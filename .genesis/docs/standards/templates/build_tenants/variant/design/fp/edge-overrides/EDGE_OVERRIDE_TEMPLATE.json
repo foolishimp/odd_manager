@@ -1,0 +1,15 @@
+{
+  "edge": "requirements→feature_decomp",
+  "customization_intent": "Describe the tenant-local aim for this edge.",
+  "requirement_refs": [
+    "REQ-PROJ-001"
+  ],
+  "design_refs": [
+    "build_tenants/<techlabel>/design/README.md"
+  ],
+  "guidance_append": "Describe how this tenant wants the edge handled.",
+  "suggested_output": "output/feature_decomp.md",
+  "required_sections": [
+    "# Feature Decomposition"
+  ]
+}

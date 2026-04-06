@@ -1,0 +1,12 @@
+# Genesis kernel default — written by gen-install.py v3.0.0
+#
+# This file is the engine's bootstrap config. Domain installers
+# set package, worker, and runtime_contract when they install.
+# Without a domain package, the engine has no graph to iterate.
+#
+# runtime_contract: path/to/domain/genesis.yml
+# package: your_domain.package:package
+# worker:  your_domain.package:worker
+# runtime_build: codex
+# runtime_backend: codex_cli
+# runtime_authority_ref: runtime://role-dispatch

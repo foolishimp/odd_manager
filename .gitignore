@@ -1,0 +1,8 @@
+.DS_Store
+.ai-workspace/
+__pycache__/
+*.pyc
+
+build_tenants/react_vite/node_modules/
+build_tenants/react_vite/dist/
+build_tenants/react_vite/tests/artifacts/
