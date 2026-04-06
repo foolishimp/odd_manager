@@ -89,6 +89,54 @@ export type GapView = {
   passing: string[];
 };
 
+export type GraphFunctionVectorView = {
+  name: string;
+  source: string[];
+  target: string;
+};
+
+export type GraphFunctionView = {
+  id: string;
+  name: string;
+  label: string;
+  status: Tone;
+  intent: string;
+  function_kind: string | null;
+  inputs: string[];
+  outputs: string[];
+  environment: {
+    requires: string[];
+    provides: string[];
+    carries: string[];
+  };
+  vectors: GraphFunctionVectorView[];
+  job_names: string[];
+  workorder_ids: string[];
+};
+
+export type FunctionView = {
+  id: string;
+  label: string;
+  status: Tone;
+  intent: string;
+  inputs: string[];
+  outputs: string[];
+  backing_graph_function: string;
+  published_graph_function_id: string | null;
+  gap: GapView | null;
+  run_ids: string[];
+  call_ids: string[];
+  open_continuation_ids: string[];
+};
+
+export type JobView = {
+  name: string;
+  contracts: Array<{
+    kind: string;
+    target_id: string;
+  }>;
+};
+
 export type WorkOrderView = {
   id: string;
   label: string;
@@ -97,6 +145,7 @@ export type WorkOrderView = {
   inputs: string[];
   outputs: string[];
   graph_function_id: string;
+  graph_function_name: string;
   gap: GapView | null;
   run_ids: string[];
   call_ids: string[];
@@ -108,12 +157,12 @@ export type GraphNodeView = {
   id: string;
   node_name: string;
   label: string;
-  kind: "asset_node" | "workorder";
+  kind: "asset_node" | "function";
   status: Tone;
   description: string;
   subtitle: string;
   asset_ids: string[];
-  ref_kind: "asset" | "workorder" | "binding";
+  ref_kind: "asset" | "function" | "binding";
   ref_id: string;
   input_node_ids: string[];
   output_node_ids: string[];
@@ -243,13 +292,9 @@ export type DomainProjection = {
   asset_types: AssetTypeProfile[];
   assets: AssetView[];
   bindings: BindingView[];
-  functions: Array<{
-    name: string;
-    intent: string;
-    inputs: string[];
-    outputs: string[];
-    backing_graph_function: string;
-  }>;
+  functions: FunctionView[];
+  jobs: JobView[];
+  graph_functions: GraphFunctionView[];
   workorders: WorkOrderView[];
   gaps: {
     converged: boolean;
@@ -301,11 +346,12 @@ export type SurfaceData =
 export type Selection =
   | { kind: "asset"; id: string }
   | { kind: "binding"; id: string }
+  | { kind: "function"; id: string }
   | { kind: "workorder"; id: string }
+  | { kind: "graph_function"; id: string }
   | { kind: "run"; id: string }
   | { kind: "graph_call"; id: string }
   | { kind: "continuation"; id: string }
   | { kind: "frame"; id: string }
   | { kind: "event"; id: string }
   | { kind: "graph"; id: string };
-

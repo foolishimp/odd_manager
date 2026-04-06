@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from gtl.graph import GraphVector, interface_contract, node_contract_key
 from gtl.function_model import GraphFunction, RefinementBoundary, CandidateFamily
 from gtl.module_model import Module
+from .materialization import MaterializationRequest, materialize_graph_function
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,10 @@ def resolve_surface_refinement_boundary(
     vectors: tuple[GraphVector, ...],
     refinement_boundaries: tuple[RefinementBoundary, ...],
     vector_id: str,
+    vector: GraphVector | None = None,
 ) -> RefinementBoundary | None:
     """Resolve one published refinement boundary from any lawful traversal surface."""
-    target_vec = _resolve_vector(vectors, vector_id)
+    target_vec = vector if vector is not None else _resolve_vector(vectors, vector_id)
     if target_vec is None:
         return None
 
@@ -79,9 +81,10 @@ def resolve_surface_candidate_family(
     vectors: tuple[GraphVector, ...],
     candidate_families: tuple[CandidateFamily, ...],
     vector_id: str,
+    vector: GraphVector | None = None,
 ) -> CandidateFamily | None:
     """Resolve one published candidate family from any lawful traversal surface."""
-    target_vec = _resolve_vector(vectors, vector_id)
+    target_vec = vector if vector is not None else _resolve_vector(vectors, vector_id)
     if target_vec is None:
         return None
 
@@ -162,15 +165,59 @@ def validate_module_selection_surface(module: Module) -> None:
     )
 
 
+def validate_job_callable_vectors_are_published(module: Module) -> None:
+    """Fail closed when a job-bound public carrier is absent from Module.graphs."""
+    published_vectors = tuple(vector for graph in module.graphs for vector in graph.vectors)
+    published_keys = {
+        (
+            vector.name,
+            interface_contract(vector.source if isinstance(vector.source, tuple) else (vector.source,)),
+            interface_contract((vector.target,)),
+        )
+        for vector in published_vectors
+    }
+
+    graph_function_by_id = {graph_function.id: graph_function for graph_function in module.graph_functions}
+    missing: list[str] = []
+    for job in module.jobs:
+        for contract in job.contracts:
+            if contract.kind != "graph_function":
+                continue
+            graph_function = graph_function_by_id.get(contract.target_id)
+            if graph_function is None:
+                continue
+            record = materialize_graph_function(
+                MaterializationRequest(graph_function=graph_function.name),
+                module,
+                published_graph_functions=(graph_function,),
+            )
+            for vector in record.graph.vectors:
+                vector_key = (
+                    vector.name,
+                    interface_contract(vector.source if isinstance(vector.source, tuple) else (vector.source,)),
+                    interface_contract((vector.target,)),
+                )
+                if vector_key not in published_keys:
+                    missing.append(f"{graph_function.name}:{vector.name}")
+    if missing:
+        raise ValueError(
+            "validate_job_callable_vectors_are_published(): job-bound public carriers "
+            f"must publish their materialized vectors through Module.graphs; missing: {sorted(missing)}"
+        )
+
+
 def resolve_refinement_boundary(
     module: Module,
     vector_id: str,
+    *,
+    vector: GraphVector | None = None,
 ) -> RefinementBoundary | None:
     """Resolve the published refinement boundary for a live vector."""
     return resolve_surface_refinement_boundary(
         vectors=tuple(vector for graph in module.graphs for vector in graph.vectors),
         refinement_boundaries=module.refinement_boundaries,
         vector_id=vector_id,
+        vector=vector,
     )
 
 
@@ -215,6 +262,8 @@ def validate_module_traversal_surface(module: Module) -> None:
 def resolve_candidate_family(
     module: Module,
     vector_id: str,
+    *,
+    vector: GraphVector | None = None,
 ) -> CandidateFamily | None:
     """Resolve the canonical candidate family for a vector.
 
@@ -225,6 +274,7 @@ def resolve_candidate_family(
         vectors=tuple(vector for graph in module.graphs for vector in graph.vectors),
         candidate_families=module.candidate_families,
         vector_id=vector_id,
+        vector=vector,
     )
 
 

@@ -94,8 +94,8 @@ The app ontology has these primary objects:
 - **Graph Function**
   - the public named callable carrier for constructive work
 - **Work Vector**
-  - the product view over one graph function or lawful graph-function
-    composition
+  - the product view over one public graph-function carrier and its realized
+    internal vectors
 - **Semantic Job**
   - the durable work contract over published graph functions
 - **Policy Surface**
@@ -114,12 +114,404 @@ The app ontology has these primary objects:
 The core execution rule is:
 
 ```text
-Job -> GraphFunction -> GraphCall -> materialized graph -> internal GraphVector traversal
+Job -> GraphFunction -> GraphCall -> materialized graph -> internal GraphVector traversal over cumulative environment
 ```
 
 `GraphFunction` is the public callable carrier.
 
 `GraphVector` remains internal realized structure.
+
+`GraphFunction.environment` is the cumulative typed environment contract.
+
+## Cumulative Environment Law
+
+Do not model GTL composition as "the last output feeds the next input".
+
+That shape is too weak for real asset construction.
+
+The builder-facing law is:
+
+- each `GraphFunction` declares `environment.requires`
+- each `GraphFunction` declares `environment.provides`
+- each `GraphFunction` declares `environment.carries`
+- later functions may require any typed binding available in the carried environment
+
+The environment is immutable and cumulative.
+
+Earlier bindings remain available unless you explicitly narrow the contract.
+
+In practice, that means later SDLC steps can still read upstream truths such as:
+
+- `input_set`
+- `requirements`
+- `design`
+
+even after newer bindings have been added.
+
+Use `GraphVector.contexts` for stable source context and use `GraphFunction.environment` for cumulative typed asset bindings.
+
+Minimal pattern:
+
+```python
+capture_requirements = graph_function_for_vector(
+    GraphVector("input_set→requirements", input_set, requirements),
+)
+
+synthesize_design = GraphFunction.from_graph(
+    name="requirements_to_design",
+    graph=Graph(
+        name="requirements_to_design",
+        inputs=(input_set, requirements),
+        outputs=(design,),
+        nodes=(input_set, requirements, design),
+        vectors=(GraphVector("requirements→design", (input_set, requirements), design),),
+    ),
+    environment=EnvRef.from_contract(
+        requires=(input_set, requirements),
+        provides=(design,),
+    ),
+)
+
+implement_code = GraphFunction.from_graph(
+    name="design_to_code",
+    graph=Graph(
+        name="design_to_code",
+        inputs=(input_set, requirements, design),
+        outputs=(code,),
+        nodes=(input_set, requirements, design, code),
+        vectors=(GraphVector("design→code", (input_set, requirements, design), code),),
+    ),
+    environment=EnvRef.from_contract(
+        requires=(input_set, requirements, design),
+        provides=(code,),
+    ),
+)
+
+executive = compose(capture_requirements, synthesize_design, implement_code)
+```
+
+The law is not:
+
+- `f.outputs == g.inputs`
+
+The law is:
+
+- `g.environment.requires` must be satisfied by the cumulative environment carried so far
+
+## Runtime Environment Resolution
+
+ABG does not dispatch a live vector from declaration shape alone.
+
+At bind time, ABG resolves one executable runtime environment for the specific
+live vector being dispatched.
+
+Resolution law:
+
+- `requires` comes from the live vector source boundary
+- `provides` comes from the live vector target boundary
+- `carries` is the stable union of the published graph-function carries plus the
+  live vector boundary
+- each carried binding is projected from current runtime truth and labeled as
+  either `external_entry` or `internal_carrier`
+- internally produced required bindings must already be replay-visible before
+  constructive dispatch
+- conflicting carried bindings with the same name but incompatible contracts fail
+  closed
+- unresolved runtime environment blocks `F_P` dispatch and leaves the route open
+
+Builder consequence:
+
+- declaring a binding in `environment.carries` is not enough
+- if a late step requires `requirements` or `design` from 2+ steps earlier, that
+  binding must already be visible in replayed runtime truth before the late step
+  runs
+- ABG does not invent hidden parameter passing between internal vectors
+
+## Public Carrier Pattern
+
+For one live executable vector, the canonical public carrier is a graph
+function.
+
+Use `graph_function_for_vector(...)` for that pattern.
+
+Do not make bare vectors public job targets.
+
+Do not publish helper leaf graph functions as extra module graph functions unless
+they are:
+
+- themselves bound by a semantic `Job`
+- explicit `CandidateFamily` members
+
+Otherwise they become hidden structural alternatives.
+
+### Composed executive over cumulative environment
+
+The real builder pattern for multi-step work is:
+
+- author leaf or mid-level graph functions with explicit cumulative environments
+- compose them into one public executive carrier
+- materialize that executive once for module publication
+- publish every live internal vector through `RefinementBoundary` or
+  `CandidateFamily`
+- bind the semantic `Job` to the public executive carrier, not to an internal
+  vector
+
+Concrete pattern:
+
+```python
+capture_requirements = graph_function_for_vector(
+    GraphVector("input_set→requirements", input_set, requirements),
+)
+
+synthesize_design = GraphFunction.from_graph(
+    name="requirements_to_design",
+    graph=Graph(
+        name="requirements_to_design",
+        inputs=(input_set, requirements),
+        outputs=(design,),
+        nodes=(input_set, requirements, design),
+        vectors=(GraphVector("requirements→design", (input_set, requirements), design),),
+    ),
+    environment=EnvRef.from_contract(
+        requires=(input_set, requirements),
+        provides=(design,),
+    ),
+)
+
+implement_code = GraphFunction.from_graph(
+    name="design_to_code",
+    graph=Graph(
+        name="design_to_code",
+        inputs=(input_set, requirements, design),
+        outputs=(code,),
+        nodes=(input_set, requirements, design, code),
+        vectors=(GraphVector("design→code", (input_set, requirements, design), code),),
+    ),
+    environment=EnvRef.from_contract(
+        requires=(input_set, requirements, design),
+        provides=(code,),
+    ),
+)
+
+executive = compose(capture_requirements, synthesize_design, implement_code)
+materialized = executive.materialize()
+
+boundaries = tuple(
+    RefinementBoundary(
+        name=vector.name,
+        inputs=vector.source if isinstance(vector.source, tuple) else (vector.source,),
+        outputs=(vector.target,),
+    )
+    for vector in materialized.vectors
+)
+
+module = Module(
+    name="delivery",
+    graphs=(materialized,),
+    graph_functions=(executive,),
+    refinement_boundaries=boundaries,
+    jobs=(
+        Job(
+            name="bootstrap_release",
+            contracts=(ContractRef(kind="graph_function", target_id=executive.id),),
+        ),
+    ),
+)
+```
+
+That publication shape is important.
+
+ABG binds the `Job` to `executive`, materializes the executive graph, and then
+traverses the internal vectors against the cumulative environment carried by the
+public carrier.
+
+If the module publishes the public carrier but not its live vectors and
+traversal targets, ABG will fail closed.
+
+### Cold-start migration from imperative executive runners
+
+If you are replacing an app-owned executive loop, do not keep the old loop as a
+shadow orchestrator.
+
+Migrate in this order:
+
+- make each constructive step a `GraphFunction` with explicit `EnvRef`
+- compose those steps into one public executive carrier
+- materialize the executive once and publish that graph through `Module.graphs`
+- publish each traversable internal vector through `RefinementBoundary` or
+  `CandidateFamily`
+- bind the semantic `Job` to the outer carrier
+- let ABG own traversal, selection, recursive frame opening, and rebound
+- inspect emitted runtime facts instead of hand-writing a driver loop
+
+This is the right migration path for `odd_method`-class apps that currently have
+an app-owned program catalog plus a custom iteration runner.
+
+## Recursion And Composition
+
+Recursion does not introduce a second environment model.
+
+It reuses the same cumulative environment contract and opens more work against
+the world already built so far.
+
+The builder-facing law is:
+
+- recurse over a public `GraphFunction`, not a bare vector
+- the recursive carrier keeps the wrapped carrier's outer contract and
+  cumulative environment
+- recursive child work executes against the carried environment visible at that
+  frame
+- fold-back and continuation logic must preserve explicit lineage rather than
+  mutating prior truth
+
+Concrete recursive composition pattern:
+
+```python
+recursive = recurse(
+    compose(capture_requirements, synthesize_design, implement_code),
+    termination_ready,
+    foldback={
+        "binding": "outer_contract",
+        "mode": "rebind",
+        "requires_parent_evaluation": True,
+    },
+)
+
+assert recursive.inputs == (input_set,)
+assert recursive.outputs == (code,)
+assert tuple(node.name for node in recursive.environment.carries) == (
+    "input_set",
+    "requirements",
+    "design",
+    "code",
+)
+```
+
+That is the important point: recursion preserves the cumulative carried world.
+It does not collapse back to one-step output piping.
+
+### Recursive structural choice
+
+When recursive work is one selectable way to satisfy a coarse contract, do not
+bind the semantic job directly to the recursive candidate.
+
+Publish:
+
+- one public outer carrier over the coarse contract vector
+- one explicit `CandidateFamily` or `RefinementBoundary` for the selectable
+  inner work
+- one explicit `SelectionDecision` when candidate families are involved
+
+Concrete pattern:
+
+```python
+outer = GraphVector("input_set→code", input_set, code)
+
+recursive_candidate = recurse(
+    compose(capture_requirements, synthesize_design, implement_code),
+    termination_ready,
+    foldback={
+        "binding": "outer_contract",
+        "mode": "rebind",
+        "requires_parent_evaluation": True,
+    },
+)
+
+family = CandidateFamily(
+    name="input_set→code_profiles",
+    inputs=(input_set,),
+    outputs=(code,),
+    candidates=(recursive_candidate,),
+)
+
+outer_profile = graph_function_for_vector(outer)
+
+module = Module(
+    name="delivery",
+    graphs=(
+        Graph(
+            name="delivery",
+            inputs=(input_set,),
+            outputs=(code,),
+            nodes=(input_set, code),
+            vectors=(outer,),
+        ),
+    ),
+    graph_functions=(outer_profile, recursive_candidate),
+    candidate_families=(family,),
+    jobs=(
+        Job(
+            name=outer.name,
+            contracts=(ContractRef(kind="graph_function", target_id=outer_profile.id),),
+        ),
+    ),
+)
+```
+
+At runtime, selection is explicit:
+
+```python
+SelectionDecision(
+    contract_id=outer.id,
+    work_key=outer.id,
+    graph_function=recursive_candidate.name,
+    selected_by="policy",
+    selection_mode="explicit",
+    rationale="select recursive cumulative profile",
+)
+```
+
+That leads ABG to open a frame for the recursive candidate and execute child
+steps over the carried environment of that frame.
+
+Runtime shape after selection:
+
+- ABG binds the semantic job to the coarse outer carrier
+- explicit selection opens a child frame for the recursive candidate
+- child steps execute against the cumulative environment visible at that frame
+- fold-back rebinds to the outer contract rather than mutating parent truth in
+  place
+- parent resume can then dispatch late steps that require bindings produced 2+
+  steps earlier in the child chain
+
+That is the real composed-recursive route to use for SDLC zoom work.
+
+### Fail-closed rules for composition and recursion
+
+These are the common builder errors that surfaced during real recursive and
+composed SDLC implementation:
+
+- do not model composition as `f.outputs == g.inputs`; downstream requirements
+  are satisfied from `environment.carries`
+- do not bind jobs to bare vectors
+- do not publish a public graph function without publishing its live vectors
+  through `Module.graphs`
+- do not omit `RefinementBoundary` or `CandidateFamily` publication for live
+  internal vectors
+- do not publish helper leaf graph functions as extra public alternatives unless
+  they are job-bound carriers or explicit candidate-family members
+- do not assume `compose(...)` over symbolic carriers is directly executable;
+  if a carrier materializes to a symbolic template, you still need a lawful
+  materialization path before ABG can traverse it
+- do not assume a declared carry is executable truth; ABG resolves the live
+  vector runtime environment and blocks if an internally produced required
+  binding is not yet replay-visible
+- do not reuse one binding name for structurally different node contracts;
+  conflicting carried contracts fail closed
+
+## Parallelism And Write Territory
+
+Parallelism is conservative.
+
+The engine may batch work in parallel only when write territory is disjoint.
+
+Use this rule:
+
+- read overlap is fine
+- write overlap is a conflict
+- overlapping writers serialize
+
+Do not design workflows that depend on implicit merging of overlapping writers.
 
 ## What The Builder Authors
 
@@ -449,6 +841,32 @@ cd /path/to/project
 PYTHONPATH=.genesis python -m genesis gaps --workspace .
 PYTHONPATH=.genesis python -m genesis start --auto --workspace .
 ```
+
+### Live transport readiness
+
+For live qualification, "CLI installed" is not sufficient.
+
+You need:
+
+- the agent CLI on `PATH`
+- the agent callable from the workspace
+- an active authenticated session
+
+If live qualification reports transport unavailability, repair the agent/session
+first. Do not misclassify that as a GTL or ABG product failure.
+
+### What constructive dispatch exposes
+
+When ABG dispatches `F_P`, the prompt explicitly surfaces:
+
+- deterministic failures that must be cleared before assessment
+- the resolved runtime environment for the live edge
+- whether each binding comes from `external_entry` or `internal_carrier`
+- the output contract and mandatory acceptance contexts
+- execution rules that require the artifact to be updated before assessment
+
+Builders should expect this prompt shape and use it as the authoritative
+execution contract for one live edge.
 
 ## What To Inspect After A Run
 

@@ -4,6 +4,8 @@
 **Date**: 2026-03-24
 **Derived from**: 20260324T142230_NOTE_spec-driven-homeostatic-methodology.md
 **Repriced**: 2026-03-24 — Verification Layers and Renewal Path added, derived from product-owner scenario analysis (20260324T165057_PRODUCT_SCENARIOS_abg-gtl-first-10.md)
+**Repriced**: 2026-04-07 — Product definition layer made explicit in the constitutional chain, bootstrap rule, and spec-driven method
+**Repriced**: 2026-04-07 — Goals layer made explicit in the constitutional chain, bootstrap rule, and spec-driven method
 
 This document defines the philosophical baseline for spec-driven development.
 
@@ -37,7 +39,11 @@ Imperative procedure still exists, but it is subordinate to declared authority.
 
 ## Manifesto
 
+We define the current **goals** for the active body of work before repricing deeper constitutional layers.
+
 We work from **intent** before implementation.
+
+We define the current **product** in explicit present-tense terms before decomposing it into detailed requirements.
 
 We define the full constitutional **what** in **requirements**, not merely a feature list.
 
@@ -51,7 +57,7 @@ We demand **evidence** for claims through scenarios, tests, events, projection, 
 
 We treat **repricing** as part of correctness: when reality exposes a constitutional gap, the specification must change.
 
-We keep **authority directional** even while iterating: intent governs requirements, requirements govern design, and requirements plus design govern code.
+We keep **authority directional** even while iterating: goals govern intent, intent governs product, product governs requirements, requirements govern design, and requirements plus design govern code.
 
 We keep the **live operative surface** in the present tense only: once a new current reality is established, transitional paths are erased from the live product unless explicitly retained as compatibility features.
 
@@ -65,14 +71,17 @@ If these claims do not hold, the work is not genuinely spec-driven.
 
 The work is not genuinely spec-driven if any of these fail:
 
-1. Given intent and requirements, a competent team cannot derive a conformant design.
-2. Given requirements and design, a competent team cannot derive conformant code.
-3. A live requirement has no explicit status, category, or owning design decision.
-4. A live requirement has no downstream realization or explicit deferment surface.
-5. Code behavior exists without requirement and design authority.
-6. A live domain artifact is rewritten in place after becoming part of the live constitutional surface.
-7. A capability claim has no operational evidence.
-8. Drift is discovered, but the constitutional source is not repriced.
+1. Given goals, a competent team cannot derive a conformant intent surface.
+2. Given intent, a competent team cannot derive a conformant product definition.
+3. Given product definition, a competent team cannot derive conformant requirements.
+4. Given requirements, a competent team cannot derive a conformant design.
+5. Given requirements and design, a competent team cannot derive conformant code.
+6. A live requirement has no explicit status, category, or owning design decision.
+7. A live requirement has no downstream realization or explicit deferment surface.
+8. Code behavior exists without requirement and design authority.
+9. A live domain artifact is rewritten in place after becoming part of the live constitutional surface.
+10. A capability claim has no operational evidence.
+11. Drift is discovered, but the constitutional source is not repriced.
 
 ---
 
@@ -82,7 +91,7 @@ This methodology is not only a local operating note for one implementation. It i
 
 Its role is meta-constitutional:
 
-- it defines how intent, requirements, design, code, evidence, and repricing relate
+- it defines how goals, intent, product, requirements, design, code, evidence, and repricing relate
 - it defines what counts as specification sufficiency
 - it defines what kinds of requirement truth exist
 - it defines how authority flows during iterative delivery
@@ -92,8 +101,10 @@ Therefore, if a project's implementation disappears, this methodology should sti
 The important boundary is:
 
 - `SPEC_METHOD.md` defines the process constitution
+- `GOALS.md` defines the current overriding concerns for the active body of work
 - `INTENT.md` defines domain direction
-- `specification/requirements/` is the live requirement surface
+- `PRODUCT.md` defines the current product realization
+- `specification/requirements/` is the live requirement surface derived from product definition
 - a shared design surface plus any tenant-local design surfaces choose the concrete mechanism
 - when a project realization model uses build tenants, `build_tenants/` is the project-owned realization root beneath one shared specification
 
@@ -108,16 +119,18 @@ So if project-specific design and code disappeared, recovery would proceed throu
 ## Constitutional Chain
 
 ```
-Intent → Requirements → Design → Code → Events → Projection → Delta
-                                                                   ↓
-                                                              Scenarios
-                                                                   ↓
-                                                            Gap Analysis
-                                                                   ↓
-                                                       Repricing / New Intent
+Goals → Intent → Product → Requirements → Design → Code → Events → Projection → Delta
+                                                                                       ↓
+                                                                                  Scenarios
+                                                                                       ↓
+                                                                                Gap Analysis
+                                                                                       ↓
+                                                                    Repricing / New Goals / Intent
 ```
 
+- **Goals** define the current overriding concerns for the active body of work.
 - **Intent** defines purpose and direction.
+- **Product** defines the current product realization, key terms, and end-state shape in terms that can be decomposed into requirements.
 - **Requirements** define invariant truths the system must satisfy.
 - **Design** defines the structural decisions, interfaces, carrier surfaces, and delivery topology that make those truths achievable.
 - **ADRs** are one durable form of design record, not a second constitutional layer above design.
@@ -127,9 +140,13 @@ Intent → Requirements → Design → Code → Events → Projection → Delta
 - **Delta** reveals drift between intended truth and realized state.
 - **Scenarios** test operational meaning — can the system actually do the thing the words describe?
 - **Gap analysis** identifies where real use cases hit the current model and reveal insufficiency.
-- **Repricing** updates requirements, design, or code when the system no longer harmonizes. When gap analysis reveals constitutional insufficiency, it generates new **Intent**.
+- **Repricing** updates goals, intent, product, requirements, design, or code when the system no longer harmonizes. When gap analysis reveals constitutional insufficiency, it generates new **Goals** and/or **Intent**.
 
-This is the homeostatic loop. Every link in the chain is load-bearing. A break at any link — an unowned requirement, an ungrounded design record, code without a design decision — creates accidental law.
+This is the homeostatic loop. Every link in the chain is load-bearing. A break at any link — goals with no downstream repricing path, an unowned requirement, an ungrounded design record, code without a design decision — creates accidental law.
+
+`GOALS.md` is the bounded work-wave surface. It captures the current overriding concerns for the next body of work, keeps temporary focus out of deeper constitutional layers until it is intentionally repriced there, and is more immediate than intent while remaining higher-level than product definition and requirements.
+
+`PRODUCT.md` is the bridge between direction and obligation. It states the current product realization in present-tense terms, names the product terms and boundaries that downstream layers rely on, and provides the surface that requirements decompose.
 
 Requirements are the constitutional **what** of the project. They are not limited to user-visible product features. The live requirement surface may include capabilities, invariants, constraints, governance, and verification obligations. What matters is that each requirement states something the project must make true.
 
@@ -144,12 +161,14 @@ re-entry point into the constitutional chain.
 
 The minimum lawful change classes are:
 
-- `intent_reprice`: directional or scope change; re-enters at Intent and flows through Requirements, Design, Code, and Evidence
+- `goal_reprice`: current bounded work-wave focus changes; re-enters at Goals and may flow through Intent, Product, Requirements, Design, Code, and Evidence where that focus changes deeper constitutional truth
+- `intent_reprice`: directional or scope change; re-enters at Intent and flows through Product, Requirements, Design, Code, and Evidence
+- `product_reprice`: current product realization changes while directional intent remains stable; re-enters at Product and flows through Requirements, Design, Code, and Evidence
 - `requirement_reprice`: constitutional truth changes while project direction remains stable; re-enters at Requirements and flows through Design, Code, and Evidence
 - `design_reframe`: realization structure changes while active intent and requirement truth remain stable; re-enters at Design and flows through Code and Evidence
 - `realization_refactor`: local code, configuration, or attribute change with no intended constitutional or structural change; re-enters at the realized surface only and must prove no upstream drift
 
-Smaller changes may re-enter below Intent only if they explicitly assert that no
+Smaller changes may re-enter below Goals only if they explicitly assert that no
 upstream constitutional surface is changing.
 
 The absence of a declared change class is process drift.
@@ -316,13 +335,19 @@ Requirements should also avoid freezing concrete realization choices prematurely
 
 The methodology is specification-driven only if the layers are reconstructable in order:
 
-1. Given **Intent + Requirements** and a chosen technology stack, a competent team should be able to derive a conformant **Design**.
-2. Given **Requirements + Design**, a competent team should be able to derive conformant **Code**.
+1. Given **Goals**, a competent team should be able to derive a conformant **Intent** surface.
+2. Given **Intent**, a competent team should be able to derive a conformant **Product** definition.
+3. Given **Product**, a competent team should be able to derive conformant **Requirements**.
+4. Given **Requirements** and a chosen technology stack, a competent team should be able to derive a conformant **Design**.
+5. Given **Requirements + Design**, a competent team should be able to derive conformant **Code**.
 
 This does not mean the derivation is unique. Different designs may satisfy the same requirements, and different codebases may satisfy the same design. The test is sufficiency, not determinism.
 
-Failures at either boundary indicate a specification defect:
+Failures at any boundary indicate a specification defect:
 
+- If intent cannot be derived from goals, the goals surface is unclear, contradictory, or not concrete enough to orient the next bounded wave of work.
+- If product cannot be derived from intent, the intent surface is too vague, contradictory, or not concrete enough to guide realization.
+- If requirements cannot be derived from product, the product surface is underspecified, contradictory, or not decomposable enough to govern implementation.
 - If design cannot be derived from requirements, the requirement surface is underspecified, contradictory, or polluted with accidental implementation detail.
 - If code cannot be derived from requirements plus design, the design surface is incomplete, ambiguous, or not operational enough.
 
@@ -348,15 +373,15 @@ If filenames and placement are hardcoded in requirements without constitutional 
 Intent is not only top-down. The full homeostatic cycle includes a reverse path where real use cases generate new intent:
 
 ```
-Current spec → real-world use case → gap analysis → new intent
+Current spec → real-world use case → gap analysis → new goals / intent
 ```
 
 This is how the system stays alive instead of becoming a frozen constitution. The generative rule:
 
 1. A real use case (scenario, deployment, external review) hits the current model
 2. Gap analysis identifies what the constitution cannot express
-3. If the gap is constitutional (not just a missing implementation), a new intent is written
-4. The new intent flows forward through the chain: requirements → design → code
+3. If the gap is constitutional (not just a missing implementation), new goals and/or intent are written
+4. The repriced surface then flows forward through the chain: product → requirements → design → code
 
 New intents emerge from repeated, real use-case pressure against the current model — not from abstract speculation. The gap must be concrete before it becomes intent. Ad hoc coding pressure does not generate intent; explicit gap analysis does.
 
@@ -366,7 +391,7 @@ This flow is not a one-pass waterfall computation. It is a cumulative iteration:
 - code is repeatedly re-derived against the current constitutional surface
 - gaps discovered during implementation, testing, replay, or scenario work feed back into repricing
 
-What must remain stable is the direction of authority: requirements govern design, and requirements plus design govern code, even when the project advances through many iterations.
+What must remain stable is the full direction of authority: goals govern intent, intent governs product, product governs requirements, requirements govern design, and requirements plus design govern code, even when the project advances through many iterations.
 
 ---
 
@@ -420,7 +445,7 @@ In that case:
 - inherited constitutional documents from the prior line become migration source material, not live authority in the new line
 - it is lawful to zero inherited constitutional surfaces on the migration line and rebuild them from first principles
 - nothing carries forward by default; every retained statement, requirement, design choice, or guide rule must be explicitly re-adopted
-- every carry-forward is intentional and should land in the correct layer: intent, requirements, design, guide, or template
+- every carry-forward is intentional and should land in the correct layer: goals, intent, product, requirements, design, guide, or template
 - old design and code may be used as reference implementations, but they do not govern the new constitutional surface unless explicitly re-derived and re-adopted
 - absence from the new constitutional surface means "not yet adopted" and carries no automatic authority from the prior line
 
@@ -429,7 +454,7 @@ The purpose of this rule is to prevent accidental law from leaking through migra
 When performing a fundamental migration:
 
 1. Declare the migration line and treat the prior line as source material.
-2. Establish fresh constitutional surfaces for method, intent, requirements, and design.
+2. Establish fresh constitutional surfaces for method, goals, intent, product, requirements, and design.
 3. Classify inherited material as adopted, superseded, deferred, or orphaned.
 4. Copy forward only what is intentionally retained.
 5. Re-derive downstream design and code from the new constitutional surfaces, not from ambient precedent.
@@ -515,7 +540,7 @@ In project documents, this classification shall be explicit in requirement heade
 - If events and projection reveal persistent delta, either code is wrong or the requirement/design stack is stale.
 - If a capability has requirements and design but no scenario, its operational meaning is unverified — it may be vaporware.
 - If a requirement is treated as a product feature when it is actually a guarantee, governance rule, or verification obligation, the requirement surface has been misclassified.
-- If design cannot be re-derived from requirements, or code cannot be re-derived from requirements plus design, the constitutional chain is broken.
+- If intent cannot be re-derived from goals, requirements cannot be re-derived from product, design cannot be re-derived from requirements, or code cannot be re-derived from requirements plus design, the constitutional chain is broken.
 - If a live constitutional artifact is corrected by in-place mutation rather than supersession or withdrawal, constitutional history has been corrupted.
 - If a real use case reveals a gap not expressible in current requirements, a new intent is needed — not a code hack.
 
@@ -526,7 +551,9 @@ In project documents, this classification shall be explicit in requirement heade
 The target constitutional shape for a project is:
 
 - `.genesis/docs/standards/SPEC_METHOD.md` as process constitution
+- `specification/GOALS.md` as current work-wave orientation
 - `specification/INTENT.md` as domain direction
+- `specification/PRODUCT.md` as current product realization
 - `specification/requirements/` as the live requirement surface
 - a live shared design surface
 - any tenant-local design surfaces required by the realization model
@@ -546,7 +573,9 @@ specification/
 │   ├── *_METHOD.md
 │   ├── *_GUIDE.md
 │   └── *_TEMPLATE.md
+├── GOALS.md
 ├── INTENT.md
+├── PRODUCT.md
 └── requirements/
     └── *.md
 
@@ -558,23 +587,27 @@ Projects do not need to start with a complete `requirements/` tree on day zero.
 
 Requirements may be sourced from any legitimate constitutional input, including:
 
+- `GOALS.md`
 - `INTENT.md`
+- `PRODUCT.md`
 - existing requirement documents
 - imported standards or policy material
 - prior project versions
 - migration or repricing source material
 
-Most projects begin by deriving the first requirement surface from `INTENT.md`, but that is the usual starting point, not the only lawful source.
+Most projects begin by deriving `INTENT.md` from `GOALS.md`, then `PRODUCT.md` from `INTENT.md`, then the first requirement surface from the product definition, but that is the usual starting point, not the only lawful source.
 
 The bootstrap sequence is:
 
 1. Establish or install `.genesis/docs/standards/SPEC_METHOD.md`.
-2. Write or confirm `INTENT.md`.
-3. Gather the requirement source material relevant to the project.
-4. Run the `intent → requirements` step and write the resulting live surface under `requirements/`.
-5. Store requirements as individual files or grouped requirement families, whichever yields the clearest constitutional surface.
-6. Classify each live requirement family by lifecycle status and requirement category.
-7. Treat `requirements/` as the authoritative requirement surface going forward.
+2. Write or confirm `GOALS.md`.
+3. Run the `goals → intent` step and write or confirm `INTENT.md`.
+4. Run the `intent → product` step and write or confirm `PRODUCT.md`.
+5. Gather the requirement source material relevant to the project.
+6. Run the `product → requirements` step and write the resulting live surface under `requirements/`.
+7. Store requirements as individual files or grouped requirement families, whichever yields the clearest constitutional surface.
+8. Classify each live requirement family by lifecycle status and requirement category.
+9. Treat `requirements/` as the authoritative requirement surface going forward.
 
 Once `requirements/` exists as the live constitutional surface, no rival monolithic requirements document should remain co-equal authority with it.
 
@@ -586,30 +619,34 @@ This rule exists to keep the requirement surface structurally clear, derivable, 
 
 When a feature is introduced or changed:
 
-1. Update **Intent** if the purpose or scope has changed.
-2. Update **Requirements** so the invariant truths are explicit, and classify each new or changed requirement by category.
-3. Update or write **Design** so the governing structural choice is explicit. ADRs are one valid design form.
-4. Write **Scenarios** for capability claims that require operational proof, and define other evidence surfaces for non-capability requirements where appropriate.
-5. Prefer declarative expression of the problem and acceptance surface before adding imperative mechanism.
-6. Check the reconstruction boundary: can the current requirements support the intended design, and can the current design support the intended implementation?
-7. Only then implement **Code**.
-8. Use **Events, Projection, and Delta** to verify whether reality still satisfies the requirements.
+1. Update **Goals** if the current bounded work wave or overriding concerns have changed.
+2. Update **Intent** if the purpose or scope has changed.
+3. Update **Product** if the current product realization, terms, boundaries, or end-state shape have changed.
+4. Update **Requirements** so the invariant truths are explicit as a decomposition of the product definition, and classify each new or changed requirement by category.
+5. Update or write **Design** so the governing structural choice is explicit. ADRs are one valid design form.
+6. Write **Scenarios** for capability claims that require operational proof, and define other evidence surfaces for non-capability requirements where appropriate.
+7. Prefer declarative expression of the problem and acceptance surface before adding imperative mechanism.
+8. Check the reconstruction boundary: can the current goals support the current intent, can the current intent support the current product, can the current product support the intended requirements, can the current requirements support the intended design, and can the current design support the intended implementation?
+9. Only then implement **Code**.
+10. Use **Events, Projection, and Delta** to verify whether reality still satisfies the requirements.
 
 When bootstrapping a project or repricing a requirement surface:
 
-1. Start from `.genesis/docs/standards/SPEC_METHOD.md` and `INTENT.md`.
-2. Gather requirement source material from the relevant constitutional inputs.
-3. Perform the `intent → requirements` step and write the resulting live surface under `requirements/`.
-4. Store requirements as individual files or grouped requirement families, whichever best preserves clarity and avoids monolithic sprawl.
-5. Make `requirements/` the sole live requirement authority before proceeding to design and code.
-6. Prefer declarative structure over procedural workaround while shaping the new requirement surface.
-7. Only after that surface exists should downstream design and implementation be treated as constitutionally grounded.
+1. Start from `.genesis/docs/standards/SPEC_METHOD.md` and `GOALS.md`.
+2. Perform the `goals → intent` step and write or confirm `INTENT.md`.
+3. Perform the `intent → product` step and write or confirm `PRODUCT.md` as the current product-definition bridge.
+4. Gather requirement source material from the relevant constitutional inputs.
+5. Perform the `product → requirements` step and write the resulting live surface under `requirements/`.
+6. Store requirements as individual files or grouped requirement families, whichever best preserves clarity and avoids monolithic sprawl.
+7. Make `requirements/` the sole live requirement authority before proceeding to design and code.
+8. Prefer declarative structure over procedural workaround while shaping the new requirement surface.
+9. Only after that surface exists should downstream design and implementation be treated as constitutionally grounded.
 
 When a real use case reveals a gap:
 
 1. Write the **Scenario** first — make the gap concrete and testable.
 2. Run **Gap Analysis** — is this a missing implementation or a constitutional insufficiency?
-3. If constitutional: write a new **Intent**, then flow forward (requirements → design → code).
+3. If constitutional: reprice **Goals** when the current work wave changes, write a new **Intent**, then flow forward (product → requirements → design → code).
 4. If implementation: write requirements/design as needed, then implement.
 
 ---

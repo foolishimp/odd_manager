@@ -86,6 +86,8 @@ A workorder is realized by a domain function and carried by a GTL
 
 The GTL-level public named callable carrier underlying a published workorder.
 
+Its declared `environment` contract is cumulative rather than one-step piped.
+
 ### Outcome
 
 A derived convergence or posture view over graphs, assets, workorders, proof,
@@ -98,8 +100,11 @@ convergence targets.
 
 ### Work Vector
 
-A productized operator or builder view over one workorder or one lawful
-workorder composition.
+A productized operator or builder view over one public graph-function carrier
+and its realized internal vectors.
+
+It may summarize lawful composition or recursion, but it is not itself the
+public callable carrier.
 
 A work vector is not a runtime primitive.
 
@@ -114,7 +119,8 @@ One engine-owned execution attempt over semantic work.
 
 ### Graph Call
 
-One engine-owned realization of one published graph-function boundary.
+One engine-owned realization of one published graph-function boundary against a
+resolved live runtime environment.
 
 ### Frame
 

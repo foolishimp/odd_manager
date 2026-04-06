@@ -9,6 +9,11 @@ Use this root for explanatory, operational, or supporting material that is not i
 - [LLM_GTL_APP_BUILDER_GUIDE.md](./LLM_GTL_APP_BUILDER_GUIDE.md) is the primary
   builder guide for LLM agentic coders.
 
+## Methodology Master
+
+- Public master repository: `https://github.com/foolishimp/specification_methodology`
+- Local installer source for this checkout: `/Users/jim/src/apps/specification_methodology/specification/standards/`
+
 ## Secondary References
 
 - [GTL_Technical_Guide.md](./GTL_Technical_Guide.md) is the GTL reference guide.

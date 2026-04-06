@@ -59,6 +59,8 @@ shape to observe and supervise:
 - explicit node bindings from typed nodes to concrete asset identities
 - function catalog entries with name, intent, typed inputs, typed outputs, and
   backing graph-function identity
+- published cumulative environment contracts where the builder exposes
+  `requires`, `provides`, and `carries`
 - GTL graph-function carriers and ABG runtime aggregates
 - a query-library boundary for domain overlays that ABG does not own
 
@@ -168,6 +170,9 @@ A `WorkOrder` is realized by a domain function and carried by a GTL
 While the builder catalog is still evolving, a workorder may initially expose
 only carrier identity, intent, and typed inputs and outputs.
 
+The manager may additionally project the carrier's cumulative environment
+contract when upstream publication exposes it.
+
 ### Job
 
 A durable semantic work contract over published callable carriers and declared
@@ -187,6 +192,11 @@ One engine-owned realization of one published GTL `GraphFunction` boundary.
 
 `odd_manager` does not replace `GraphCall` with a separate runtime aggregate.
 It explains a graph call in terms of the selected `WorkOrder`.
+
+Constructive dispatch is lawful only against the resolved live runtime
+environment for that boundary. The manager should therefore treat missing
+carried bindings or unresolved environment state as first-class runtime
+explanation, not as hidden parameter-passing detail.
 
 ### Frame
 

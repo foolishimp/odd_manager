@@ -40,6 +40,7 @@ from .interpret import (
 from .lineage import _discover_children, active_work_keys
 from .provenance import _read_workflow_version
 from .selection import (
+    validate_job_callable_vectors_are_published,
     validate_module_selection_surface,
     validate_module_traversal_surface,
 )
@@ -120,6 +121,7 @@ class Scope:
         if self.module is None:
             raise ValueError("Scope requires a Module.")
         validate_module_selection_surface(self.module)
+        validate_job_callable_vectors_are_published(self.module)
         validate_module_traversal_surface(self.module)
 
         if self.runtime_identity is None:
@@ -205,10 +207,10 @@ def gen_iterate(
     stream: EventStream,
 ) -> dict:
     """
-    /gen-iterate = bind one executable job → iterate exactly once.
+    /gen-iterate = bind one executable contract boundary → iterate exactly once.
 
     The most important command to keep pure.
-    One Job. One Asset. One iterate call.
+    One Job. One contract boundary. One iterate call.
     When work_keys are active, selects the first unconverged (job, work_key) pair.
     """
     worker = _resolve_worker(scope)
@@ -285,6 +287,7 @@ def _derive_state(scope: Scope, stream: EventStream) -> dict:
     return derive_operational_state(
         workspace_root=scope.workspace_root,
         stream=stream,
+        module=scope.module,
         worker=worker,
         jobs=_scoped_jobs(scope, worker),
         work_keys=tuple(_resolve_work_keys(scope, stream)),

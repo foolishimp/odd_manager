@@ -310,6 +310,7 @@ def dispatch_bound_manifest_via_transport(
         str(workspace),
         agent=agent,
         timeout=timeout or 300,
+        config=config,
     )
     failure_class = classify_failure(
         result,

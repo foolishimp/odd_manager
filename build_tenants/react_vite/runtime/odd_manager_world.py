@@ -24,8 +24,17 @@ def _configure_imports(workspace_root: Path) -> None:
         / "python"
         / "code"
     )
+    abiogenesis_code = (
+        odd_manager_root.parent
+        / "abiogenesis"
+        / "build_tenants"
+        / "abiogenesis"
+        / "python"
+        / "code"
+    )
     desired = [
         odd_method_code,
+        abiogenesis_code,
         workspace_root / ".genesis",
         odd_manager_root / ".genesis",
     ]
@@ -121,26 +130,86 @@ def _project_runtime(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _project_workorders(
-    functions: list[dict[str, Any]],
-    gaps_payload: dict[str, Any],
-    runtime_payload: dict[str, Any],
-) -> list[dict[str, Any]]:
-    gap_by_edge = {
+def _gap_by_edge(gaps_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
         gap["edge"]: gap
         for gap in gaps_payload.get("gaps", [])
         if isinstance(gap.get("edge"), str)
     }
-    workorders: list[dict[str, Any]] = []
+
+
+def _aggregate_gap_overlay(
+    owner_id: str,
+    edge_names: list[str],
+    gap_by_edge: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    related_gaps = [gap_by_edge[edge_name] for edge_name in edge_names if edge_name in gap_by_edge]
+    if not related_gaps:
+        return None
+    if len(related_gaps) == 1:
+        return related_gaps[0]
+    delta = sum(float(gap.get("delta", 0.0)) for gap in related_gaps)
+    failing = sorted(
+        {
+            item
+            for gap in related_gaps
+            for item in gap.get("failing", [])
+            if isinstance(item, str)
+        }
+    )
+    passing = sorted(
+        {
+            item
+            for gap in related_gaps
+            for item in gap.get("passing", [])
+            if isinstance(item, str)
+        }
+    )
+    return {
+        "edge": owner_id,
+        "delta": delta,
+        "delta_summary": f"{len(related_gaps)} internal edges remain unconverged.",
+        "failing": failing,
+        "passing": passing,
+    }
+
+
+def _graph_function_contract_target(job: dict[str, Any]) -> str | None:
+    for contract in job.get("contracts", []):
+        if not isinstance(contract, dict):
+            continue
+        if contract.get("kind") != "graph_function":
+            continue
+        target_id = contract.get("target_id")
+        if isinstance(target_id, str) and target_id:
+            return target_id
+    return None
+
+
+def _project_functions(
+    functions: list[dict[str, Any]],
+    graph_functions: list[dict[str, Any]],
+    gaps_payload: dict[str, Any],
+    runtime_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    graph_function_by_name = {
+        entry["name"]: entry
+        for entry in graph_functions
+        if isinstance(entry.get("name"), str)
+    }
+    gap_by_edge = _gap_by_edge(gaps_payload)
+    projected: list[dict[str, Any]] = []
     for entry in functions:
-        workorder_id = entry["name"]
+        function_id = entry["name"]
+        graph_function = graph_function_by_name.get(entry["backing_graph_function"], {})
+        graph_function_id = graph_function.get("id")
         related_runs = [
-            run for run in runtime_payload["runs"] if run.get("edge") == workorder_id
+            run for run in runtime_payload["runs"] if run.get("edge") == function_id
         ]
         related_calls = [
             call
             for call in runtime_payload["graph_calls"]
-            if call.get("graph_function_id") == entry["backing_graph_function"]
+            if call.get("graph_function_id") in {graph_function_id, entry["backing_graph_function"]}
         ]
         related_run_ids = {
             run["instance_id"]
@@ -176,20 +245,21 @@ def _project_workorders(
             status = "gated"
         elif active:
             status = "active"
-        elif workorder_id in gap_by_edge:
+        elif function_id in gap_by_edge:
             status = "pending"
         else:
             status = "converged"
-        workorders.append(
+        projected.append(
             {
-                "id": workorder_id,
-                "label": _title_case(workorder_id),
+                "id": function_id,
+                "label": _title_case(function_id),
                 "status": status,
                 "intent": entry["intent"],
                 "inputs": list(entry["inputs"]),
                 "outputs": list(entry["outputs"]),
-                "graph_function_id": entry["backing_graph_function"],
-                "gap": gap_by_edge.get(workorder_id),
+                "backing_graph_function": entry["backing_graph_function"],
+                "published_graph_function_id": graph_function_id,
+                "gap": gap_by_edge.get(function_id),
                 "run_ids": sorted(related_run_ids),
                 "call_ids": sorted(related_call_ids),
                 "open_continuation_ids": [
@@ -197,26 +267,178 @@ def _project_workorders(
                     for continuation in open_continuations
                     if isinstance(continuation.get("instance_id"), str)
                 ],
-                "source": "odd_query",
+            }
+        )
+    return projected
+
+
+def _project_workorders(
+    jobs: list[dict[str, Any]],
+    graph_functions: list[dict[str, Any]],
+    gaps_payload: dict[str, Any],
+    runtime_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    graph_function_by_id = {
+        entry["id"]: entry
+        for entry in graph_functions
+        if isinstance(entry.get("id"), str)
+    }
+    gap_by_edge = _gap_by_edge(gaps_payload)
+    workorders: list[dict[str, Any]] = []
+    for job in jobs:
+        job_name = job.get("name")
+        if not isinstance(job_name, str) or not job_name:
+            continue
+        graph_function_id = _graph_function_contract_target(job)
+        graph_function = graph_function_by_id.get(graph_function_id or "", {})
+        graph_function_name = graph_function.get("name", graph_function_id or job_name)
+        vector_names = [
+            vector.get("name")
+            for vector in graph_function.get("vectors", [])
+            if isinstance(vector, dict) and isinstance(vector.get("name"), str)
+        ]
+        related_runs = [
+            run for run in runtime_payload["runs"] if run.get("job_id") == job_name
+        ]
+        related_run_ids = {
+            run["instance_id"]
+            for run in related_runs
+            if isinstance(run.get("instance_id"), str)
+        }
+        related_calls = [
+            call
+            for call in runtime_payload["graph_calls"]
+            if call.get("run_id") in related_run_ids
+        ]
+        if not related_calls and graph_function_id:
+            related_calls = [
+                call
+                for call in runtime_payload["graph_calls"]
+                if call.get("graph_function_id") == graph_function_id
+            ]
+        related_call_ids = {
+            call["instance_id"]
+            for call in related_calls
+            if isinstance(call.get("instance_id"), str)
+        }
+        open_continuations = [
+            continuation
+            for continuation in runtime_payload["continuations"]
+            if continuation.get("status") == "open"
+            and (
+                continuation.get("run_id") in related_run_ids
+                or continuation.get("call_id") in related_call_ids
+            )
+        ]
+        blocked = any(
+            item.get("status") in {"failed", "timed_out"}
+            for item in related_runs + related_calls
+        )
+        active = any(
+            item.get("status")
+            in {"queued", "pending", "started", "dispatched", "open"}
+            for item in related_runs + related_calls
+        )
+        gap_overlay = _aggregate_gap_overlay(job_name, vector_names, gap_by_edge)
+        if blocked:
+            status = "blocked"
+        elif open_continuations:
+            status = "gated"
+        elif active:
+            status = "active"
+        elif gap_overlay:
+            status = "pending"
+        else:
+            status = "converged"
+        workorders.append(
+            {
+                "id": job_name,
+                "label": _title_case(job_name.removesuffix("_job")),
+                "status": status,
+                "intent": graph_function.get("intent")
+                or f"Published job bound to {graph_function_name}.",
+                "inputs": list(graph_function.get("inputs", [])),
+                "outputs": list(graph_function.get("outputs", [])),
+                "graph_function_id": graph_function_id or graph_function_name,
+                "graph_function_name": graph_function_name,
+                "gap": gap_overlay,
+                "run_ids": sorted(related_run_ids),
+                "call_ids": sorted(related_call_ids),
+                "open_continuation_ids": [
+                    continuation["instance_id"]
+                    for continuation in open_continuations
+                    if isinstance(continuation.get("instance_id"), str)
+                ],
+                "source": "published_job",
             }
         )
     return workorders
+
+
+def _project_graph_functions(
+    graph_functions: list[dict[str, Any]],
+    workorders: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    workorder_ids_by_graph_function: dict[str, list[str]] = {}
+    status_by_graph_function: dict[str, list[str]] = {}
+    for workorder in workorders:
+        graph_function_id = workorder.get("graph_function_id")
+        if not isinstance(graph_function_id, str) or not graph_function_id:
+            continue
+        workorder_ids_by_graph_function.setdefault(graph_function_id, []).append(workorder["id"])
+        status_by_graph_function.setdefault(graph_function_id, []).append(workorder["status"])
+
+    projected: list[dict[str, Any]] = []
+    for entry in graph_functions:
+        graph_function_id = entry.get("id")
+        graph_function_name = entry.get("name")
+        if not isinstance(graph_function_id, str) or not isinstance(graph_function_name, str):
+            continue
+        projected.append(
+            {
+                "id": graph_function_id,
+                "name": graph_function_name,
+                "label": _title_case(graph_function_name),
+                "status": _dominant_status(status_by_graph_function.get(graph_function_id, ["attention"])),
+                "intent": entry.get("intent") or "Published graph-function carrier.",
+                "function_kind": entry.get("function_kind"),
+                "inputs": list(entry.get("inputs", [])),
+                "outputs": list(entry.get("outputs", [])),
+                "environment": {
+                    "requires": list(entry.get("environment", {}).get("requires", [])),
+                    "provides": list(entry.get("environment", {}).get("provides", [])),
+                    "carries": list(entry.get("environment", {}).get("carries", [])),
+                },
+                "vectors": [
+                    {
+                        "name": vector.get("name", "vector"),
+                        "source": list(vector.get("source", [])),
+                        "target": vector.get("target", "target"),
+                    }
+                    for vector in entry.get("vectors", [])
+                    if isinstance(vector, dict)
+                ],
+                "job_names": list(entry.get("job_names", [])),
+                "workorder_ids": list(workorder_ids_by_graph_function.get(graph_function_id, [])),
+            }
+        )
+    return projected
 
 
 def _project_graph_set(
     assets: list[dict[str, Any]],
     asset_types: list[dict[str, Any]],
     bindings: list[dict[str, Any]],
-    workorders: list[dict[str, Any]],
+    functions: list[dict[str, Any]],
 ) -> dict[str, Any]:
     assets_by_id = {asset["asset_id"]: asset for asset in assets}
     asset_types_by_name = {asset_type["name"]: asset_type for asset_type in asset_types}
     bindings_by_node = {binding["node"]: binding for binding in bindings}
 
     node_names: set[str] = set(bindings_by_node)
-    for workorder in workorders:
-        node_names.update(workorder["inputs"])
-        node_names.update(workorder["outputs"])
+    for function in functions:
+        node_names.update(function["inputs"])
+        node_names.update(function["outputs"])
 
     node_status_map: dict[str, str] = {}
     for node_name in sorted(node_names):
@@ -224,9 +446,9 @@ def _project_graph_set(
         asset_ids = list(binding["asset_ids"]) if binding else []
         bound_assets = [assets_by_id[asset_id] for asset_id in asset_ids if asset_id in assets_by_id]
         related_workorder_statuses = [
-            workorder["status"]
-            for workorder in workorders
-            if node_name in workorder["inputs"] or node_name in workorder["outputs"]
+            function["status"]
+            for function in functions
+            if node_name in function["inputs"] or node_name in function["outputs"]
         ]
         if any(asset.get("metadata", {}).get("exists") == "false" for asset in bound_assets):
             status = "blocked"
@@ -283,47 +505,47 @@ def _project_graph_set(
             }
         )
 
-    for workorder in workorders:
+    for function in functions:
         graph_nodes.append(
             {
-                "id": f"workorder:{workorder['id']}",
-                "node_name": workorder["id"],
-                "label": workorder["label"],
-                "kind": "workorder",
-                "status": workorder["status"],
-                "description": workorder["intent"],
-                "subtitle": workorder["graph_function_id"],
+                "id": f"function:{function['id']}",
+                "node_name": function["id"],
+                "label": function["label"],
+                "kind": "function",
+                "status": function["status"],
+                "description": function["intent"],
+                "subtitle": function["backing_graph_function"],
                 "asset_ids": [],
-                "ref_kind": "workorder",
-                "ref_id": workorder["id"],
-                "input_node_ids": [f"node:{item}" for item in workorder["inputs"]],
-                "output_node_ids": [f"node:{item}" for item in workorder["outputs"]],
+                "ref_kind": "function",
+                "ref_id": function["id"],
+                "input_node_ids": [f"node:{item}" for item in function["inputs"]],
+                "output_node_ids": [f"node:{item}" for item in function["outputs"]],
             }
         )
 
     graph_segments: list[dict[str, Any]] = []
-    for workorder in workorders:
-        workorder_node_id = f"workorder:{workorder['id']}"
-        for input_node in workorder["inputs"]:
+    for function in functions:
+        function_node_id = f"function:{function['id']}"
+        for input_node in function["inputs"]:
             graph_segments.append(
                 {
-                    "id": f"{input_node}->{workorder['id']}",
+                    "id": f"{input_node}->{function['id']}",
                     "from": f"node:{input_node}",
-                    "to": workorder_node_id,
-                    "label": workorder["label"],
-                    "status": workorder["status"],
-                    "ref_id": workorder["id"],
+                    "to": function_node_id,
+                    "label": function["label"],
+                    "status": function["status"],
+                    "ref_id": function["id"],
                 }
             )
-        for output_node in workorder["outputs"]:
+        for output_node in function["outputs"]:
             graph_segments.append(
                 {
-                    "id": f"{workorder['id']}->{output_node}",
-                    "from": workorder_node_id,
+                    "id": f"{function['id']}->{output_node}",
+                    "from": function_node_id,
                     "to": f"node:{output_node}",
                     "label": _title_case(output_node),
-                    "status": workorder["status"],
-                    "ref_id": workorder["id"],
+                    "status": function["status"],
+                    "ref_id": function["id"],
                 }
             )
 
@@ -337,7 +559,7 @@ def _project_graph_set(
                 "id": "graph.bootstrap",
                 "label": "Bootstrap Asset Graph",
                 "status": graph_status,
-                "derivation": "published function inputs and outputs plus explicit bindings",
+                "derivation": "descriptive function catalog inputs and outputs plus explicit bindings",
                 "nodes": graph_nodes,
                 "segments": graph_segments,
             }
@@ -352,16 +574,25 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
     domain_payload = query_domain(app)
     events = app.stream.all_events()
     runtime_payload = _project_runtime(events)
-    workorders = _project_workorders(
+    graph_functions = domain_payload.get("graph_functions", [])
+    functions = _project_functions(
         domain_payload.get("functions", []),
+        graph_functions,
         domain_payload.get("gaps", {}),
         runtime_payload,
     )
+    workorders = _project_workorders(
+        domain_payload.get("jobs", []),
+        graph_functions,
+        domain_payload.get("gaps", {}),
+        runtime_payload,
+    )
+    graph_function_registry = _project_graph_functions(graph_functions, workorders)
     graph_set = _project_graph_set(
         domain_payload.get("assets", []),
         domain_payload.get("asset_types", []),
         domain_payload.get("bindings", []),
-        workorders,
+        functions,
     )
 
     active_runs = sum(
@@ -376,17 +607,19 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
     )
     total_gaps = len(domain_payload.get("gaps", {}).get("gaps", []))
     total_delta = float(domain_payload.get("gaps", {}).get("total_delta", 0))
+    workorder_status = _dominant_status([workorder["status"] for workorder in workorders])
+    overview_status = _dominant_status([graph_set["status"], workorder_status])
 
-    if graph_set["status"] == "blocked":
+    if workorder_status == "blocked":
         headline = "One or more published workorders are fail-closed."
-    elif graph_set["status"] == "gated":
+    elif workorder_status == "gated":
         headline = "Open continuations require review or correction."
-    elif graph_set["status"] == "active":
+    elif workorder_status == "active":
         headline = "ABG is currently carrying active runtime work."
     elif total_delta == 0 and open_continuations == 0:
         headline = "Published workorders are currently converged."
     else:
-        headline = "Domain gaps remain open across the current graph set."
+        headline = "Descriptive domain gaps remain open across the current graph set."
 
     return {
         "workspace_root": str(workspace_root),
@@ -395,11 +628,11 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
             "runtime_source": "abg_event_model",
             "runtime_aggregate_provider": "abg_projectors",
             "domain_source": "odd_method_query_library",
-            "graph_derivation": "published function inputs and outputs plus explicit bindings",
+            "graph_derivation": "descriptive function catalog inputs and outputs plus explicit bindings",
             "query_cadence": "on_demand",
         },
         "overview": {
-            "status": graph_set["status"],
+            "status": overview_status,
             "headline": headline,
             "summary": "odd_manager composes ABG-native runtime projections with odd_method query overlays without introducing a shadow runtime.",
             "total_delta": total_delta,
@@ -413,6 +646,8 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
         "graph_set": graph_set,
         "domain": {
             **domain_payload,
+            "functions": functions,
+            "graph_functions": graph_function_registry,
             "workorders": workorders,
         },
         "runtime": runtime_payload,

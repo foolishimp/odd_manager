@@ -4,6 +4,8 @@ import type {
   BindingView,
   ContinuationView,
   FrameView,
+  FunctionView,
+  GraphFunctionView,
   GraphCallView,
   GraphView,
   ManagerWorld,
@@ -43,6 +45,7 @@ export function InspectorPanel({
         <AssetInspector
           asset={world.domain.assets.find((item) => item.asset_id === selection.id) ?? null}
           bindings={world.domain.bindings}
+          functions={world.domain.functions}
           workorders={world.domain.workorders}
           onSelectSelection={onSelectSelection}
         />
@@ -52,7 +55,16 @@ export function InspectorPanel({
         <BindingInspector
           binding={world.domain.bindings.find((item) => item.node === selection.id) ?? null}
           assets={world.domain.assets}
+          functions={world.domain.functions}
           workorders={world.domain.workorders}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "function":
+      return (
+        <FunctionInspector
+          fn={world.domain.functions.find((item) => item.id === selection.id) ?? null}
+          graphFunctions={world.domain.graph_functions}
           onSelectSelection={onSelectSelection}
         />
       );
@@ -60,6 +72,14 @@ export function InspectorPanel({
       return (
         <WorkOrderInspector
           workorder={world.domain.workorders.find((item) => item.id === selection.id) ?? null}
+          graphFunctions={world.domain.graph_functions}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "graph_function":
+      return (
+        <GraphFunctionInspector
+          graphFunction={world.domain.graph_functions.find((item) => item.id === selection.id) ?? null}
           onSelectSelection={onSelectSelection}
         />
       );
@@ -110,6 +130,7 @@ export function InspectorPanel({
       return (
         <GraphInspector
           graph={world.graph_set.graphs.find((item) => item.id === selection.id) ?? null}
+          graphFunctions={world.domain.graph_functions}
           selectedGraphId={selectedGraphId}
           onSelectSelection={onSelectSelection}
         />
@@ -129,11 +150,13 @@ export function InspectorPanel({
 function AssetInspector({
   asset,
   bindings,
+  functions,
   workorders,
   onSelectSelection,
 }: {
   asset: AssetView | null;
   bindings: BindingView[];
+  functions: FunctionView[];
   workorders: WorkOrderView[];
   onSelectSelection: (selection: Selection) => void;
 }) {
@@ -143,6 +166,9 @@ function AssetInspector({
 
   const relatedBindings = bindings.filter((binding) => binding.asset_ids.includes(asset.asset_id));
   const relatedNodeNames = new Set(relatedBindings.map((binding) => binding.node));
+  const relatedFunctions = functions.filter(
+    (fn) => fn.inputs.some((item) => relatedNodeNames.has(item)) || fn.outputs.some((item) => relatedNodeNames.has(item)),
+  );
   const relatedWorkorders = workorders.filter(
     (workorder) =>
       workorder.inputs.some((item) => relatedNodeNames.has(item)) ||
@@ -209,6 +235,25 @@ function AssetInspector({
           />
         </InspectorSection>
 
+        <InspectorSection title="Related Functions">
+          <div className="inline-pills">
+            {relatedFunctions.length ? (
+              relatedFunctions.map((fn) => (
+                <button
+                  key={fn.id}
+                  type="button"
+                  className={`status-chip ${fn.status}`}
+                  onClick={() => onSelectSelection({ kind: "function", id: fn.id })}
+                >
+                  {fn.label}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+
         <InspectorSection title="Related WorkOrders">
           <div className="inline-pills">
             {relatedWorkorders.length ? (
@@ -235,11 +280,13 @@ function AssetInspector({
 function BindingInspector({
   binding,
   assets,
+  functions,
   workorders,
   onSelectSelection,
 }: {
   binding: BindingView | null;
   assets: AssetView[];
+  functions: FunctionView[];
   workorders: WorkOrderView[];
   onSelectSelection: (selection: Selection) => void;
 }) {
@@ -247,6 +294,9 @@ function BindingInspector({
     return <MissingInspector noun="binding" />;
   }
 
+  const relatedFunctions = functions.filter(
+    (fn) => fn.inputs.includes(binding.node) || fn.outputs.includes(binding.node),
+  );
   const relatedWorkorders = workorders.filter(
     (workorder) => workorder.inputs.includes(binding.node) || workorder.outputs.includes(binding.node),
   );
@@ -280,6 +330,25 @@ function BindingInspector({
           </div>
         </InspectorSection>
 
+        <InspectorSection title="Connected Functions">
+          <div className="inline-pills">
+            {relatedFunctions.length ? (
+              relatedFunctions.map((fn) => (
+                <button
+                  key={fn.id}
+                  type="button"
+                  className={`status-chip ${fn.status}`}
+                  onClick={() => onSelectSelection({ kind: "function", id: fn.id })}
+                >
+                  {fn.label}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">no descriptive functions</span>
+            )}
+          </div>
+        </InspectorSection>
+
         <InspectorSection title="Connected WorkOrders">
           <div className="inline-pills">
             {relatedWorkorders.length ? (
@@ -303,28 +372,186 @@ function BindingInspector({
   );
 }
 
+function FunctionInspector({
+  fn,
+  graphFunctions,
+  onSelectSelection,
+}: {
+  fn: FunctionView | null;
+  graphFunctions: GraphFunctionView[];
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!fn) {
+    return <MissingInspector noun="function" />;
+  }
+
+  const publishedGraphFunction =
+    graphFunctions.find((item) => item.id === fn.published_graph_function_id) ?? null;
+
+  return (
+    <aside className="panel panel--dispatch inspector-panel">
+      <InspectorHero
+        eyebrow="Function"
+        title={fn.label}
+        subtitle={fn.backing_graph_function}
+        tone={fn.status}
+      />
+
+      <div className="inspector-stack">
+        <p>{fn.intent}</p>
+
+        <InspectorSection title="Backing GraphFunction">
+          {publishedGraphFunction ? (
+            <div className="inline-pills">
+              <button
+                type="button"
+                className="status-chip active"
+                onClick={() => onSelectSelection({ kind: "graph_function", id: publishedGraphFunction.id })}
+              >
+                {publishedGraphFunction.label}
+              </button>
+              <span className="status-chip attention">{publishedGraphFunction.id}</span>
+            </div>
+          ) : (
+            <DetailRows rows={[["Carrier Name", fn.backing_graph_function]]} />
+          )}
+        </InspectorSection>
+
+        <InspectorSection title="Inputs">
+          <div className="inline-pills">
+            {fn.inputs.map((input) => (
+              <button
+                key={input}
+                type="button"
+                className="status-chip pending"
+                onClick={() => onSelectSelection({ kind: "binding", id: input })}
+              >
+                {input}
+              </button>
+            ))}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Outputs">
+          <div className="inline-pills">
+            {fn.outputs.map((output) => (
+              <button
+                key={output}
+                type="button"
+                className="status-chip converged"
+                onClick={() => onSelectSelection({ kind: "binding", id: output })}
+              >
+                {output}
+              </button>
+            ))}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Gap Overlay">
+          {fn.gap ? (
+            <DetailRows
+              rows={[
+                ["Edge", fn.gap.edge],
+                ["Delta", fn.gap.delta.toFixed(2)],
+                ["Summary", fn.gap.delta_summary],
+                ["Failing", fn.gap.failing.join(", ") || "none"],
+                ["Passing", fn.gap.passing.join(", ") || "none"],
+              ]}
+            />
+          ) : (
+            <div className="empty-state">
+              <strong>No active gap overlay.</strong>
+              <p>The current function is converged from the query-library perspective.</p>
+            </div>
+          )}
+        </InspectorSection>
+
+        <InspectorSection title="Runtime Links">
+          <div className="inline-pills">
+            {fn.run_ids.map((runId) => (
+              <button
+                key={runId}
+                type="button"
+                className="status-chip active"
+                onClick={() => onSelectSelection({ kind: "run", id: runId })}
+              >
+                run:{runId}
+              </button>
+            ))}
+            {fn.call_ids.map((callId) => (
+              <button
+                key={callId}
+                type="button"
+                className="status-chip pending"
+                onClick={() => onSelectSelection({ kind: "graph_call", id: callId })}
+              >
+                call:{callId}
+              </button>
+            ))}
+            {fn.open_continuation_ids.map((continuationId) => (
+              <button
+                key={continuationId}
+                type="button"
+                className="status-chip gated"
+                onClick={() => onSelectSelection({ kind: "continuation", id: continuationId })}
+              >
+                continuation:{continuationId}
+              </button>
+            ))}
+            {!fn.run_ids.length && !fn.call_ids.length && !fn.open_continuation_ids.length ? (
+              <span className="status-chip attention">no runtime aggregates</span>
+            ) : null}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
 function WorkOrderInspector({
   workorder,
+  graphFunctions,
   onSelectSelection,
 }: {
   workorder: WorkOrderView | null;
+  graphFunctions: GraphFunctionView[];
   onSelectSelection: (selection: Selection) => void;
 }) {
   if (!workorder) {
     return <MissingInspector noun="workorder" />;
   }
 
+  const graphFunction =
+    graphFunctions.find((item) => item.id === workorder.graph_function_id) ?? null;
+
   return (
     <aside className="panel panel--dispatch inspector-panel">
       <InspectorHero
         eyebrow="WorkOrder"
         title={workorder.label}
-        subtitle={workorder.graph_function_id}
+        subtitle={workorder.graph_function_name}
         tone={workorder.status}
       />
 
       <div className="inspector-stack">
         <p>{workorder.intent}</p>
+
+        <InspectorSection title="Public Carrier">
+          {graphFunction ? (
+            <div className="inline-pills">
+              <button
+                type="button"
+                className="status-chip active"
+                onClick={() => onSelectSelection({ kind: "graph_function", id: graphFunction.id })}
+              >
+                {graphFunction.label}
+              </button>
+              <span className="status-chip attention">{graphFunction.id}</span>
+            </div>
+          ) : (
+            <DetailRows rows={[["Graph Function Id", workorder.graph_function_id]]} />
+          )}
+        </InspectorSection>
 
         <InspectorSection title="Inputs">
           <div className="inline-pills">
@@ -412,6 +639,121 @@ function WorkOrderInspector({
             !workorder.open_continuation_ids.length ? (
               <span className="status-chip attention">no runtime aggregates</span>
             ) : null}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function GraphFunctionInspector({
+  graphFunction,
+  onSelectSelection,
+}: {
+  graphFunction: GraphFunctionView | null;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!graphFunction) {
+    return <MissingInspector noun="graph function" />;
+  }
+
+  return (
+    <aside className="panel panel--dispatch inspector-panel">
+      <InspectorHero
+        eyebrow="GraphFunction"
+        title={graphFunction.label}
+        subtitle={graphFunction.function_kind ?? graphFunction.name}
+        tone={graphFunction.status}
+      />
+
+      <div className="inspector-stack">
+        <p>{graphFunction.intent}</p>
+
+        <DetailRows
+          rows={[
+            ["Graph Function Id", graphFunction.id],
+            ["Jobs", graphFunction.job_names.join(", ") || "none"],
+            ["Carrier Name", graphFunction.name],
+            ["WorkOrders", graphFunction.workorder_ids.join(", ") || "none"],
+          ]}
+        />
+
+        <InspectorSection title="Environment Requires">
+          <div className="inline-pills">
+            {graphFunction.environment.requires.length ? (
+              graphFunction.environment.requires.map((item) => (
+                <span key={item} className="status-chip pending">
+                  {item}
+                </span>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Environment Provides">
+          <div className="inline-pills">
+            {graphFunction.environment.provides.length ? (
+              graphFunction.environment.provides.map((item) => (
+                <span key={item} className="status-chip converged">
+                  {item}
+                </span>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Environment Carries">
+          <div className="inline-pills">
+            {graphFunction.environment.carries.length ? (
+              graphFunction.environment.carries.map((item) => (
+                <span key={item} className="status-chip active">
+                  {item}
+                </span>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Realized Vectors">
+          <div className="list-stack">
+            {graphFunction.vectors.length ? (
+              graphFunction.vectors.map((vector) => (
+                <div key={vector.name} className="odd-card">
+                  <span className="panel__eyebrow">{vector.name}</span>
+                  <strong>{`${vector.source.join(" + ")} -> ${vector.target}`}</strong>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">
+                <strong>No vectors published.</strong>
+                <p>The current carrier has no realized vectors in the current registry payload.</p>
+              </div>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Manager WorkOrders">
+          <div className="inline-pills">
+            {graphFunction.workorder_ids.length ? (
+              graphFunction.workorder_ids.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className="status-chip active"
+                  onClick={() => onSelectSelection({ kind: "workorder", id: item })}
+                >
+                  {item}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
           </div>
         </InspectorSection>
       </div>
@@ -521,10 +863,12 @@ function EventInspector({
 
 function GraphInspector({
   graph,
+  graphFunctions,
   selectedGraphId,
   onSelectSelection,
 }: {
   graph: GraphView | null;
+  graphFunctions: GraphFunctionView[];
   selectedGraphId: string;
   onSelectSelection: (selection: Selection) => void;
 }) {
@@ -547,8 +891,8 @@ function GraphInspector({
             ["Nodes", String(graph.nodes.length)],
             ["Segments", String(graph.segments.length)],
             [
-              "WorkOrders",
-              String(graph.nodes.filter((node) => node.kind === "workorder").length),
+              "Functions",
+              String(graph.nodes.filter((node) => node.kind === "function").length),
             ],
           ]}
         />
@@ -564,6 +908,25 @@ function GraphInspector({
                 {node.label}
               </button>
             ))}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Published GraphFunctions">
+          <div className="inline-pills">
+            {graphFunctions.length ? (
+              graphFunctions.map((graphFunction) => (
+                <button
+                  key={graphFunction.id}
+                  type="button"
+                  className={`status-chip ${graphFunction.status}`}
+                  onClick={() => onSelectSelection({ kind: "graph_function", id: graphFunction.id })}
+                >
+                  {graphFunction.label}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">no registry entries</span>
+            )}
           </div>
         </InspectorSection>
       </div>
@@ -634,7 +997,7 @@ function MissingInspector({ noun }: { noun: string }) {
 }
 
 function selectionFromNode(
-  kind: "asset" | "workorder" | "binding",
+  kind: "asset" | "function" | "binding",
   id: string,
 ): Selection {
   if (kind === "asset") {
@@ -643,7 +1006,7 @@ function selectionFromNode(
   if (kind === "binding") {
     return { kind: "binding", id };
   }
-  return { kind: "workorder", id };
+  return { kind: "function", id };
 }
 
 function capitalize(value: string) {

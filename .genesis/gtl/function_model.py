@@ -22,6 +22,43 @@ from gtl.graph import Attrs, Graph, Node, _mint_id, interface_contract
 
 
 @dataclass(frozen=True)
+class EnvRef:
+    """
+    Explicit cumulative environment contract for GraphFunction composition.
+
+    requires: externally supplied typed bindings required to enter the function.
+    provides: typed bindings emitted by this function.
+    carries: cumulative bindings available after this function executes.
+    """
+    requires: tuple[Node, ...] = ()
+    provides: tuple[Node, ...] = ()
+    carries: tuple[Node, ...] = ()
+
+    @classmethod
+    def from_contract(
+        cls,
+        *,
+        requires: tuple[Node, ...],
+        provides: tuple[Node, ...],
+        carries: tuple[Node, ...] | None = None,
+    ) -> "EnvRef":
+        return cls(
+            requires=requires,
+            provides=provides,
+            carries=carries if carries is not None else tuple(dict.fromkeys((*requires, *provides))),
+        )
+
+    def __post_init__(self) -> None:
+        carry_contracts = interface_contract(self.carries)
+        required_contracts = interface_contract(self.requires)
+        provided_contracts = interface_contract(self.provides)
+        if not set(required_contracts).issubset(set(carry_contracts)):
+            raise ValueError("EnvRef.requires must be represented in EnvRef.carries")
+        if not set(provided_contracts).issubset(set(carry_contracts)):
+            raise ValueError("EnvRef.provides must be represented in EnvRef.carries")
+
+
+@dataclass(frozen=True)
 class TemplateRef:
     """
     Replayable template reference for graph-function publication truth.
@@ -91,6 +128,7 @@ class GraphFunction:
     compare=False: structural equality ignores id.
     """
     name: str
+    environment: EnvRef
     inputs: tuple[Node, ...] = ()
     outputs: tuple[Node, ...] = ()
     template: TemplateRef | Graph | str | Callable[[], Graph] = ""
@@ -107,14 +145,18 @@ class GraphFunction:
         graph: Graph,
         inputs: tuple[Node, ...] = (),
         outputs: tuple[Node, ...] = (),
+        environment: EnvRef,
         effects: tuple = (),
         declarations: Attrs = Attrs(),
         tags: tuple[str, ...] = (),
     ) -> "GraphFunction":
+        resolved_inputs = inputs or graph.inputs
+        resolved_outputs = outputs or graph.outputs
         return cls(
             name=name,
-            inputs=inputs or graph.inputs,
-            outputs=outputs or graph.outputs,
+            inputs=resolved_inputs,
+            outputs=resolved_outputs,
+            environment=environment,
             template=TemplateRef.inline_graph(graph, ref=f"inline:{name}"),
             effects=effects,
             declarations=declarations,
@@ -129,6 +171,7 @@ class GraphFunction:
         ref: str,
         inputs: tuple[Node, ...] = (),
         outputs: tuple[Node, ...] = (),
+        environment: EnvRef,
         effects: tuple = (),
         declarations: Attrs = Attrs(),
         tags: tuple[str, ...] = (),
@@ -138,6 +181,7 @@ class GraphFunction:
             name=name,
             inputs=inputs,
             outputs=outputs,
+            environment=environment,
             template=TemplateRef.symbolic(ref, version=version),
             effects=effects,
             declarations=declarations,
@@ -148,6 +192,14 @@ class GraphFunction:
         template = _coerce_template(self.template, name=self.name)
         object.__setattr__(self, "template", template)
         object.__setattr__(self, "declarations", Attrs.coerce(self.declarations))
+        if interface_contract(self.environment.requires) != interface_contract(self.inputs):
+            raise ValueError(
+                f"GraphFunction({self.name!r}) inputs must match environment.requires"
+            )
+        if not set(interface_contract(self.outputs)).issubset(set(interface_contract(self.environment.provides))):
+            raise ValueError(
+                f"GraphFunction({self.name!r}) outputs must be represented in environment.provides"
+            )
         if template.kind == "inline_graph":
             self._validate_outer_contract(template.graph)
 

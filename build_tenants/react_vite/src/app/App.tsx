@@ -193,8 +193,12 @@ function selectionExists(world: ManagerWorld, selection: Selection) {
       return world.domain.assets.some((asset) => asset.asset_id === selection.id);
     case "binding":
       return world.domain.bindings.some((binding) => binding.node === selection.id);
+    case "function":
+      return world.domain.functions.some((item) => item.id === selection.id);
     case "workorder":
       return world.domain.workorders.some((workorder) => workorder.id === selection.id);
+    case "graph_function":
+      return world.domain.graph_functions.some((graphFunction) => graphFunction.id === selection.id);
     case "run":
       return world.runtime.runs.some((run) => run.instance_id === selection.id);
     case "graph_call":
@@ -224,6 +228,9 @@ function locateSelection(world: ManagerWorld, selection: Selection) {
       if (selection.kind === "binding") {
         return candidate.ref_kind === "binding" && candidate.ref_id === selection.id;
       }
+      if (selection.kind === "function") {
+        return candidate.ref_kind === "function" && candidate.ref_id === selection.id;
+      }
       if (selection.kind === "workorder") {
         return candidate.ref_kind === "workorder" && candidate.ref_id === selection.id;
       }
@@ -243,5 +250,5 @@ function nodeToSelection(node: GraphNodeView): Selection {
   if (node.ref_kind === "binding") {
     return { kind: "binding", id: node.ref_id };
   }
-  return { kind: "workorder", id: node.ref_id };
+  return { kind: "function", id: node.ref_id };
 }

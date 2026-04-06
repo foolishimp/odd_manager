@@ -13,6 +13,11 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from genesis.binding import ExecutableJob
+from gtl.graph import interface_contract
+
+
+def _contract_token(nodes) -> str:
+    return json.dumps(interface_contract(nodes), separators=(",", ":"), sort_keys=False)
 
 
 def req_hash(requirements: list[str]) -> str:
@@ -30,16 +35,31 @@ def req_hash(requirements: list[str]) -> str:
 def executable_job_hash(job: ExecutableJob) -> str:
     """
     Hash of GTL job identity, role semantics, evaluator definitions,
-    and bound context digests.
+    graph-function environment/materialization identity, and bound context digests.
 
     Covers: GTL job.name, role names, F_D (binding), F_P/F_H (description),
-    name+regime for all evaluators, plus every context digest on the vector.
+    name+regime for all evaluators, the graph-function template/environment,
+    the materialized vector contract, plus every context digest on the vector.
     Uses names (not ids) for cross-process stability — ids are UUID-minted
     at import time. Used as spec_hash when scope.workflow_version != "unknown".
     """
     parts: list[str] = [f"job:{job.job.name}"]
     if job.graph_function is not None:
         parts.append(f"graph_function:{job.graph_function.name}")
+        parts.append(
+            "template:"
+            f"{job.graph_function.template.kind}:"
+            f"{job.graph_function.template.ref}:"
+            f"{job.graph_function.template.version or ''}"
+        )
+        parts.append(f"env_requires:{_contract_token(job.graph_function.environment.requires)}")
+        parts.append(f"env_provides:{_contract_token(job.graph_function.environment.provides)}")
+        parts.append(f"env_carries:{_contract_token(job.graph_function.environment.carries)}")
+    if job.materialization_id is not None:
+        parts.append(f"materialization:{job.materialization_id}")
+    source = job.vector.source if isinstance(job.vector.source, tuple) else (job.vector.source,)
+    parts.append(f"vector_inputs:{_contract_token(source)}")
+    parts.append(f"vector_outputs:{_contract_token((job.vector.target,))}")
     parts.extend(sorted(f"role:{r.name}" for r in job.job.roles))
     parts.extend(sorted(
         f"{ev.name}:{ev.regime.__name__}:{ev.binding}:{ev.description}"

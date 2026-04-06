@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from gtl.function_model import CandidateFamily, GraphFunction, RefinementBoundary
+from gtl.function_model import CandidateFamily, EnvRef, GraphFunction, RefinementBoundary
 from gtl.graph import Attrs, Context, Graph, GraphVector, Node, _schema_key
 from gtl.operator_model import Evaluator, F_D, F_H, F_P, Operator, Rule
 from gtl.module_model import Module
@@ -310,6 +310,11 @@ def _serialize_graph_function_summary(function: GraphFunction) -> dict[str, Any]
         "name": function.name,
         "inputs": [_serialize_node(node) for node in function.inputs],
         "outputs": [_serialize_node(node) for node in function.outputs],
+        "environment": {
+            "requires": [_serialize_node(node) for node in function.environment.requires],
+            "provides": [_serialize_node(node) for node in function.environment.provides],
+            "carries": [_serialize_node(node) for node in function.environment.carries],
+        },
         "template_kind": function.template.kind,
         "template_ref": function.template.ref,
         "template_version": function.template.version,
@@ -334,6 +339,20 @@ def _deserialize_graph_function_summary(data: dict[str, Any]) -> GraphFunction:
         name=data["name"],
         inputs=tuple(_deserialize_node(node) for node in data.get("inputs", ())),
         outputs=tuple(_deserialize_node(node) for node in data.get("outputs", ())),
+        environment=EnvRef(
+            requires=tuple(
+                _deserialize_node(node)
+                for node in data.get("environment", {}).get("requires", ())
+            ),
+            provides=tuple(
+                _deserialize_node(node)
+                for node in data.get("environment", {}).get("provides", ())
+            ),
+            carries=tuple(
+                _deserialize_node(node)
+                for node in data.get("environment", {}).get("carries", ())
+            ),
+        ),
         template=template,
         declarations=_from_jsonable(data.get("declarations", {})),
         tags=tuple(data.get("tags", ())),
@@ -424,6 +443,11 @@ def _serialize_surface_graph_function(function: GraphFunction) -> dict[str, Any]
         "name": function.name,
         "inputs": [_serialize_node(node) for node in function.inputs],
         "outputs": [_serialize_node(node) for node in function.outputs],
+        "environment": {
+            "requires": [_serialize_node(node) for node in function.environment.requires],
+            "provides": [_serialize_node(node) for node in function.environment.provides],
+            "carries": [_serialize_node(node) for node in function.environment.carries],
+        },
         "template_kind": function.template.kind,
         "template_ref": function.template.ref,
         "template_version": function.template.version,
@@ -570,6 +594,20 @@ def _deserialize_surface_graph_function_registry(
                 name=entry["name"],
                 inputs=tuple(_deserialize_node(node) for node in entry.get("inputs", ())),
                 outputs=tuple(_deserialize_node(node) for node in entry.get("outputs", ())),
+                environment=EnvRef(
+                    requires=tuple(
+                        _deserialize_node(node)
+                        for node in entry.get("environment", {}).get("requires", ())
+                    ),
+                    provides=tuple(
+                        _deserialize_node(node)
+                        for node in entry.get("environment", {}).get("provides", ())
+                    ),
+                    carries=tuple(
+                        _deserialize_node(node)
+                        for node in entry.get("environment", {}).get("carries", ())
+                    ),
+                ),
                 template=(
                     _deserialize_graph(entry["template_graph"])
                     if entry.get("template_kind") == "inline_graph"

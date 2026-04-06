@@ -16,7 +16,7 @@ Pure functions over GTL graph types. No engine/runtime dependency.
 from __future__ import annotations
 
 from gtl.graph import Attrs, Graph, Node, GraphVector, node_contract_key
-from gtl.function_model import CandidateFamily, GraphFunction, RefinementBoundary, TemplateRef
+from gtl.function_model import CandidateFamily, EnvRef, GraphFunction, RefinementBoundary, TemplateRef
 from gtl.operator_model import Evaluator, Rule
 
 
@@ -126,37 +126,82 @@ def _materialize(gf: GraphFunction) -> Graph:
     return gf.materialize()
 
 
+def _merge_graph_function_declarations(
+    *values: Attrs,
+) -> Attrs:
+    merged: dict[str, object] = {}
+    for attrs in values:
+        for key, value in attrs.items():
+            if key in merged and merged[key] != value:
+                raise ValueError(f"Conflicting structured declaration for {key!r}")
+            merged[key] = value
+    return Attrs.coerce(merged)
+
+
+def graph_function_for_vector(
+    vector: GraphVector,
+    *,
+    name: str | None = None,
+    tags: tuple[str, ...] = (),
+) -> GraphFunction:
+    """Publish one GraphVector as the public GraphFunction carrier."""
+    source = vector.source if isinstance(vector.source, tuple) else (vector.source,)
+    function_name = name or vector.name
+    return GraphFunction.from_graph(
+        name=function_name,
+        graph=Graph(
+            name=f"{function_name}_workflow",
+            inputs=source,
+            outputs=(vector.target,),
+            nodes=tuple(dict.fromkeys((*source, vector.target))),
+            vectors=(vector,),
+            contexts=vector.contexts,
+            rules=(vector.rule,) if vector.rule is not None else (),
+            tags=tags,
+        ),
+        environment=EnvRef.from_contract(
+            requires=source,
+            provides=(vector.target,),
+        ),
+        tags=tags,
+    )
+
+
 # ── Composition ──────────────────────────────────────────────────────────────
 
 
 def _compose_pair(f: GraphFunction, g: GraphFunction) -> GraphFunction:
-    """Binary composition: f;g where f.outputs satisfy g.inputs."""
-    f_output_contracts = _node_contract_map(f.outputs)
-    g_input_contracts = _node_contract_map(g.inputs)
+    """Binary composition over cumulative carried environment closure."""
+    f_environment = f.environment
+    g_environment = g.environment
 
-    missing = set(g_input_contracts) - set(f_output_contracts)
+    f_available_contracts = _node_contract_map(f_environment.carries)
+    g_input_contracts = _node_contract_map(g_environment.requires)
+
+    missing = set(g_input_contracts) - set(f_available_contracts)
     if missing:
         raise ValueError(
-            f"compose({f.name}, {g.name}): g.inputs not satisfied by f.outputs — "
+            f"compose({f.name}, {g.name}): g.inputs not satisfied by the available environment — "
             f"missing: {sorted(missing)}"
         )
     mismatched = sorted(
         name
         for name, contract in g_input_contracts.items()
-        if f_output_contracts.get(name) != contract
+        if f_available_contracts.get(name) != contract
     )
     if mismatched:
         raise ValueError(
-            f"compose({f.name}, {g.name}): g.inputs not structurally satisfied by f.outputs — "
+            f"compose({f.name}, {g.name}): g.inputs not structurally satisfied by the available environment — "
             f"mismatched: {mismatched}"
         )
 
-    g_output_contracts = _node_contract_map(g.outputs)
+    g_output_contracts = _node_contract_map(g_environment.provides)
     pass_throughs = set(g_input_contracts) & set(g_output_contracts)
-    duplicates = (set(f_output_contracts) & set(g_output_contracts)) - pass_throughs
+    duplicates = (set(f_available_contracts) & set(g_output_contracts)) - pass_throughs
     if duplicates:
         raise ValueError(
-            f"compose({f.name}, {g.name}): duplicate output names: {sorted(duplicates)}"
+            f"compose({f.name}, {g.name}): duplicate output names in carried environment: "
+            f"{sorted(duplicates)}"
         )
 
     try:
@@ -186,13 +231,20 @@ def _compose_pair(f: GraphFunction, g: GraphFunction) -> GraphFunction:
             ref=f"compose:{f.name};{g.name}",
         )
 
+    composed_environment = EnvRef.from_contract(
+        requires=f_environment.requires,
+        provides=_stable_union(f_environment.provides, g_environment.provides),
+        carries=_stable_union(f_environment.carries, g_environment.carries),
+    )
+
     return GraphFunction(
         name=f"{f.name};{g.name}",
         inputs=f.inputs,
         outputs=g.outputs,
+        environment=composed_environment,
         template=template,
         effects=_stable_union(f.effects, g.effects),
-        declarations=_merge_attrs(f.declarations, g.declarations),
+        declarations=_merge_graph_function_declarations(f.declarations, g.declarations),
         tags=_stable_union(f.tags, g.tags),
     )
 
@@ -293,6 +345,7 @@ def identity(interface: tuple[Node, ...]) -> GraphFunction:
         name="id",
         inputs=interface,
         outputs=interface,
+        environment=EnvRef.from_contract(requires=interface, provides=interface),
     )
 
 
@@ -317,6 +370,7 @@ def recurse(
         name=f"recurse({graph_function.name})",
         inputs=graph_function.inputs,
         outputs=graph_function.outputs,
+        environment=graph_function.environment,
         template=graph_function.template,
         effects=graph_function.effects,
         declarations=_merge_attrs(
@@ -355,6 +409,7 @@ def fan_out(f: GraphFunction, *, over: Node) -> GraphFunction:
         name=f"fan_out({f.name})",
         inputs=(over,),
         outputs=(over,),
+        environment=EnvRef.from_contract(requires=(over,), provides=(over,)),
         template=f.template,
         effects=f.effects,
         declarations=f.declarations,
@@ -376,6 +431,11 @@ def fan_in(reducer: GraphFunction, *, over: Node) -> GraphFunction:
         name=f"fan_in({reducer.name})",
         inputs=(over,),
         outputs=reducer.outputs,
+        environment=EnvRef.from_contract(
+            requires=(over,),
+            provides=reducer.environment.provides,
+            carries=_stable_union((over,), reducer.environment.provides),
+        ),
         template=reducer.template,
         effects=reducer.effects,
         declarations=reducer.declarations,
@@ -406,6 +466,10 @@ def gate(
         name=f"gate({target.name})",
         inputs=target.inputs,
         outputs=target.outputs,
+        environment=(
+            target.environment if isinstance(target, GraphFunction)
+            else EnvRef.from_contract(requires=target.inputs, provides=target.outputs)
+        ),
         effects=target_effects,
         declarations=_merge_attrs(
             target_declarations,
@@ -435,6 +499,7 @@ def promote(*, source: Node, to: Node) -> GraphFunction:
         name=f"promote({source.name}->{to.name})",
         inputs=(source,),
         outputs=(to,),
+        environment=EnvRef.from_contract(requires=(source,), provides=(to,)),
         tags=(f"source:{source.name}", f"to:{to.name}"),
     )
 

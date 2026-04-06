@@ -217,11 +217,15 @@ visual rules unless the shared design package is intentionally revised.
 - concrete assets or asset collections bind into typed nodes explicitly
 - workorders are published callable transformations over typed asset nodes
 - a workorder is carried by a GTL graph function
+- graph functions declare cumulative typed environment contracts over
+  `requires`, `provides`, and `carries`
 - jobs bind published callable carriers by identity
 - roles declare semantic capability classes required for work
 - a run realizes a job
 - a graph call realizes a graph function inside a run and is explainable in
   terms of the selected workorder
+- graph-call dispatch resolves the live runtime environment for the selected
+  boundary rather than relying on hidden last-output piping
 - frames realize recursive invocation boundaries inside graph calls
 - runtime facts are emitted against runs, graph calls, or frames
 - continuations are derived from runtime facts and remain run-local
@@ -259,6 +263,7 @@ visual rules unless the shared design package is intentionally revised.
 - asset graphs and asset bindings
 - named functions over asset graphs
 - builder-facing graph-function publication rules
+- cumulative environment publication rules over graph-function carriers
 - the current ODD translation surface captured in
   `odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md`
 
@@ -283,6 +288,10 @@ It remains traceable to the underlying domain function and GTL
 Derived objects such as `Outcome`, `Transition`, and `WorkVector` are lawful
 only as projections over published graphs, typed assets, bindings, workorders,
 runtime facts, and proof state.
+
+Within that rule, `WorkVector` is a UI/read-model view over one public
+graph-function carrier and its realized internal vectors. It must not be used
+as a substitute public callable or shadow runtime primitive.
 
 ## Current Builder Integration Note
 

@@ -369,7 +369,7 @@ function GraphMap({
                 <button
                   key={node.id}
                   type="button"
-                  className={`network-map__node ${node.status} ${isSelected ? "is-selected" : ""} ${isRelated ? "is-related" : "is-muted"} ${node.kind === "workorder" ? "network-map__node--workorder" : ""}`}
+                  className={`network-map__node ${node.status} ${isSelected ? "is-selected" : ""} ${isRelated ? "is-related" : "is-muted"} ${node.kind === "function" ? "network-map__node--function" : ""}`}
                   style={{ left: `${node.x * zoom}px`, top: `${node.y * zoom}px` }}
                   onClick={() => onSelectNode(node)}
                 >

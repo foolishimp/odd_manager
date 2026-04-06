@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from gtl.function_model import GraphFunction
-from gtl.graph import Attrs, GraphVector, Node, Context
+from gtl.graph import Attrs, Graph, GraphVector, Node, Context, node_contract_key
 from gtl.module_model import Module
 from gtl.operator_model import Evaluator, F_D, F_H, F_P
 from gtl.work_model import Job as GtlJob, Role, ContractRef
@@ -325,6 +325,177 @@ class ContextResolver:
             )
 
 
+# ── Runtime Environment ──────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ResolvedEnvironmentBinding:
+    """
+    One runtime binding visible at an executable contract boundary.
+
+    produced_within_carrier distinguishes bindings that must be replay-derived
+    from the current carrier from external/root inputs that remain authoritative
+    entry conditions.
+    """
+    node: Node
+    projection: dict[str, Any]
+    required: bool = False
+    provided: bool = False
+    produced_within_carrier: bool = False
+
+    @property
+    def display_status(self) -> str:
+        status = str(self.projection.get("status", "unknown"))
+        if not self.produced_within_carrier and status == "not_started":
+            return "external_authority"
+        return status
+
+
+@dataclass(frozen=True)
+class ResolvedEnvironment:
+    """
+    Runtime-resolved cumulative environment snapshot for one executable job.
+
+    requires/provides describe the local execution boundary for the live vector.
+    carries preserves the larger published carrier closure when available.
+    """
+    requires: tuple[Node, ...] = ()
+    provides: tuple[Node, ...] = ()
+    carries: tuple[Node, ...] = ()
+    bindings: tuple[ResolvedEnvironmentBinding, ...] = ()
+    missing_required: tuple[str, ...] = ()
+    conflicting_contracts: tuple[str, ...] = ()
+
+    @classmethod
+    def empty(cls) -> "ResolvedEnvironment":
+        return cls()
+
+    @property
+    def ready(self) -> bool:
+        return not self.missing_required and not self.conflicting_contracts
+
+    def summary_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.missing_required:
+            lines.append(
+                "missing internally produced required bindings: "
+                + ", ".join(self.missing_required)
+            )
+        if self.conflicting_contracts:
+            lines.append(
+                "conflicting carried binding contracts: "
+                + ", ".join(self.conflicting_contracts)
+            )
+        return lines
+
+
+def _source_nodes(source: Node | tuple[Node, ...]) -> tuple[Node, ...]:
+    return source if isinstance(source, tuple) else (source,)
+
+
+def _stable_node_union(*values: tuple[Node, ...]) -> tuple[Node, ...]:
+    merged: list[Node] = []
+    seen_names: set[str] = set()
+    for nodes in values:
+        for node in nodes:
+            if node.name in seen_names:
+                continue
+            seen_names.add(node.name)
+            merged.append(node)
+    return tuple(merged)
+
+
+def _materialized_carrier_graph(
+    job: ExecutableJob,
+    module: Module | None,
+) -> Graph | None:
+    if module is None or job.graph_function is None:
+        return None
+    record = materialize_graph_function(
+        MaterializationRequest(graph_function=job.graph_function.name),
+        module,
+        published_graph_functions=(job.graph_function,),
+    )
+    return record.graph
+
+
+def resolve_runtime_environment(
+    job: ExecutableJob,
+    stream: EventStream,
+    *,
+    module: Module | None = None,
+    work_key: str | None = None,
+) -> ResolvedEnvironment:
+    """
+    Resolve the executable runtime environment for one live vector.
+
+    Local execution requires the vector source contract. The carried closure is
+    inherited from the published graph function when present, then widened with
+    the live vector boundary. Required bindings produced inside the same carrier
+    must be replay-visible before dispatch.
+    """
+    requires = _source_nodes(job.vector.source)
+    provides = (job.vector.target,)
+    published_carries = (
+        job.graph_function.environment.carries
+        if job.graph_function is not None
+        else ()
+    )
+    carries = _stable_node_union(published_carries, requires, provides)
+
+    contract_by_name: dict[str, tuple[str, str, tuple[str, ...]]] = {}
+    conflicting_contracts: list[str] = []
+    for node in carries:
+        contract = node_contract_key(node)
+        existing = contract_by_name.get(node.name)
+        if existing is None:
+            contract_by_name[node.name] = contract
+            continue
+        if existing != contract and node.name not in conflicting_contracts:
+            conflicting_contracts.append(node.name)
+
+    materialized_graph = _materialized_carrier_graph(job, module)
+    produced_within_carrier = (
+        {vector.target.name for vector in materialized_graph.vectors}
+        if materialized_graph is not None
+        else set()
+    )
+
+    bindings: list[ResolvedEnvironmentBinding] = []
+    binding_by_name: dict[str, ResolvedEnvironmentBinding] = {}
+    required_names = {node.name for node in requires}
+    provided_names = {node.name for node in provides}
+    for node in carries:
+        if node.name in binding_by_name:
+            continue
+        binding = ResolvedEnvironmentBinding(
+            node=node,
+            projection=project(stream, node.name, "current", work_key=work_key),
+            required=node.name in required_names,
+            provided=node.name in provided_names,
+            produced_within_carrier=node.name in produced_within_carrier,
+        )
+        bindings.append(binding)
+        binding_by_name[node.name] = binding
+
+    missing_required = tuple(
+        node.name
+        for node in requires
+        if node.name not in conflicting_contracts
+        and binding_by_name[node.name].produced_within_carrier
+        and binding_by_name[node.name].projection.get("status") == "not_started"
+    )
+
+    return ResolvedEnvironment(
+        requires=requires,
+        provides=provides,
+        carries=carries,
+        bindings=tuple(bindings),
+        missing_required=missing_required,
+        conflicting_contracts=tuple(conflicting_contracts),
+    )
+
+
 # ── PrecomputedManifest and BoundJob ─────────────────────────────────────────
 
 @dataclass
@@ -340,16 +511,17 @@ class PrecomputedManifest:
     passing_evaluators: list[Evaluator]
     fd_results: dict[str, Any]
     relevant_contexts: dict[str, str]
+    resolved_environment: ResolvedEnvironment = field(default_factory=ResolvedEnvironment.empty)
     missing_contexts: list[str] = field(default_factory=list)
     delta_summary: str = ""
 
     @property
     def has_gap(self) -> bool:
-        return bool(self.failing_evaluators)
+        return bool(self.failing_evaluators) or not self.resolved_environment.ready
 
     @property
     def unresolved_count(self) -> int:
-        return len(self.failing_evaluators)
+        return len(self.failing_evaluators) + (0 if self.resolved_environment.ready else 1)
 
     @property
     def delta(self) -> float:
@@ -616,6 +788,7 @@ def bind_fd(
     spec_hash: str | None = None,
     current_workflow_version: str = "unknown",
     carry_forward: list[dict] | None = None,
+    module: Module | None = None,
     *,
     work_key: str | None = None,
 ) -> PrecomputedManifest:
@@ -623,9 +796,21 @@ def bind_fd(
     F_D pre-computation phase. Everything computable without an LLM.
     Produces the residual gap — the minimal surface F_P must address.
     """
-    source = job.source_type
-    source_name = source[0].name if isinstance(source, tuple) else source.name
-    current = project(stream, source_name, "current", work_key=work_key)
+    resolved_environment = resolve_runtime_environment(
+        job,
+        stream,
+        module=module,
+        work_key=work_key,
+    )
+    source_name = resolved_environment.requires[0].name
+    current = next(
+        (
+            binding.projection
+            for binding in resolved_environment.bindings
+            if binding.node.name == source_name
+        ),
+        project(stream, source_name, "current", work_key=work_key),
+    )
 
     all_events = stream.all_events()
     fd_results: dict[str, Any] = {}
@@ -666,11 +851,12 @@ def bind_fd(
             resolved[ctx.name] = f"[context not found: {exc}]"
             _missing_contexts.append(ctx.name)
 
-    summary = render_delta(fd_results, failing)
+    summary = render_delta(fd_results, failing, environment=resolved_environment)
 
     return PrecomputedManifest(
         executable_job=job,
         current_asset=current,
+        resolved_environment=resolved_environment,
         failing_evaluators=failing,
         passing_evaluators=passing,
         fd_results=fd_results,
@@ -696,6 +882,12 @@ def bind_fp(
             f"Cannot dispatch F_P: required context(s) not found: "
             f"{', '.join(pre.missing_contexts)}. "
             f"Fix the context locators or provide the missing files before iterating."
+        )
+    if not pre.resolved_environment.ready:
+        details = pre.resolved_environment.summary_lines()
+        raise ValueError(
+            "Cannot dispatch F_P: runtime environment unresolved: "
+            + "; ".join(details)
         )
     prompt = _assemble_prompt(pre, job, result_path)
     return BoundJob(executable_job=job, precomputed=pre, prompt=prompt, result_path=result_path)
@@ -741,11 +933,61 @@ def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: 
         gap_lines.append("  (none — all evaluators pass)")
     sections.append("\n".join(gap_lines))
 
+    fd_failures = [ev for ev in pre.failing_evaluators if ev.regime is F_D]
+    if fd_failures:
+        deterministic_lines = [
+            "[DETERMINISTIC FAILURES] — clear these before asking for assessment:"
+        ]
+        for ev in fd_failures:
+            detail = pre.fd_results.get(ev.name, {}).get("detail", {})
+            if isinstance(detail, dict):
+                reason = (
+                    str(detail.get("stderr", "")).strip()
+                    or str(detail.get("stdout", "")).strip()
+                    or str(detail)
+                )
+            else:
+                reason = str(detail)
+            deterministic_lines.append(f"  {ev.name}: {reason}")
+        sections.append("\n".join(deterministic_lines))
+
     if pre.relevant_contexts:
         ctx_lines = ["[CONTEXT] — constraint surface for this edge:"]
         for name, content in pre.relevant_contexts.items():
             ctx_lines.append(f"\n--- {name} ---\n{content}")
         sections.append("\n".join(ctx_lines))
+
+    mandatory_contexts = tuple(
+        name
+        for name in pre.relevant_contexts
+        if "standard" in name or "output_contract" in name or "contract" in name
+    )
+
+    if pre.resolved_environment.bindings:
+        env_lines = ["[ENVIRONMENT] — resolved runtime environment for this edge:"]
+        for binding in pre.resolved_environment.bindings:
+            roles: list[str] = []
+            if binding.required:
+                roles.append("required")
+            if binding.provided:
+                roles.append("provided")
+            if not roles:
+                roles.append("carried")
+            origin = (
+                "internal_carrier"
+                if binding.produced_within_carrier
+                else "external_entry"
+            )
+            env_lines.append(
+                f"  {binding.node.name} [{', '.join(roles)}] "
+                f"schema={binding.node.schema!r} status={binding.display_status} origin={origin}"
+            )
+        if not pre.resolved_environment.ready:
+            env_lines.extend(
+                f"  BLOCKED: {line}"
+                for line in pre.resolved_environment.summary_lines()
+            )
+        sections.append("\n".join(env_lines))
 
     target = job.vector.target
     fp_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_P]
@@ -768,6 +1010,19 @@ def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: 
         f"Evaluators to pass: {[ev.name for ev in pre.failing_evaluators]}"
         + assessment_contract
     )
+
+    execution_lines = [
+        "[EXECUTION RULES]",
+        "- Update the workspace artifact(s), not just the assessment file.",
+        "- Clear every deterministic F_D failure before treating the work as done.",
+        "- Treat standards and output-contract contexts as mandatory acceptance checks.",
+        "- Self-check the artifact against the target markov conditions before writing assessment JSON.",
+    ]
+    if mandatory_contexts:
+        execution_lines.append(
+            "- Mandatory contexts for this edge: " + ", ".join(mandatory_contexts)
+        )
+    sections.append("\n".join(execution_lines))
 
     return "\n\n".join(sections)
 
@@ -792,8 +1047,14 @@ def select_relevant_contexts(
 def render_delta(
     fd_results: dict[str, Any],
     failing: list[Evaluator],
+    environment: ResolvedEnvironment | None = None,
 ) -> str:
     """Render a structured human-readable gap description."""
+    if environment is not None and not environment.ready and not failing:
+        lines = ["delta = 1 — runtime environment unresolved:"]
+        lines.extend(f"  {line}" for line in environment.summary_lines())
+        return "\n".join(lines)
+
     if not failing:
         return "delta = 0 — all evaluators pass"
 
@@ -802,5 +1063,8 @@ def render_delta(
         detail = fd_results.get(ev.name, {})
         det = detail.get("detail", detail) if isinstance(detail, dict) else detail
         lines.append(f"  {ev.name} ({ev.regime.__name__}): {det}")
+    if environment is not None and not environment.ready:
+        lines.append("  runtime environment unresolved:")
+        lines.extend(f"    {line}" for line in environment.summary_lines())
 
     return "\n".join(lines)

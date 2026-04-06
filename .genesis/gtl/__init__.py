@@ -3,7 +3,7 @@ GTL — Genesis Topology Language.
 
     gtl.graph          — Graph, Node, GraphVector, Context, Attr, Attrs
     gtl.operator_model — Regime, F_D, F_P, F_H, Operator, Evaluator, Rule
-    gtl.function_model — GraphFunction, RefinementBoundary, CandidateFamily
+    gtl.function_model — EnvRef, GraphFunction, RefinementBoundary, CandidateFamily
     gtl.work_model     — ContractRef, Role, Job
     gtl.module_model   — Module, ModuleImport
     gtl.algebra        — edge, compose, substitute, identity, recurse,
@@ -19,7 +19,7 @@ from .operator_model import (
     Regime, F_D, F_P, F_H,
     Operator, Evaluator, Rule,
 )
-from .function_model import CandidateFamily, GraphFunction, RefinementBoundary, TemplateRef
+from .function_model import CandidateFamily, EnvRef, GraphFunction, RefinementBoundary, TemplateRef
 from .work_model import ContractRef, Role, Job
 from .module_model import Module, ModuleImport
 
@@ -30,7 +30,7 @@ __all__ = [
     "Regime", "F_D", "F_P", "F_H",
     "Operator", "Evaluator", "Rule",
     # Function model (prime)
-    "GraphFunction", "RefinementBoundary", "CandidateFamily", "TemplateRef",
+    "EnvRef", "GraphFunction", "RefinementBoundary", "CandidateFamily", "TemplateRef",
     # Work model (prime)
     "ContractRef", "Role", "Job",
     # Module model (prime)

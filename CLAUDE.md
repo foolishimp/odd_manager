@@ -162,6 +162,10 @@ If frame-local recursion bleeds into global publication or hidden fallback trave
 
 ## 8. Read Next
 
+Methodology master:
+- public source-of-truth repository: `https://github.com/foolishimp/specification_methodology`
+- installed workspace mirror: `workspace://.genesis/docs/standards/`
+
 Installed runtime details, always present after install:
 - `workspace://.genesis/docs/LLM_GTL_APP_BUILDER_GUIDE.md`
 - `workspace://.genesis/docs/GTL_Technical_Guide.md`

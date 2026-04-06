@@ -140,6 +140,21 @@ def unresolved_fraction(outcomes: tuple[EvaluatorOutcome, ...]) -> float:
     return unresolved / len(outcomes)
 
 
+def precomputed_unresolved_fraction(
+    contract_id: str,
+    precomputed: PrecomputedManifest,
+) -> float:
+    """
+    Unresolved fraction with runtime-environment blocking treated as open work.
+
+    Missing internally produced carried bindings are a binding gap, not
+    convergence. Treat them as fully open for the current contract boundary.
+    """
+    if not precomputed.resolved_environment.ready:
+        return 1.0
+    return unresolved_fraction(outcomes_from_precomputed(contract_id, precomputed))
+
+
 def convergence_from_precomputed(
     contract_id: str,
     precomputed: PrecomputedManifest,
@@ -152,6 +167,15 @@ def convergence_from_precomputed(
     typed evaluator outcomes as the canonical assessment surface.
     """
     outcomes = outcomes_from_precomputed(contract_id, precomputed, round_index=round_index)
+    if not precomputed.resolved_environment.ready:
+        return ConvergenceResult(
+            contract_id=contract_id,
+            outcomes=outcomes,
+            aggregate_state="open",
+            next_action="continue",
+            next_regime=None,
+            round_index=round_index,
+        )
     escalation_behavior = _escalation_behavior(precomputed)
     failing = precomputed.failing_evaluators
     if not failing:
@@ -358,7 +382,7 @@ def parent_converged(
                 carry_forward=carry_forward,
                 work_key=parent_key,
             )
-            d = unresolved_fraction(outcomes_from_precomputed(job.vector.id, precomputed))
+            d = precomputed_unresolved_fraction(job.vector.id, precomputed)
             if d > 0:
                 return False
         return True

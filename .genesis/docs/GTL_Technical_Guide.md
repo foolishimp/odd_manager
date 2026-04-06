@@ -350,7 +350,7 @@ This means:
 
 ```python
 from gtl.graph import Attrs, Graph, GraphVector, Node
-from gtl.function_model import GraphFunction, TemplateRef
+from gtl.function_model import EnvRef, GraphFunction
 from gtl.module_model import Module
 from gtl.operator_model import Evaluator, F_D, F_P, Operator
 from gtl.work_model import ContractRef, Job
@@ -376,13 +376,19 @@ requirements_to_design = GraphVector(
 
 design_graph = Graph(
     name="design_graph",
+    inputs=(requirements,),
+    outputs=(design,),
     nodes=(requirements, design),
     vectors=(requirements_to_design,),
 )
 
-design_fn = GraphFunction(
+design_fn = GraphFunction.from_graph(
     name="design_fn",
-    template=TemplateRef(kind="graph", target_id="design_graph"),
+    graph=design_graph,
+    environment=EnvRef.from_contract(
+        requires=(requirements,),
+        provides=(design,),
+    ),
 )
 
 module = Module(
@@ -392,7 +398,7 @@ module = Module(
     jobs=(
         Job(
             name="produce_design",
-            contracts=(ContractRef(kind="graph_function", target_id="design_fn"),),
+            contracts=(ContractRef(kind="graph_function", target_id=design_fn.id),),
         ),
     ),
 )

@@ -36,7 +36,11 @@ from .binding import (
     bind_fd,
     bind_fp,
 )
-from .convergence import convergence_from_precomputed, outcomes_from_precomputed, unresolved_fraction
+from .convergence import (
+    convergence_from_precomputed,
+    outcomes_from_precomputed,
+    precomputed_unresolved_fraction,
+)
 from .correction import find_latest_reset
 from .events import EventContext, EventStream, emit
 from .frames import (
@@ -505,6 +509,7 @@ def _ordered_pending_child_keys(
 
 def _plan_recursive_frontier_candidate(
     *,
+    module: Module,
     operative: OperativeScope,
     stream: EventStream,
     workspace_root: Path,
@@ -546,8 +551,11 @@ def _plan_recursive_frontier_candidate(
                 spec_hash=spec_hash,
                 current_workflow_version=workflow_version,
                 carry_forward=carry_forward,
+                module=module,
                 work_key=child_key,
             )
+            if not pre.resolved_environment.ready:
+                continue
             conv = convergence_from_precomputed(step.executable_job.vector.id, pre)
             if conv.aggregate_state == "closed":
                 continue
@@ -624,6 +632,7 @@ def plan_next_traversal(
 
     resolver = ContextResolver(workspace_root)
     recursive_candidate = _plan_recursive_frontier_candidate(
+        module=module,
         operative=operative,
         stream=stream,
         workspace_root=workspace_root,
@@ -638,6 +647,7 @@ def plan_next_traversal(
     selected_pre: PrecomputedManifest | None = None
     selected_spec_hash = ""
     selected_work_key: str | None = None
+    blocked_environment: list[dict[str, object]] = []
 
     if recursive_candidate is not None:
         selected_job = recursive_candidate.executable_job
@@ -667,8 +677,19 @@ def plan_next_traversal(
                     spec_hash=spec_hash,
                     current_workflow_version=workflow_version,
                     carry_forward=carry_forward or [],
+                    module=module,
                     work_key=work_key,
                 )
+                if not pre.resolved_environment.ready:
+                    blocked_environment.append(
+                        {
+                            "edge": job.vector.name,
+                            "work_key": work_key,
+                            "missing_required": list(pre.resolved_environment.missing_required),
+                            "conflicting_contracts": list(pre.resolved_environment.conflicting_contracts),
+                        }
+                    )
+                    continue
                 conv = convergence_from_precomputed(job.vector.id, pre)
                 if conv.aggregate_state != "closed":
                     selected_job = job
@@ -680,6 +701,14 @@ def plan_next_traversal(
                 break
 
     if selected_job is None or selected_pre is None:
+        if blocked_environment:
+            return TraversalPlan(
+                result={
+                    "status": "blocked",
+                    "reason": "required carried environment is unresolved",
+                    "blocked": blocked_environment,
+                }
+            )
         if operative.open_frames:
             return TraversalPlan(
                 result={
@@ -707,8 +736,16 @@ def plan_next_traversal(
             family = resolve_frame_candidate_family(surface, selected_job.vector.id)
             boundary = resolve_frame_refinement_boundary(surface, selected_job.vector.id)
     else:
-        family = resolve_candidate_family(module, selected_job.vector.id)
-        boundary = resolve_refinement_boundary(module, selected_job.vector.id)
+        family = resolve_candidate_family(
+            module,
+            selected_job.vector.id,
+            vector=selected_job.vector,
+        )
+        boundary = resolve_refinement_boundary(
+            module,
+            selected_job.vector.id,
+            vector=selected_job.vector,
+        )
         if family is None and boundary is None:
             raise ValueError(
                 "plan_next_traversal(): no published traversal target for "
@@ -813,17 +850,24 @@ def derive_operational_gaps(
                 spec_hash=spec_hash,
                 current_workflow_version=workflow_version,
                 carry_forward=carry_forward,
+                module=module,
                 work_key=work_key,
             )
-            outcomes = outcomes_from_precomputed(job.vector.id, pre)
-            delta = unresolved_fraction(outcomes)
+            delta = precomputed_unresolved_fraction(job.vector.id, pre)
             entry: dict = {
                 "edge": job.vector.name,
                 "delta": delta,
                 "failing": [ev.name for ev in pre.failing_evaluators],
                 "passing": [ev.name for ev in pre.passing_evaluators],
                 "delta_summary": pre.delta_summary,
+                "environment_ready": pre.resolved_environment.ready,
             }
+            if pre.resolved_environment.missing_required:
+                entry["missing_required_bindings"] = list(pre.resolved_environment.missing_required)
+            if pre.resolved_environment.conflicting_contracts:
+                entry["conflicting_environment_contracts"] = list(
+                    pre.resolved_environment.conflicting_contracts
+                )
             if work_key is not None:
                 entry["work_key"] = work_key
             results.append(entry)
@@ -872,6 +916,7 @@ def derive_operational_state(
     *,
     workspace_root: Path,
     stream: EventStream,
+    module: Module,
     worker: Worker,
     jobs: tuple[ExecutableJob, ...] | list[ExecutableJob],
     work_keys: tuple[str, ...] | list[str],
@@ -914,11 +959,10 @@ def derive_operational_state(
                 spec_hash=spec_hash,
                 current_workflow_version=workflow_version,
                 carry_forward=carry_forward,
+                module=module,
                 work_key=work_key,
             )
-            total_delta += unresolved_fraction(
-                outcomes_from_precomputed(job.vector.id, pre)
-            )
+            total_delta += precomputed_unresolved_fraction(job.vector.id, pre)
 
     if total_delta == 0 and not operative.open_frames:
         return {"status": "converged"}
@@ -1299,6 +1343,7 @@ def _termination_satisfied(
         spec_hash=termination_spec_hash,
         current_workflow_version=workflow_version,
         carry_forward=carry_forward,
+        module=module,
         work_key=frame.parent_key,
     )
     return len(termination_pre.failing_evaluators) == 0
@@ -1893,6 +1938,7 @@ def _advance_current_recursive_state(
             spec_hash=spec_hash,
             current_workflow_version=workflow_version,
             carry_forward=carry_forward,
+            module=module,
             work_key=step.child_key,
         )
         conv = convergence_from_precomputed(step.executable_job.vector.id, pre)

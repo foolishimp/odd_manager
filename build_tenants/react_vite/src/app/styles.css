@@ -3414,14 +3414,14 @@ pre {
   line-height: 1.2;
 }
 
-.network-map__node--workorder {
+.network-map__node--function {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--line) 66%);
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft) 62%, transparent), transparent 52%),
     color-mix(in srgb, var(--panel) 96%, transparent);
 }
 
-:root[data-theme="dark"] .network-map__node--workorder {
+:root[data-theme="dark"] .network-map__node--function {
   background:
     radial-gradient(circle at top right, rgba(89, 195, 195, 0.12), transparent 52%),
     rgba(16, 26, 44, 0.94);
