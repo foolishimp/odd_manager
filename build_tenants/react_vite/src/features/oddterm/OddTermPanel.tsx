@@ -197,8 +197,10 @@ export function OddTermPanel({
         stationId: selectedStationId,
         edgeId: selectedEdgeId,
       });
-      if (!primarySessionId) {
+      if (layoutMode === "single" || !primarySessionId) {
         setPrimarySessionId(created.session.id);
+      } else if (!secondarySessionId || secondarySessionId === primarySessionId) {
+        setSecondarySessionId(created.session.id);
       }
       setActiveSessionId(created.session.id);
       await onRefreshConsole();
@@ -310,6 +312,12 @@ export function OddTermPanel({
               selectedStationId={selectedStationId}
               selectedEdgeId={selectedEdgeId}
               autoFocus={session.id === activeSessionId}
+              layoutMode={layoutMode}
+              primarySessionId={primarySessionId}
+              secondarySessionId={secondarySessionId}
+              onSetPrimarySessionId={setPrimarySessionId}
+              onSetSecondarySessionId={setSecondarySessionId}
+              onSetActiveSessionId={setActiveSessionId}
               onActivate={() => setActiveSessionId(session.id)}
               onRefreshConsole={onRefreshConsole}
             />
@@ -344,6 +352,12 @@ type TerminalSessionPaneProps = {
   selectedStationId: string | null;
   selectedEdgeId: string | null;
   autoFocus: boolean;
+  layoutMode: LayoutMode;
+  primarySessionId: string | null;
+  secondarySessionId: string | null;
+  onSetPrimarySessionId: (sessionId: string | null) => void;
+  onSetSecondarySessionId: (sessionId: string | null) => void;
+  onSetActiveSessionId: (sessionId: string | null) => void;
   onActivate: () => void;
   onRefreshConsole: () => Promise<void>;
 };
@@ -355,6 +369,12 @@ function TerminalSessionPane({
   selectedStationId,
   selectedEdgeId,
   autoFocus,
+  layoutMode,
+  primarySessionId,
+  secondarySessionId,
+  onSetPrimarySessionId,
+  onSetSecondarySessionId,
+  onSetActiveSessionId,
   onActivate,
   onRefreshConsole,
 }: TerminalSessionPaneProps) {
@@ -551,6 +571,12 @@ function TerminalSessionPane({
                   edgeId: session.attachedEdgeId ?? selectedEdgeId,
                   label: session.label,
                 });
+                if (layoutMode === "single" || primarySessionId === session.id) {
+                  onSetPrimarySessionId(created.session.id);
+                } else if (secondarySessionId === session.id) {
+                  onSetSecondarySessionId(created.session.id);
+                }
+                onSetActiveSessionId(created.session.id);
                 await selectGTermSession(workspaceRoot, created.session.id);
                 await onRefreshConsole();
               })();

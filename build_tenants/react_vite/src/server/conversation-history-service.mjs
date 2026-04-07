@@ -294,19 +294,33 @@ export function loadConversationHistoryStats(workspaceRoot, historyId) {
   };
 }
 
-export function conversationEntryText(entry) {
+export function stripTerminalControlText(text) {
+  return String(text ?? "")
+    .replace(/\u001b\[(\d+)C/g, (_, count) => " ".repeat(Number.parseInt(count, 10) || 0))
+    .replace(/\u001b\][^\u001b\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001b[@-_]/g, "")
+    .replace(/\u0007/g, "")
+    .replace(/\r/g, "")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
+export function conversationEntryText(entry, options = {}) {
   const payload = entry?.payload ?? {};
+  const sanitizeTerminalText = Boolean(options.sanitizeTerminalText);
+  const normalize = (value) =>
+    sanitizeTerminalText ? stripTerminalControlText(value) : value;
   if (typeof payload.text === "string") {
-    return payload.text;
+    return normalize(payload.text);
   }
   if (typeof payload.content === "string") {
-    return payload.content;
+    return normalize(payload.content);
   }
   if (typeof payload.body === "string") {
-    return payload.body;
+    return normalize(payload.body);
   }
   if (typeof payload.message === "string") {
-    return payload.message;
+    return normalize(payload.message);
   }
   return "";
 }
@@ -315,9 +329,13 @@ export function extractConversationRange(workspaceRoot, historyId, options = {})
   const { meta, entries } = loadConversationHistory(workspaceRoot, historyId, {
     limit: options.entryCount ?? options.limit ?? 120,
   });
+  const sanitizeTerminalText = Boolean(options.sanitizeTerminalText);
   return {
     meta,
     entries,
-    text: entries.map(conversationEntryText).filter(Boolean).join(""),
+    text: entries
+      .map((entry) => conversationEntryText(entry, { sanitizeTerminalText }))
+      .filter(Boolean)
+      .join(""),
   };
 }

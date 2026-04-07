@@ -57,9 +57,12 @@ def main() -> int:
     if pid == 0:
         try:
             os.chdir(workspace_root)
+            os.environ.pop("NO_COLOR", None)
             os.environ["TERM"] = os.environ.get("TERM", "xterm-256color")
             os.environ["COLORTERM"] = os.environ.get("COLORTERM", "truecolor")
             os.environ["CLICOLOR"] = "1"
+            os.environ["CLICOLOR_FORCE"] = os.environ.get("CLICOLOR_FORCE", "1")
+            os.environ["FORCE_COLOR"] = os.environ.get("FORCE_COLOR", "1")
             os.environ["HISTFILE"] = os.environ.get("HISTFILE", "/tmp/gterm_zsh_history")
             os.environ["PYENV_DISABLE_REHASH"] = "1"
             os.execv(shell_path, shell_argv)

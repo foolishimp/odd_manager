@@ -19,6 +19,7 @@ import {
   loadConversationHistory,
   loadConversationHistoryStats,
   sessionConversationHistoryId,
+  stripTerminalControlText,
   updateConversationMetadata,
 } from "./conversation-history-service.mjs";
 import {
@@ -219,17 +220,6 @@ function broadcast(session, payload) {
   }
 }
 
-function stripAnsi(text) {
-  return String(text ?? "")
-    .replace(/\u001b\[(\d+)C/g, (_, count) => " ".repeat(Number.parseInt(count, 10) || 0))
-    .replace(/\u001b\][^\u001b\u0007]*(?:\u0007|\u001b\\)/g, "")
-    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
-    .replace(/\u001b[@-_]/g, "")
-    .replace(/\u0007/g, "")
-    .replace(/\r/g, "")
-    .replace(/[^\x09\x0a\x20-\x7e]/g, "");
-}
-
 function normalizeMirrorLine(line) {
   return String(line ?? "")
     .replace(/\t/g, " ")
@@ -302,8 +292,8 @@ function isMirrorFragmentLine(line) {
 }
 
 function extractMirrorReport(buffer, sentText) {
-  const normalizedSent = normalizeMirrorLine(stripAnsi(sentText));
-  const lines = stripAnsi(buffer)
+  const normalizedSent = normalizeMirrorLine(stripTerminalControlText(sentText));
+  const lines = stripTerminalControlText(buffer)
     .replace(/\r/g, "\n")
     .split("\n")
     .map(normalizeMirrorLine)
@@ -862,6 +852,7 @@ export function readGTermSessionTail(workspaceRoot, sessionId, lineCount = 120) 
   const historyId = sessionConversationHistoryId(sessionId);
   const extracted = extractConversationRange(resolve(workspaceRoot), historyId, {
     entryCount: Math.max(1, lineCount),
+    sanitizeTerminalText: true,
   });
 
   return {
