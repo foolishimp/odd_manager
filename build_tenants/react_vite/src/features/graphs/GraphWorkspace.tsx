@@ -16,6 +16,7 @@ type GraphWorkspaceProps = {
   onIterate: () => void;
   onStartAuto: () => void;
   detailPane?: ReactNode;
+  showOverviewSections?: boolean;
 };
 
 const MIN_ZOOM = 0.75;
@@ -266,6 +267,7 @@ export function GraphWorkspace({
   onIterate,
   onStartAuto,
   detailPane,
+  showOverviewSections = true,
 }: GraphWorkspaceProps) {
   const graph = graphs.find((item) => item.id === selectedGraphId) ?? graphs[0] ?? null;
   const overview = useMemo(() => (graph ? describeGraph(graph) : null), [graph]);
@@ -380,7 +382,7 @@ export function GraphWorkspace({
         <p className="muted">Graph workspace will appear once the manager world is loaded.</p>
       )}
 
-      {graph && overview ? (
+      {showOverviewSections && graph && overview ? (
         <div className="graph-summary">
           <div className="panel__heading">
             <div>
@@ -404,7 +406,7 @@ export function GraphWorkspace({
         </div>
       ) : null}
 
-      {graph && overview ? (
+      {showOverviewSections && graph && overview ? (
         <div className={`graph-detail-grid ${showBelowDetailPane ? "graph-detail-grid--split" : ""}`}>
           <div className="graph-detail-section">
             <div className="panel__heading panel__heading--subsection">

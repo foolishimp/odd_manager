@@ -3628,7 +3628,22 @@ pre {
   min-width: 0;
 }
 
+.process-page {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.process-page__main {
+  min-width: 0;
+}
+
 .requirements-page__lens {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.82fr) minmax(0, 1.28fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.process-page__lens {
   display: grid;
   grid-template-columns: minmax(18rem, 0.82fr) minmax(0, 1.28fr);
   gap: 1rem;
@@ -3640,7 +3655,17 @@ pre {
   min-width: 0;
 }
 
+.process-page__explorer,
+.process-page__workbench {
+  min-width: 0;
+}
+
 .requirements-navigator {
+  display: grid;
+  gap: 1rem;
+}
+
+.process-navigator {
   display: grid;
   gap: 1rem;
 }
@@ -3648,6 +3673,15 @@ pre {
 .requirements-navigator__views {
   display: grid;
   gap: 0.7rem;
+}
+
+.process-navigator__views {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.process-map-host {
+  min-width: 0;
 }
 
 .requirements-source-tabs {
@@ -3858,12 +3892,18 @@ pre {
 }
 
 .requirements-tab.is-selected,
+.process-tab.is-selected,
 .list-row.is-selected {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--line) 58%);
   background: color-mix(in srgb, var(--accent-soft) 32%, var(--panel) 68%);
 }
 
 .requirements-explorer__controls {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.process-explorer__controls {
   display: grid;
   gap: 0.75rem;
 }
@@ -3885,7 +3925,27 @@ pre {
   gap: 0.7rem;
 }
 
+.process-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.7rem;
+}
+
 .requirements-tab {
+  width: 100%;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.82rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: var(--shadow-soft);
+  transform: none;
+}
+
+.process-tab {
   width: 100%;
   display: grid;
   gap: 0.35rem;
@@ -3904,7 +3964,19 @@ pre {
   border-color: color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
 }
 
+.process-tab:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line) 78%);
+}
+
 .requirements-tab__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.process-tab__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3915,7 +3987,17 @@ pre {
   line-height: 1.2;
 }
 
+.process-tab strong {
+  line-height: 1.2;
+}
+
 .requirements-tab p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.process-tab p {
   margin: 0;
   color: var(--muted);
   line-height: 1.4;
@@ -3933,12 +4015,36 @@ pre {
   box-shadow: var(--shadow-soft);
 }
 
+.process-explorer__query {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line) 82%);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft) 42%, transparent), transparent 52%),
+    color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
 .requirements-explorer__query:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
   outline-offset: 2px;
 }
 
+.process-explorer__query:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  outline-offset: 2px;
+}
+
 .requirements-explorer__query-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.process-explorer__query-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3951,7 +4057,19 @@ pre {
   line-height: 1.1;
 }
 
+.process-explorer__query strong {
+  font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
 .requirements-explorer__query p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.process-explorer__query p {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
@@ -3963,7 +4081,20 @@ pre {
   padding-right: 0.18rem;
 }
 
+.process-explorer__list {
+  max-height: clamp(20rem, 56vh, 44rem);
+  overflow: auto;
+  padding-right: 0.18rem;
+}
+
 .requirements-explorer__list .list-row__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.process-explorer__list .list-row__summary {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -4184,6 +4315,7 @@ pre {
 @media (max-width: 1100px) {
   .workspace-view,
   .requirements-page__lens,
+  .process-page__lens,
   .graph-detail-grid--split,
   .odd-grid--two,
   .odd-grid--three,

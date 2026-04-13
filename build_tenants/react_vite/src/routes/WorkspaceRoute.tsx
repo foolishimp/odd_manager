@@ -7,6 +7,7 @@ import { InspectorPanel } from "../features/inspector/InspectorPanel";
 import { OddBoardWidget } from "../features/oddboard/OddBoardWidget";
 import { useOddConsoleState } from "../features/oddboard/useOddConsoleState";
 import { OddTermWorkspaceWidget } from "../features/oddterm/OddTermWorkspaceWidget";
+import { ProcessWorkspace } from "../features/process/ProcessWorkspace";
 import { RequirementsWorkspace } from "../features/requirements/RequirementsWorkspace";
 import { RuntimePanel } from "../features/runtime/RuntimePanel";
 import { loadSurface } from "../lib/api";
@@ -238,13 +239,19 @@ export function WorkspaceRoute({
       ) : null}
 
       {selectedPage === "process" ? (
-        <div className="workspace-view">
-          <PlaceholderWorkspacePanel
-            eyebrow="Process View"
-            title="Process-focused workspace"
-            summary="This page starts intentionally blank so we can shape the process-flow surface around how people work, not around the full raw domain model."
-            emptyTitle="No process widgets placed yet."
-            emptySummary="OddBoard and the local shell workspace remain available above. We can now decide which process-flow, asset handoff, activity, and execution widgets belong here."
+        <div className="workspace-stack">
+          <ProcessWorkspace
+            world={world}
+            selection={selection}
+            selectedNodeId={selectedNodeId}
+            navigatorMode={navigatorMode}
+            onChangeNavigatorMode={onChangeNavigatorMode}
+            onSelectNode={onSelectNode}
+            onSelectSelection={onSelectSelection}
+            runningCommand={runningCommand}
+            onRefresh={onRefresh}
+            onIterate={onIterate}
+            onStartAuto={onStartAuto}
           />
         </div>
       ) : null}
@@ -456,36 +463,6 @@ export function WorkspaceRoute({
         </div>
       ) : null}
     </main>
-  );
-}
-
-function PlaceholderWorkspacePanel({
-  eyebrow,
-  title,
-  summary,
-  emptyTitle,
-  emptySummary,
-}: {
-  eyebrow: string;
-  title: string;
-  summary: string;
-  emptyTitle: string;
-  emptySummary: string;
-}) {
-  return (
-    <section className="panel panel--context">
-      <div className="panel__heading">
-        <div>
-          <span className="panel__eyebrow">{eyebrow}</span>
-          <h2>{title}</h2>
-        </div>
-        <p>{summary}</p>
-      </div>
-      <div className="empty-state">
-        <strong>{emptyTitle}</strong>
-        <p>{emptySummary}</p>
-      </div>
-    </section>
   );
 }
 
