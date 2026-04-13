@@ -23,3 +23,4 @@ Use `.genesis/docs/standards/` as the governing method reference when writing or
 - `07-live-coordination-and-durable-record.md`
 - `08-session-workspace-and-provider-adapters.md`
 - `09-verification-and-traceability.md`
+- `10-entry-lenses-and-delivery-workspaces.md`

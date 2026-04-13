@@ -190,6 +190,83 @@ class Context:
 
 # ── Node ─────────────────────────────────────────────────────────────────
 
+
+@dataclass(frozen=True)
+class AssetSurface:
+    """
+    Declarative asset contract attached to a typed node/boundary.
+
+    This is GTL-side declaration truth only. Runtime binding resolution,
+    transport selection, write territory, and provenance remain ABG concerns.
+    """
+    kind: str = ""
+    required_contexts: tuple[str, ...] = ()
+    standards_refs: tuple[str, ...] = ()
+    output_contract_refs: tuple[str, ...] = ()
+
+    @classmethod
+    def coerce(cls, value: Any) -> "AssetSurface":
+        if value is None:
+            return cls()
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, Mapping):
+            return cls(
+                kind=str(value.get("kind", "") or ""),
+                required_contexts=tuple(
+                    str(item)
+                    for item in value.get("required_contexts", ())
+                ),
+                standards_refs=tuple(
+                    str(item)
+                    for item in value.get("standards_refs", ())
+                ),
+                output_contract_refs=tuple(
+                    str(item)
+                    for item in value.get("output_contract_refs", ())
+                ),
+            )
+        raise TypeError(f"Cannot coerce {value!r} into AssetSurface")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, str):
+            raise TypeError("AssetSurface.kind must be a string")
+        for field_name, values in (
+            ("required_contexts", self.required_contexts),
+            ("standards_refs", self.standards_refs),
+            ("output_contract_refs", self.output_contract_refs),
+        ):
+            if not isinstance(values, tuple):
+                raise TypeError(f"AssetSurface.{field_name} must be a tuple[str, ...]")
+            for value in values:
+                if not isinstance(value, str) or not value:
+                    raise ValueError(f"AssetSurface.{field_name} entries must be non-empty strings")
+
+    @property
+    def declared(self) -> bool:
+        return bool(
+            self.kind
+            or self.required_contexts
+            or self.standards_refs
+            or self.output_contract_refs
+        )
+
+    def contract_key(self) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        return (
+            self.kind,
+            self.required_contexts,
+            self.standards_refs,
+            self.output_contract_refs,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "required_contexts": list(self.required_contexts),
+            "standards_refs": list(self.standards_refs),
+            "output_contract_refs": list(self.output_contract_refs),
+        }
+
 @dataclass(frozen=True)
 class Node:
     """
@@ -207,16 +284,32 @@ class Node:
     name: str
     schema: type | str = ""
     markov: tuple[str, ...] = ()
+    asset_surface: AssetSurface = field(default_factory=AssetSurface)
     tags: tuple[str, ...] = ()
     id: str = field(default_factory=_mint_id, compare=False)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "asset_surface", AssetSurface.coerce(self.asset_surface))
 
-def node_contract_key(node: Node) -> tuple[str, str, tuple[str, ...]]:
+
+def node_contract_key(
+    node: Node,
+) -> tuple[str, str, tuple[str, ...], tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]]:
     """Stable structural contract key for interface matching."""
-    return (node.name, _schema_key(node.schema), tuple(node.markov))
+    return (
+        node.name,
+        _schema_key(node.schema),
+        tuple(node.markov),
+        node.asset_surface.contract_key(),
+    )
 
 
-def interface_contract(nodes: tuple[Node, ...]) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+def interface_contract(
+    nodes: tuple[Node, ...],
+) -> tuple[
+    tuple[str, str, tuple[str, ...], tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]],
+    ...
+]:
     """Stable structural contract for an ordered node interface."""
     return tuple(node_contract_key(node) for node in nodes)
 

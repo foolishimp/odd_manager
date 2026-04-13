@@ -18,7 +18,13 @@ export type GraphLayout = {
 };
 
 function kindRank(node: GraphNodeView): number {
-  return node.kind === "asset_node" ? 0 : 1;
+  const order: Record<GraphNodeView["kind"], number> = {
+    asset_node: 0,
+    catalog: 1,
+    governance: 2,
+    function: 3,
+  };
+  return order[node.kind] ?? 4;
 }
 
 export function combineTone(...tones: Array<Tone | undefined>): Tone {
@@ -83,6 +89,13 @@ export function buildGraphLayout(graph: GraphView): GraphLayout {
     layers.set(layer, bucket);
   }
 
+  const layerCount = Math.max(layers.size, 1);
+  const maxBucketSize = Math.max(
+    1,
+    ...[...layers.values()].map((bucket) => bucket.length),
+  );
+  const rowGap = resolveRowGap(layerCount, maxBucketSize);
+
   let maxY = PADDING_Y;
   let maxX = PADDING_X;
   const positioned: PositionedGraphNode[] = [];
@@ -93,7 +106,7 @@ export function buildGraphLayout(graph: GraphView): GraphLayout {
     });
     bucket.forEach((node, index) => {
       const x = PADDING_X + layer * LAYER_GAP;
-      const y = PADDING_Y + index * ROW_GAP;
+      const y = PADDING_Y + index * rowGap;
       maxX = Math.max(maxX, x);
       maxY = Math.max(maxY, y);
       positioned.push({
@@ -112,4 +125,14 @@ export function buildGraphLayout(graph: GraphView): GraphLayout {
       (segment) => nodesById.has(segment.from) && nodesById.has(segment.to),
     ),
   };
+}
+
+function resolveRowGap(layerCount: number, maxBucketSize: number) {
+  if (layerCount <= 2) {
+    return maxBucketSize <= 10 ? 164 : 152;
+  }
+  if (layerCount === 3) {
+    return maxBucketSize <= 10 ? 148 : 138;
+  }
+  return ROW_GAP;
 }

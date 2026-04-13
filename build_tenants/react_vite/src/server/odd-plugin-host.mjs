@@ -7,6 +7,7 @@ import {
   slugify,
   topicSessionRoomId,
 } from "./oddchat-room-service.mjs";
+import { listOddChatParticipants } from "./oddchat-participant-service.mjs";
 import {
   loadGTermPoolState,
   sendGTermSessionRoomInput,
@@ -109,6 +110,16 @@ function submittedRoomInput(body) {
   return trimmed ? `${trimmed}\r` : "";
 }
 
+function hasRoomParticipant(workspaceRoot, sessionId, roomId) {
+  return (
+    listOddChatParticipants(workspaceRoot, {
+      sessionId,
+      roomId,
+      connectedOnly: true,
+    }).length > 0
+  );
+}
+
 export function resolvePostedRoom(
   workspaceRoot,
   {
@@ -187,13 +198,27 @@ export async function dispatchAgentReplies(
   const targetSessions = resolved.privateChannel
     ? attachedSessions.filter((session) => session.id === resolved.targetSessionId)
     : attachedSessions;
+  const legacyTargetSessions = targetSessions.filter(
+    (session) => !hasRoomParticipant(workspaceRoot, session.id, resolved.roomId),
+  );
 
   const input = submittedRoomInput(resolved.body);
   if (!input) {
     return [];
   }
 
-  return targetSessions.map((session) => {
+  const deliveries = targetSessions
+    .filter((session) => hasRoomParticipant(workspaceRoot, session.id, resolved.roomId))
+    .map((session) => ({
+      sessionId: session.id,
+      roomId: resolved.roomId,
+      ok: true,
+      mode: "participant-mailbox",
+    }));
+
+  return [
+    ...deliveries,
+    ...legacyTargetSessions.map((session) => {
     try {
       sendGTermSessionRoomInput(workspaceRoot, session.id, {
         data: input,
@@ -206,14 +231,17 @@ export async function dispatchAgentReplies(
         sessionId: session.id,
         roomId: resolved.roomId,
         ok: true,
+        mode: "stdin-bootstrap",
       };
     } catch (error) {
       return {
         sessionId: session.id,
         roomId: resolved.roomId,
         ok: false,
+        mode: "stdin-bootstrap",
         error: error instanceof Error ? error.message : String(error),
       };
     }
-  });
+    }),
+  ];
 }

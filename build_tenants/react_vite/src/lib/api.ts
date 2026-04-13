@@ -1,4 +1,10 @@
-import type { CommandName, CommandResult, ManagerWorld, SurfaceData } from "./types";
+import type {
+  CommandName,
+  CommandResult,
+  ManagerWorld,
+  SessionServiceState,
+  SurfaceData,
+} from "./types";
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -52,3 +58,49 @@ export async function runCommand(
   );
 }
 
+export async function loadSessionServiceState(workspaceRoot: string): Promise<SessionServiceState> {
+  const params = new URLSearchParams({ workspaceRoot });
+  return parseJson<SessionServiceState>(await fetch(`/api/session-service?${params.toString()}`));
+}
+
+export async function approveSessionServiceRun(
+  workspaceRoot: string,
+  runId: string,
+  edge?: string | null,
+): Promise<Record<string, unknown>> {
+  return parseJson<Record<string, unknown>>(
+    await fetch("/api/session-service/run/approve", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceRoot,
+        runId,
+        edge: edge ?? null,
+      }),
+    }),
+  );
+}
+
+export async function rejectSessionServiceRun(
+  workspaceRoot: string,
+  runId: string,
+  reason: string,
+  edge?: string | null,
+): Promise<Record<string, unknown>> {
+  return parseJson<Record<string, unknown>>(
+    await fetch("/api/session-service/run/reject", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceRoot,
+        runId,
+        edge: edge ?? null,
+        reason,
+      }),
+    }),
+  );
+}

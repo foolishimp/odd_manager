@@ -128,7 +128,11 @@ export function FolderBrowser({
                   {entry.hasWorkspace ? "●" : "◦"}
                 </span>
                 <span className="folder-browser__entry-name">{entry.name}</span>
-                {entry.hasWorkspace ? <span className="folder-browser__entry-tag">abg</span> : null}
+                {entry.hasWorkspace ? (
+                  <span className="folder-browser__entry-tag" title={entry.markers.join(" · ")}>
+                    managed
+                  </span>
+                ) : null}
               </button>
 
               {entry.hasWorkspace ? (

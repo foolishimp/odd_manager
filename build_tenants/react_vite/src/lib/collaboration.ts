@@ -16,6 +16,7 @@ export type FsEntry = {
   name: string;
   absolutePath: string;
   hasWorkspace: boolean;
+  markers: string[];
 };
 
 export type FsBrowseResult = {
@@ -63,6 +64,27 @@ export type GBoardTopic = {
   attachedSessionIds: string[];
 };
 
+export type RoomParticipant = {
+  id: string;
+  provider: string;
+  participantLabel: string;
+  sessionId: string;
+  sessionLabel: string;
+  sessionStatus?: "live" | "closed" | "error" | null;
+  roomId: string;
+  topicId: string | null;
+  topicLabel: string | null;
+  transport: "mcp";
+  status: "connected" | "disconnected" | "stale";
+  createdAt: string | null;
+  joinedAt: string | null;
+  updatedAt: string | null;
+  leftAt: string | null;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
+  lastPostedAt: string | null;
+};
+
 export type GTermSessionSummary = {
   id: string;
   workspaceRoot: string;
@@ -80,6 +102,7 @@ export type GTermSessionSummary = {
   attachedEdgeId: string | null;
   historyBytes: number;
   liveClientCount: number;
+  participants?: RoomParticipant[];
 };
 
 export type GTermPoolState = {
@@ -98,7 +121,7 @@ export type GChatMessage = {
   title: string;
   content: string;
   path: string | null;
-  source: "comment" | "live" | "session";
+  source: "comment" | "live" | "session" | "irc" | "agent";
   messageKind: "chat" | "report" | "system" | "promotion";
   relatedSessionId: string | null;
   selectedTrainId: TrainId | null;
@@ -122,6 +145,7 @@ export type GChatTopic = {
   updatedAt: string | null;
   attachedRecords: GBoardRecord[];
   attachedSessions: GTermSessionSummary[];
+  participants: RoomParticipant[];
 };
 
 export type AgentConsoleState = {
@@ -412,6 +436,100 @@ export async function selectGTermSession(
       body: JSON.stringify({
         workspaceRoot,
         sessionId,
+      }),
+    }),
+  );
+}
+
+export async function launchTopicAgent(
+  workspaceRoot: string,
+  options: {
+    topicId: string;
+    sessionId: string;
+    provider: "codex" | "claude";
+  },
+): Promise<{
+  ok: boolean;
+  provider: string;
+  sessionId: string;
+  sessionLabel: string;
+  topicId: string;
+  topicLabel: string;
+  roomId: string;
+  command: string;
+}> {
+  return expectJson(
+    await fetch("/api/oddchat/topic/bootstrap-agent", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceRoot,
+        topicId: options.topicId,
+        sessionId: options.sessionId,
+        provider: options.provider,
+      }),
+    }),
+  );
+}
+
+export async function launchShellAgent(
+  workspaceRoot: string,
+  options: {
+    sessionId: string;
+    provider: "codex" | "claude";
+  },
+): Promise<{
+  ok: boolean;
+  provider: string;
+  sessionId: string;
+  sessionLabel: string;
+  command: string;
+}> {
+  return expectJson(
+    await fetch("/api/oddterm/session/launch-agent", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceRoot,
+        sessionId: options.sessionId,
+        provider: options.provider,
+      }),
+    }),
+  );
+}
+
+export async function joinShellAgentTopic(
+  workspaceRoot: string,
+  options: {
+    sessionId: string;
+    topicId: string;
+    provider: "codex" | "claude";
+  },
+): Promise<{
+  ok: boolean;
+  provider: string;
+  sessionId: string;
+  sessionLabel: string;
+  topicId: string;
+  topicLabel: string;
+  roomId: string;
+  prompt: string;
+}> {
+  return expectJson(
+    await fetch("/api/oddterm/session/join-topic", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        workspaceRoot,
+        sessionId: options.sessionId,
+        topicId: options.topicId,
+        provider: options.provider,
       }),
     }),
   );

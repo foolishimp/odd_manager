@@ -17,6 +17,7 @@ import hashlib
 import json as _json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from gtl.function_model import GraphFunction
-from gtl.graph import Attrs, Graph, GraphVector, Node, Context, node_contract_key
+from gtl.graph import Attrs, Graph, GraphVector, Node, Context, node_contract_key, _schema_key
 from gtl.module_model import Module
 from gtl.operator_model import Evaluator, F_D, F_H, F_P
 from gtl.work_model import Job as GtlJob, Role, ContractRef
@@ -342,6 +343,7 @@ class ResolvedEnvironmentBinding:
     required: bool = False
     provided: bool = False
     produced_within_carrier: bool = False
+    required_sources: tuple[str, ...] = ()
 
     @property
     def display_status(self) -> str:
@@ -363,7 +365,11 @@ class ResolvedEnvironment:
     provides: tuple[Node, ...] = ()
     carries: tuple[Node, ...] = ()
     bindings: tuple[ResolvedEnvironmentBinding, ...] = ()
+    vector_source_required_contexts: tuple[str, ...] = ()
+    asset_surface_required_contexts: tuple[str, ...] = ()
+    asset_surface_injected_required_contexts: tuple[str, ...] = ()
     missing_required: tuple[str, ...] = ()
+    missing_asset_surface_contexts: tuple[str, ...] = ()
     conflicting_contracts: tuple[str, ...] = ()
 
     @classmethod
@@ -372,14 +378,28 @@ class ResolvedEnvironment:
 
     @property
     def ready(self) -> bool:
-        return not self.missing_required and not self.conflicting_contracts
+        return (
+            not self.missing_required
+            and not self.missing_asset_surface_contexts
+            and not self.conflicting_contracts
+        )
 
     def summary_lines(self) -> list[str]:
         lines: list[str] = []
+        if self.asset_surface_injected_required_contexts:
+            lines.append(
+                "effective runtime boundary includes asset_surface-injected required bindings: "
+                + ", ".join(self.asset_surface_injected_required_contexts)
+            )
         if self.missing_required:
             lines.append(
                 "missing internally produced required bindings: "
                 + ", ".join(self.missing_required)
+            )
+        if self.missing_asset_surface_contexts:
+            lines.append(
+                "target asset_surface requires undeclared carried contexts: "
+                + ", ".join(self.missing_asset_surface_contexts)
             )
         if self.conflicting_contracts:
             lines.append(
@@ -387,6 +407,193 @@ class ResolvedEnvironment:
                 + ", ".join(self.conflicting_contracts)
             )
         return lines
+
+
+@dataclass(frozen=True)
+class TargetAssetBinding:
+    """Concrete workspace binding for a named asset/node when discoverable."""
+
+    asset_id: str
+    uri: str
+    relative_path: str | None = None
+    path_kind: str | None = None
+    exists: bool | None = None
+    binding_source: str = "workspace_asset_query"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "asset_id": self.asset_id,
+            "uri": self.uri,
+            "relative_path": self.relative_path,
+            "path_kind": self.path_kind,
+            "exists": self.exists,
+            "binding_source": self.binding_source,
+        }
+
+
+ASSET_BINDING_QUERY_TIMEOUT_SECONDS: int = int(
+    os.environ.get("ASSET_BINDING_QUERY_TIMEOUT_SECONDS", "15")
+)
+
+
+def _coerce_command_tokens(raw: Any, *, label: str) -> list[str]:
+    if isinstance(raw, str):
+        tokens = shlex.split(raw)
+    elif isinstance(raw, (list, tuple)) and all(isinstance(token, str) for token in raw):
+        tokens = list(raw)
+    else:
+        raise ValueError(f"{label} must be a shell-like string or list[str]")
+    if not tokens:
+        raise ValueError(f"{label} must not be empty")
+    return tokens
+
+
+def _dig_path(payload: Any, dotted_path: str) -> Any:
+    current = payload
+    for segment in dotted_path.split("."):
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
+def _coerce_boolish(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            return True
+        if lowered in {"false", "0", "no"}:
+            return False
+    return None
+
+
+def _asset_binding_query_contract(runtime_config: dict[str, Any] | None) -> tuple[dict[str, Any] | None, bool]:
+    """Return a resolved asset-binding query contract and whether it was explicit."""
+    config = dict(runtime_config or {})
+    explicit = config.get("asset_binding_contract")
+    if explicit is not None:
+        if not isinstance(explicit, dict):
+            raise ValueError("runtime_config.asset_binding_contract must be a mapping")
+        contract = dict(explicit)
+        contract["command"] = _coerce_command_tokens(
+            contract.get("command"),
+            label="runtime_config.asset_binding_contract.command",
+        )
+        contract.setdefault("assets_key", "assets")
+        contract.setdefault("asset_id_key", "asset_id")
+        contract.setdefault("uri_key", "uri")
+        contract.setdefault("relative_path_key", "metadata.relative_path")
+        contract.setdefault("path_kind_key", "checkpoint.path_kind")
+        contract.setdefault("exists_key", "checkpoint.exists")
+        contract.setdefault("timeout_seconds", ASSET_BINDING_QUERY_TIMEOUT_SECONDS)
+        contract.setdefault("binding_source", "runtime_config.asset_binding_contract")
+        return contract, True
+
+    domain_package = config.get("domain_package")
+    if not isinstance(domain_package, str) or not domain_package.strip():
+        return None, False
+    return (
+        {
+            "command": [
+                sys.executable,
+                "-m",
+                domain_package.strip(),
+                "query-domain",
+                "--workspace",
+                ".",
+            ],
+            "assets_key": "assets",
+            "asset_id_key": "asset_id",
+            "uri_key": "uri",
+            "relative_path_key": "metadata.relative_path",
+            "path_kind_key": "checkpoint.path_kind",
+            "exists_key": "checkpoint.exists",
+            "timeout_seconds": ASSET_BINDING_QUERY_TIMEOUT_SECONDS,
+            "binding_source": "runtime_config.domain_package",
+        },
+        False,
+    )
+
+
+def resolve_workspace_asset_bindings(
+    *,
+    workspace_root: Path | None,
+    runtime_config: dict[str, Any] | None = None,
+) -> dict[str, TargetAssetBinding]:
+    """
+    Resolve concrete asset bindings from an optional workspace asset query surface.
+
+    When runtime_config provides an explicit asset_binding_contract, failures are
+    configuration defects and must fail closed. When only a default domain_package
+    query is available, discovery remains best-effort.
+    """
+    contract, explicit = _asset_binding_query_contract(runtime_config)
+    if contract is None:
+        return {}
+    if workspace_root is None:
+        if explicit:
+            raise ValueError(
+                "runtime_config.asset_binding_contract requires a workspace_root"
+            )
+        return {}
+
+    timeout = contract.get("timeout_seconds", ASSET_BINDING_QUERY_TIMEOUT_SECONDS)
+    try:
+        result = subprocess.run(
+            contract["command"],
+            cwd=workspace_root,
+            capture_output=True,
+            text=True,
+            timeout=float(timeout),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if explicit:
+            raise ValueError(
+                f"workspace asset query failed: {exc}"
+            ) from exc
+        return {}
+
+    if result.returncode != 0:
+        if explicit:
+            detail = result.stderr.strip() or result.stdout.strip() or f"returncode={result.returncode}"
+            raise ValueError(f"workspace asset query failed: {detail}")
+        return {}
+
+    try:
+        payload = _json.loads(result.stdout)
+    except _json.JSONDecodeError as exc:
+        if explicit:
+            raise ValueError("workspace asset query did not return valid JSON") from exc
+        return {}
+
+    assets = _dig_path(payload, str(contract["assets_key"]))
+    if not isinstance(assets, list):
+        if explicit:
+            raise ValueError("workspace asset query JSON must expose a list at assets_key")
+        return {}
+
+    resolved: dict[str, TargetAssetBinding] = {}
+    for entry in assets:
+        if not isinstance(entry, dict):
+            continue
+        asset_id = _dig_path(entry, str(contract["asset_id_key"]))
+        uri = _dig_path(entry, str(contract["uri_key"]))
+        if not isinstance(asset_id, str) or not asset_id or not isinstance(uri, str) or not uri:
+            continue
+        relative_path = _dig_path(entry, str(contract["relative_path_key"]))
+        path_kind = _dig_path(entry, str(contract["path_kind_key"]))
+        exists = _coerce_boolish(_dig_path(entry, str(contract["exists_key"])))
+        resolved[asset_id] = TargetAssetBinding(
+            asset_id=asset_id,
+            uri=uri,
+            relative_path=relative_path if isinstance(relative_path, str) and relative_path else None,
+            path_kind=path_kind if isinstance(path_kind, str) and path_kind else None,
+            exists=exists,
+            binding_source=str(contract["binding_source"]),
+        )
+    return resolved
 
 
 def _source_nodes(source: Node | tuple[Node, ...]) -> tuple[Node, ...]:
@@ -434,14 +641,34 @@ def resolve_runtime_environment(
     the live vector boundary. Required bindings produced inside the same carrier
     must be replay-visible before dispatch.
     """
-    requires = _source_nodes(job.vector.source)
+    requires = list(_source_nodes(job.vector.source))
+    vector_source_required_contexts = tuple(node.name for node in requires)
     provides = (job.vector.target,)
     published_carries = (
         job.graph_function.environment.carries
         if job.graph_function is not None
         else ()
     )
-    carries = _stable_node_union(published_carries, requires, provides)
+    carries = _stable_node_union(published_carries, tuple(requires), provides)
+    carry_nodes_by_name = {node.name: node for node in carries}
+
+    missing_asset_surface_contexts: list[str] = []
+    asset_surface_required_contexts: list[str] = []
+    asset_surface_injected_required_contexts: list[str] = []
+    required_names = {node.name for node in requires}
+    for context_name in job.vector.target.asset_surface.required_contexts:
+        if context_name not in asset_surface_required_contexts:
+            asset_surface_required_contexts.append(context_name)
+        context_node = carry_nodes_by_name.get(context_name)
+        if context_node is None:
+            if context_name not in missing_asset_surface_contexts:
+                missing_asset_surface_contexts.append(context_name)
+            continue
+        if context_name not in required_names:
+            requires.append(context_node)
+            required_names.add(context_name)
+            asset_surface_injected_required_contexts.append(context_name)
+    requires = tuple(requires)
 
     contract_by_name: dict[str, tuple[str, str, tuple[str, ...]]] = {}
     conflicting_contracts: list[str] = []
@@ -463,7 +690,6 @@ def resolve_runtime_environment(
 
     bindings: list[ResolvedEnvironmentBinding] = []
     binding_by_name: dict[str, ResolvedEnvironmentBinding] = {}
-    required_names = {node.name for node in requires}
     provided_names = {node.name for node in provides}
     for node in carries:
         if node.name in binding_by_name:
@@ -474,6 +700,14 @@ def resolve_runtime_environment(
             required=node.name in required_names,
             provided=node.name in provided_names,
             produced_within_carrier=node.name in produced_within_carrier,
+            required_sources=tuple(
+                source
+                for source, enabled in (
+                    ("vector_source", node.name in vector_source_required_contexts),
+                    ("asset_surface", node.name in asset_surface_required_contexts),
+                )
+                if enabled
+            ),
         )
         bindings.append(binding)
         binding_by_name[node.name] = binding
@@ -491,7 +725,11 @@ def resolve_runtime_environment(
         provides=provides,
         carries=carries,
         bindings=tuple(bindings),
+        vector_source_required_contexts=vector_source_required_contexts,
+        asset_surface_required_contexts=tuple(asset_surface_required_contexts),
+        asset_surface_injected_required_contexts=tuple(asset_surface_injected_required_contexts),
         missing_required=missing_required,
+        missing_asset_surface_contexts=tuple(missing_asset_surface_contexts),
         conflicting_contracts=tuple(conflicting_contracts),
     )
 
@@ -546,6 +784,43 @@ class BoundJob:
     selected_backend: str = ""
     assignment_source: str = ""
     resolved_runtime_ref: str = ""
+    target_asset_binding: dict[str, Any] | None = None
+    environment_asset_bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
+    target_asset_surface: dict[str, Any] | None = None
+    environment_asset_surfaces: dict[str, dict[str, Any]] = field(default_factory=dict)
+    runtime_environment_contract: dict[str, Any] = field(default_factory=dict)
+
+
+def _asset_surface_summary(node: Node) -> dict[str, Any] | None:
+    surface = node.asset_surface
+    if not surface.declared:
+        return None
+    return {
+        "kind": surface.kind,
+        "schema": _schema_key(node.schema),
+        "required_contexts": list(surface.required_contexts),
+        "standards_refs": list(surface.standards_refs),
+        "output_contract_refs": list(surface.output_contract_refs),
+    }
+
+
+def _runtime_environment_contract_summary(
+    resolved_environment: ResolvedEnvironment,
+) -> dict[str, Any]:
+    return {
+        "vector_source_required_contexts": list(
+            resolved_environment.vector_source_required_contexts
+        ),
+        "asset_surface_required_contexts": list(
+            resolved_environment.asset_surface_required_contexts
+        ),
+        "asset_surface_injected_required_contexts": list(
+            resolved_environment.asset_surface_injected_required_contexts
+        ),
+        "effective_required_contexts": [
+            node.name for node in resolved_environment.requires
+        ],
+    }
 
 
 def _event_time_value(event: dict) -> datetime | None:
@@ -872,6 +1147,9 @@ def bind_fp(
     pre: PrecomputedManifest,
     job: ExecutableJob,
     result_path: str = "",
+    *,
+    workspace_root: Path | None = None,
+    runtime_config: dict[str, Any] | None = None,
 ) -> BoundJob:
     """
     Assemble the minimal F_P manifest from pre-computed material.
@@ -889,13 +1167,61 @@ def bind_fp(
             "Cannot dispatch F_P: runtime environment unresolved: "
             + "; ".join(details)
         )
-    prompt = _assemble_prompt(pre, job, result_path)
-    return BoundJob(executable_job=job, precomputed=pre, prompt=prompt, result_path=result_path)
+    asset_bindings = resolve_workspace_asset_bindings(
+        workspace_root=workspace_root,
+        runtime_config=runtime_config,
+    )
+    target_binding = asset_bindings.get(job.vector.target.name)
+    if asset_bindings and target_binding is None:
+        raise ValueError(
+            f"Cannot dispatch F_P: target asset binding for {job.vector.target.name!r} "
+            "is not present in the workspace asset query surface."
+        )
+    prompt = _assemble_prompt(
+        pre,
+        job,
+        result_path,
+        asset_bindings=asset_bindings,
+        target_binding=target_binding,
+    )
+    environment_names = {
+        env_binding.node.name
+        for env_binding in pre.resolved_environment.bindings
+    }
+    return BoundJob(
+        executable_job=job,
+        precomputed=pre,
+        prompt=prompt,
+        result_path=result_path,
+        target_asset_binding=None if target_binding is None else target_binding.to_dict(),
+        environment_asset_bindings={
+            name: binding.to_dict()
+            for name, binding in asset_bindings.items()
+            if name in environment_names
+        },
+        target_asset_surface=_asset_surface_summary(job.vector.target),
+        environment_asset_surfaces={
+            binding.node.name: summary
+            for binding in pre.resolved_environment.bindings
+            if (summary := _asset_surface_summary(binding.node)) is not None
+        },
+        runtime_environment_contract=_runtime_environment_contract_summary(
+            pre.resolved_environment
+        ),
+    )
 
 
-def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: str = "") -> str:
+def _assemble_prompt(
+    pre: PrecomputedManifest,
+    job: ExecutableJob,
+    result_path: str = "",
+    *,
+    asset_bindings: dict[str, TargetAssetBinding] | None = None,
+    target_binding: TargetAssetBinding | None = None,
+) -> str:
     """Assemble the F_P prompt."""
     sections: list[str] = []
+    asset_bindings = asset_bindings or {}
 
     src = job.vector.source
     if isinstance(src, tuple):
@@ -957,10 +1283,17 @@ def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: 
             ctx_lines.append(f"\n--- {name} ---\n{content}")
         sections.append("\n".join(ctx_lines))
 
+    target = job.vector.target
     mandatory_contexts = tuple(
-        name
-        for name in pre.relevant_contexts
-        if "standard" in name or "output_contract" in name or "contract" in name
+        dict.fromkeys(
+            list(
+                name
+                for name in pre.relevant_contexts
+                if "standard" in name or "output_contract" in name or "contract" in name
+            )
+            + list(target.asset_surface.standards_refs)
+            + list(target.asset_surface.output_contract_refs)
+        )
     )
 
     if pre.resolved_environment.bindings:
@@ -978,9 +1311,32 @@ def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: 
                 if binding.produced_within_carrier
                 else "external_entry"
             )
+            required_via_suffix = ""
+            if binding.required_sources:
+                required_via_suffix = (
+                    " required_via=" + "+".join(binding.required_sources)
+                )
+            asset_kind_suffix = ""
+            if binding.node.asset_surface.kind:
+                asset_kind_suffix = f" asset_kind={binding.node.asset_surface.kind}"
+            asset_binding = asset_bindings.get(binding.node.name)
+            location_suffix = ""
+            if asset_binding is not None:
+                location_parts = []
+                if asset_binding.relative_path:
+                    location_parts.append(f"path={asset_binding.relative_path}")
+                if asset_binding.path_kind:
+                    location_parts.append(f"kind={asset_binding.path_kind}")
+                if asset_binding.exists is not None:
+                    location_parts.append(f"exists={str(asset_binding.exists).lower()}")
+                if asset_binding.uri:
+                    location_parts.append(f"uri={asset_binding.uri}")
+                if location_parts:
+                    location_suffix = " " + " ".join(location_parts)
             env_lines.append(
                 f"  {binding.node.name} [{', '.join(roles)}] "
                 f"schema={binding.node.schema!r} status={binding.display_status} origin={origin}"
+                f"{required_via_suffix}{asset_kind_suffix}{location_suffix}"
             )
         if not pre.resolved_environment.ready:
             env_lines.extend(
@@ -989,7 +1345,68 @@ def _assemble_prompt(pre: PrecomputedManifest, job: ExecutableJob, result_path: 
             )
         sections.append("\n".join(env_lines))
 
-    target = job.vector.target
+    contract_summary = _runtime_environment_contract_summary(pre.resolved_environment)
+    boundary_lines = [
+        "[REQUIRED BOUNDARY] — invocation-local effective required bindings for this edge:",
+        "  vector_source_required_contexts: "
+        + (
+            ", ".join(contract_summary["vector_source_required_contexts"])
+            or "(none)"
+        ),
+        "  asset_surface_required_contexts: "
+        + (
+            ", ".join(contract_summary["asset_surface_required_contexts"])
+            or "(none)"
+        ),
+        "  asset_surface_injected_required_contexts: "
+        + (
+            ", ".join(contract_summary["asset_surface_injected_required_contexts"])
+            or "(none)"
+        ),
+        "  effective_required_contexts: "
+        + (
+            ", ".join(contract_summary["effective_required_contexts"])
+            or "(none)"
+        ),
+        "  note: this merge is invocation-local runtime interpretation, not a rewrite of published GTL module topology.",
+    ]
+    sections.append("\n".join(boundary_lines))
+
+    if target.asset_surface.declared:
+        asset_surface_lines = [
+            "[ASSET SURFACE] — declared target asset contract:",
+            f"  kind: {target.asset_surface.kind or '(unspecified)'}",
+            f"  schema: {_schema_key(target.schema)}",
+        ]
+        if target.asset_surface.required_contexts:
+            asset_surface_lines.append(
+                "  required_contexts: " + ", ".join(target.asset_surface.required_contexts)
+            )
+        if target.asset_surface.standards_refs:
+            asset_surface_lines.append(
+                "  standards_refs: " + ", ".join(target.asset_surface.standards_refs)
+            )
+        if target.asset_surface.output_contract_refs:
+            asset_surface_lines.append(
+                "  output_contract_refs: "
+                + ", ".join(target.asset_surface.output_contract_refs)
+            )
+        sections.append("\n".join(asset_surface_lines))
+
+    if target_binding is not None:
+        target_lines = [
+            "[TARGET BINDING] — concrete workspace destination for the produced asset:",
+            f"  asset_id: {target_binding.asset_id}",
+            f"  uri: {target_binding.uri}",
+        ]
+        if target_binding.relative_path:
+            target_lines.append(f"  relative_path: {target_binding.relative_path}")
+        if target_binding.path_kind:
+            target_lines.append(f"  path_kind: {target_binding.path_kind}")
+        if target_binding.exists is not None:
+            target_lines.append(f"  exists: {str(target_binding.exists).lower()}")
+        sections.append("\n".join(target_lines))
+
     fp_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_P]
     assessment_contract = ""
     if fp_failing and result_path:

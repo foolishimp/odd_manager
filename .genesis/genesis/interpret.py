@@ -1561,7 +1561,13 @@ def _iterated_outcome(
         fp_results_dir.mkdir(parents=True, exist_ok=True)
         result_path = str(fp_results_dir / f"{manifest_id}.json")
 
-    bound = bind_fp(pre, runtime.executable_job, result_path=result_path)
+    bound = bind_fp(
+        pre,
+        runtime.executable_job,
+        result_path=result_path,
+        workspace_root=runtime.workspace_root,
+        runtime_config=runtime.runtime_config,
+    )
     bound.manifest_id = manifest_id
     bound.worker_id = runtime.worker.id
     if runtime.executable_job.job.roles:
@@ -1794,6 +1800,11 @@ def _iterated_outcome(
             "current_asset": pre.current_asset,
             "prompt": bound.prompt,
             "result_path": result_path,
+            "target_asset_binding": bound.target_asset_binding,
+            "environment_asset_bindings": bound.environment_asset_bindings,
+            "target_asset_surface": bound.target_asset_surface,
+            "environment_asset_surfaces": bound.environment_asset_surfaces,
+            "runtime_environment_contract": bound.runtime_environment_contract,
             "spec_hash": runtime.spec_hash,
             "requirements": runtime.module.metadata.get("requirements", []),
             "workflow_version": runtime.workflow_version,
@@ -2323,6 +2334,10 @@ def _realize_iteration(
             fp_dispatch_data["assignment_source"] = bound_job.assignment_source
         if bound_job.resolved_runtime_ref:
             fp_dispatch_data["resolved_runtime_ref"] = bound_job.resolved_runtime_ref
+        if bound_job.runtime_environment_contract:
+            fp_dispatch_data["runtime_environment_contract"] = (
+                bound_job.runtime_environment_contract
+            )
         events.append({
             "event_type": "fp_dispatched",
             "data": fp_dispatch_data,

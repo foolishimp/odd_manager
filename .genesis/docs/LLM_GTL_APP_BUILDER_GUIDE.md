@@ -198,6 +198,53 @@ The law is:
 
 - `g.environment.requires` must be satisfied by the cumulative environment carried so far
 
+## Asset Surface Contract
+
+Node typing is not only `Node.schema`.
+
+When a boundary represents a real produced or consumed asset, declare its
+`asset_surface`.
+
+`asset_surface` is GTL declaration truth for:
+
+- `kind`
+- `required_contexts`
+- `standards_refs`
+- `output_contract_refs`
+
+Minimal pattern:
+
+```python
+schema = Node(
+    name="schema_surface",
+    schema="SchemaSurface",
+    asset_surface={
+        "kind": "schema_surface",
+        "required_contexts": ("dataset_profile",),
+        "standards_refs": ("REQ-DATA-012",),
+        "output_contract_refs": ("schema_contract_v1",),
+    },
+)
+```
+
+Use this when you want downstream work to consume an asset by declared contract
+rather than by ad hoc file-path lore.
+
+This is the practical builder meaning:
+
+- `Node.schema` says what typed locus this is
+- `asset_surface.kind` says what operational asset role it serves
+- `asset_surface.required_contexts` says what carried bindings must also be
+  present when this asset is produced
+- `asset_surface.standards_refs` and `output_contract_refs` give ABG enough
+  declaration truth to surface specialized proof and output-contract context
+
+Keep the boundary clean:
+
+- `asset_surface` belongs to GTL
+- workspace binding, transport choice, write territory, and provenance remain
+  ABG-owned runtime concerns
+
 ## Runtime Environment Resolution
 
 ABG does not dispatch a live vector from declaration shape alone.
@@ -209,6 +256,9 @@ Resolution law:
 
 - `requires` comes from the live vector source boundary
 - `provides` comes from the live vector target boundary
+- the effective required boundary is the invocation-local merge of:
+  - live vector source requirements
+  - target `asset_surface.required_contexts`
 - `carries` is the stable union of the published graph-function carries plus the
   live vector boundary
 - each carried binding is projected from current runtime truth and labeled as
@@ -217,15 +267,21 @@ Resolution law:
   constructive dispatch
 - conflicting carried bindings with the same name but incompatible contracts fail
   closed
+- bind-time prompt and manifest surfaces include the target and carried
+  `asset_surface` contracts
 - unresolved runtime environment blocks `F_P` dispatch and leaves the route open
 
 Builder consequence:
 
 - declaring a binding in `environment.carries` is not enough
+- declaring `asset_surface.required_contexts` is a real way to widen the live
+  executable boundary for that invocation
 - if a late step requires `requirements` or `design` from 2+ steps earlier, that
   binding must already be visible in replayed runtime truth before the late step
   runs
 - ABG does not invent hidden parameter passing between internal vectors
+- ABG may widen one invocation boundary from declared `asset_surface` truth, but
+  that merge is invocation-local and does not rewrite published GTL topology
 
 ## Public Carrier Pattern
 
@@ -241,6 +297,8 @@ they are:
 
 - themselves bound by a semantic `Job`
 - explicit `CandidateFamily` members
+- helper graph functions required for lawful symbolic materialization and marked
+  `selection_visible=False`
 
 Otherwise they become hidden structural alternatives.
 
@@ -346,6 +404,42 @@ Migrate in this order:
 
 This is the right migration path for `odd_method`-class apps that currently have
 an app-owned program catalog plus a custom iteration runner.
+
+### Eager vs deferred composition
+
+There are now two lawful composition patterns.
+
+#### Eager GTL composition
+
+Use eager composition when your component functions already materialize inline:
+
+- compose inline graph functions in GTL
+- materialize once
+- publish the resulting graph through `Module.graphs`
+
+This is the simplest publication path for ordinary executives.
+
+#### Deferred ABG materialization of symbolic carriers
+
+Use deferred composition when you want a reusable higher-order public carrier
+whose internals stay symbolic until runtime publication.
+
+The law is:
+
+- the public carrier may be symbolic
+- ABG may materialize that symbolic carrier against helper graph functions
+  published by the same module
+- symbolic publication does not remove the requirement to publish lawful live
+  traversal truth through `Module.graphs`
+- helper refs must resolve uniquely against module-published graph-function truth
+- the realized graph must preserve the carrier's declared outer interface exactly
+- helpers that exist only to support symbolic materialization should be marked
+  `selection_visible=False` so selection validation does not misread them as
+  hidden public alternatives
+
+This is the right pattern for higher-order harnesses where the caller should see
+one stable outer contract while the runtime resolves injected helper steps
+lawfully.
 
 ## Recursion And Composition
 
@@ -476,6 +570,59 @@ Runtime shape after selection:
 
 That is the real composed-recursive route to use for SDLC zoom work.
 
+## Higher-Order Harness Pattern
+
+A higher-order harness is still an ordinary `GraphFunction`.
+
+Do not ask ABG for a special "consensus engine", "discovery engine", or
+"review engine".
+
+Instead:
+
+- keep the topology explicit in GTL
+- inject custom helper graph functions
+- keep the outer contract stable for callers
+- let ABG materialize and traverse the carrier like any other published graph
+  function
+
+Consensus is the canonical example:
+
+```text
+subject_asset
+-> review_assessment_vector
+-> consensus_decision
+-> reviewed_subject_asset
+```
+
+The caller cares about the outer contract only.
+
+The harness may internally use:
+
+- `compose(...)`
+- `recurse(...)`
+- `fan_out(...)`
+- `fan_in(...)`
+- `gate(...)`
+- custom helper graph functions for review, reduction, and application
+
+Builder rule:
+
+- publish the reusable harness as one public graph function
+- publish the injected helper graph functions if ABG must resolve them for
+  symbolic materialization
+- mark helper graph functions `selection_visible=False` when they are not meant
+  to be callable public alternatives
+- bind the job to the outer harness carrier, not to helper steps
+
+This lets you build reusable library carriers such as:
+
+- consensus harness
+- discovery harness
+- harvest harness
+- repair loop harness
+
+without expanding GTL ontology or adding hidden runtime controllers.
+
 ### Fail-closed rules for composition and recursion
 
 These are the common builder errors that surfaced during real recursive and
@@ -489,10 +636,14 @@ composed SDLC implementation:
 - do not omit `RefinementBoundary` or `CandidateFamily` publication for live
   internal vectors
 - do not publish helper leaf graph functions as extra public alternatives unless
-  they are job-bound carriers or explicit candidate-family members
-- do not assume `compose(...)` over symbolic carriers is directly executable;
-  if a carrier materializes to a symbolic template, you still need a lawful
-  materialization path before ABG can traverse it
+  they are:
+  - job-bound carriers
+  - explicit candidate-family members
+  - symbolic-materialization helpers marked `selection_visible=False`
+- do not assume a symbolic carrier is executable by string ref alone; ABG can
+  materialize symbolic composition lawfully only when helper refs resolve
+  uniquely against module-published graph-function truth and the realized graph
+  preserves the declared outer contract
 - do not assume a declared carry is executable truth; ABG resolves the live
   vector runtime environment and blocks if an internally produced required
   binding is not yet replay-visible

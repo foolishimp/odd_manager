@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from gtl.function_model import CandidateFamily, EnvRef, GraphFunction, RefinementBoundary
-from gtl.graph import Attrs, Context, Graph, GraphVector, Node, _schema_key
+from gtl.graph import AssetSurface, Attrs, Context, Graph, GraphVector, Node, _schema_key
 from gtl.operator_model import Evaluator, F_D, F_H, F_P, Operator, Rule
 from gtl.module_model import Module
 from gtl.work_model import Job, Role
@@ -194,6 +194,7 @@ def _serialize_node(node: Node) -> dict[str, Any]:
         "name": node.name,
         "schema": _schema_key(node.schema),
         "markov": list(node.markov),
+        "asset_surface": node.asset_surface.to_dict(),
         "tags": list(node.tags),
     }
 
@@ -203,6 +204,7 @@ def _deserialize_node(data: dict[str, Any]) -> Node:
         name=data["name"],
         schema=data.get("schema", ""),
         markov=tuple(data.get("markov", ())),
+        asset_surface=AssetSurface.coerce(data.get("asset_surface")),
         tags=tuple(data.get("tags", ())),
         id=data.get("id", ""),
     )

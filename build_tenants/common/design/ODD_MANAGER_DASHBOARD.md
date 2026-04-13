@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Date**: 2026-04-06
-**Implements**: `REQ-OM-BND-*`, `REQ-OM-ONT-*`, `REQ-OM-PROJ-*`, `REQ-OM-NAV-*`, `REQ-OM-INS-*`, `REQ-OM-WRK-*`, `REQ-OM-COL-*`, `REQ-OM-SES-*`, `REQ-OM-VER-*`
+**Implements**: `REQ-OM-BND-*`, `REQ-OM-ONT-*`, `REQ-OM-PROJ-*`, `REQ-OM-NAV-*`, `REQ-OM-INS-*`, `REQ-OM-WRK-*`, `REQ-OM-COL-*`, `REQ-OM-SES-*`, `REQ-OM-VER-*`, `REQ-OM-LNS-*`
 **Derives From**:
 - `specification/INTENT.md`
 - `specification/PRODUCT.md`
@@ -16,6 +16,7 @@
 - `specification/requirements/07-live-coordination-and-durable-record.md`
 - `specification/requirements/08-session-workspace-and-provider-adapters.md`
 - `specification/requirements/09-verification-and-traceability.md`
+- `specification/requirements/10-entry-lenses-and-delivery-workspaces.md`
 - `/Users/jim/src/apps/abiogenesis/docs/LLM_GTL_APP_BUILDER_GUIDE.md`
 - `/Users/jim/src/apps/abiogenesis/specification/GTL_3_CONSTITUTIONAL_DESIGN.md`
 - `/Users/jim/src/apps/abiogenesis/specification/ABG_3_CONSTITUTIONAL_DESIGN.md`
@@ -259,13 +260,17 @@ visual rules unless the shared design package is intentionally revised.
 
 - outcome-driven builder/domain framing
 - assets addressed by URI
-- asset types, asset collections, and typed asset nodes
+- asset types, asset families, collections, and typed asset nodes
 - asset graphs and asset bindings
 - named functions over asset graphs
+- edge contracts, executive programs, and work-act types
 - builder-facing graph-function publication rules
 - cumulative environment publication rules over graph-function carriers
-- the current ODD translation surface captured in
-  `odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md`
+- ambiguity register, ambiguity policy posture, and capability-gated stop-state
+  declarations
+- the current ODD translation and disambiguation surfaces captured in
+  `odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md` and
+  `odd_method/docs/ODD_SDLC_DISAMBIGUATION_STRATEGY.md`
 
 ### UI And Read-Model Only
 
@@ -293,39 +298,117 @@ Within that rule, `WorkVector` is a UI/read-model view over one public
 graph-function carrier and its realized internal vectors. It must not be used
 as a substitute public callable or shadow runtime primitive.
 
+## OddChat Participant Transport
+
+### Room Truth And Participant Delivery
+
+`OddChat` room history is the canonical mailbox for live coordination.
+
+That means:
+
+- topics remain the durable identity surface
+- live rooms remain the operator-visible coordination surface
+- sessions remain the durable execution substrate
+- provider-backed participants join rooms over MCP and track receipt state
+- room fan-out happens through canonical room history plus participant cursor,
+  not through ambient stdin injection into every attached shell
+
+Attached sessions still matter, but attachment alone is not equivalent to room
+delivery. Attachment expresses available execution substrate and visible room
+context. Joined participants express active room-delivery intent.
+
+### Participant Model
+
+The manager owns a participant read model with these minimum fields:
+
+- participant id
+- provider identity
+- backing session id
+- room id and optional topic id
+- connection status
+- last read cursor
+- last post/read timestamps
+
+Participants are manager-owned read-model objects over the session substrate.
+They do not replace sessions as a product primitive.
+
+### Bootstrap Versus Steady-State Transport
+
+The product may use one-shot shell injection to bootstrap an existing session
+into a provider-backed participant.
+
+That bootstrap path is lawful only for:
+
+- launching Codex, Claude, or another provider CLI with the right MCP config
+- carrying topic, room, and session identity into the launched process
+
+It is not the steady-state chat transport.
+
+After launch:
+
+- the participant joins the selected room through MCP
+- room receive uses participant membership and cursor state
+- room reply uses MCP room-post operations
+- ordinary shell input remains ordinary shell input
+
+### MCP Surface
+
+The provider-facing MCP surface is room-oriented:
+
+- `room_join`
+- `room_status`
+- `room_read`
+- `room_wait`
+- `room_send`
+- `room_leave`
+
+Low-level transport-facing IRC tools may still exist for debugging or transport
+binding, but they are not the primary product model.
+
 ## Current Builder Integration Note
 
-`odd_method` is still in build.
+`odd_method` is still in build, but the manager no longer treats that as a
+license to hide currently published builder truth behind placeholder state.
 
-The live `odd_method` repo state on 2026-04-06 currently exposes enough stable
-shape for `odd_manager` to build around, but not enough frozen detail to treat
-the full builder-domain library as closed.
+The live `odd_method` repo state on 2026-04-10 exposes a materially larger and
+more explicit observer contract than the earlier first-slice surface.
 
 The observable live integration surface today is:
 
 - the `odd_method` specification stack
 - the installed method standards
-- `odd_method/specification/requirements/08-odd-sdlc-first-slice.md`
-- `odd_method/specification/scenarios/06-first-odd-sdlc-asset-function-call.md`
+- `odd_method/specification/requirements/10-odd-sdlc-software-domain-buildout.md`
+- `odd_method/docs/ODD_SDLC_DISAMBIGUATION_STRATEGY.md`
+- `odd_method/docs/REQUIREMENTS_TRACEABILITY.md`
 - `odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md`
 - `odd_method/build_tenants/common/design/adrs/ADR-006-abg-runtime-and-odd-query-plugin-boundary.md`
 - `odd_method/build_tenants/odd_sdlc/python/code/odd_sdlc/domain_model.py`
+- `odd_method/build_tenants/odd_sdlc/python/code/odd_sdlc/query_contract.py`
+- `odd_method/build_tenants/odd_sdlc/python/code/odd_sdlc/query.py`
 
 The current stable builder signals visible to the manager are:
 
+- explicit query-contract metadata and versioning
 - URI-addressed assets
 - declared asset types
-- asset collections
+- asset families and collections
 - explicit typed-node bindings
 - named function catalog entries with typed inputs and outputs
+- edge contracts
+- executive programs
+- work-act types
+- ambiguity register state, including policy action and bounded stop posture
 - backing GTL graph-function identity
 - a ratified query-library boundary for domain overlays
 
 `odd_manager` should therefore treat `odd_method` integration as
-spec-and-design-defined while that line is still in build.
+spec-and-design-defined while that line is still in build, but it must also
+track the published query-domain contract explicitly and surface contractual
+drift as a first-class observer concern.
 
-`odd_manager` is allowed to ship with placeholder detail where richer builder
-semantic material is not yet published cleanly.
+`odd_manager` remains forward-only in this phase. There is no pre-release
+backward-compatibility obligation to preserve stale observer shapes once the
+upstream builder line publishes richer lawful truth.
 
 ## Runtime And Query Composition Model
 
@@ -358,9 +441,12 @@ That means:
   published function inputs, outputs, and bindings
 - richer domain overlays may come from query-library calls without requiring a
   background sync service
-- richer domain descriptions may render as explicit placeholders until the
-  upstream builder line hardens
+- unpublished or not-yet-ratified domain descriptions may render as explicit
+  placeholders until the upstream builder line hardens
 - placeholder detail must never masquerade as canonical domain publication
+- once `odd_method` publishes a field in the ratified query-domain contract,
+  `odd_manager` must carry it explicitly rather than collapsing it back into
+  generic placeholder or summary state
 
 ## Read Model And Projection Model
 
@@ -389,9 +475,17 @@ The UI needs, at minimum:
   - failure classification
   - closure state
 - query-overlay objects:
+  - query-contract metadata and versioning
   - asset views
+  - asset-family views
+  - collection views
   - binding views
   - function catalog views
+  - edge-contract views
+  - executive-program views
+  - work-act-type views
+  - ambiguity-register and ambiguity-entry views
+  - capability posture and bounded-stop overlays
   - gap overlays
   - convergence overlays
   - checkpoint and provenance interpretation
@@ -403,6 +497,11 @@ The UI needs, at minimum:
 
 The first implementation may treat rich type semantics, proof hints, closure
 explanations, and gap narratives as optional fields.
+
+Published ambiguity posture, capability posture, query-contract versioning, and
+builder catalog objects such as asset families, edge contracts, executive
+programs, and work-act types are not optional once they exist in the upstream
+contract.
 
 ### Example Projection Shapes
 
@@ -484,22 +583,28 @@ No derived projection may become the only source for runtime truth.
 
 ### Top-Level Pages
 
-1. `Home`
+1. `Requirements View`
+   - requirement-first explorer and requirement workbench for delivery
+     stakeholders
+2. `Process View`
+   - process-first explorer and process/build-activity workbench over the same
+     underlying information model
+3. `Home`
    - immediate posture over live runs, open continuations, blocking evidence,
      and recent change
-2. `Graphs`
+4. `Graphs`
    - graph-set and asset-graph workspace over typed assets, bindings, and
      workorders
-3. `Runtime`
+5. `Runtime`
    - runs, graph calls, frames, worker/backend resolution, runtime facts
-4. `Continuations`
+6. `Continuations`
    - open obligations, retry/repair/review queues, causal links
-5. `Evidence And Policy`
+7. `Evidence And Policy`
    - proof lanes, evaluations, closure posture, policy attachments
-6. `Builder`
+8. `Builder`
    - `odd_method` source surfaces, in-build work-vector framing, and
      graph-function integration boundary as those surfaces harden
-7. `Provenance`
+9. `Provenance`
    - timeline, lineage, event truth, supersession, correction
 
 ### Builder Guide Alignment
@@ -516,6 +621,10 @@ These pages map onto the artifact-first operator surfaces in
 
 ### Panel Ownership
 
+- `Requirements View` owns requirement-first exploration and the requirement
+  workbench
+- `Process View` owns process/build-activity exploration and the
+  process-selected workbench
 - `Home` owns posture, attention, and "what changed"
 - `Graphs` owns graph-set topology and focus selection
 - `Runtime` owns call/run/frame inspection
@@ -525,6 +634,37 @@ These pages map onto the artifact-first operator surfaces in
 - `Provenance` owns raw event-derived narrative
 - a persistent inspector owns the currently selected object's details, related
   documents, evidence, and history
+- OddBoard and the local session workspace remain ubiquitous cross-page tools
+  rather than page-specific authority centers
+
+### Shared Delivery Widget Law
+
+`Requirements View` and `Process View` are distinct entry lenses over one
+shared information model.
+
+That means:
+
+- widgets are reusable across both pages where the underlying concern is shared
+- widgets are collapsible and preserve operator context when reopened
+- totals and summary badges are saved queries over shared backing records
+- large record sets are shown through bounded navigators with independent
+  scrolling, pagination, or virtualization rather than by pushing the rest of
+  the page out of view
+- when one widget controls another widget's query or focus, the dependency is
+  expressed through shared framing or local grouping so the operator can see
+  the hierarchy directly
+- applying a total or summary badge makes the resulting query explicit at the
+  affected navigator and returns operator focus there so the change is visible
+  immediately
+- visible objects are never dead-end text; they open richer detail or the
+  authoritative underlying surface
+- the first visible layer is human-readable, while raw ids and source surfaces
+  remain reachable as deeper layers
+
+The requirement-selected and process-selected workbenches may differ in entry
+filter, primary selection, and surrounding summary context, but they should
+reuse the same widget families wherever lawful rather than diverging into two
+independent page architectures.
 
 ### Drilldown Model
 
@@ -535,6 +675,14 @@ The standard drilldown path is:
 A second lawful path begins from runtime urgency:
 
 `Continuation -> causing event -> graph call/frame -> workorder -> policy attachment -> required proof lane -> closure consequence`
+
+A third lawful path begins from requirement framing:
+
+`Requirement -> Requirement Summary -> Design Surface -> Module / Implementation Surface -> Testcase Authority -> Test Execution -> Ticket / Comment / Risk Context`
+
+A fourth lawful path begins from process framing:
+
+`Build Activity / Process Focus -> Related Requirement or Work Surface -> Design / Implementation / Proof Surface -> Ticket / Comment / Risk Context`
 
 ### What The Home Screen Must Answer Immediately
 
@@ -553,6 +701,20 @@ A second lawful path begins from runtime urgency:
 The operator lands on `Home`, sees the current posture, recent change, and the
 highest-severity open obligations, then pivots into the selected graph,
 workorder, or runtime object.
+
+### Understand Requirement Reality
+
+The stakeholder opens `Requirements View`, filters or searches the requirement
+set, selects a human-readable requirement, then inspects its summary, history,
+design links, implementation surfaces, proof surfaces, ticket state, and
+discussion without losing requirement framing.
+
+### Understand Build Activity
+
+The stakeholder opens `Process View`, starts from build activity or process
+flow, then pivots through the same shared widget family to inspect linked
+requirements, implementation, proof, ticket, and discussion surfaces from a
+process-first posture.
 
 ### Inspect Current Runtime Truth
 

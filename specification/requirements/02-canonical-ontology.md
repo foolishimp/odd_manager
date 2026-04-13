@@ -12,9 +12,10 @@ actual managed domain and runtime.
 
 Acceptance Criteria
 - the product provides first-class surfaces for graph sets, assets, asset
-  types, asset collections, asset nodes, asset graphs, asset bindings,
-  workorders, jobs, roles, runs, graph calls, frames, continuations, runtime
-  facts, policy, evidence, provenance, and closure
+  types, asset families, asset collections, asset nodes, asset graphs, asset
+  bindings, workorders, jobs, roles, runs, graph calls, frames,
+  continuations, runtime facts, policy, evidence, provenance, closure,
+  ambiguity register, capability contracts, and bounded stop states
 - operator-visible labels and actions are anchored to those objects
 - the product does not require a second hidden ontology to explain product
   state
@@ -74,6 +75,8 @@ operator surfaces rather than as subordinate metadata.
 Acceptance Criteria
 - the operator can inspect the policy and proof surfaces relevant to a selected
   outcome, call, or continuation
+- the operator can inspect ambiguity policy and capability posture relevant to a
+  selected graph, workorder, or lifecycle stage where those surfaces exist
 - provenance is reachable as part of ordinary supervisory work
 - closure claims can be explained in terms of evidence and open obligations
 
@@ -123,7 +126,25 @@ Acceptance Criteria
 - placeholder detail may be used for rich type semantics, gap interpretation,
   closure hints, proof hints, or function descriptions that are not yet
   published cleanly by the builder line
+- once upstream publishes ambiguity, capability, or policy-bearing domain
+  overlays explicitly, the manager does not hide them behind generic
+  placeholder state
 - placeholder detail does not replace canonical asset URI, declared type, node
   identity, binding identity, workorder identity, or graph-function identity
 - the product labels provisional detail honestly rather than presenting
   invented precision as settled domain truth
+
+### REQ-OM-ONT-011 - Published ambiguity and capability objects are first-class supervisory truth
+
+When the managed builder/domain line publishes ambiguity and capability objects,
+`odd_manager` shall surface them as first-class supervisory truth rather than
+as incidental annotations on gaps or status badges.
+
+Acceptance Criteria
+- ambiguity register entries remain inspectable as distinct objects or object
+  collections with stable identity or stable classification
+- capability-bearing surfaces remain distinguishable from generic status text
+  or gap summaries
+- bounded stop states such as `pending_capability` or `fh_required` are
+  explained in terms of the governing domain object rather than inferred only
+  from generic failure wording

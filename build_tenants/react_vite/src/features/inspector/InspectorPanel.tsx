@@ -1,19 +1,38 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { MarkdownDocument } from "../../components/MarkdownDocument";
+import { loadSurface } from "../../lib/api";
+import { presentStructuredText } from "../../lib/textPresentation";
 import type {
+  AmbiguityEntryView,
   AssetView,
+  AssetFamilyView,
   BindingView,
+  CollectionView,
   ContinuationView,
+  EdgeContractView,
   FrameView,
   FunctionView,
   GraphFunctionView,
   GraphCallView,
   GraphView,
   ManagerWorld,
+  ProgramView,
+  RequirementView,
   RecentEventView,
   RuntimeRunView,
   Selection,
+  SurfaceData,
+  WorkActTypeView,
   WorkOrderView,
 } from "../../lib/types";
+import {
+  describeCanonicalTerm,
+  labelDeliveryStatus,
+  labelSelectionKind,
+  labelTone,
+  presentAmbiguity,
+} from "../../lib/presentation";
 
 type InspectorPanelProps = {
   world: ManagerWorld;
@@ -29,17 +48,35 @@ export function InspectorPanel({
   onSelectSelection,
 }: InspectorPanelProps) {
   if (!selection) {
-    return (
-      <aside className="panel panel--context inspector-panel">
-        <div className="empty-state">
-          <strong>No object selected.</strong>
-          <p>Select a graph node, workorder, runtime aggregate, or document-backed asset.</p>
-        </div>
-      </aside>
-    );
+      return (
+        <aside className="panel panel--context inspector-panel">
+          <div className="empty-state">
+            <strong>No object selected.</strong>
+            <p>Select a map node, work item, runtime record, or document-backed artifact.</p>
+          </div>
+        </aside>
+      );
   }
 
   switch (selection.kind) {
+    case "requirement":
+      return (
+        <RequirementInspector
+          requirement={
+            world.domain.requirements.find((item) => item.requirement_id === selection.id) ?? null
+          }
+          assets={world.domain.assets}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "surface":
+      return (
+        <SurfaceInspector
+          workspaceRoot={world.workspace_root}
+          relativePath={selection.id}
+          onSelectSelection={onSelectSelection}
+        />
+      );
     case "asset":
       return (
         <AssetInspector
@@ -48,6 +85,12 @@ export function InspectorPanel({
           functions={world.domain.functions}
           workorders={world.domain.workorders}
           onSelectSelection={onSelectSelection}
+        />
+      );
+    case "asset_family":
+      return (
+        <AssetFamilyInspector
+          assetFamily={world.domain.asset_families.find((item) => item.name === selection.id) ?? null}
         />
       );
     case "binding":
@@ -60,6 +103,33 @@ export function InspectorPanel({
           onSelectSelection={onSelectSelection}
         />
       );
+    case "collection":
+      return (
+        <CollectionInspector
+          collection={world.domain.collections.find((item) => item.name === selection.id) ?? null}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "ambiguity":
+      return (
+        <AmbiguityInspector
+          ambiguity={
+            world.domain.ambiguity_register.ambiguities.find(
+              (item) => item.ambiguity_id === selection.id,
+            ) ?? null
+          }
+          world={world}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "edge_contract":
+      return (
+        <EdgeContractInspector
+          edgeContract={world.domain.edge_contracts.find((item) => item.name === selection.id) ?? null}
+          world={world}
+          onSelectSelection={onSelectSelection}
+        />
+      );
     case "function":
       return (
         <FunctionInspector
@@ -68,11 +138,26 @@ export function InspectorPanel({
           onSelectSelection={onSelectSelection}
         />
       );
+    case "program":
+      return (
+        <ProgramInspector
+          program={world.domain.programs.find((item) => item.name === selection.id) ?? null}
+          world={world}
+          onSelectSelection={onSelectSelection}
+        />
+      );
     case "workorder":
       return (
         <WorkOrderInspector
           workorder={world.domain.workorders.find((item) => item.id === selection.id) ?? null}
           graphFunctions={world.domain.graph_functions}
+          onSelectSelection={onSelectSelection}
+        />
+      );
+    case "work_act_type":
+      return (
+        <WorkActTypeInspector
+          workActType={world.domain.work_act_types.find((item) => item.name === selection.id) ?? null}
           onSelectSelection={onSelectSelection}
         />
       );
@@ -90,6 +175,7 @@ export function InspectorPanel({
           title={selection.id}
           description="ABG-native execution attempt aggregate."
           payload={world.runtime.runs.find((item) => item.instance_id === selection.id) ?? null}
+          onSelectSelection={onSelectSelection}
         />
       );
     case "graph_call":
@@ -99,6 +185,7 @@ export function InspectorPanel({
           title={selection.id}
           description="ABG-native callable boundary aggregate."
           payload={world.runtime.graph_calls.find((item) => item.instance_id === selection.id) ?? null}
+          onSelectSelection={onSelectSelection}
         />
       );
     case "continuation":
@@ -108,6 +195,7 @@ export function InspectorPanel({
           title={selection.id}
           description="ABG-native continuation aggregate requiring supervision."
           payload={world.runtime.continuations.find((item) => item.instance_id === selection.id) ?? null}
+          onSelectSelection={onSelectSelection}
         />
       );
     case "frame":
@@ -117,6 +205,7 @@ export function InspectorPanel({
           title={selection.id}
           description="ABG-native recursive invocation frame."
           payload={world.runtime.frames.find((item) => item.instance_id === selection.id) ?? null}
+          onSelectSelection={onSelectSelection}
         />
       );
     case "event":
@@ -147,6 +236,242 @@ export function InspectorPanel({
   }
 }
 
+function RequirementInspector({
+  requirement,
+  assets,
+  onSelectSelection,
+}: {
+  requirement: RequirementView | null;
+  assets: AssetView[];
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!requirement) {
+    return <MissingInspector noun={labelSelectionKind("requirement").toLowerCase()} />;
+  }
+
+  const backingAsset = assets.find(
+    (asset) => (asset.metadata.relative_path ?? "") === requirement.source_path,
+  );
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("requirement")}
+        title={requirement.requirement_id}
+        subtitle={`${requirement.title} · ${labelDeliveryStatus(requirement.status ?? requirement.delivery_status)}`}
+        tone={requirement.delivery_status}
+      />
+
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Title", requirement.title],
+            ["Family", requirement.family_title || requirement.family || "Unspecified"],
+            ["Priority", requirement.priority ?? "Unspecified"],
+            ["Type", requirement.type ?? "Unspecified"],
+            ["Source Path", requirement.source_path],
+          ]}
+        />
+
+        <InspectorSection title="Requirement Summary">
+          <p>{requirement.summary}</p>
+        </InspectorSection>
+
+        <InspectorSection title="Traceability">
+          <DetailRows
+            rows={[
+              ["Current Status", labelDeliveryStatus(requirement.status ?? requirement.delivery_status)],
+              ["Traces To", requirement.traces_to.length ? requirement.traces_to.join(", ") : "None declared"],
+              ["Code References", String(requirement.code_refs.length)],
+              ["Test References", String(requirement.test_refs.length)],
+              ["Acceptance References", String(requirement.testcase_authority_refs.length)],
+            ]}
+          />
+        </InspectorSection>
+
+        {backingAsset ? (
+          <InspectorSection title="Published Artifact">
+            <div className="inline-pills">
+              <button
+                type="button"
+                className="status-chip converged"
+                onClick={() => onSelectSelection({ kind: "asset", id: backingAsset.asset_id })}
+              >
+                {backingAsset.asset_id}
+              </button>
+            </div>
+          </InspectorSection>
+        ) : null}
+
+        <InspectorSection title="Acceptance Criteria">
+          {requirement.acceptance_criteria.length ? (
+            <div className="list-stack">
+              {requirement.acceptance_criteria.map((criterion, index) => (
+                <div key={`${requirement.requirement_id}:${index}`} className="list-row">
+                  <strong className="list-row__title">Acceptance {index + 1}</strong>
+                  <p className="list-row__summary">{criterion}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <strong>No acceptance criteria published.</strong>
+              <p>This backlog item does not yet expose explicit acceptance criteria.</p>
+            </div>
+          )}
+        </InspectorSection>
+
+        <InspectorSection title="Evidence Links">
+          <ReferencePills
+            title="Code"
+            items={requirement.code_refs}
+            tone="active"
+            onSelectSelection={onSelectSelection}
+          />
+          <ReferencePills
+            title="Tests"
+            items={[...requirement.test_refs, ...requirement.test_claim_refs, ...requirement.testcase_authority_refs]}
+            tone="pending"
+            onSelectSelection={onSelectSelection}
+          />
+          <ReferencePills
+            title="Authority"
+            items={[
+              requirement.source_path,
+              ...requirement.derives_from,
+              ...requirement.authority_refs,
+              ...requirement.current_requirement_refs,
+            ]}
+            tone="attention"
+            onSelectSelection={onSelectSelection}
+          />
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function SurfaceInspector({
+  workspaceRoot,
+  relativePath,
+  onSelectSelection,
+}: {
+  workspaceRoot: string;
+  relativePath: string;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  const [surface, setSurface] = useState<SurfaceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void loadSurface(workspaceRoot, relativePath)
+      .then((result) => {
+        if (!cancelled) {
+          setSurface(result);
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [relativePath, workspaceRoot]);
+
+  const title = relativePath.split("/").pop() || relativePath;
+
+  if (loading) {
+    return (
+      <aside className="panel panel--context inspector-panel">
+        <div className="empty-state">
+          <strong>Loading surface.</strong>
+          <p>{relativePath}</p>
+        </div>
+      </aside>
+    );
+  }
+
+  if (error) {
+    return (
+      <aside className="panel panel--context inspector-panel">
+        <div className="empty-state">
+          <strong>Surface could not be loaded.</strong>
+          <p>{error}</p>
+        </div>
+      </aside>
+    );
+  }
+
+  if (!surface || surface.kind === "missing") {
+    return <MissingInspector noun={labelSelectionKind("surface").toLowerCase()} />;
+  }
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("surface")}
+        title={title}
+        subtitle={relativePath}
+        tone="converged"
+      />
+
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Path", surface.path],
+            ["Kind", surface.kind],
+          ]}
+        />
+
+        {surface.kind === "directory" ? (
+          <InspectorSection title="Entries">
+            <div className="list-stack">
+              {surface.entries.map((entry) => (
+                <button
+                  key={entry.relative_path}
+                  type="button"
+                  className="list-row"
+                  onClick={() => onSelectSelection({ kind: "surface", id: entry.relative_path })}
+                >
+                  <div className="list-row__meta">
+                    <span className="panel__eyebrow">{entry.kind}</span>
+                    <span className={`status-chip ${entry.kind === "directory" ? "active" : "converged"}`}>
+                      {entry.kind}
+                    </span>
+                  </div>
+                  <strong className="list-row__title">{entry.name}</strong>
+                  <p className="list-row__summary">{entry.relative_path}</p>
+                </button>
+              ))}
+            </div>
+          </InspectorSection>
+        ) : null}
+
+        {surface.kind === "file" ? (
+          <InspectorSection title="Content">
+            {surface.relative_path.endsWith(".md") ? (
+              <MarkdownDocument content={surface.content} />
+            ) : (
+              <pre className="markdown-viewer__code-block">{surface.content}</pre>
+            )}
+          </InspectorSection>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
 function AssetInspector({
   asset,
   bindings,
@@ -161,7 +486,7 @@ function AssetInspector({
   onSelectSelection: (selection: Selection) => void;
 }) {
   if (!asset) {
-    return <MissingInspector noun="asset" />;
+    return <MissingInspector noun={labelSelectionKind("asset").toLowerCase()} />;
   }
 
   const relatedBindings = bindings.filter((binding) => binding.asset_ids.includes(asset.asset_id));
@@ -178,24 +503,24 @@ function AssetInspector({
   return (
     <aside className="panel panel--context inspector-panel">
       <InspectorHero
-        eyebrow="Asset"
+        eyebrow={labelSelectionKind("asset")}
         title={asset.asset_id}
-        subtitle={`${asset.declared_type} · ${asset.kind}`}
+        subtitle={`${describeCanonicalTerm(asset.declared_type)} · ${asset.kind}`}
         tone={asset.metadata.exists === "false" ? "blocked" : "converged"}
       />
 
       <div className="inspector-stack">
         <DetailRows
           rows={[
-            ["URI", asset.uri],
-            ["Relative Path", asset.metadata.relative_path ?? "not published"],
+            ["Artifact URI", asset.uri],
+            ["Workspace Path", asset.metadata.relative_path ?? "not published"],
             ["Projection Source", asset.projection_source ?? "unspecified"],
             ["Updates", String(asset.update_count ?? 0)],
             ["Mutable", asset.provenance?.mutable ? "true" : "false"],
           ]}
         />
 
-        <InspectorSection title="Bindings">
+        <InspectorSection title="Workflow Bindings">
           <div className="inline-pills">
             {relatedBindings.length ? (
               relatedBindings.map((binding) => (
@@ -214,7 +539,7 @@ function AssetInspector({
           </div>
         </InspectorSection>
 
-        <InspectorSection title="Checkpoint">
+        <InspectorSection title="File Snapshot">
           <DetailRows
             rows={[
               ["Exists", String(asset.checkpoint?.exists ?? false)],
@@ -225,7 +550,7 @@ function AssetInspector({
           />
         </InspectorSection>
 
-        <InspectorSection title="Provenance">
+        <InspectorSection title="Source Trace">
           <DetailRows
             rows={[
               ["Model", asset.provenance?.model ?? "unknown"],
@@ -235,7 +560,7 @@ function AssetInspector({
           />
         </InspectorSection>
 
-        <InspectorSection title="Related Functions">
+        <InspectorSection title="Related Workflow Steps">
           <div className="inline-pills">
             {relatedFunctions.length ? (
               relatedFunctions.map((fn) => (
@@ -254,7 +579,7 @@ function AssetInspector({
           </div>
         </InspectorSection>
 
-        <InspectorSection title="Related WorkOrders">
+        <InspectorSection title="Related Work Items">
           <div className="inline-pills">
             {relatedWorkorders.length ? (
               relatedWorkorders.map((workorder) => (
@@ -265,6 +590,429 @@ function AssetInspector({
                   onClick={() => onSelectSelection({ kind: "workorder", id: workorder.id })}
                 >
                   {workorder.label}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function AssetFamilyInspector({
+  assetFamily,
+}: {
+  assetFamily: AssetFamilyView | null;
+}) {
+  if (!assetFamily) {
+    return <MissingInspector noun={labelSelectionKind("asset_family").toLowerCase()} />;
+  }
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("asset_family")}
+        title={assetFamily.name}
+        subtitle={assetFamily.description}
+        tone={catalogTone(assetFamily.realization_status)}
+      />
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Family Role", assetFamily.lifecycle_role],
+            ["Realization", assetFamily.realization_status],
+            ["Representative Types", String(assetFamily.representative_asset_types.length)],
+          ]}
+        />
+        <InspectorSection title="Representative Artifact Types">
+          <div className="inline-pills">
+            {assetFamily.representative_asset_types.length ? (
+              assetFamily.representative_asset_types.map((assetType) => (
+                <span key={assetType} className="status-chip pending">
+                  {assetType}
+                </span>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function CollectionInspector({
+  collection,
+  onSelectSelection,
+}: {
+  collection: CollectionView | null;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!collection) {
+    return <MissingInspector noun={labelSelectionKind("collection").toLowerCase()} />;
+  }
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("collection")}
+        title={collection.name}
+        subtitle="Published project-model artifact collection."
+        tone="attention"
+      />
+      <div className="inspector-stack">
+        <DetailRows rows={[["Artifacts", String(collection.assets.length)]]} />
+        <InspectorSection title="Artifacts">
+          <div className="inline-pills">
+            {collection.assets.length ? (
+              collection.assets.map((asset) => (
+                <button
+                  key={asset.asset_id}
+                  type="button"
+                  className="status-chip converged"
+                  onClick={() => onSelectSelection({ kind: "asset", id: asset.asset_id })}
+                >
+                  {asset.asset_id}
+                </button>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function AmbiguityInspector({
+  ambiguity,
+  world,
+  onSelectSelection,
+}: {
+  ambiguity: AmbiguityEntryView | null;
+  world: ManagerWorld;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!ambiguity) {
+    return <MissingInspector noun={labelSelectionKind("ambiguity").toLowerCase()} />;
+  }
+
+  const presented = presentAmbiguity(ambiguity);
+
+  return (
+    <aside className="panel panel--governance inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("ambiguity")}
+        title={ambiguity.ambiguity_id}
+        subtitle={presented.summary}
+        tone={domainTone(ambiguity)}
+      />
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Type", presented.classificationLabel],
+            ["Posture", ambiguity.governance_posture],
+            ["Policy Action", ambiguity.policy_action ?? "unknown"],
+            ["Status", presented.statusLabel],
+            ["Blocking", String(Boolean(ambiguity.blocking))],
+            ["Hard Stop", String(Boolean(ambiguity.hard_stop))],
+            ["Required Capability", presented.capabilityLabel ?? "none published"],
+            ["Risk Appetite", ambiguity.risk_appetite ?? "unknown"],
+          ]}
+        />
+
+        <InspectorSection title="Recommended Next Step">
+          <div className="odd-card">
+            <span className="panel__eyebrow">Guidance</span>
+            <strong>{ambiguity.next_lawful_action}</strong>
+            <p>{presented.summary}</p>
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="How To Clear It">
+          <DetailRows
+            rows={[
+              ["Current Resolution", ambiguity.current_resolution || "none published"],
+              ["Decision Basis", ambiguity.decision_basis || "none published"],
+              [
+                "Expected Next Workflow Step",
+                describeCanonicalTerm(ambiguity.expected_resolving_edge, "none published"),
+              ],
+            ]}
+          />
+          {ambiguity.expected_resolving_edge ? (
+            <div className="inline-pills">
+              <button
+                type="button"
+                className="status-chip active"
+                  onClick={() =>
+                    onSelectSelection(resolveEdgeSelectionForInspector(world, ambiguity.expected_resolving_edge))
+                  }
+                >
+                  open next workflow step
+                </button>
+              </div>
+            ) : null}
+        </InspectorSection>
+
+        <InspectorSection title="Competing Readings">
+          <div className="list-stack">
+            {ambiguity.competing_interpretations.length ? (
+              ambiguity.competing_interpretations.map((item) => (
+                <div key={item} className="odd-card">
+                  <strong>{item}</strong>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">
+                <strong>No competing interpretations published.</strong>
+                <p>The current ambiguity payload does not carry alternative readings.</p>
+              </div>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Affected Artifacts">
+          <div className="inline-pills">
+            {ambiguity.affected_assets.length ? (
+              ambiguity.affected_assets.map((assetId) => {
+                const known = world.domain.assets.some((asset) => asset.asset_id === assetId);
+                return known ? (
+                  <button
+                    key={assetId}
+                    type="button"
+                    className="status-chip pending"
+                    onClick={() => onSelectSelection({ kind: "asset", id: assetId })}
+                  >
+                    {assetId}
+                  </button>
+                ) : (
+                  <span key={assetId} className="status-chip attention">
+                    {assetId}
+                  </span>
+                );
+              })
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+
+        <InspectorSection title="Evidence and Rules">
+          <DetailRows
+            rows={[
+              ["Decision Owner", ambiguity.decision_owner || "unknown"],
+              ["Evidence Refs", ambiguity.evidence_refs.join(", ") || "none"],
+              ["Invariant Refs", ambiguity.invariant_refs.join(", ") || "none"],
+              ["Decision Events", ambiguity.decision_event_refs.join(", ") || "none"],
+            ]}
+          />
+        </InspectorSection>
+
+        <InspectorSection title="Raw State">
+          <DetailRows rows={objectRows(ambiguity.observed_state)} />
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function EdgeContractInspector({
+  edgeContract,
+  world,
+  onSelectSelection,
+}: {
+  edgeContract: EdgeContractView | null;
+  world: ManagerWorld;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!edgeContract) {
+    return <MissingInspector noun={labelSelectionKind("edge_contract").toLowerCase()} />;
+  }
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow={labelSelectionKind("edge_contract")}
+        title={edgeContract.name}
+        subtitle={edgeContract.description}
+        tone={catalogTone(edgeContract.realization_status)}
+      />
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Target Artifact Family", edgeContract.target_asset_family],
+            ["Delivery Role", edgeContract.configured_fp_role],
+            ["Output Report", edgeContract.work_report_contract],
+            ["Realization", edgeContract.realization_status],
+          ]}
+        />
+        <InspectorSection title="Source Artifact Families">
+          <div className="inline-pills">
+            {edgeContract.source_asset_families.map((family) => (
+              <button
+                key={family}
+                type="button"
+                className="status-chip pending"
+                onClick={() => onSelectSelection({ kind: "asset_family", id: family })}
+              >
+                {family}
+              </button>
+            ))}
+          </div>
+        </InspectorSection>
+        <InspectorSection title="Deterministic Checks">
+          <DetailRows
+            rows={[
+              ["Preflight", edgeContract.preflight_fd_layers.join(", ") || "none"],
+              ["Postflight", edgeContract.postflight_fd_layers.join(", ") || "none"],
+            ]}
+          />
+        </InspectorSection>
+        <InspectorSection title="Representative Workflow Steps">
+          <div className="inline-pills">
+            {edgeContract.representative_functions.length ? (
+              edgeContract.representative_functions.map((item) => {
+                const selection = resolveFunctionSelection(world, item);
+                return selection ? (
+                  <button
+                    key={item}
+                    type="button"
+                    className="status-chip active"
+                    onClick={() => onSelectSelection(selection)}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span key={item} className="status-chip attention">
+                    {item}
+                  </span>
+                );
+              })
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function ProgramInspector({
+  program,
+  world,
+  onSelectSelection,
+}: {
+  program: ProgramView | null;
+  world: ManagerWorld;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!program) {
+    return <MissingInspector noun="program" />;
+  }
+
+  return (
+    <aside className="panel panel--dispatch inspector-panel">
+      <InspectorHero
+        eyebrow="Program"
+        title={program.name}
+        subtitle={program.intent}
+        tone="active"
+      />
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Kind", program.kind],
+            ["Steps", String(program.steps.length)],
+            ["Outputs", program.outputs.join(", ") || "none"],
+          ]}
+        />
+        <InspectorSection title="Steps">
+          <div className="inline-pills">
+            {program.steps.map((step) => {
+              const selection = resolveFunctionSelection(world, step);
+              return selection ? (
+                <button
+                  key={step}
+                  type="button"
+                  className="status-chip active"
+                  onClick={() => onSelectSelection(selection)}
+                >
+                  {step}
+                </button>
+              ) : (
+                <span key={step} className="status-chip attention">
+                  {step}
+                </span>
+              );
+            })}
+          </div>
+        </InspectorSection>
+        <InspectorSection title="Outputs">
+          <div className="inline-pills">
+            {program.outputs.length ? (
+              program.outputs.map((output) => (
+                <span key={output} className="status-chip converged">
+                  {output}
+                </span>
+              ))
+            ) : (
+              <span className="status-chip attention">none</span>
+            )}
+          </div>
+        </InspectorSection>
+      </div>
+    </aside>
+  );
+}
+
+function WorkActTypeInspector({
+  workActType,
+  onSelectSelection,
+}: {
+  workActType: WorkActTypeView | null;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!workActType) {
+    return <MissingInspector noun="work act type" />;
+  }
+
+  return (
+    <aside className="panel panel--context inspector-panel">
+      <InspectorHero
+        eyebrow="Work Act Type"
+        title={workActType.name}
+        subtitle={workActType.description}
+        tone={catalogTone(workActType.realization_status)}
+      />
+      <div className="inspector-stack">
+        <DetailRows
+          rows={[
+            ["Mutates Workspace", String(workActType.mutates_workspace)],
+            [
+              "Produces Governed Evidence",
+              String(workActType.produces_governed_evidence),
+            ],
+            ["Realization", workActType.realization_status],
+          ]}
+        />
+        <InspectorSection title="Typical Asset Families">
+          <div className="inline-pills">
+            {workActType.typical_asset_families.length ? (
+              workActType.typical_asset_families.map((family) => (
+                <button
+                  key={family}
+                  type="button"
+                  className="status-chip pending"
+                  onClick={() => onSelectSelection({ kind: "asset_family", id: family })}
+                >
+                  {family}
                 </button>
               ))
             ) : (
@@ -766,6 +1514,7 @@ function RuntimeAggregateInspector({
   title,
   description,
   payload,
+  onSelectSelection,
 }: {
   eyebrow: string;
   title: string;
@@ -777,20 +1526,232 @@ function RuntimeAggregateInspector({
     | FrameView
     | Record<string, unknown>
     | null;
+  onSelectSelection: (selection: Selection) => void;
 }) {
   if (!payload) {
     return <MissingInspector noun={eyebrow.toLowerCase()} />;
   }
 
   const tone = runtimeTone("status" in payload ? payload.status : null);
+  const rows = runtimeRows(payload);
+  const links = runtimeSelections(payload);
+  const childSteps =
+    "child_steps" in payload && Array.isArray(payload.child_steps) ? payload.child_steps : null;
 
   return (
     <aside className="panel panel--governance inspector-panel">
       <InspectorHero eyebrow={eyebrow} title={title} subtitle={description} tone={tone} />
       <div className="inspector-stack">
-        <pre>{JSON.stringify(payload, null, 2)}</pre>
+        <DetailRows rows={rows} />
+        {links.length ? (
+          <InspectorSection title="Runtime Links">
+            <div className="inline-pills">
+              {links.map((link) => (
+                <button
+                  key={`${link.selection.kind}:${link.selection.id}`}
+                  type="button"
+                  className={`status-chip ${link.tone}`}
+                  onClick={() => onSelectSelection(link.selection)}
+                >
+                  {link.label}
+                </button>
+              ))}
+            </div>
+          </InspectorSection>
+        ) : null}
+        {childSteps ? (
+          <InspectorSection title="Child Steps">
+            <div className="list-stack">
+              {childSteps.length ? (
+                childSteps.map((step) => (
+                  <div key={`${step.child_key}:${step.edge}`} className="odd-card">
+                    <span className="panel__eyebrow">{step.status}</span>
+                    <strong>{step.edge}</strong>
+                    <p>{step.target}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <strong>No child steps.</strong>
+                  <p>The current frame does not carry published child frontier steps.</p>
+                </div>
+              )}
+            </div>
+          </InspectorSection>
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+function domainTone(payload: Record<string, unknown>): "blocked" | "gated" | "active" | "attention" {
+  if (payload.blocking === true || payload.hard_stop === true) {
+    return "blocked";
+  }
+  if (payload.policy_action === "escalate_fh") {
+    return "gated";
+  }
+  if (payload.decision_status === "pending_capability") {
+    return "attention";
+  }
+  const realizationStatus = payload.realization_status;
+  if (typeof realizationStatus === "string" && realizationStatus.includes("active")) {
+    return "active";
+  }
+  return "attention";
+}
+
+function catalogTone(realizationStatus: string): "active" | "attention" {
+  return realizationStatus.includes("active") ? "active" : "attention";
+}
+
+function runtimeRows(
+  payload: RuntimeRunView | GraphCallView | ContinuationView | FrameView | Record<string, unknown>,
+): Array<[string, string]> {
+  const baseRows = objectRows(payload);
+  const preferred = [
+    "status",
+    "edge",
+    "graph_function_id",
+    "continuation_kind",
+    "parent_edge",
+    "job_id",
+    "run_id",
+    "call_id",
+    "frame_attempt_id",
+    "materialization_id",
+    "worker_id",
+    "selected_worker_id",
+    "selected_backend",
+    "role_id",
+    "failure_class",
+    "attempt_number",
+    "event_count",
+    "stack_depth",
+    "checkpoint_id",
+  ];
+  const preferredRows: Array<[string, string]> = [];
+  for (const key of preferred) {
+    if (!(key in payload)) {
+      continue;
+    }
+    const value = (payload as Record<string, unknown>)[key];
+    if (value == null || value === "") {
+      continue;
+    }
+    preferredRows.push([humanizeKey(key), valueToString(value)]);
+  }
+  return preferredRows.length ? preferredRows : baseRows;
+}
+
+function runtimeSelections(
+  payload: RuntimeRunView | GraphCallView | ContinuationView | FrameView | Record<string, unknown>,
+) {
+  const links: Array<{
+    label: string;
+    tone: "active" | "pending" | "gated";
+    selection: Selection;
+  }> = [];
+  const runId = stringField(payload, "run_id");
+  if (runId) {
+    links.push({ label: `run:${runId}`, tone: "active", selection: { kind: "run", id: runId } });
+  }
+  const callId = stringField(payload, "call_id");
+  if (callId) {
+    links.push({
+      label: `call:${callId}`,
+      tone: "pending",
+      selection: { kind: "graph_call", id: callId },
+    });
+  }
+  const continuationId = stringField(payload, "continuation_id");
+  if (continuationId) {
+    links.push({
+      label: `continuation:${continuationId}`,
+      tone: "gated",
+      selection: { kind: "continuation", id: continuationId },
+    });
+  }
+  const frameId = stringField(payload, "frame_attempt_id");
+  if (frameId) {
+    links.push({
+      label: `frame:${frameId}`,
+      tone: "pending",
+      selection: { kind: "frame", id: frameId },
+    });
+  }
+  return links;
+}
+
+function objectRows(payload: Record<string, unknown> | null | undefined): Array<[string, string]> {
+  if (!payload) {
+    return [["State", "none"]];
+  }
+  const rows = Object.entries(payload)
+    .slice(0, 8)
+    .map(([key, value]) => [key, valueToString(value)] as [string, string]);
+  return rows.length ? rows : [["State", "none"]];
+}
+
+function valueToString(value: unknown): string {
+  if (value == null) {
+    return "none";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.some((item) => typeof item === "object" && item !== null)) {
+      return JSON.stringify(value, null, 2);
+    }
+    return value.map((item) => valueToString(item)).join(", ") || "none";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function stringField(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+function humanizeKey(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function resolveFunctionSelection(world: ManagerWorld, id: string): Selection | null {
+  const fn = world.domain.functions.find((item) => item.id === id);
+  if (fn) {
+    return { kind: "function", id: fn.id };
+  }
+  const graphFunction = world.domain.graph_functions.find(
+    (item) => item.id === id || item.name === id,
+  );
+  if (graphFunction) {
+    return { kind: "graph_function", id: graphFunction.id };
+  }
+  const workorder = world.domain.workorders.find(
+    (item) => item.id === id || item.graph_function_name === id,
+  );
+  if (workorder) {
+    return { kind: "workorder", id: workorder.id };
+  }
+  return null;
+}
+
+function resolveEdgeSelectionForInspector(world: ManagerWorld, edge: string): Selection {
+  return (
+    resolveFunctionSelection(world, edge) ?? {
+      kind: "graph",
+      id: world.graph_set.graphs[0]?.id ?? "graph.bootstrap",
+    }
   );
 }
 
@@ -873,13 +1834,13 @@ function GraphInspector({
   onSelectSelection: (selection: Selection) => void;
 }) {
   if (!graph) {
-    return <MissingInspector noun="graph" />;
+    return <MissingInspector noun={labelSelectionKind("graph").toLowerCase()} />;
   }
 
   return (
     <aside className="panel panel--dispatch inspector-panel">
       <InspectorHero
-        eyebrow="Graph"
+        eyebrow={labelSelectionKind("graph")}
         title={graph.label}
         subtitle={selectedGraphId === graph.id ? "currently selected" : graph.derivation}
         tone={graph.status}
@@ -911,7 +1872,7 @@ function GraphInspector({
           </div>
         </InspectorSection>
 
-        <InspectorSection title="Published GraphFunctions">
+        <InspectorSection title="Published Workflow Programs">
           <div className="inline-pills">
             {graphFunctions.length ? (
               graphFunctions.map((graphFunction) => (
@@ -951,7 +1912,7 @@ function InspectorHero({
         <span className="panel__eyebrow">{eyebrow}</span>
         <h2>{title}</h2>
       </div>
-      <span className={`status-chip ${tone}`}>{tone}</span>
+      <span className={`status-chip ${tone}`}>{labelTone(tone)}</span>
       <p>{subtitle}</p>
     </div>
   );
@@ -975,12 +1936,62 @@ function InspectorSection({
 function DetailRows({ rows }: { rows: Array<[string, string]> }) {
   return (
     <div className="detail-rows">
-      {rows.map(([label, value]) => (
-        <div key={label} className="detail-rows__item">
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
+      {rows.map(([label, value]) => {
+        const presentation = presentStructuredText(value);
+        return (
+          <div key={label} className="detail-rows__item">
+            <span>{label}</span>
+            {presentation.kind === "plain" ? (
+              <strong>{presentation.text}</strong>
+            ) : (
+              <div className="detail-rows__formatted">
+                <MarkdownDocument content={presentation.content} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReferencePills({
+  title,
+  items,
+  tone,
+  onSelectSelection,
+}: {
+  title: string;
+  items: string[];
+  tone: "converged" | "pending" | "active" | "gated" | "blocked" | "attention";
+  onSelectSelection?: (selection: Selection) => void;
+}) {
+  const uniqueItems = [...new Set(items.filter((item) => item.trim().length > 0))];
+  return (
+    <div>
+      <span className="panel__eyebrow">{title}</span>
+      <div className="inline-pills">
+        {uniqueItems.length ? (
+          uniqueItems.slice(0, 10).map((item) =>
+            onSelectSelection ? (
+              <button
+                key={`${title}:${item}`}
+                type="button"
+                className={`status-chip ${tone}`}
+                onClick={() => onSelectSelection({ kind: "surface", id: item })}
+              >
+                {item}
+              </button>
+            ) : (
+              <span key={`${title}:${item}`} className={`status-chip ${tone}`}>
+                {item}
+              </span>
+            ),
+          )
+        ) : (
+          <span className="status-chip attention">none</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -997,16 +2008,22 @@ function MissingInspector({ noun }: { noun: string }) {
 }
 
 function selectionFromNode(
-  kind: "asset" | "function" | "binding",
+  kind:
+    | "requirement"
+    | "surface"
+    | "asset"
+    | "asset_family"
+    | "binding"
+    | "collection"
+    | "ambiguity"
+    | "edge_contract"
+    | "function"
+    | "program"
+    | "work_act_type"
+    | "workorder",
   id: string,
 ): Selection {
-  if (kind === "asset") {
-    return { kind: "asset", id };
-  }
-  if (kind === "binding") {
-    return { kind: "binding", id };
-  }
-  return { kind: "function", id };
+  return { kind, id };
 }
 
 function capitalize(value: string) {

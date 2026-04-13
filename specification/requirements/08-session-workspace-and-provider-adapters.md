@@ -90,3 +90,31 @@ Acceptance Criteria
   hardcoded into the generic session pool
 - transport and backend choices do not remove the product's control over
   lifecycle context, promotion, attribution, or replay
+
+### REQ-OM-SES-008 - Existing sessions can bootstrap room-capable participants
+
+The product shall let an existing session bootstrap a provider-backed room
+participant without losing ordinary shell usability.
+
+Acceptance Criteria
+- an existing session can launch a provider-backed participant for a selected
+  topic or room
+- bootstrap can be initiated from product controls rather than requiring manual
+  environment assembly
+- the launched participant remains attributable to the underlying session
+- the session remains a durable generic shell before and after the participant
+  process exits
+
+### REQ-OM-SES-009 - Stream injection is bootstrap-only for provider adapters
+
+The product shall limit terminal stream injection to one-shot bootstrap or
+operator-directed shell input rather than using it as the primary live-room
+delivery transport.
+
+Acceptance Criteria
+- a product control may inject a bounded launch command into a session to start
+  a provider adapter
+- ongoing room delivery and reply flow through the provider adapter boundary
+  rather than raw terminal stdin
+- the room model does not depend on shell output mirroring to determine whether
+  a participant received a room message

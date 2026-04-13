@@ -134,6 +134,7 @@ def validate_selection_surface(
         _graph_function_contract(function)
         for function in graph_functions
         if function.id not in callable_carrier_ids
+        if function.declarations.get("selection_visible", True) is not False
         if _graph_function_contract(function) in vector_contracts
         and _graph_function_contract(function) not in family_contracts
     }

@@ -1,7 +1,7 @@
 import {
   attachRecordToGBoardTopic,
   attachSessionToGBoardTopic,
-  createOrResumeGBoardTopic,
+  createGBoardTopic as persistGBoardTopic,
   loadGBoardRecords,
   loadGBoardTopics,
   createGBoardComment as persistGBoardComment,
@@ -10,6 +10,7 @@ import {
 import { roomConversationHistoryId } from "./conversation-history-service.mjs";
 import { loadGTermPoolState } from "./oddterm-pool-service.mjs";
 import { resolvePostedRoom } from "./odd-plugin-host.mjs";
+import { listOddChatParticipants } from "./oddchat-participant-service.mjs";
 import {
   appendLiveRoomMessage,
   loadLiveRoomMessages,
@@ -20,8 +21,25 @@ export function loadAgentConsoleState(workspaceRoot) {
   const liveMessages = loadLiveRoomMessages(workspaceRoot);
   const gboardRecords = loadGBoardRecords(workspaceRoot);
   const gboardTopics = loadGBoardTopics(workspaceRoot);
+  const participants = listOddChatParticipants(workspaceRoot, {
+    connectedOnly: true,
+  });
   const recordById = new Map(gboardRecords.map((record) => [record.id, record]));
-  const sessionById = new Map(gterm.sessions.map((session) => [session.id, session]));
+  const participantsBySessionId = new Map();
+  for (const participant of participants) {
+    const current = participantsBySessionId.get(participant.sessionId) ?? [];
+    current.push(participant);
+    participantsBySessionId.set(participant.sessionId, current);
+  }
+  const sessionById = new Map(
+    gterm.sessions.map((session) => [
+      session.id,
+      {
+        ...session,
+        participants: participantsBySessionId.get(session.id) ?? [],
+      },
+    ]),
+  );
   const gchatTopics = gboardTopics.map((topic) => ({
     id: topic.id,
     roomId: topic.roomId,
@@ -41,6 +59,7 @@ export function loadAgentConsoleState(workspaceRoot) {
     attachedSessions: topic.attachedSessionIds
       .map((sessionId) => sessionById.get(sessionId))
       .filter(Boolean),
+    participants: participants.filter((participant) => participant.roomId === topic.roomId),
     conversationHistoryId: roomConversationHistoryId(topic.roomId),
   }));
 
@@ -56,7 +75,10 @@ export function loadAgentConsoleState(workspaceRoot) {
       topics: gchatTopics,
       messages: gchatMessages,
     },
-    oddterm: gterm,
+    oddterm: {
+      ...gterm,
+      sessions: gterm.sessions.map((session) => sessionById.get(session.id) ?? session),
+    },
   };
 }
 
@@ -108,7 +130,7 @@ export function createGChatTopic(
   workspaceRoot,
   options = {},
 ) {
-  const topic = createOrResumeGBoardTopic(workspaceRoot, options);
+  const topic = persistGBoardTopic(workspaceRoot, options);
   return {
     ok: true,
     topic,

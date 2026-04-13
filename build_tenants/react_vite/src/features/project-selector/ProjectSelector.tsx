@@ -13,6 +13,7 @@ type ProjectSelectorProps = {
 };
 
 type SelectorTab = "recent" | "browse" | "manual";
+type BrowseMode = "folders" | "scan";
 
 const RECENT_WORKSPACES_KEY = "oman-recent-workspaces";
 const MAX_RECENT_WORKSPACES = 8;
@@ -57,6 +58,7 @@ export function ProjectSelector({
   const [tab, setTab] = useState<SelectorTab>("recent");
   const [recentWorkspaces, setRecentWorkspaces] = useState<WorkspaceReference[]>([]);
   const [browseRoot, setBrowseRoot] = useState(() => workspaceDraft || currentWorkspaceRoot);
+  const [browseMode, setBrowseMode] = useState<BrowseMode>("folders");
   const [scanResults, setScanResults] = useState<WorkspaceScanResult[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function ProjectSelector({
 
   useEffect(() => {
     setBrowseRoot(currentWorkspaceRoot);
+    setBrowseMode("folders");
     setScanResults([]);
     setScanError(null);
   }, [currentWorkspaceRoot]);
@@ -107,13 +110,17 @@ export function ProjectSelector({
     try {
       const discovered = await scanForOddWorkspaces(root);
       setScanResults(discovered);
+      setBrowseMode("scan");
     } catch (caught) {
       setScanError(caught instanceof Error ? caught.message : String(caught));
       setScanResults([]);
+      setBrowseMode("scan");
     } finally {
       setScanning(false);
     }
   }
+
+  const hasScanState = scanning || !!scanError || scanResults.length > 0;
 
   return (
     <div className="project-selector">
@@ -168,21 +175,92 @@ export function ProjectSelector({
 
       {tab === "browse" ? (
         <div className="project-selector__panel">
-          <FolderBrowser
-            path={browseRoot}
-            onSelectWorkspace={openWorkspace}
-            disabled={disabled}
-            onPathChange={(absolutePath) => {
-              setBrowseRoot(absolutePath);
-              setScanResults([]);
-              setScanError(null);
-            }}
-          />
+          <div className="project-selector__browse-mode" role="tablist" aria-label="Browse view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={browseMode === "folders"}
+              className={`project-selector__tab${browseMode === "folders" ? " is-active" : ""}`}
+              onClick={() => setBrowseMode("folders")}
+              disabled={disabled}
+            >
+              Folder Contents
+            </button>
+            {hasScanState ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={browseMode === "scan"}
+                className={`project-selector__tab${browseMode === "scan" ? " is-active" : ""}`}
+                onClick={() => setBrowseMode("scan")}
+                disabled={disabled}
+              >
+                {scanning ? "Scan Results" : `Scan Results${scanResults.length ? ` (${scanResults.length})` : ""}`}
+              </button>
+            ) : null}
+          </div>
+
+          {browseMode === "folders" ? (
+            <>
+              <div className="project-selector__browse-summary">
+                <strong>Browse to the folder you want to scan or open directly.</strong>
+                <p>The folder list shows only the current directory. Recursive scan results appear in a separate view.</p>
+              </div>
+              <FolderBrowser
+                path={browseRoot}
+                onSelectWorkspace={openWorkspace}
+                disabled={disabled}
+                onPathChange={(absolutePath) => {
+                  setBrowseRoot(absolutePath);
+                  setBrowseMode("folders");
+                  setScanResults([]);
+                  setScanError(null);
+                }}
+              />
+            </>
+          ) : (
+            <div className="project-selector__scan-results">
+              <div className="project-selector__browse-summary">
+                <strong>Managed workspaces found under {browseRoot}</strong>
+                <p>
+                  These are recursive scan results under the current browse root. Switch back to folder contents to change the scan root.
+                </p>
+              </div>
+              <div className="project-selector__list">
+                {scanning ? <div className="project-selector__empty">Scanning {browseRoot}…</div> : null}
+                {scanError ? <div className="project-selector__empty">{scanError}</div> : null}
+                {!scanning && !scanError && scanResults.length === 0 ? (
+                  <div className="project-selector__empty">
+                    No managed workspaces were found under this folder.
+                  </div>
+                ) : null}
+                {scanResults.map((entry) => (
+                  <button
+                    key={entry.path}
+                    type="button"
+                    className={`project-selector__workspace${entry.path === currentWorkspaceRoot ? " is-current" : ""}`}
+                    onClick={() => openWorkspace(entry.path)}
+                    disabled={disabled || scanning}
+                  >
+                    <span className="project-selector__workspace-name">{entry.name}</span>
+                    <span className="project-selector__workspace-path">{entry.markers.join(" · ")}</span>
+                    <span className="project-selector__workspace-path">{entry.path}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="shell__workspace-picker-actions">
             <button
               className="ghost"
               type="button"
-              onClick={() => setBrowseRoot(workspaceDraft || currentWorkspaceRoot)}
+              onClick={() => {
+                setBrowseRoot(workspaceDraft || currentWorkspaceRoot);
+                setBrowseMode("folders");
+                setScanResults([]);
+                setScanError(null);
+              }}
               disabled={disabled}
             >
               Reset Browse Root
@@ -192,30 +270,8 @@ export function ProjectSelector({
               onClick={() => void handleScan()}
               disabled={disabled || !browseRoot.trim()}
             >
-              Scan This Folder For ODD Workspaces
+              Scan Under This Folder
             </button>
-          </div>
-          <div className="project-selector__list">
-            {scanning ? <div className="project-selector__empty">Scanning {browseRoot}…</div> : null}
-            {scanError ? <div className="project-selector__empty">{scanError}</div> : null}
-            {!scanning && !scanError && scanResults.length === 0 ? (
-              <div className="project-selector__empty">
-                Browse to the folder you want, then scan it for ODD workspaces.
-              </div>
-            ) : null}
-            {scanResults.map((entry) => (
-              <button
-                key={entry.path}
-                type="button"
-                className={`project-selector__workspace${entry.path === currentWorkspaceRoot ? " is-current" : ""}`}
-                onClick={() => openWorkspace(entry.path)}
-                disabled={disabled || scanning}
-              >
-                <span className="project-selector__workspace-name">{entry.name}</span>
-                <span className="project-selector__workspace-path">{entry.markers.join(" · ")}</span>
-                <span className="project-selector__workspace-path">{entry.path}</span>
-              </button>
-            ))}
           </div>
         </div>
       ) : null}

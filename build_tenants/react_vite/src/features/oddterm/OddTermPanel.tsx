@@ -5,11 +5,13 @@ import "xterm/css/xterm.css";
 import {
   closeGTermSession,
   createGTermSession,
+  joinShellAgentTopic,
+  launchShellAgent,
   promoteGTermSession,
   renameGTermSession,
   selectGTermSession,
 } from "../../lib/collaboration";
-import type { GTermPoolState, TrainId } from "../../lib/collaboration";
+import type { GChatTopic, GTermPoolState, TrainId } from "../../lib/collaboration";
 
 type GTermPanelProps = {
   workspaceRoot: string;
@@ -17,11 +19,13 @@ type GTermPanelProps = {
   selectedStationId: string | null;
   selectedEdgeId: string | null;
   gterm: GTermPoolState | null;
+  topics: GChatTopic[];
   onRefreshConsole: () => Promise<void>;
 };
 
 type TerminalStatus = "connecting" | "connected" | "closed" | "error";
 type LayoutMode = "single" | "split-vertical" | "split-horizontal";
+type JoinProvider = "codex" | "claude";
 
 type TerminalEvent =
   | {
@@ -44,6 +48,29 @@ type TerminalEvent =
       type: "error";
       message: string;
     };
+
+const ODDTERM_TOPIC_SELECTIONS_STORAGE_KEY = "oman-oddterm-topic-selections";
+const ODDTERM_PROVIDER_SELECTIONS_STORAGE_KEY = "oman-oddterm-provider-selections";
+const ODDTERM_AGENT_PANEL_COLLAPSED_STORAGE_KEY = "oman-oddterm-agent-panel-collapsed";
+
+function readStoredMap(storageKey: string) {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const payload = JSON.parse(window.localStorage.getItem(storageKey) ?? "{}");
+    return payload && typeof payload === "object" ? payload : {};
+  } catch {
+    return {};
+  }
+}
+
+function inferJoinProvider(session: GTermPoolState["sessions"][number]): JoinProvider | null {
+  const provider = session.participants?.find(
+    (participant) => participant.provider === "codex" || participant.provider === "claude",
+  )?.provider;
+  return provider === "codex" || provider === "claude" ? provider : null;
+}
 
 function socketUrl(workspaceRoot: string, sessionId: string) {
   const url = new URL("/api/oddterm", window.location.origin);
@@ -83,6 +110,7 @@ export function OddTermPanel({
   selectedStationId,
   selectedEdgeId,
   gterm,
+  topics,
   onRefreshConsole,
 }: GTermPanelProps) {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
@@ -106,6 +134,18 @@ export function OddTermPanel({
     return window.localStorage.getItem("oman-oddterm-secondary");
   });
   const [creatingSession, setCreatingSession] = useState(false);
+  const [selectedTopicBySessionId, setSelectedTopicBySessionId] = useState<Record<string, string>>(() =>
+    readStoredMap(ODDTERM_TOPIC_SELECTIONS_STORAGE_KEY) as Record<string, string>,
+  );
+  const [selectedProviderBySessionId, setSelectedProviderBySessionId] = useState<
+    Record<string, JoinProvider>
+  >(() => readStoredMap(ODDTERM_PROVIDER_SELECTIONS_STORAGE_KEY) as Record<string, JoinProvider>);
+  const [collapsedAgentPanelBySessionId, setCollapsedAgentPanelBySessionId] = useState<
+    Record<string, boolean>
+  >(() => readStoredMap(ODDTERM_AGENT_PANEL_COLLAPSED_STORAGE_KEY) as Record<string, boolean>);
+  const [launchingAgentKey, setLaunchingAgentKey] = useState<string | null>(null);
+  const [joiningTopicKey, setJoiningTopicKey] = useState<string | null>(null);
+  const [agentActionError, setAgentActionError] = useState<string | null>(null);
 
   const sessions = gterm?.sessions ?? [];
 
@@ -174,6 +214,36 @@ export function OddTermPanel({
   }, [secondarySession?.id]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      ODDTERM_TOPIC_SELECTIONS_STORAGE_KEY,
+      JSON.stringify(selectedTopicBySessionId),
+    );
+  }, [selectedTopicBySessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      ODDTERM_PROVIDER_SELECTIONS_STORAGE_KEY,
+      JSON.stringify(selectedProviderBySessionId),
+    );
+  }, [selectedProviderBySessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      ODDTERM_AGENT_PANEL_COLLAPSED_STORAGE_KEY,
+      JSON.stringify(collapsedAgentPanelBySessionId),
+    );
+  }, [collapsedAgentPanelBySessionId]);
+
+  useEffect(() => {
     if (!secondaryOptions.length) {
       setSecondarySessionId(null);
       return;
@@ -186,6 +256,28 @@ export function OddTermPanel({
     });
   }, [secondaryOptions]);
 
+  useEffect(() => {
+    const availableSessionIds = new Set(sessions.map((session) => session.id));
+    const availableTopicIds = new Set(topics.map((topic) => topic.id));
+
+    setSelectedTopicBySessionId((current) => {
+      const nextEntries = Object.entries(current).filter(
+        ([sessionId, topicId]) => availableSessionIds.has(sessionId) && availableTopicIds.has(topicId),
+      );
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+
+    setSelectedProviderBySessionId((current) => {
+      const nextEntries = Object.entries(current).filter(([sessionId]) => availableSessionIds.has(sessionId));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+
+    setCollapsedAgentPanelBySessionId((current) => {
+      const nextEntries = Object.entries(current).filter(([sessionId]) => availableSessionIds.has(sessionId));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+  }, [sessions, topics]);
+
   async function handleCreateSession() {
     if (creatingSession) {
       return;
@@ -197,26 +289,77 @@ export function OddTermPanel({
         stationId: selectedStationId,
         edgeId: selectedEdgeId,
       });
+      await selectGTermSession(workspaceRoot, created.session.id);
+      await onRefreshConsole();
       if (layoutMode === "single" || !primarySessionId) {
         setPrimarySessionId(created.session.id);
       } else if (!secondarySessionId || secondarySessionId === primarySessionId) {
         setSecondarySessionId(created.session.id);
       }
       setActiveSessionId(created.session.id);
-      await onRefreshConsole();
     } finally {
       setCreatingSession(false);
     }
   }
 
-  useEffect(() => {
-    if (!gterm || creatingSession) {
-      return;
+  function handleSelectTopic(sessionId: string, topicId: string | null) {
+    setSelectedTopicBySessionId((current) => {
+      if (!topicId) {
+        const { [sessionId]: _removed, ...rest } = current;
+        return rest;
+      }
+      return {
+        ...current,
+        [sessionId]: topicId,
+      };
+    });
+  }
+
+  async function handleLaunchAgent(sessionId: string, provider: JoinProvider) {
+    const launchKey = `${provider}:${sessionId}`;
+    setLaunchingAgentKey(launchKey);
+    setAgentActionError(null);
+    setSelectedProviderBySessionId((current) => ({
+      ...current,
+      [sessionId]: provider,
+    }));
+    try {
+      await launchShellAgent(workspaceRoot, {
+        sessionId,
+        provider,
+      });
+      await onRefreshConsole();
+    } catch (caught) {
+      setAgentActionError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setLaunchingAgentKey(null);
     }
-    if (gterm.sessions.length === 0) {
-      void handleCreateSession();
+  }
+
+  function handleToggleAgentPanel(sessionId: string) {
+    setCollapsedAgentPanelBySessionId((current) => ({
+      ...current,
+      [sessionId]: !(current[sessionId] ?? true),
+    }));
+  }
+
+  async function handleJoinTopic(sessionId: string, topicId: string, provider: JoinProvider) {
+    const joinKey = `${provider}:${sessionId}:${topicId}`;
+    setJoiningTopicKey(joinKey);
+    setAgentActionError(null);
+    try {
+      await joinShellAgentTopic(workspaceRoot, {
+        sessionId,
+        topicId,
+        provider,
+      });
+      await onRefreshConsole();
+    } catch (caught) {
+      setAgentActionError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setJoiningTopicKey(null);
     }
-  }, [gterm, creatingSession, workspaceRoot]);
+  }
 
   const visibleSessions =
     layoutMode === "single"
@@ -228,7 +371,7 @@ export function OddTermPanel({
   return (
     <div className="agent-console__surface agent-console__surface--terminal">
       <div className="agent-console__terminal-workspace-bar">
-        <div className="agent-console__terminal-session-list" role="tablist" aria-label="OddTerm sessions">
+        <div className="agent-console__terminal-session-list" role="tablist" aria-label="Local shell sessions">
           {sessions.map((session) => (
             <button
               key={session.id}
@@ -247,11 +390,11 @@ export function OddTermPanel({
             </button>
           ))}
           <button type="button" className="ghost agent-console__new-shell" onClick={() => void handleCreateSession()}>
-            {creatingSession ? "Creating..." : "+ New OddTerm"}
+            {creatingSession ? "Creating..." : "+ New Local Shell"}
           </button>
         </div>
         <div className="agent-console__terminal-workspace-controls">
-          <div className="agent-console__layout-toggle" role="tablist" aria-label="OddTerm layout">
+          <div className="agent-console__layout-toggle" role="tablist" aria-label="Local shell layout">
             <button
               type="button"
               className={`agent-console__layout-button${layoutMode === "single" ? " is-active" : ""}`}
@@ -277,7 +420,7 @@ export function OddTermPanel({
 
           {layoutMode !== "single" && secondaryOptions.length ? (
             <label className="agent-console__secondary-picker">
-              <span>Second OddTerm</span>
+              <span>Second Local Shell</span>
               <select
                 value={secondarySession?.id ?? ""}
                 onChange={(event) => setSecondarySessionId(event.target.value || null)}
@@ -301,6 +444,8 @@ export function OddTermPanel({
         </div>
       </div>
 
+      {agentActionError ? <p className="agent-console__error">{agentActionError}</p> : null}
+
       <div className={`agent-console__terminal-layout agent-console__terminal-layout--${layoutMode}`}>
         {visibleSessions.length ? (
           visibleSessions.map((session, index) => (
@@ -319,15 +464,28 @@ export function OddTermPanel({
               onSetSecondarySessionId={setSecondarySessionId}
               onSetActiveSessionId={setActiveSessionId}
               onActivate={() => setActiveSessionId(session.id)}
+              topics={topics}
+              selectedTopicId={selectedTopicBySessionId[session.id] ?? null}
+              selectedProvider={
+                selectedProviderBySessionId[session.id] ?? inferJoinProvider(session) ?? "codex"
+              }
+              providerReady={Boolean(selectedProviderBySessionId[session.id] ?? inferJoinProvider(session))}
+              agentPanelCollapsed={collapsedAgentPanelBySessionId[session.id] ?? true}
+              launchingAgentKey={launchingAgentKey}
+              joiningTopicKey={joiningTopicKey}
+              onSelectTopic={handleSelectTopic}
+              onLaunchAgent={handleLaunchAgent}
+              onJoinTopic={handleJoinTopic}
+              onToggleAgentPanel={handleToggleAgentPanel}
               onRefreshConsole={onRefreshConsole}
             />
           ))
         ) : (
           <div className="agent-console__terminal-shell">
             <div className="agent-console__terminal-empty">
-              <p className="muted">No oddterm is attached yet.</p>
+              <p className="muted">No local shell is open yet.</p>
               <button type="button" onClick={() => void handleCreateSession()} disabled={creatingSession}>
-                {creatingSession ? "Creating..." : "Create First OddTerm"}
+                {creatingSession ? "Creating..." : "Create First Local Shell"}
               </button>
             </div>
           </div>
@@ -336,7 +494,7 @@ export function OddTermPanel({
         {layoutMode !== "single" && !secondarySession ? (
           <div className="agent-console__terminal-shell agent-console__terminal-shell--placeholder">
             <div className="agent-console__terminal-empty">
-              <p className="muted">Create or select another oddterm to fill the split view.</p>
+              <p className="muted">Create or select another local shell to fill the split view.</p>
             </div>
           </div>
         ) : null}
@@ -359,6 +517,17 @@ type TerminalSessionPaneProps = {
   onSetSecondarySessionId: (sessionId: string | null) => void;
   onSetActiveSessionId: (sessionId: string | null) => void;
   onActivate: () => void;
+  topics: GChatTopic[];
+  selectedTopicId: string | null;
+  selectedProvider: JoinProvider;
+  providerReady: boolean;
+  agentPanelCollapsed: boolean;
+  launchingAgentKey: string | null;
+  joiningTopicKey: string | null;
+  onSelectTopic: (sessionId: string, topicId: string | null) => void;
+  onLaunchAgent: (sessionId: string, provider: JoinProvider) => Promise<void>;
+  onJoinTopic: (sessionId: string, topicId: string, provider: JoinProvider) => Promise<void>;
+  onToggleAgentPanel: (sessionId: string) => void;
   onRefreshConsole: () => Promise<void>;
 };
 
@@ -376,6 +545,17 @@ function TerminalSessionPane({
   onSetSecondarySessionId,
   onSetActiveSessionId,
   onActivate,
+  topics,
+  selectedTopicId,
+  selectedProvider,
+  providerReady,
+  agentPanelCollapsed,
+  launchingAgentKey,
+  joiningTopicKey,
+  onSelectTopic,
+  onLaunchAgent,
+  onJoinTopic,
+  onToggleAgentPanel,
   onRefreshConsole,
 }: TerminalSessionPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -397,6 +577,14 @@ function TerminalSessionPane({
   const [promotionState, setPromotionState] = useState<"idle" | "saved" | "error">("idle");
   const [renaming, setRenaming] = useState(false);
   const [closing, setClosing] = useState(false);
+  const activeTopic = topics.find((topic) => topic.id === selectedTopicId) ?? topics[0] ?? null;
+  const sessionParticipants = session.participants ?? [];
+  const joinedParticipantsForTopic = activeTopic
+    ? sessionParticipants.filter((participant) => participant.topicId === activeTopic.id)
+    : [];
+  const selectedProviderJoined = joinedParticipantsForTopic.some(
+    (participant) => participant.provider === selectedProvider && participant.status === "connected",
+  );
 
   function focusTerminal() {
     terminalRef.current?.focus();
@@ -558,9 +746,14 @@ function TerminalSessionPane({
             {sessionMeta.backend ? ` · ${sessionMeta.backend}` : ""}
           </span>
         ) : null}
+        {session.participants?.length ? (
+          <span className="agent-console__terminal-meta">
+            {session.participants.map((participant) => participant.participantLabel).join(", ")}
+          </span>
+        ) : null}
         <button
           type="button"
-          className="ghost"
+          className="ghost agent-console__terminal-action"
           onClick={(event) => {
             event.stopPropagation();
             if (status === "closed") {
@@ -571,29 +764,29 @@ function TerminalSessionPane({
                   edgeId: session.attachedEdgeId ?? selectedEdgeId,
                   label: session.label,
                 });
+                await selectGTermSession(workspaceRoot, created.session.id);
+                await onRefreshConsole();
                 if (layoutMode === "single" || primarySessionId === session.id) {
                   onSetPrimarySessionId(created.session.id);
                 } else if (secondarySessionId === session.id) {
                   onSetSecondarySessionId(created.session.id);
                 }
                 onSetActiveSessionId(created.session.id);
-                await selectGTermSession(workspaceRoot, created.session.id);
-                await onRefreshConsole();
               })();
               return;
             }
             setInstanceKey((current) => current + 1);
           }}
         >
-          {status === "closed" ? "New Live OddTerm" : "Reconnect"}
+          {status === "closed" ? "New Live Shell" : "Reconnect"}
         </button>
         <button
           type="button"
-          className="ghost"
+          className="ghost agent-console__terminal-action"
           disabled={renaming}
           onClick={async (event) => {
             event.stopPropagation();
-            const nextLabel = window.prompt("Rename oddterm", session.label);
+            const nextLabel = window.prompt("Rename local shell", session.label);
             if (!nextLabel || nextLabel.trim() === session.label) {
               return;
             }
@@ -610,7 +803,7 @@ function TerminalSessionPane({
         </button>
         <button
           type="button"
-          className="ghost"
+          className="ghost agent-console__terminal-action"
           disabled={promoting}
           onClick={async (event) => {
             event.stopPropagation();
@@ -636,7 +829,17 @@ function TerminalSessionPane({
         </button>
         <button
           type="button"
-          className="ghost"
+          className="ghost agent-console__terminal-action"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleAgentPanel(session.id);
+          }}
+        >
+          {agentPanelCollapsed ? "Show Agents" : "Hide Agents"}
+        </button>
+        <button
+          type="button"
+          className="ghost agent-console__terminal-action"
           disabled={closing}
           onClick={async (event) => {
             event.stopPropagation();
@@ -657,10 +860,112 @@ function TerminalSessionPane({
         </button>
       </div>
 
+      {!agentPanelCollapsed ? (
+        <div className="agent-console__terminal-context">
+          <div className="agent-console__terminal-context-header">
+            <p className="muted agent-console__terminal-context-copy">
+              Launch an agent in this shell, then join a topic when ready.
+            </p>
+            <div className="agent-console__terminal-context-status">
+              {providerReady ? (
+                <span className="summary-pill">
+                  As {selectedProvider === "claude" ? "Claude" : "Codex"}
+                </span>
+              ) : (
+                <span className="muted">Launch Codex or Claude first.</span>
+              )}
+              {joinedParticipantsForTopic.length ? (
+                <div className="agent-console__resource-chip-list">
+                  {joinedParticipantsForTopic.map((participant) => (
+                    <span key={participant.id} className="summary-pill">
+                      {participant.participantLabel} · {participant.status}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="agent-console__terminal-context-row agent-console__terminal-context-row--compact">
+            <label className="agent-console__terminal-picker agent-console__terminal-picker--topic">
+              <span className="panel__eyebrow">Topic</span>
+              <select
+                className="agent-console__select"
+                value={activeTopic?.id ?? ""}
+                onChange={(event) => onSelectTopic(session.id, event.target.value || null)}
+                onClick={(event) => event.stopPropagation()}
+                disabled={!topics.length}
+              >
+                <option value="">{topics.length ? "Select topic…" : "No topics yet"}</option>
+                {topics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="agent-console__resource-actions agent-console__resource-actions--terminal">
+              <button
+                type="button"
+                className="ghost agent-console__terminal-action"
+                disabled={session.status !== "live" || launchingAgentKey !== null}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onLaunchAgent(session.id, "codex");
+                }}
+              >
+                {launchingAgentKey === `codex:${session.id}` ? "Launching Codex..." : "Launch Codex"}
+              </button>
+              <button
+                type="button"
+                className="ghost agent-console__terminal-action"
+                disabled={session.status !== "live" || launchingAgentKey !== null}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onLaunchAgent(session.id, "claude");
+                }}
+              >
+                {launchingAgentKey === `claude:${session.id}` ? "Launching Claude..." : "Launch Claude"}
+              </button>
+              <button
+                type="button"
+                className="agent-console__terminal-action"
+                disabled={
+                  session.status !== "live" ||
+                  !providerReady ||
+                  !activeTopic ||
+                  joiningTopicKey !== null ||
+                  selectedProviderJoined
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!activeTopic) {
+                    return;
+                  }
+                  void onJoinTopic(session.id, activeTopic.id, selectedProvider);
+                }}
+              >
+                {selectedProviderJoined
+                  ? `Joined ${selectedProvider === "claude" ? "Claude" : "Codex"}`
+                  : activeTopic && joiningTopicKey === `${selectedProvider}:${session.id}:${activeTopic.id}`
+                    ? `Joining ${selectedProvider === "claude" ? "Claude" : "Codex"}...`
+                    : "Join Topic"}
+              </button>
+            </div>
+          </div>
+
+          {!joinedParticipantsForTopic.length ? (
+            <p className="muted agent-console__terminal-context-note">
+              No shell participants are connected to this topic yet.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div
         ref={hostRef}
         className="agent-console__terminal-host"
-        aria-label={`Workspace oddterm ${session.label}`}
+        aria-label={`Workspace local shell ${session.label}`}
         tabIndex={0}
         onClick={focusTerminal}
         onMouseDown={() => {

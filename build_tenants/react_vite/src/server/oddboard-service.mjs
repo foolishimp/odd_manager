@@ -418,7 +418,7 @@ function matchingTopic(topics, context) {
   );
 }
 
-export function createOrResumeGBoardTopic(
+export function createGBoardTopic(
   workspaceRoot,
   {
     title = null,
@@ -429,47 +429,12 @@ export function createOrResumeGBoardTopic(
   } = {},
 ) {
   const records = loadGBoardRecords(workspaceRoot);
-  const topics = loadGBoardTopics(workspaceRoot);
   const sourceRecord = sourceRecordId ? records.find((record) => record.id === sourceRecordId) ?? null : null;
   const context = sourceRecord
     ? topicContextFromRecord(workspaceRoot, sourceRecord)
     : topicContextFromSelection({ title, selectedTrainId, stationId, edgeId });
 
-  const existing = matchingTopic(topics, context);
   const now = new Date().toISOString();
-
-  if (existing) {
-    const resumed = {
-      ...existing,
-      updatedAt: now,
-      selectedTrainId: selectedTrainId ?? existing.selectedTrainId ?? null,
-      stationId: stationId ?? existing.stationId ?? null,
-      edgeId: edgeId ?? existing.edgeId ?? null,
-      attachedRecordIds:
-        sourceRecord && !existing.attachedRecordIds.includes(sourceRecord.id)
-          ? [...existing.attachedRecordIds, sourceRecord.id]
-          : existing.attachedRecordIds,
-    };
-    writeTopic(workspaceRoot, resumed);
-    appendLiveRoomMessage(workspaceRoot, {
-      roomId: resumed.roomId,
-      senderId: "system",
-      senderLabel: "OddBoard",
-      title: `Resumed topic: ${resumed.label}`,
-      body: `The topic "${resumed.label}" is active again over ${resumed.assetLabel ?? "workspace context"}.`,
-      kind: "system",
-      source: "live",
-      selectedTrainId: resumed.selectedTrainId,
-      stationId: resumed.stationId,
-      edgeId: resumed.edgeId,
-    });
-    emitAgentConsoleEvent(workspaceRoot, {
-      kind: "topic-resumed",
-      topicId: resumed.id,
-      roomId: resumed.roomId,
-    });
-    return resumed;
-  }
 
   const id = `topic_${timestampStamp()}_${randomUUID().slice(0, 8)}`;
   const topic = {
@@ -531,6 +496,8 @@ export function createOrResumeGBoardTopic(
 
   return topic;
 }
+
+export const createOrResumeGBoardTopic = createGBoardTopic;
 
 export function attachRecordToGBoardTopic(
   workspaceRoot,

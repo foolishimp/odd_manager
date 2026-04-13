@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   attachGChatTopicRecord,
-  attachGChatTopicSession,
   createGBoardTopic,
-  createGTermSession,
   postGChatMessage,
 } from "../../lib/collaboration";
 import type {
@@ -15,15 +13,17 @@ import type {
   TrainId,
 } from "../../lib/collaboration";
 import { MarkdownDocument } from "../../components/MarkdownDocument";
+import { renderContentByFormat } from "../../lib/textPresentation";
 
 type ConsoleSurface = "oddboard" | "oddchat";
 type GBoardBrowserMode = "recent" | "browse";
 type GBoardSourceFilter = "all" | GBoardRecordSource;
 type GBoardMetadataFilter = "all" | "other" | string;
-type RoomAction = "topic" | "attach-record" | "attach-session" | "new-session" | null;
-type ExplorerSectionId = "topics" | "workers" | "assets";
+type RoomAction = "topic" | "attach-record" | null;
+type ExplorerSectionId = "topics" | "assets";
 
 const AGENT_CONSOLE_COLLAPSED_STORAGE_KEY = "oman-oddboard-collapsed";
+const ODDCHAT_LIVE_SCROLL_STORAGE_KEY = "oman-oddchat-live-scroll";
 const GBOARD_RECENT_LIMIT = 28;
 
 const GBOARD_SOURCE_OPTIONS: Array<{ id: GBoardSourceFilter; label: string }> = [
@@ -87,13 +87,7 @@ function roomMessages(state: AgentConsoleState | null, roomId: string) {
 }
 
 function renderableRecordContent(record: GBoardRecord) {
-  if (record.format === "yaml") {
-    return `\`\`\`yaml\n${String(record.content ?? "").trimEnd()}\n\`\`\`\n`;
-  }
-  if (record.format === "text") {
-    return `\`\`\`text\n${String(record.content ?? "").trimEnd()}\n\`\`\`\n`;
-  }
-  return record.content;
+  return renderContentByFormat(record.content, record.format);
 }
 
 function compactTopicLabel(topic: GChatTopic) {
@@ -113,11 +107,6 @@ function topicSessionRoomId(topicId: string, sessionId: string) {
 
 function nextSelectionId<T extends { id: string }>(items: T[], currentId: string | null) {
   return items.some((item) => item.id === currentId) ? currentId : items[0]?.id ?? null;
-}
-
-function topicShellLabel(topic: GChatTopic) {
-  const compact = topic.label.trim().replace(/\s+/g, " ");
-  return compact.length > 32 ? compact.slice(0, 32).trim() : compact || "topic-shell";
 }
 
 export function OddBoardWidget({
@@ -146,20 +135,25 @@ export function OddBoardWidget({
   const [draft, setDraft] = useState("");
   const [newTopicTitle, setNewTopicTitle] = useState("");
   const [selectedAssetToAttachId, setSelectedAssetToAttachId] = useState<string | null>(null);
-  const [selectedSessionToAttachId, setSelectedSessionToAttachId] = useState<string | null>(null);
   const [selectedSessionChannelId, setSelectedSessionChannelId] = useState<string | null>(null);
+  const [liveRoomScroll, setLiveRoomScroll] = useState(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+    const stored = window.localStorage.getItem(ODDCHAT_LIVE_SCROLL_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
+  });
   const [collapsedSections, setCollapsedSections] = useState<Record<ExplorerSectionId, boolean>>({
     topics: false,
-    workers: false,
     assets: false,
   });
   const [sending, setSending] = useState(false);
   const [roomAction, setRoomAction] = useState<RoomAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const roomMessagesRef = useRef<HTMLDivElement | null>(null);
 
   const allRecords = consoleState?.oddboard.records ?? [];
   const allTopics = consoleState?.oddchat.topics ?? [];
-  const allSessions = consoleState?.oddterm.sessions ?? [];
 
   const sourceScopedRecords = useMemo(() => {
     if (gboardMode === "recent") {
@@ -233,6 +227,7 @@ export function OddBoardWidget({
     () => (activeRoomId ? roomMessages(consoleState, activeRoomId) : []),
     [consoleState, activeRoomId],
   );
+  const lastActiveMessageId = activeMessages[activeMessages.length - 1]?.id ?? null;
   const availableAssets = useMemo(() => {
     if (!activeTopic) {
       return [];
@@ -240,13 +235,6 @@ export function OddBoardWidget({
     const attachedIds = new Set(activeTopic.attachedRecords.map((record) => record.id));
     return allRecords.filter((record) => !attachedIds.has(record.id));
   }, [activeTopic, allRecords]);
-  const availableSessions = useMemo(() => {
-    if (!activeTopic) {
-      return [];
-    }
-    const attachedIds = new Set(activeTopic.attachedSessions.map((session) => session.id));
-    return allSessions.filter((session) => !attachedIds.has(session.id));
-  }, [activeTopic, allSessions]);
   const recordTopic =
     (activeRecord
       ? (consoleState?.oddboard.topics ?? []).find(
@@ -265,6 +253,13 @@ export function OddBoardWidget({
     }
     window.localStorage.setItem(AGENT_CONSOLE_COLLAPSED_STORAGE_KEY, String(collapsed));
   }, [collapsed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(ODDCHAT_LIVE_SCROLL_STORAGE_KEY, String(liveRoomScroll));
+  }, [liveRoomScroll]);
 
   useEffect(() => {
     setSelectedRecordId((current) => nextSelectionId(visibleRecords, current));
@@ -309,8 +304,21 @@ export function OddBoardWidget({
       }
       return availableAssets[0]?.id ?? null;
     });
-    setSelectedSessionToAttachId((current) => nextSelectionId(availableSessions, current));
-  }, [activeRecord, availableAssets, availableSessions]);
+  }, [activeRecord, availableAssets]);
+
+  useEffect(() => {
+    if (!liveRoomScroll) {
+      return;
+    }
+    const node = roomMessagesRef.current;
+    if (!node) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeRoomId, lastActiveMessageId, liveRoomScroll]);
 
   async function handleSend() {
     if (!activeRoomId) {
@@ -386,50 +394,6 @@ export function OddBoardWidget({
     }
   }
 
-  async function handleAttachSession(sessionId: string | null) {
-    if (!activeTopic || !sessionId) {
-      return;
-    }
-    setRoomAction("attach-session");
-    setActionError(null);
-    try {
-      await attachGChatTopicSession(workspaceRoot, {
-        topicId: activeTopic.id,
-        sessionId,
-      });
-      await onRefreshConsole({ background: true });
-    } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setRoomAction(null);
-    }
-  }
-
-  async function handleCreateSessionAndAttach() {
-    if (!activeTopic) {
-      return;
-    }
-    setRoomAction("new-session");
-    setActionError(null);
-    try {
-      const created = await createGTermSession(workspaceRoot, {
-        label: topicShellLabel(activeTopic),
-        selectedTrainId: activeTopic.selectedTrainId ?? selectedTrainId,
-        stationId: activeTopic.stationId ?? selectedStationId,
-        edgeId: activeTopic.edgeId ?? selectedEdgeId,
-      });
-      await attachGChatTopicSession(workspaceRoot, {
-        topicId: activeTopic.id,
-        sessionId: created.session.id,
-      });
-      await onRefreshConsole({ background: true });
-    } catch (caught) {
-      setActionError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setRoomAction(null);
-    }
-  }
-
   function toggleSection(sectionId: ExplorerSectionId) {
     setCollapsedSections((current) => ({
       ...current,
@@ -442,7 +406,7 @@ export function OddBoardWidget({
       ? "Durable board records are attached to this workspace."
       : activeTopic
         ? `Topic room "${activeTopic.label}" is ready for live coordination.`
-        : "Create a topic to start a live room and attach workers or assets.";
+        : "Create a topic to start a live room and attach assets. Agent launch now lives in the local shell workspace.";
 
   if (collapsed) {
     return (
@@ -457,7 +421,7 @@ export function OddBoardWidget({
             <span className="summary-pill summary-pill--view">{surface}</span>
             {activeTopic ? <span className="summary-pill">{activeTopic.label}</span> : null}
             <span className="summary-pill">{allTopics.length} topic(s)</span>
-            {activeTopic ? <span className="summary-pill">{activeTopic.attachedSessions.length} oddterm(s)</span> : null}
+            {activeTopic ? <span className="summary-pill">{activeTopic.participants.length} room agent(s)</span> : null}
             {selectedStationId ? <span className="summary-pill">{selectedStationId}</span> : null}
             {selectedEdgeId ? <span className="summary-pill">{selectedEdgeId}</span> : null}
           </div>
@@ -663,7 +627,7 @@ export function OddBoardWidget({
               <div className="agent-console__gchat-topic-list">
                 {allTopics.length === 0 ? (
                   <div className="project-selector__empty">
-                    No topics yet. Create one to start a room, attach assets, and add workers.
+                    No topics yet. Create one to start a room and attach assets.
                   </div>
                 ) : (
                   allTopics.map((topic) => (
@@ -677,73 +641,12 @@ export function OddBoardWidget({
                       }}
                     >
                       <strong>{topic.label}</strong>
-                      <span>
-                        {topic.attachedSessions.length} oddterm(s) · {topic.attachedRecords.length} asset(s)
-                      </span>
+                      <span>{topic.attachedRecords.length} asset(s)</span>
+                      <span>{topic.participants.length} room agent(s)</span>
                       <span>{formatTimestamp(topic.updatedAt)}</span>
                     </button>
                   ))
                 )}
-              </div>
-            </ExplorerSection>
-
-            <ExplorerSection
-              title="Workers / OddTerm"
-              tone="workers"
-              collapsed={collapsedSections.workers}
-              onToggle={() => toggleSection("workers")}
-              count={activeTopic?.attachedSessions.length ?? 0}
-            >
-              <div className="agent-console__resource-chip-list">
-                {activeTopic?.attachedSessions.length ? (
-                  activeTopic.attachedSessions.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      className={`agent-console__terminal-session-chip${session.id === activeSessionChannel?.id ? " is-active" : ""}`}
-                      onClick={() =>
-                        setSelectedSessionChannelId((current) => (current === session.id ? null : session.id))
-                      }
-                    >
-                      <strong>{session.label}</strong>
-                      <span>{session.status}</span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="muted">No oddterms attached to this topic yet.</p>
-                )}
-              </div>
-
-              <div className="agent-console__resource-actions agent-console__resource-actions--stacked">
-                <select
-                  className="agent-console__select"
-                  value={selectedSessionToAttachId ?? ""}
-                  onChange={(event) => setSelectedSessionToAttachId(event.target.value || null)}
-                >
-                  <option value="">Select existing oddterm…</option>
-                  {availableSessions.map((session) => (
-                    <option key={session.id} value={session.id}>
-                      {session.label} · {session.status}
-                    </option>
-                  ))}
-                </select>
-                <div className="agent-console__resource-actions">
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => void handleCreateSessionAndAttach()}
-                    disabled={roomAction === "new-session"}
-                  >
-                    {roomAction === "new-session" ? "Creating..." : "New OddTerm"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleAttachSession(selectedSessionToAttachId)}
-                    disabled={!selectedSessionToAttachId || roomAction === "attach-session"}
-                  >
-                    {roomAction === "attach-session" ? "Attaching..." : "Attach OddTerm"}
-                  </button>
-                </div>
               </div>
             </ExplorerSection>
 
@@ -823,20 +726,28 @@ export function OddBoardWidget({
                         Back To Room
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setLiveRoomScroll((current) => !current)}
+                    >
+                      {liveRoomScroll ? "Live Scroll On" : "Live Scroll Off"}
+                    </button>
                     <span className="summary-pill">{activeTopic.originKind}</span>
                     {activeTopic.assetLabel ? <span className="summary-pill">{activeTopic.assetLabel}</span> : null}
                     {activeSessionChannel ? <span className="summary-pill">{activeSessionChannel.label}</span> : null}
+                    <span className="summary-pill">{activeTopic.participants.length} room agent(s)</span>
                     {activeTopic.assetKind ? <span className="summary-pill">{topicAssetKindLabel(activeTopic.assetKind)}</span> : null}
                   </div>
                 </div>
 
-                <div className="agent-console__messages">
+                <div ref={roomMessagesRef} className="agent-console__messages">
                   {loading ? <p className="muted">Loading topic conversation…</p> : null}
                   {!loading && !activeMessages.length ? (
                     <p className="muted">
                       {activeSessionChannel
                         ? `No private channel activity has been recorded with ${activeSessionChannel.label} yet.`
-                        : "No live room activity has been recorded for this topic yet. Attach workers and start the conversation."}
+                        : "No live room activity has been recorded for this topic yet. Join it from the local shell workspace and start the conversation."}
                     </p>
                   ) : null}
                   {!loading && activeMessages.length ? activeMessages.map((message) => <MessageCard key={message.id} message={message} />) : null}
@@ -854,7 +765,7 @@ export function OddBoardWidget({
                     placeholder={
                       activeSessionChannel
                         ? `Send a private message to ${activeSessionChannel.label}…`
-                        : "Send a room message to everyone, or direct work using @worker-name for an attached oddterm…"
+                        : "Send a room message to everyone, or use @shell-name only for a legacy attached-shell route…"
                     }
                   />
                   <div className="agent-console__composer-actions">
@@ -874,7 +785,7 @@ export function OddBoardWidget({
               </>
             ) : (
               <div className="project-selector__empty">
-                Create a topic to start a live room, attach workers from the oddterm pool, and collect assets into the room.
+                Create a topic to start a live room, then use the local shell workspace to launch agents and join the topic.
               </div>
             )}
           </div>
@@ -885,6 +796,10 @@ export function OddBoardWidget({
 }
 
 function MessageCard({ message }: { message: GChatMessage }) {
+  const title = String(message.title ?? "").trim();
+  const content = String(message.content ?? "").trim();
+  const showTitle = title.length > 0 && title !== content;
+
   return (
     <article className="agent-console__message">
       <div className="agent-console__message-meta">
@@ -895,8 +810,8 @@ function MessageCard({ message }: { message: GChatMessage }) {
           <span>{formatTimestamp(message.timestamp)}</span>
         </div>
       </div>
-      <h3>{message.title}</h3>
-      <pre className="agent-console__message-content">{message.content}</pre>
+      {showTitle ? <h3>{title}</h3> : null}
+      <pre className="agent-console__message-content">{content}</pre>
       {message.path ? <small>{message.path}</small> : null}
     </article>
   );
@@ -911,7 +826,7 @@ function ExplorerSection({
   children,
 }: {
   title: string;
-  tone: "topics" | "workers" | "assets";
+  tone: "topics" | "assets";
   collapsed: boolean;
   onToggle: () => void;
   count?: number;

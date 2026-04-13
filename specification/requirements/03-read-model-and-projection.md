@@ -13,6 +13,8 @@ than as a static report bundle or one synthetic summary file.
 Acceptance Criteria
 - the product reads and projects declaration, runtime, evidence, and policy
   surfaces as part of one managed world
+- the product can project ambiguity and capability posture as part of that same
+  world rather than as out-of-band implementation notes
 - the product can project one graph set containing multiple graphs where the
   managed workspace exposes them
 - operator-visible claims remain traceable to the underlying surfaces that
@@ -55,6 +57,9 @@ Acceptance Criteria
 - the product can distinguish active work, governance waiting, deterministic
   proof failure, runtime defect, policy defect, probabilistic non-convergence,
   and superseded work
+- the product can distinguish bounded stop states such as
+  `pending_capability`, `fh_required`, carried ambiguity, and hard-blocked
+  policy posture from generic failure
 - operator-facing explanations describe why a selected object is waiting or
   blocked
 - the product can show what last changed state and what kind of condition is
@@ -80,6 +85,8 @@ read model.
 
 Acceptance Criteria
 - projected asset views show stable identity and declared type
+- projected views preserve asset-family, collection, and edge-contract semantics
+  where upstream publishes them
 - projected graph views can show which typed nodes are bound and which remain
   open
 - projected workorder views can show typed inputs and outputs without requiring
@@ -106,6 +113,8 @@ absence or fabricated structure.
 Acceptance Criteria
 - projections can render partial graph, workorder, asset-type, gap, or
   convergence detail when only stable identity and binding data are available
+- ambiguity and capability surfaces that are explicitly published upstream are
+  not treated as placeholder detail
 - placeholder views still expose authoritative ids, bindings, carrier names,
   and runtime links
 - the UI makes it clear whether a field is published truth, derived summary, or
@@ -120,8 +129,36 @@ masquerade as the other.
 Acceptance Criteria
 - `run`, `graph_call`, `continuation`, `frame`, and event-derived runtime
   status are projected from ABG truth
-- asset views, binding views, function catalog views, and gap or convergence
-  overlays may be projected from `odd_method` query-library results
+- asset views, binding views, function catalog views, asset-family and program
+  views, ambiguity register views, capability-posture views, and gap or
+  convergence overlays may be projected from `odd_method` query-library results
 - the composed UI can identify whether a field came from ABG runtime
   projection, ODD domain query, or manager-derived summary
 - the first query cadence may be on-demand rather than background-synchronized
+
+### REQ-OM-PROJ-010 - Query-contract metadata is explicit and drift-detectable
+
+`odd_manager` shall surface enough upstream query-contract metadata to detect
+observer drift explicitly rather than silently ignoring a repriced domain
+payload.
+
+Acceptance Criteria
+- the projected domain payload retains explicit query-contract identity and
+  version where upstream publishes it
+- local adapter and type layers can distinguish supported contract shape from
+  unrecognized drift
+- incompatible upstream query-contract changes are surfaced as explicit
+  integration work rather than hidden behind silent field dropping
+
+### REQ-OM-PROJ-011 - Ambiguity and capability posture is projected as first-class world state
+
+`odd_manager` shall project ambiguity and capability posture as first-class
+world state over the managed workspace.
+
+Acceptance Criteria
+- the world projection includes current ambiguity register state where upstream
+  publishes it
+- the world projection includes capability-gated stop states and their governing
+  domain explanation where upstream publishes them
+- overview and inspector layers can trace a blocked or carried posture back to
+  the governing ambiguity or capability surface

@@ -8,7 +8,7 @@
 
 `odd_manager` is an operator-facing control-plane product for OODD systems.
 
-It provides a lawful management and observability domain over:
+It provides one lawful control surface over:
 
 - graph sets, typed assets, asset graphs, bindings, and workorders
 - GTL declarations
@@ -16,6 +16,8 @@ It provides a lawful management and observability domain over:
 - `odd_method` builder/domain surfaces as they emerge during that product's
   build-out
 - workspace evidence, provenance, and closure material
+- multiple stakeholder entry lenses over one shared world model, including
+  requirement-first and process-first delivery views
 
 The manager may be implemented against a stable observation contract before the
 full `odd_method` domain-detail library hardens.
@@ -24,10 +26,14 @@ That stable contract is:
 
 - URI-addressed assets
 - declared asset types
+- asset families and asset collections
 - typed asset nodes
 - explicit bindings
 - named functions over asset graphs
 - GTL graph-function carriers
+- published jobs, programs, edge contracts, and work-act types where the
+  upstream query library exposes them
+- ambiguity register, ambiguity policy, and capability-gated stop-state overlays
 - ABG runtime facts and aggregates
 - direct ABG event and projector access for runtime state
 - `odd_method` query-library overlays for domain understanding that ABG does
@@ -43,7 +49,26 @@ It is not:
 Its job is to make current truth legible and operable without inventing a rival
 semantic center.
 
+## Pre-release Compatibility Posture
+
+`odd_manager` has no released product line yet.
+
+Therefore the live operative surface is forward-only.
+
+The product is not required to preserve backward compatibility for stale
+pre-release observer contracts, payload shapes, UI structures, or terminology
+that no longer match live upstream truth.
+
+Compatibility may be kept only where it lowers migration cost without distorting
+current constitutional or design truth.
+
 ## Product Terms
+
+### Control Surface
+
+One operator-facing surface that composes runtime truth, domain overlays,
+policy, evidence, and coordination without introducing a second runtime or a
+shadow semantic center.
 
 ### GraphSet
 
@@ -56,6 +81,10 @@ A durable truth or delivery surface identified by URI.
 ### Asset Type
 
 The semantic role an asset fulfills in the domain.
+
+### Asset Family
+
+A named semantic grouping over related asset types and lifecycle lanes.
 
 ### Asset Collection
 
@@ -88,6 +117,21 @@ The GTL-level public named callable carrier underlying a published workorder.
 
 Its declared `environment` contract is cumulative rather than one-step piped.
 
+### Edge Contract
+
+A published description of one lawful graph transition, its conditions, and its
+closure posture.
+
+### Program
+
+A higher-order published workflow or carrier grouping over multiple callable
+surfaces.
+
+### Work Act Type
+
+A published class of constructive or operational software-domain act used to
+explain what kind of work happened and how it should be governed.
+
 ### Outcome
 
 A derived convergence or posture view over graphs, assets, workorders, proof,
@@ -107,6 +151,43 @@ It may summarize lawful composition or recursion, but it is not itself the
 public callable carrier.
 
 A work vector is not a runtime primitive.
+
+### Entry Lens
+
+A user-facing entry point that organizes one shared information model around
+one primary supervisory question.
+
+Entry lenses may emphasize different objects and filters, but they do not mint
+a second world model or rival truth surface.
+
+### Requirements View
+
+A requirement-first entry lens for delivery stakeholders.
+
+It frames current project state around human-readable requirements and their
+downstream design, implementation, proof, work, and discussion surfaces.
+
+### Process View
+
+A process-first entry lens for delivery stakeholders.
+
+It frames the same underlying project state around build activity, process
+flow, and execution posture rather than around a selected requirement.
+
+### Information Widget
+
+A reusable product read-model surface that presents one bounded slice of the
+shared world model.
+
+Information widgets are collapsible, drillable, and traceable to underlying
+authoritative surfaces. Totals and summary badges are saved queries over shared
+backing objects rather than independent truth.
+
+### Requirement Workbench
+
+The requirement-scoped inspection surface that gathers history, design,
+implementation, proof, work tracking, and discussion around one selected
+requirement.
 
 ### Semantic Job
 
@@ -139,6 +220,23 @@ An emitted ABG event or replay-derived runtime truth surface.
 
 A declarative control surface over dispatch, evaluation, escalation, proof, or
 closure without redefining graph law.
+
+### Ambiguity Register
+
+A query-derived domain surface that records major ambiguity, its current status,
+policy action, threatened invariants, affected assets, and expected resolving
+boundary.
+
+### Capability Contract
+
+A tenant-local declared capability surface that governs whether an executional
+or operational stage is lawful.
+
+### Bounded Stop State
+
+An honest non-converged posture such as `pending_capability`, `fh_required`, or
+another lawful blocked or carried state that marks why downstream closure has
+not been reached.
 
 ### Proof Lane
 
@@ -179,6 +277,8 @@ The intended end-state product shape is:
    evidence review, and closure explanation
 8. treat all dashboard summaries as projections over declaration truth and ABG
    event truth rather than as shadow runtime state
+9. remain forward-only before first release rather than carrying stale
+   pre-release compatibility debt
 
 ## Current Product Definition
 
@@ -191,18 +291,26 @@ The current product definition of `odd_manager` is:
   `build_tenants/common/design/`
 - a manager product subordinate to GTL/ABG runtime law and `odd_method`
   builder/domain truth as that line is actively being built
+- a control surface over ABG runtime truth and live `odd_method` query-derived
+  domain overlays, including ambiguity and capability posture where published
 - a new control-plane product that preserves an established shell, inspector,
   board, and graph-workspace visual language without inheriting a transport
   ontology
-- a product allowed to ship with placeholder builder-detail surfaces where the
-  current `odd_method` line has not yet published richer semantic detail
+- a pre-release product with no obligation to preserve stale backward-compatible
+  observer contracts while the live upstream surface is still repricing
+- a product allowed to ship with placeholder builder-detail surfaces only where
+  the current `odd_method` line has not yet published richer semantic detail
 - a product that composes ABG-native runtime projections with `odd_method`
   domain query results instead of depending on one monolithic observer payload
+- a product that offers requirement-first and process-first stakeholder entry
+  lenses over one shared world model rather than separate widget systems
+- a product whose information widgets remain collapsible, drillable, and
+  traceable to human-readable and authoritative underlying surfaces
 - a project whose live design law currently sits in
   `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
 - a project whose installer-seeded `build_tenants/odd_manager/python/` surface
-  remains starter scaffold only, not the chosen UI carrier
+  remains starter scaffold only, not the chosen control-surface carrier
 
-The current implementation target proposed by design, but not yet created, is:
+The current active implementation target is:
 
 - `build_tenants/react_vite/`

@@ -13,8 +13,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Literal
 
+from gtl.algebra import compose
 from gtl.function_model import GraphFunction
-from gtl.graph import Attrs, Graph
+from gtl.graph import Attrs, Graph, interface_contract
 from gtl.module_model import Module
 
 
@@ -85,6 +86,137 @@ def _resolve_graph_function(
     return matches[0]
 
 
+def _resolve_symbolic_graph_function(
+    module: Module,
+    ref: str,
+    *,
+    published_graph_functions: tuple[GraphFunction, ...] = (),
+) -> GraphFunction:
+    candidates: list[GraphFunction] = []
+    short_ref = ref.rsplit(".", 1)[-1]
+    for graph_function in published_graph_functions + tuple(module.graph_functions):
+        if graph_function.template.ref == ref or graph_function.name == ref or graph_function.name == short_ref:
+            candidates.append(graph_function)
+    unique_by_id = {graph_function.id: graph_function for graph_function in candidates}
+    matches = tuple(unique_by_id.values())
+    if len(matches) != 1:
+        raise ValueError(
+            f"materialize_graph_function(): symbolic ref {ref!r} is not uniquely published "
+            f"by module {module.name!r}"
+        )
+    return matches[0]
+
+
+def _materialize_inline_graph_function(
+    graph_function: GraphFunction,
+    module: Module,
+    *,
+    published_graph_functions: tuple[GraphFunction, ...] = (),
+    stack: tuple[str, ...] = (),
+) -> GraphFunction:
+    if graph_function.id in stack:
+        raise ValueError(
+            f"materialize_graph_function(): recursive symbolic graph function cycle at {graph_function.name!r}"
+        )
+    if graph_function.template.kind == "inline_graph":
+        return graph_function
+    graph = _materialize_symbolic_graph(
+        graph_function,
+        module,
+        published_graph_functions=published_graph_functions,
+        stack=stack + (graph_function.id,),
+    )
+    if interface_contract(graph.inputs) != interface_contract(graph_function.inputs):
+        raise ValueError(
+            f"materialize_graph_function(): symbolic graph function {graph_function.name!r} "
+            "does not preserve its declared input contract"
+        )
+    if interface_contract(graph.outputs) != interface_contract(graph_function.outputs):
+        raise ValueError(
+            f"materialize_graph_function(): symbolic graph function {graph_function.name!r} "
+            "does not preserve its declared output contract"
+        )
+    return GraphFunction.from_graph(
+        name=graph_function.name,
+        graph=graph,
+        environment=graph_function.environment,
+        effects=graph_function.effects,
+        declarations=graph_function.declarations,
+        tags=graph_function.tags,
+    )
+
+
+def _consume_symbolic_graph_function(
+    text: str,
+    start: int,
+    module: Module,
+    *,
+    published_graph_functions: tuple[GraphFunction, ...] = (),
+    stack: tuple[str, ...] = (),
+) -> tuple[GraphFunction, int]:
+    if text.startswith("compose:", start):
+        left, cursor = _consume_symbolic_graph_function(
+            text,
+            start + len("compose:"),
+            module,
+            published_graph_functions=published_graph_functions,
+            stack=stack,
+        )
+        if cursor >= len(text) or text[cursor] != ";":
+            raise ValueError(
+                f"materialize_graph_function(): malformed compose ref {text!r}"
+            )
+        right, cursor = _consume_symbolic_graph_function(
+            text,
+            cursor + 1,
+            module,
+            published_graph_functions=published_graph_functions,
+            stack=stack,
+        )
+        return compose(left, right), cursor
+
+    cursor = start
+    while cursor < len(text) and text[cursor] != ";":
+        cursor += 1
+    atom = text[start:cursor]
+    if not atom:
+        raise ValueError(
+            f"materialize_graph_function(): malformed symbolic ref {text!r}"
+        )
+    resolved = _resolve_symbolic_graph_function(
+        module,
+        atom,
+        published_graph_functions=published_graph_functions,
+    )
+    return _materialize_inline_graph_function(
+        resolved,
+        module,
+        published_graph_functions=published_graph_functions,
+        stack=stack,
+    ), cursor
+
+
+def _materialize_symbolic_graph(
+    graph_function: GraphFunction,
+    module: Module,
+    *,
+    published_graph_functions: tuple[GraphFunction, ...] = (),
+    stack: tuple[str, ...] = (),
+) -> Graph:
+    resolved, cursor = _consume_symbolic_graph_function(
+        graph_function.template.ref,
+        0,
+        module,
+        published_graph_functions=published_graph_functions,
+        stack=stack,
+    )
+    if cursor != len(graph_function.template.ref):
+        raise ValueError(
+            f"materialize_graph_function(): malformed symbolic ref {graph_function.template.ref!r}"
+        )
+    return resolved.materialize()
+
+
 def materialize_graph_function(
     request: MaterializationRequest,
     module: Module,
@@ -111,7 +243,14 @@ def materialize_graph_function(
             "materialize_graph_function(): structural parameters are not yet declared for canonical GTL publication"
         )
 
-    graph = graph_function.materialize()
+    if graph_function.template.kind == "inline_graph":
+        graph = graph_function.materialize()
+    else:
+        graph = _materialize_symbolic_graph(
+            graph_function,
+            module,
+            published_graph_functions=published_graph_functions,
+        )
     materialization_id = _stable_digest(
         {
             "module": module.name,

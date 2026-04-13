@@ -1,6 +1,7 @@
 import { useState, type PropsWithChildren } from "react";
 import type { CommandName, Overview, PageId, ThemeMode } from "../lib/types";
 import { ProjectSelector } from "../features/project-selector/ProjectSelector";
+import { ACTIVE_VOCABULARY_PACK, labelPage, labelTone } from "../lib/presentation";
 
 type AppShellProps = PropsWithChildren<{
   theme: ThemeMode;
@@ -17,14 +18,16 @@ type AppShellProps = PropsWithChildren<{
   error: string | null;
 }>;
 
-const PAGES: Array<{ id: PageId; label: string }> = [
-  { id: "home", label: "Home" },
-  { id: "graphs", label: "Graphs" },
-  { id: "runtime", label: "Runtime" },
-  { id: "continuations", label: "Continuations" },
-  { id: "evidence", label: "Evidence & Policy" },
-  { id: "builder", label: "Builder" },
-  { id: "provenance", label: "Provenance" },
+const PAGES: PageId[] = [
+  "requirements",
+  "process",
+  "home",
+  "graphs",
+  "runtime",
+  "continuations",
+  "evidence",
+  "builder",
+  "provenance",
 ];
 
 export function AppShell({
@@ -54,8 +57,8 @@ export function AppShell({
           <div>
             <h1>Odd Manager</h1>
             <p>
-              Operator-facing supervision over graph sets, typed assets, workorders,
-              and ABG runtime truth, composed with odd_method domain overlays.
+              Project supervision over artifacts, work items, blockers, and operational history,
+              with {ACTIVE_VOCABULARY_PACK.label.toLowerCase()} language layered over odd_method.
             </p>
           </div>
         </div>
@@ -77,7 +80,9 @@ export function AppShell({
           <div className="shell__control-card shell__control-card--status">
             <span className="shell__control-label">Workspace Status</span>
             <strong className={statusLabel === "blocked" ? "is-warning" : ""}>{statusValue}</strong>
-            <small>{statusDetail}</small>
+            <small>
+              {labelTone(statusLabel)}: {statusDetail}
+            </small>
           </div>
 
           <div className="shell__control-actions">
@@ -110,15 +115,15 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="manager-nav" aria-label="Manager surfaces">
+          <nav className="manager-nav" aria-label="Manager surfaces">
           {PAGES.map((page) => (
             <button
-              key={page.id}
+              key={page}
               type="button"
-              className={`manager-nav__item ${selectedPage === page.id ? "is-selected" : ""}`}
-              onClick={() => onSelectPage(page.id)}
+              className={`manager-nav__item ${selectedPage === page ? "is-selected" : ""}`}
+              onClick={() => onSelectPage(page)}
             >
-              {page.label}
+              {labelPage(page)}
             </button>
           ))}
         </nav>

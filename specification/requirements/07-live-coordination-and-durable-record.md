@@ -74,3 +74,19 @@ Acceptance Criteria
 - room work can result in controlled topic updates, asset updates, or promoted
   records
 - resulting updates remain attributable enough for replay and later review
+
+### REQ-OM-COL-007 - Room delivery uses participant membership and receipt state
+
+The live room model shall deliver room activity through explicit participant
+membership and receipt state rather than through ambient terminal stream
+injection.
+
+Acceptance Criteria
+- a participant can join or leave a room without destroying the underlying
+  session substrate
+- room delivery can be resumed from participant receipt state rather than only
+  from terminal scrollback
+- room fan-out can target all joined participants without requiring raw stdin
+  injection into every attached shell
+- the canonical room history remains the authoritative mailbox surface for live
+  coordination

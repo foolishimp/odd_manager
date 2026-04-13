@@ -1,5 +1,9 @@
 .DS_Store
-.ai-workspace/
+.ai-workspace/*
+!.ai-workspace/tickets/
+!.ai-workspace/tickets/**
+.playwright-mcp/
+build_tenants/react_vite/.ai-workspace/
 __pycache__/
 *.pyc
 

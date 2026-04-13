@@ -25,3 +25,25 @@ npm install
 npm run dev:server
 npm run dev:client
 ```
+
+Per-agent room/IRC MCP adapter:
+
+```sh
+OMAN_WORKSPACE_ROOT=/abs/workspace \
+OMAN_SESSION_LABEL=worker-1 \
+OMAN_TOPIC_ID=<topic-id> \
+npm run mcp:irc
+```
+
+That adapter talks only to the local `odd_manager` API. The manager-local API
+owns canonical OddChat room truth, participant delivery, and optional IRC
+transport binding instead of letting transport become a second authority
+surface.
+
+The intended operator flow is:
+
+- create a topic in OddChat
+- attach or create local shells
+- launch Codex or Claude into an attached shell
+- let the agent join the topic through the room-oriented MCP tools
+- use OddChat room history as the canonical mailbox

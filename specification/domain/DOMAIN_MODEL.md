@@ -1,7 +1,7 @@
 # Domain Model — odd_manager
 
 **Version**: 0.1.0
-**Date**: 2026-04-06
+**Date**: 2026-04-10
 **Status**: Active
 **Derives From**:
 - `specification/INTENT.md`
@@ -11,6 +11,8 @@
 - `/Users/jim/src/apps/odd_method/specification/PRODUCT.md`
 - `/Users/jim/src/apps/odd_method/specification/requirements/02-graph-functions.md`
 - `/Users/jim/src/apps/odd_method/specification/requirements/07-asset-typing-and-binding.md`
+- `/Users/jim/src/apps/odd_method/specification/requirements/10-odd-sdlc-software-domain-buildout.md`
+- `/Users/jim/src/apps/odd_method/docs/ODD_SDLC_DISAMBIGUATION_STRATEGY.md`
 - `/Users/jim/src/apps/odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md`
 
 ## Purpose
@@ -36,8 +38,10 @@ One managed workspace may expose:
 
 - multiple graphs
 - typed assets inside those graphs
+- asset families and asset collections
 - explicit asset bindings into typed nodes
 - published callable functions over those graphs
+- ambiguity and capability posture as current domain truth
 
 Within `odd_manager`, the manager-facing name for a published callable function
 is `WorkOrder`.
@@ -55,10 +59,17 @@ shape to observe and supervise:
 
 - `Asset` with stable identity, URI, declared type, provenance, and optional
   checkpoint material
+- `AssetFamily` as a stable semantic grouping over lifecycle lanes
 - `AssetCollection` as a named bound scope
 - explicit node bindings from typed nodes to concrete asset identities
 - function catalog entries with name, intent, typed inputs, typed outputs, and
   backing graph-function identity
+- published programs, edge contracts, and work-act types where the builder
+  query library exposes them
+- an ambiguity register with current status, policy action, and expected
+  resolving boundary
+- capability contracts and capability-gated stop states for side-effecting
+  lifecycle stages
 - published cumulative environment contracts where the builder exposes
   `requires`, `provides`, and `carries`
 - GTL graph-function carriers and ABG runtime aggregates
@@ -78,9 +89,12 @@ composition boundary:
 The query-library side may provide:
 
 - asset views
+- asset-family and collection views
 - asset-type semantics
 - binding views
 - function catalog views
+- program, edge-contract, and work-act-type views
+- ambiguity-register and capability-posture views
 - gap and convergence overlays
 - checkpoint and provenance interpretation
 
@@ -104,6 +118,14 @@ being updated:
 - full gap interpretation libraries
 - proof and closure hint libraries
 - domain-specific convergence explanation
+
+The following currently published upstream truths should not be downgraded to
+placeholder state once they exist:
+
+- ambiguity register entries
+- capability contracts
+- policy action over active ambiguity
+- bounded stop states such as `pending_capability`
 
 Where that detail is incomplete, `odd_manager` may project placeholder detail
 cards, badges, or inspector rows.
@@ -135,6 +157,10 @@ An asset type may carry evaluation, descriptive, proof, or closure meaning.
 
 In the current live builder line, the manager must tolerate asset-type detail
 that is still shallow or partially published.
+
+### AssetFamily
+
+A named semantic grouping over related asset types and lifecycle lanes.
 
 ### AssetCollection
 
@@ -172,6 +198,21 @@ only carrier identity, intent, and typed inputs and outputs.
 
 The manager may additionally project the carrier's cumulative environment
 contract when upstream publication exposes it.
+
+### EdgeContract
+
+A published description of one lawful transition boundary, its inputs or
+conditions, and its closure posture.
+
+### Program
+
+A published higher-order workflow grouping over callable carriers and related
+domain structure.
+
+### WorkActType
+
+A published class of constructive or operational software-domain act used to
+explain what kind of work is occurring.
 
 ### Job
 
@@ -227,6 +268,23 @@ boundary counts as converged.
 Convergence explanation may be partial when the upstream builder line has not
 yet published richer closure semantics.
 
+### AmbiguityRegister
+
+A query-derived domain surface that records major ambiguity, current status,
+policy action, affected assets, threatened invariants, and expected resolving
+boundary.
+
+### CapabilityContract
+
+A tenant-local declared capability surface that governs whether executional or
+operational stages are lawful.
+
+### BoundedStopState
+
+An honest current posture such as `pending_capability`, `fh_required`, or
+another explicit carried or blocked state that explains why downstream closure
+has not occurred.
+
 ### PolicySurface
 
 A declarative control surface over dispatch, evaluation, escalation, proof, or
@@ -253,12 +311,18 @@ The operator-facing closure state over an asset, graph, workorder, or run.
 The emerging builder/domain line owns:
 
 - assets
+- asset families
 - asset types
 - asset collections
 - asset nodes
 - asset graphs
 - asset bindings
 - domain functions
+- edge contracts
+- programs
+- work-act types
+- ambiguity register
+- capability contracts and capability-gated stop states
 - convergence targets and gap interpretation
 
 ### GTL Layer
@@ -290,7 +354,8 @@ ABG owns:
 
 `odd_manager` owns:
 
-- projections over graph sets, graphs, assets, bindings, and workorders
+- projections over graph sets, graphs, assets, asset families, collections,
+  bindings, workorders, ambiguity posture, and capability posture
 - operator-facing grouping, orientation, and drilldown
 - derived posture, attention, and readiness views
 - composition of ABG runtime projections with ODD domain query overlays
@@ -307,6 +372,9 @@ semantics.
 - asset or asset-collection binding -> `AssetBinding`
 - graph topology over typed nodes -> `AssetGraph`
 - one workspace's observable graph topology set -> `GraphSet`
+- domain `ambiguity_register` -> manager ambiguity posture and inspection views
+- domain capability contracts and stop states -> manager bounded-stop
+  explanation surfaces
 
 ## Derived Objects
 
@@ -328,9 +396,13 @@ The published domain model for `odd_manager` must preserve these rules:
 
 1. No assumption of one permanent global graph.
 2. Assets are first-class and typed.
-3. Bindings into typed nodes are explicit.
-4. Published callable functions are surfaced as workorders.
-5. Runtime aggregates remain ABG-owned.
-6. Domain query overlays do not redefine runtime aggregates.
-7. Placeholder builder detail stays explicitly provisional.
-8. Derived operator objects do not become rival source truth.
+3. Asset families, collections, and capability-bearing domain overlays are
+   surfaced when upstream publishes them.
+4. Bindings into typed nodes are explicit.
+5. Published callable functions are surfaced as workorders.
+6. Runtime aggregates remain ABG-owned.
+7. Domain query overlays do not redefine runtime aggregates.
+8. Placeholder builder detail stays explicitly provisional.
+9. Published ambiguity and capability posture is not silently downgraded to
+   placeholder state.
+10. Derived operator objects do not become rival source truth.

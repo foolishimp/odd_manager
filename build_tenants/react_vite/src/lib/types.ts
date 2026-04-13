@@ -1,6 +1,8 @@
 export type ThemeMode = "light" | "dark";
 export type NavigatorMode = "compressed" | "expanded";
 export type PageId =
+  | "requirements"
+  | "process"
   | "home"
   | "graphs"
   | "runtime"
@@ -44,9 +46,27 @@ export type AssetTypeProfile = {
   fd_evaluator: string;
   fp_gap_description: string;
   fp_descriptive_framing: string;
+  specializes: string[];
+  library_level: string;
   mutable_default: boolean;
   proof_hints: string[];
   closure_hints: string[];
+};
+
+export type QueryContractView = {
+  name: string;
+  version: string;
+  top_level_keys: string[];
+  runtime_model: string;
+  query_model: string;
+};
+
+export type AssetFamilyView = {
+  name: string;
+  description: string;
+  lifecycle_role: string;
+  representative_asset_types: string[];
+  realization_status: string;
 };
 
 export type AssetCheckpoint = {
@@ -76,9 +96,146 @@ export type AssetView = {
   update_count?: number;
 };
 
+export type RequirementView = {
+  requirement_id: string;
+  title: string;
+  summary: string;
+  family: string;
+  family_title: string;
+  family_status: string | null;
+  priority: string | null;
+  type: string | null;
+  status: string | null;
+  delivery_status: Tone;
+  traces_to: string[];
+  derives_from: string[];
+  authority_refs: string[];
+  current_requirement_refs: string[];
+  implementation_claim_refs: string[];
+  planned_test_claim_refs: string[];
+  test_claim_refs: string[];
+  code_refs: string[];
+  test_refs: string[];
+  testcase_authority_refs: string[];
+  acceptance_criteria: string[];
+  source_path: string;
+};
+
+export type TicketView = {
+  id: string;
+  title: string;
+  summary: string;
+  type: string | null;
+  status: string | null;
+  goal: string | null;
+  priority: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  dependencies: string[];
+  links: string[];
+  linked_requirement_ids: string[];
+  linked_surfaces: string[];
+  source_path: string;
+};
+
+export type CommentView = {
+  id: string;
+  title: string;
+  summary: string;
+  author: string | null;
+  date: string | null;
+  status: string | null;
+  source: string | null;
+  addresses: string[];
+  linked_requirement_ids: string[];
+  linked_surfaces: string[];
+  source_path: string;
+};
+
+export type CollectionView = {
+  name: string;
+  assets: AssetView[];
+};
+
 export type BindingView = {
   node: string;
   asset_ids: string[];
+};
+
+export type EdgeContractView = {
+  name: string;
+  description: string;
+  source_asset_families: string[];
+  target_asset_family: string;
+  configured_fp_role: string;
+  preflight_fd_layers: string[];
+  postflight_fd_layers: string[];
+  work_report_contract: string;
+  representative_functions: string[];
+  realization_status: string;
+};
+
+export type ProgramView = {
+  name: string;
+  intent: string;
+  steps: string[];
+  outputs: string[];
+  kind: string;
+};
+
+export type WorkActTypeView = {
+  name: string;
+  description: string;
+  mutates_workspace: boolean;
+  produces_governed_evidence: boolean;
+  typical_asset_families: string[];
+  realization_status: string;
+};
+
+export type AmbiguityEntryView = {
+  ambiguity_id: string;
+  description: string;
+  class: string;
+  status: string;
+  policy_action: string;
+  decision_status: string;
+  governance_posture: string;
+  operator_headline: string;
+  next_lawful_action: string;
+  capability_surface: string | null;
+  tenant_name: string | null;
+  expected_resolving_edge: string | null;
+  blocking: boolean;
+  hard_stop: boolean;
+  affected_assets: string[];
+  evidence_refs: string[];
+  invariant_refs: string[];
+  competing_interpretations: string[];
+  current_resolution: string;
+  decision_basis: string;
+  decision_owner: string;
+  decision_event_refs: string[];
+  observed_state: Record<string, unknown>;
+  risk_appetite: string | null;
+  [key: string]: unknown;
+};
+
+export type AmbiguityRegisterView = {
+  register_kind: string;
+  schema_version: string;
+  workspace_root: string;
+  stage: string;
+  project_profile: Record<string, unknown>;
+  summary: {
+    total?: number;
+    blocking?: number;
+    hard_stop?: number;
+    fh_required?: number;
+    pending_capability?: number;
+    status_counts: Record<string, number>;
+    [key: string]: unknown;
+  };
+  ambiguities: AmbiguityEntryView[];
 };
 
 export type GapView = {
@@ -157,12 +314,24 @@ export type GraphNodeView = {
   id: string;
   node_name: string;
   label: string;
-  kind: "asset_node" | "function";
+  kind: "asset_node" | "function" | "catalog" | "governance";
   status: Tone;
   description: string;
   subtitle: string;
   asset_ids: string[];
-  ref_kind: "asset" | "function" | "binding";
+  ref_kind:
+    | "requirement"
+    | "surface"
+    | "asset"
+    | "asset_family"
+    | "binding"
+    | "collection"
+    | "ambiguity"
+    | "edge_contract"
+    | "function"
+    | "program"
+    | "work_act_type"
+    | "workorder";
   ref_id: string;
   input_node_ids: string[];
   output_node_ids: string[];
@@ -286,13 +455,54 @@ export type RuntimeProjection = {
   latest_event_time: string | null;
 };
 
+export type SessionServiceRunView = {
+  run_id: string;
+  status: string;
+  graph_function: string | null;
+  module: string | null;
+  edge: string | null;
+  blocking_reason: string | null;
+  selected_worker: string | null;
+  updated_at: string | null;
+};
+
+export type SessionServiceWorkerView = {
+  name: string;
+  agent: string | null;
+  transport: string | null;
+  status: string | null;
+  remote_host: string | null;
+  history_bytes: number | null;
+  last_activity_at: string | null;
+};
+
+export type SessionServiceState = {
+  configured: boolean;
+  available: boolean;
+  base_url: string | null;
+  observed_at: string | null;
+  error: string | null;
+  runs: SessionServiceRunView[];
+  workers: SessionServiceWorkerView[];
+};
+
 export type DomainProjection = {
   workspace_root: string;
+  query_contract: QueryContractView;
   semantic_facets: SemanticFacet[];
   asset_types: AssetTypeProfile[];
+  asset_families: AssetFamilyView[];
   assets: AssetView[];
+  requirements: RequirementView[];
+  tickets: TicketView[];
+  comments: CommentView[];
+  ambiguity_register: AmbiguityRegisterView;
+  collections: CollectionView[];
   bindings: BindingView[];
   functions: FunctionView[];
+  edge_contracts: EdgeContractView[];
+  programs: ProgramView[];
+  work_act_types: WorkActTypeView[];
   jobs: JobView[];
   graph_functions: GraphFunctionView[];
   workorders: WorkOrderView[];
@@ -344,10 +554,18 @@ export type SurfaceData =
     };
 
 export type Selection =
+  | { kind: "requirement"; id: string }
+  | { kind: "surface"; id: string }
   | { kind: "asset"; id: string }
+  | { kind: "asset_family"; id: string }
   | { kind: "binding"; id: string }
+  | { kind: "collection"; id: string }
+  | { kind: "ambiguity"; id: string }
+  | { kind: "edge_contract"; id: string }
   | { kind: "function"; id: string }
+  | { kind: "program"; id: string }
   | { kind: "workorder"; id: string }
+  | { kind: "work_act_type"; id: string }
   | { kind: "graph_function"; id: string }
   | { kind: "run"; id: string }
   | { kind: "graph_call"; id: string }

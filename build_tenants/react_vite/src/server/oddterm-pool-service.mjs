@@ -916,7 +916,26 @@ export function sendGTermSessionInput(workspaceRoot, sessionId, data) {
     return serializeSession(session);
   }
 
-  session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: payloadText })}\n`);
+  const bodyText = payloadText.replace(/[\r\n]+$/, "");
+  const submitText = payloadText.slice(bodyText.length);
+
+  if (bodyText) {
+    session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: bodyText })}\n`);
+  }
+
+  if (submitText) {
+    setTimeout(() => {
+      if (session.status !== "live") {
+        return;
+      }
+      try {
+        session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: submitText })}\n`);
+      } catch {
+        // Best effort submit.
+      }
+    }, 40);
+  }
+
   return serializeSession(session);
 }
 

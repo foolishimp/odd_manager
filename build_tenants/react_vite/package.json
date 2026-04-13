@@ -6,6 +6,7 @@
   "scripts": {
     "dev:client": "vite",
     "dev:server": "node src/server/index.mjs",
+    "mcp:irc": "node runtime/odd_manager_irc_mcp.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test:e2e": "playwright test",
