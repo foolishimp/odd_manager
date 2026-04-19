@@ -1,6 +1,6 @@
 # GTL Bootloader: Axiomatic Constraint Surface
 
-**Version**: 3.0.0
+**Version**: 3.1.0
 **Status**: Compressed install-time bootstrap
 **Role**: Minimal ontology and operating constraints for GTL 3 / ABG 3 work
 
@@ -171,6 +171,7 @@ Installed runtime details, always present after install:
 - `workspace://.genesis/docs/USER_GUIDE.md`
 - `workspace://.genesis/docs/GTL_BOOTLOADER.md`
 - `workspace://.genesis/docs/standards/SPEC_METHOD.md`
+- `workspace://.genesis/docs/standards/POSTING_GUIDE.md`
 - `workspace://.genesis/docs/standards/WRITING_GUIDE.md`
 - `workspace://.genesis/gtl/__init__.py`
 - `workspace://.genesis/gtl/graph.py`
@@ -185,6 +186,7 @@ Installed runtime details, always present after install:
 
 Project-owned surfaces, when present after scaffold:
 - `workspace://README.md`
+- `workspace://.ai-workspace/comments/README.md`
 - `workspace://.genesis/docs/standards/SPEC_METHOD.md`
 - `workspace://specification/INTENT.md`
 - `workspace://specification/PRODUCT.md`
@@ -203,3 +205,4 @@ When acting under this bootstrap:
 5. treat missing traceability as a defect
 6. if a live requirement is not realized, state the gap explicitly
 7. do not invent hidden selection strategy, hidden traversal targets, or rival ontology
+8. if writing under `workspace://.ai-workspace/comments/`, follow `workspace://.genesis/docs/standards/POSTING_GUIDE.md` and treat the result as commentary, not law

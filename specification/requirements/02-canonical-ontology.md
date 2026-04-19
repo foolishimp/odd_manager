@@ -15,7 +15,8 @@ Acceptance Criteria
   types, asset families, asset collections, asset nodes, asset graphs, asset
   bindings, workorders, jobs, roles, runs, graph calls, frames,
   continuations, runtime facts, policy, evidence, provenance, closure,
-  ambiguity register, capability contracts, and bounded stop states
+  ambiguity register, capability contracts, bounded stop states, domain
+  package identity, and domain contract identity
 - operator-visible labels and actions are anchored to those objects
 - the product does not require a second hidden ontology to explain product
   state
@@ -101,6 +102,8 @@ Acceptance Criteria
 - declaration-owned objects remain distinguishable from runtime-owned objects
 - builder/domain-owned objects remain distinguishable from control-plane read
   models
+- domain-package-owned objects remain distinguishable from manager-owned core
+  system pages and domain UI packs
 - UI-only constructs such as badges, scores, and lenses remain identifiable as
   derived views rather than source truth
 
@@ -119,13 +122,13 @@ Acceptance Criteria
 ### REQ-OM-ONT-010 - Placeholder builder detail is allowed when canonical identity is present
 
 The product may use placeholder or incomplete builder-domain detail while
-`odd_method` is still publishing its live model, provided canonical identity
-and runtime truth remain intact.
+the active domain package is still publishing its live model, provided
+canonical identity and runtime truth remain intact.
 
 Acceptance Criteria
 - placeholder detail may be used for rich type semantics, gap interpretation,
   closure hints, proof hints, or function descriptions that are not yet
-  published cleanly by the builder line
+  published cleanly by the active domain package
 - once upstream publishes ambiguity, capability, or policy-bearing domain
   overlays explicitly, the manager does not hide them behind generic
   placeholder state
@@ -134,9 +137,50 @@ Acceptance Criteria
 - the product labels provisional detail honestly rather than presenting
   invented precision as settled domain truth
 
+### REQ-OM-ONT-013 - Domain contract identity is first-class supervisory truth
+
+`odd_manager` shall treat the active domain package and its published contract
+identity as first-class supervisory objects.
+
+Acceptance Criteria
+- the product can identify which domain package governs the active workspace
+- the product can identify the active query-contract name and version
+- manager-side domain UI selection is traceable to published contract identity
+  rather than to repository naming heuristics
+- the operator can tell whether the active workspace is running a supported
+  domain contract
+
+### REQ-OM-ONT-014 - Domain-specific semantics extend the core ontology without replacing it
+
+`odd_manager` shall allow domain-specific semantics to extend the supervisory
+model without replacing the shared GTL/ABG core ontology.
+
+Acceptance Criteria
+- domain-specific objects such as SDLC release lanes or world-model hierarchies
+  can appear as first-class projections where the active domain publishes them
+- shared GTL/ABG objects remain stable across domains
+- the introduction of a new domain package does not require renaming or
+  reinterpreting the core runtime ontology
+
+### REQ-OM-ONT-012 - Edge obligation ledger carry and fulfillment are distinct supervisory surfaces
+
+When the managed domain package publishes per-edge obligation ledgers, `odd_manager`
+shall surface carry and fulfillment as distinct projection fields rather than
+collapsing them into one blended gap scalar.
+
+Acceptance Criteria
+- projected gap views distinguish `carry_converged` and `fulfillment_converged`
+  where the managed domain package publishes them
+- `edge_converged` is the primary closure signal per edge, not `combined_delta`
+- blocking reasons per obligation are surfaced where available
+- `combined_delta` may appear as a derived convenience but is not the primary
+  closure signal
+- the manager does not re-collapse carry and fulfillment into a single
+  pass/fail value internally
+
 ### REQ-OM-ONT-011 - Published ambiguity and capability objects are first-class supervisory truth
 
-When the managed builder/domain line publishes ambiguity and capability objects,
+When the managed domain package publishes ambiguity and capability objects,
 `odd_manager` shall surface them as first-class supervisory truth rather than
 as incidental annotations on gaps or status badges.
 

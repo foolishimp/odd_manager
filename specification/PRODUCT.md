@@ -13,17 +13,17 @@ It provides one lawful control surface over:
 - graph sets, typed assets, asset graphs, bindings, and workorders
 - GTL declarations
 - ABG runtime truth
-- `odd_method` builder/domain surfaces as they emerge during that product's
-  build-out
+- domain-package surfaces published by the active `odd_*` workspace contract
 - workspace evidence, provenance, and closure material
 - multiple stakeholder entry lenses over one shared world model, including
   requirement-first and process-first delivery views
 
 The manager may be implemented against a stable observation contract before the
-full `odd_method` domain-detail library hardens.
+full multi-domain library hardens.
 
 That stable contract is:
 
+- declared domain-package identity and query-contract identity
 - URI-addressed assets
 - declared asset types
 - asset families and asset collections
@@ -36,13 +36,13 @@ That stable contract is:
 - ambiguity register, ambiguity policy, and capability-gated stop-state overlays
 - ABG runtime facts and aggregates
 - direct ABG event and projector access for runtime state
-- `odd_method` query-library overlays for domain understanding that ABG does
+- domain-package query-library overlays for domain understanding that ABG does
   not own
 
 It is not:
 
 - the GTL/ABG runtime itself
-- the builder/domain product itself
+- the domain product itself
 - a retrofit of a transport-metaphor dashboard
 - a clone of Paperclip's company/org ontology
 
@@ -69,6 +69,35 @@ current constitutional or design truth.
 One operator-facing surface that composes runtime truth, domain overlays,
 policy, evidence, and coordination without introducing a second runtime or a
 shadow semantic center.
+
+### Core System Page
+
+A manager-owned page or tab whose meaning is stable across domain packages
+because it is grounded in GTL/ABG runtime, history, evidence, provenance, or
+traceability truth.
+
+### Domain Package
+
+A concrete `odd_*` package that publishes one domain-specific graph-function
+world, query contract, domain model, and domain overlays over the GTL/ABG
+substrate.
+
+### Domain Contract
+
+The published identity surface for one domain package and one query-model
+version, used by the manager to determine what domain overlays and domain UI
+surfaces are admissible.
+
+### Domain UI Pack
+
+A manager-owned adapter pack that binds one supported domain contract to
+domain-specific tabs, inspector renderers, labels, and operator actions.
+
+### Domain Page
+
+A page or tab contributed by a compatible domain UI pack for one active domain
+package, such as SDLC-specific builder/release views or world-model hierarchy
+views.
 
 ### GraphSet
 
@@ -264,20 +293,23 @@ truth and realization law.
 The intended end-state product shape is:
 
 1. install `odd_manager` as its own GTL/ABG project
-2. preserve a clean separation from `abiogenesis` and `odd_method`
+2. preserve a clean separation from `abiogenesis`, `odd_method`, and any one
+   concrete domain package
 3. publish the manager ontology around graph sets, typed assets, asset graphs,
    bindings, workorders, jobs, roles, runs, calls, continuations, evidence,
    provenance, and closure
-4. publish the operator visual language and graph-workspace styling as
+4. split the UI into manager-owned core system pages plus domain-contributed
+   pages and actions selected through compatible domain UI packs
+5. publish the operator visual language and graph-workspace styling as
    `odd_manager`-owned design law
-5. keep shared design law under `build_tenants/common/design/`
-6. implement the operator UI in a tenant-local carrier after the design package
+6. keep shared design law under `build_tenants/common/design/`
+7. implement the operator UI in a tenant-local carrier after the design package
    hardens
-7. support serious runtime supervision, failure recovery, policy inspection,
+8. support serious runtime supervision, failure recovery, policy inspection,
    evidence review, and closure explanation
-8. treat all dashboard summaries as projections over declaration truth and ABG
+9. treat all dashboard summaries as projections over declaration truth and ABG
    event truth rather than as shadow runtime state
-9. remain forward-only before first release rather than carrying stale
+10. remain forward-only before first release rather than carrying stale
    pre-release compatibility debt
 
 ## Current Product Definition
@@ -289,19 +321,21 @@ The current product definition of `odd_manager` is:
 - a project with a published domain model under `specification/domain/`
 - a project with a published operator visual system under
   `build_tenants/common/design/`
-- a manager product subordinate to GTL/ABG runtime law and `odd_method`
-  builder/domain truth as that line is actively being built
-- a control surface over ABG runtime truth and live `odd_method` query-derived
-  domain overlays, including ambiguity and capability posture where published
+- a manager product subordinate to GTL/ABG runtime law, `odd_method`
+  methodology, and the active workspace's published domain-package truth
+- a control surface over ABG runtime truth and live domain query-derived
+  overlays, including ambiguity and capability posture where published
 - a new control-plane product that preserves an established shell, inspector,
   board, and graph-workspace visual language without inheriting a transport
   ontology
 - a pre-release product with no obligation to preserve stale backward-compatible
   observer contracts while the live upstream surface is still repricing
-- a product allowed to ship with placeholder builder-detail surfaces only where
-  the current `odd_method` line has not yet published richer semantic detail
-- a product that composes ABG-native runtime projections with `odd_method`
-  domain query results instead of depending on one monolithic observer payload
+- a product whose manager-owned core system pages remain cross-domain while
+  domain pages and actions are selected through a compatible domain UI pack
+- a product allowed to ship with placeholder domain-detail surfaces only where
+  the current active domain package has not yet published richer semantic detail
+- a product that composes ABG-native runtime projections with domain query
+  results instead of depending on one monolithic observer payload
 - a product that offers requirement-first and process-first stakeholder entry
   lenses over one shared world model rather than separate widget systems
 - a product whose information widgets remain collapsible, drillable, and
@@ -314,3 +348,4 @@ The current product definition of `odd_manager` is:
 The current active implementation target is:
 
 - `build_tenants/react_vite/`
+- current first supported domain contract: `odd_sdlc.query-domain`

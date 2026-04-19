@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../abiogenesis"
+		},
+		{
+			"path": "../../../../odd_domain"
+		},
+		{
+			"path": "../../../../specification_methodology"
+		},
+		{
+			"path": "../../../../ai_sdlc_examples"
+		}
+	],
+	"settings": {
+		"files.watcherExclude": {
+			"**/target": true
+		}
+	}
+}

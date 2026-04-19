@@ -16,7 +16,7 @@ Acceptance Criteria
 - the control plane remains subordinate to external declaration and runtime
   truth rather than collapsing those ownership boundaries into itself
 - implementation work can proceed without requiring the product to masquerade
-  as the builder line or the runtime substrate
+  as a domain package or the runtime substrate
 
 ### REQ-OM-BND-002 - The product does not create a shadow runtime
 
@@ -44,18 +44,48 @@ Acceptance Criteria
 - the product does not require operators to think in inherited metaphor terms
   in order to understand current truth
 
-### REQ-OM-BND-004 - The emerging builder line remains a separate ownership boundary
+### REQ-OM-BND-004 - Domain packages remain separate ownership boundaries
 
-`odd_manager` shall integrate with the emerging builder line as a separate
-ownership boundary while that line is still being built.
+`odd_manager` shall integrate with domain packages as separate ownership
+boundaries rather than absorbing them into the manager product.
 
 Acceptance Criteria
-- builder/domain framing can be inspected from the control plane without being
+- domain framing can be inspected from the control plane without being
   absorbed into the manager product
-- the control plane can link to builder-owned objects, functions, and assets
+- the control plane can link to domain-owned objects, functions, and assets
   without redefining their semantics
-- incomplete builder surfaces are represented honestly rather than padded with
+- incomplete domain surfaces are represented honestly rather than padded with
   invented manager-owned substitutes
+
+### REQ-OM-BND-008 - odd_manager is a host over core pages and domain-contributed surfaces
+
+`odd_manager` shall operate as a control-plane host that keeps core GTL/ABG
+pages manager-owned while admitting domain-specific tabs and actions only
+through the active domain package contract.
+
+Acceptance Criteria
+- core system pages remain available across supported domains for runtime,
+  history, provenance, evidence, traceability, and related GTL/ABG truth
+- domain-specific pages and actions are contributed through a compatible
+  manager-side domain UI pack rather than hardcoded as unconditional global
+  product truth
+- the product can support more than one `odd_*` domain package without forking
+  the whole manager shell
+- unsupported or missing domain packs do not remove core system pages
+
+### REQ-OM-BND-009 - Domain-contributed surfaces do not redefine runtime law
+
+`odd_manager` shall not allow a domain UI pack to redefine GTL/ABG runtime
+objects or their governing semantics.
+
+Acceptance Criteria
+- domain-contributed pages may add domain-specific meaning, navigation, and
+  actions, but they do not redefine `run`, `graph_call`, `frame`,
+  `continuation`, or event truth
+- manager-owned runtime pages remain authoritative for ABG-native runtime
+  interpretation
+- domain labels or summaries remain traceable to their published domain
+  contract rather than to UI-local reinterpretation
 
 ### REQ-OM-BND-005 - Shared design law hardens before tenant-local implementation
 
@@ -89,7 +119,7 @@ Acceptance Criteria
 - realtime runtime state is read from ABG event truth and ABG runtime
   projections
 - domain overlays such as asset views, bindings, function catalog detail, or
-  gap meaning may come from `odd_method` query-library logic
+  gap meaning may come from active domain-package query-library logic
 - query-library results do not redefine ABG-native `run`, `graph_call`,
   `continuation`, or `frame` aggregates
 - the composition boundary remains explicit in design and implementation

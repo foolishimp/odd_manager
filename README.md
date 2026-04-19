@@ -5,9 +5,10 @@
 It is a separate project boundary from:
 
 - `abiogenesis`, which remains canonical GTL/ABG language and runtime truth
-- `odd_method`, which remains the emerging outcome-driven builder/domain line
+- `odd_sdlc`, which remains the emerging outcome-driven builder/domain line
   and is still in build
-- `paperclip`, which remains a UX/control-plane reference rather than semantic authority
+- `paperclip`, which remains a UX/control-plane reference rather than semantic
+  authority
 
 Start here:
 
@@ -25,9 +26,11 @@ Start here:
 
 Current repo posture:
 
-- the project is initialized with the ABG installer
+- the project is initialized with the ABG installer and governed as an
+  `odd_sdlc` workspace
 - the design package lives under `build_tenants/common/design/`
 - the shared design package publishes the shell, inspector, board, and
   graph-workspace visual language that future UI carriers must preserve
-- the installer-seeded `build_tenants/odd_manager/python/` surface is starter scaffold only
 - the active UI implementation carrier is `build_tenants/react_vite/`
+- the installed `.genesis/odd_sdlc/` package is the workspace-local domain
+  runtime source used for query composition

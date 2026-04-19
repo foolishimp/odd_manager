@@ -14,6 +14,7 @@ run_fd_evaluator, select_relevant_contexts, render_delta.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json as _json
 import os
 import re
@@ -28,11 +29,22 @@ from typing import Any
 from gtl.function_model import GraphFunction
 from gtl.graph import Attrs, Graph, GraphVector, Node, Context, node_contract_key, _schema_key
 from gtl.module_model import Module
+from gtl.obligation_ledger import (
+    OBLIGATION_LEDGER_DECLARATION_KEY,
+    coerce_obligation_ledger_declaration,
+    declared_fulfillment_obligation,
+    validate_declared_fulfillment_obligations,
+)
 from gtl.operator_model import Evaluator, F_D, F_H, F_P
 from gtl.work_model import Job as GtlJob, Role, ContractRef
 
 from .correction import find_latest_reset
 from .events import EventStream
+from .fulfillment_ledger import (
+    latest_fp_assessed_event,
+    obligation_for_evaluator,
+    resolve_published_fulfillment_ledger,
+)
 from .materialization import MaterializationRequest, materialize_graph_function
 from .projection import project
 
@@ -127,6 +139,103 @@ class ExecutableJob:
     def target_type(self) -> Node:
         """Output type — what this job writes. Uniquely identifies write territory."""
         return self.vector.target
+
+
+def declared_obligation_ledger_policy_for_job(job: ExecutableJob) -> dict[str, Any] | None:
+    fp_evaluators = tuple(evaluator for evaluator in job.evaluators if evaluator.regime is F_P)
+    if not fp_evaluators:
+        return None
+    raw_policy = job.vector.declarations.get(OBLIGATION_LEDGER_DECLARATION_KEY)
+    policy = coerce_obligation_ledger_declaration(raw_policy)
+    if policy is None:
+        raise ValueError(
+            f"ExecutableJob {job.vector.name!r} declares F_P evaluators but no "
+            "GraphVector obligation_ledger declaration"
+        )
+    return policy
+
+
+def _import_obligation_ledger_adapter(adapter_ref: str) -> Any:
+    if ":" not in adapter_ref:
+        raise ValueError(
+            f"obligation_ledger.adapter_ref must use MODULE:SYMBOL form, got {adapter_ref!r}"
+        )
+    module_name, _, symbol_name = adapter_ref.partition(":")
+    module = importlib.import_module(module_name)
+    try:
+        return getattr(module, symbol_name)
+    except AttributeError as exc:
+        raise ValueError(
+            f"obligation_ledger.adapter_ref {adapter_ref!r} does not resolve to a symbol"
+        ) from exc
+
+
+def _materialized_dynamic_obligation_entries(
+    job: ExecutableJob,
+    *,
+    policy: dict[str, Any],
+    workspace_root: Path | None,
+) -> list[dict[str, Any]]:
+    if workspace_root is None:
+        raise ValueError(
+            f"ExecutableJob {job.vector.name!r} requires workspace_root to materialize an adapter-driven obligation_ledger"
+        )
+    adapter_ref = str(policy.get("adapter_ref") or "")
+    adapter = _import_obligation_ledger_adapter(adapter_ref)
+    materialized = (
+        adapter(Path(workspace_root), dict(policy), edge_name=job.vector.name)
+        if callable(adapter)
+        else adapter
+    )
+    if not isinstance(materialized, dict):
+        raise ValueError(
+            f"obligation_ledger adapter {adapter_ref!r} must materialize to an object"
+        )
+    raw_obligations = materialized.get("obligations")
+    if not isinstance(raw_obligations, list) or not raw_obligations:
+        raise ValueError(
+            f"obligation_ledger adapter {adapter_ref!r} materialized no obligations for edge {job.vector.name!r}"
+        )
+    return [dict(entry) for entry in raw_obligations if isinstance(entry, dict)]
+
+
+def declared_fulfillment_obligations_for_job(
+    job: ExecutableJob,
+    *,
+    workspace_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    policy = declared_obligation_ledger_policy_for_job(job)
+    if policy is None:
+        return []
+    declaration_family = str(policy.get("declaration_family") or "static_obligations")
+    if declaration_family == "adapter_driven":
+        raw_entries = _materialized_dynamic_obligation_entries(
+            job,
+            policy=policy,
+            workspace_root=workspace_root,
+        )
+    else:
+        raw_entries = [dict(entry) for entry in policy.get("obligations", ())]
+    obligations: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw_entries):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"materialized obligation_ledger.obligations[{index}] must be an object"
+            )
+        obligations.append(
+            declared_fulfillment_obligation(
+                entry.get("id"),
+                evaluator=entry.get("evaluator") or entry.get("id"),
+                statement=entry.get("statement", ""),
+                source_kind=entry.get("source_kind", policy.get("obligation_source_kind", "declared_obligation_ledger")),
+                source_refs=entry.get("source_refs", ()),
+            )
+        )
+    validate_declared_fulfillment_obligations(
+        obligations,
+        field="materialized obligation_ledger.obligations",
+    )
+    return obligations
 
 
 def module_to_executable_jobs(module: Module) -> list[ExecutableJob]:
@@ -448,6 +557,114 @@ def _coerce_command_tokens(raw: Any, *, label: str) -> list[str]:
     return tokens
 
 
+def _coerce_mapping_or_json_object(raw: Any, *, label: str) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"{label} must be a mapping or JSON object string")
+    source = raw.strip()
+    if not source.startswith("{"):
+        raise ValueError(f"{label} string must be a JSON object")
+    try:
+        loaded = _json.loads(source)
+    except _json.JSONDecodeError as exc:
+        raise ValueError(f"{label} JSON string is invalid: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{label} JSON string must decode to an object")
+    return dict(loaded)
+
+
+def _runtime_pythonpath_entries(
+    runtime_config: dict[str, Any] | None,
+    *,
+    workspace_root: Path | None,
+) -> list[str]:
+    if workspace_root is None:
+        return []
+    raw = dict(runtime_config or {}).get("pythonpath")
+    if isinstance(raw, str):
+        values = [raw]
+    elif isinstance(raw, (list, tuple)):
+        values = [item for item in raw if isinstance(item, str)]
+    else:
+        values = []
+    entries: list[str] = []
+    for value in values:
+        stripped = value.strip()
+        if not stripped:
+            continue
+        path = Path(stripped)
+        if not path.is_absolute():
+            path = (workspace_root / path).resolve()
+        entries.append(str(path))
+    return entries
+
+
+def _workspace_command_env(
+    *,
+    runtime_config: dict[str, Any] | None,
+    workspace_root: Path | None,
+) -> dict[str, str]:
+    env = os.environ.copy()
+    extra = os.pathsep.join(
+        _runtime_pythonpath_entries(runtime_config, workspace_root=workspace_root)
+    )
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [extra, existing]))
+    return env
+
+
+def _read_workspace_asset_snapshot(
+    workspace_root: Path,
+    relative_path: str,
+    *,
+    max_chars: int = 4000,
+) -> str | None:
+    """Load a bounded text snapshot for a concrete workspace asset binding."""
+    path = (workspace_root / relative_path).resolve()
+    try:
+        path.relative_to(workspace_root.resolve())
+    except ValueError:
+        return None
+    if not path.exists():
+        return None
+
+    def _truncate(text: str) -> str:
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars].rstrip() + "\n...[truncated]"
+
+    if path.is_file():
+        try:
+            return _truncate(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    if path.is_dir():
+        parts: list[str] = []
+        remaining = max_chars
+        for pattern in ("*.md", "*.txt", "*.py", "*.json", "*.yml", "*.yaml"):
+            for asset_file in sorted(path.rglob(pattern)):
+                try:
+                    content = asset_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                block = (
+                    f"# {asset_file.relative_to(workspace_root)}\n"
+                    f"{content.rstrip()}\n\n"
+                )
+                if len(block) > remaining:
+                    parts.append(block[:remaining].rstrip() + "\n...[truncated]")
+                    return "".join(parts).rstrip()
+                parts.append(block)
+                remaining -= len(block)
+                if remaining <= 0:
+                    return "".join(parts).rstrip()
+        if parts:
+            return "".join(parts).rstrip()
+    return None
+
+
 def _dig_path(payload: Any, dotted_path: str) -> Any:
     current = payload
     for segment in dotted_path.split("."):
@@ -474,9 +691,10 @@ def _asset_binding_query_contract(runtime_config: dict[str, Any] | None) -> tupl
     config = dict(runtime_config or {})
     explicit = config.get("asset_binding_contract")
     if explicit is not None:
-        if not isinstance(explicit, dict):
-            raise ValueError("runtime_config.asset_binding_contract must be a mapping")
-        contract = dict(explicit)
+        contract = _coerce_mapping_or_json_object(
+            explicit,
+            label="runtime_config.asset_binding_contract",
+        )
         contract["command"] = _coerce_command_tokens(
             contract.get("command"),
             label="runtime_config.asset_binding_contract.command",
@@ -546,6 +764,10 @@ def resolve_workspace_asset_bindings(
             cwd=workspace_root,
             capture_output=True,
             text=True,
+            env=_workspace_command_env(
+                runtime_config=runtime_config,
+                workspace_root=workspace_root,
+            ),
             timeout=float(timeout),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -839,81 +1061,24 @@ def bind_fh(
     job: ExecutableJob,
     all_events: list[dict],
     current_workflow_version: str = "unknown",
-    carry_forward: list[dict] | None = None,
     *,
     work_key: str | None = None,
+    workspace_root: Path | None = None,
 ) -> bool:
     """
-    Evaluate holdsAt(operative(edge, work_key, wv), now) for the F_H gate.
-
-    Event Calculus semantics:
-      approved{kind: fh_review}  initiates  operative(edge, work_key, wv)
-      approved{kind: fh_intent}  initiates  operative(edge, work_key, wv)
-      revoked{kind: fh_approval} terminates operative(edge, work_key, wv)
+    Resolve the current ledger-backed admission state for this edge/work slice.
     """
-    if carry_forward is None:
-        carry_forward = []
-
-    latest_approved_time: datetime | None = None
-    found_approved = False
-
-    for e in all_events:
-        etype = e.get("event_type")
-        edata = e.get("data", {})
-
-        is_approved = (
-            etype == "approved" and edata.get("kind") in ("fh_review", "fh_intent")
-        )
-
-        if is_approved and edata.get("edge") == job.vector.name:
-            if work_key is not None:
-                event_wk = edata.get("work_key")
-                if event_wk is not None and event_wk != work_key:
-                    continue
-            elif edata.get("work_key") is not None:
-                continue
-            if current_workflow_version == "unknown":
-                found_approved = True
-                latest_approved_time = _event_time_value(e)
-                continue
-
-            ev_wv = edata.get("workflow_version")
-
-            if ev_wv == current_workflow_version:
-                found_approved = True
-                latest_approved_time = _event_time_value(e)
-                continue
-
-            for cf in carry_forward:
-                if (cf.get("edge") == job.vector.name
-                        and cf.get("from_version") == ev_wv
-                        and cf.get("work_key", None) == (work_key or None)):
-                    found_approved = True
-                    latest_approved_time = _event_time_value(e)
-                    break
-
-    if not found_approved:
+    resolved_ledger = resolve_published_fulfillment_ledger(
+        all_events,
+        edge=job.vector.name,
+        work_key=work_key,
+        current_workflow_version=current_workflow_version,
+        workspace=workspace_root,
+    )
+    if resolved_ledger is None:
         return False
-
-    for e in all_events:
-        etype = e.get("event_type")
-        edata = e.get("data", {})
-        if etype == "revoked" and edata.get("kind") == "fh_approval":
-            revoked_edge = edata.get("edge")
-            if revoked_edge == job.vector.name or revoked_edge == "*":
-                rev_wk = edata.get("work_key")
-                if work_key is not None and rev_wk is not None and rev_wk != work_key:
-                    continue
-                if work_key is None and rev_wk is not None:
-                    continue
-                if current_workflow_version != "unknown":
-                    rev_wv = edata.get("workflow_version")
-                    if rev_wv != current_workflow_version:
-                        continue
-                event_time = _event_time_value(e)
-                if latest_approved_time is None or (event_time is not None and event_time > latest_approved_time):
-                    return False
-
+    if bool(resolved_ledger.get("admission_required")):
+        return bool(resolved_ledger.get("admitted"))
     return True
 
 
@@ -927,69 +1092,58 @@ def bind_fp_certified(
     current_workflow_version: str = "unknown",
     *,
     work_key: str | None = None,
+    workspace_root: Path | None = None,
 ) -> bool:
     """
     Evaluate holdsAt(certified(edge, work_key, evaluator, spec_hash, wv), now).
 
     Reset boundary (ADR-026): certifications before the latest applicable reset
     are shadowed.
+
+    Runtime truth is sourced from the published fulfillment ledger, not from
+    raw event payload fields. The assessed event is only the discovery pointer
+    to the current ledger publication for this obligation.
     """
     reset_boundary = find_latest_reset(all_events, edge=job.vector.name, work_key=work_key)
     reset_time = _event_time_value(reset_boundary) if reset_boundary else None
+    latest_assessed = latest_fp_assessed_event(
+        all_events,
+        edge=job.vector.name,
+        work_key=work_key,
+        spec_hash=spec_hash,
+    )
+    latest_assessed_time = _event_time_value(latest_assessed) if latest_assessed is not None else None
 
-    latest_assessed_time: datetime | None = None
-    found_assessed = False
-
-    for e in all_events:
-        etype = e.get("event_type")
-        edata = e.get("data", {})
-
-        is_assessed = (
-            etype == "assessed"
-            and edata.get("kind") == "fp"
-            and edata.get("edge") == job.vector.name
-            and edata.get("evaluator") == ev.name
-            and edata.get("result") == "pass"
-        )
-
-        if is_assessed:
-            if spec_hash is not None and edata.get("spec_hash") != spec_hash:
-                continue
-            if work_key is not None:
-                event_wk = edata.get("work_key")
-                if event_wk is not None and event_wk != work_key:
-                    continue
-            elif edata.get("work_key") is not None:
-                continue
-            event_time = _event_time_value(e)
-            if reset_time is not None and event_time is not None and event_time <= reset_time:
-                continue
-            found_assessed = True
-            latest_assessed_time = event_time
-
-    if not found_assessed:
+    if latest_assessed is None:
         return False
 
-    for e in all_events:
-        etype = e.get("event_type")
-        edata = e.get("data", {})
-        if etype == "revoked" and edata.get("kind") == "fp_assessment":
-            revoked_edge = edata.get("edge")
-            if revoked_edge == job.vector.name or revoked_edge == "*":
-                rev_wk = edata.get("work_key")
-                if work_key is not None and rev_wk is not None and rev_wk != work_key:
-                    continue
-                if work_key is None and rev_wk is not None:
-                    continue
-                if current_workflow_version != "unknown":
-                    rev_wv = edata.get("workflow_version")
-                    if rev_wv != current_workflow_version:
-                        continue
-                event_time = _event_time_value(e)
-                if latest_assessed_time is None or (event_time is not None and event_time > latest_assessed_time):
-                    return False
-
-    return True
+    if reset_time is not None and latest_assessed_time is not None and latest_assessed_time <= reset_time:
+        return False
+    ledger_data = resolve_published_fulfillment_ledger(
+        all_events,
+        edge=job.vector.name,
+        work_key=work_key,
+        spec_hash=spec_hash,
+        current_workflow_version=current_workflow_version,
+        workspace=workspace_root,
+        ledger_ref=latest_assessed.get("data", {}).get("published_ledger_ref"),
+    )
+    if ledger_data is None:
+        return False
+    if ledger_data.get("edge") != job.vector.name:
+        return False
+    if ledger_data.get("carry_converged") is False:
+        return False
+    if ledger_data.get("admitted") is not True:
+        return False
+    if ledger_data.get("target_certification_passed", True) is not True:
+        return False
+    if ledger_data.get("certification_scope") == "edge":
+        return bool(ledger_data.get("edge_converged"))
+    obligation = obligation_for_evaluator(ledger_data, ev.name)
+    if obligation is None:
+        return False
+    return obligation.get("fulfillment_status") == "fulfilled"
 
 
 # ── F_D evaluator runner ──────────────────────────────────────────────────────
@@ -1101,13 +1255,15 @@ def bind_fd(
             return fd_results.get(ev.name, {}).get("passes", False)
         if ev.regime is F_H:
             return bind_fh(
-                job, all_events, current_workflow_version, carry_forward,
+                job, all_events, current_workflow_version,
                 work_key=work_key,
+                workspace_root=workspace_root,
             )
         if ev.regime is F_P:
             return bind_fp_certified(
                 job, ev, all_events, spec_hash, current_workflow_version,
                 work_key=work_key,
+                workspace_root=workspace_root,
             )
         return False
 
@@ -1181,6 +1337,7 @@ def bind_fp(
         pre,
         job,
         result_path,
+        workspace_root=workspace_root,
         asset_bindings=asset_bindings,
         target_binding=target_binding,
     )
@@ -1216,6 +1373,7 @@ def _assemble_prompt(
     job: ExecutableJob,
     result_path: str = "",
     *,
+    workspace_root: Path | None = None,
     asset_bindings: dict[str, TargetAssetBinding] | None = None,
     target_binding: TargetAssetBinding | None = None,
 ) -> str:
@@ -1248,6 +1406,32 @@ def _assemble_prompt(
         f"Status: {pre.current_asset.get('status', 'unknown')}\n"
         f"Edges converged: {pre.current_asset.get('edges_converged', [])}"
     )
+
+    target_binding_lines = [
+        "[WORKING METHOD] — current-state-first execution is mandatory:",
+    ]
+    if target_binding is not None:
+        relative_path = target_binding.relative_path
+        if isinstance(relative_path, str) and relative_path:
+            target_binding_lines.append(
+                f"  1. Inspect the current target asset state at {relative_path} before making changes."
+            )
+        else:
+            target_binding_lines.append(
+                "  1. Inspect the current target asset state in the bound workspace location before making changes."
+            )
+    else:
+        target_binding_lines.append(
+            "  1. Inspect the current target asset state in workspace before making changes."
+        )
+    target_binding_lines.extend(
+        [
+            "  2. Determine what is already realized and what remains unresolved.",
+            "  3. Treat the current workspace state as truth; prior manifests and prior prompts are historical evidence only.",
+            "  4. Continue construction from the present state and reduce the unresolved gap before assessment.",
+        ]
+    )
+    sections.append("\n".join(target_binding_lines))
 
     gap_lines = [f"[GAP] — {len(pre.failing_evaluators)} evaluator(s) failing:"]
     for ev in pre.failing_evaluators:
@@ -1282,6 +1466,34 @@ def _assemble_prompt(
         for name, content in pre.relevant_contexts.items():
             ctx_lines.append(f"\n--- {name} ---\n{content}")
         sections.append("\n".join(ctx_lines))
+
+    if workspace_root is not None:
+        source_nodes = src if isinstance(src, tuple) else (src,)
+        source_snapshots: list[str] = []
+        for node in source_nodes:
+            binding = asset_bindings.get(node.name)
+            if binding is None or not binding.relative_path:
+                continue
+            snapshot = _read_workspace_asset_snapshot(
+                workspace_root,
+                binding.relative_path,
+            )
+            if snapshot:
+                source_snapshots.append(
+                    "\n".join(
+                        [
+                            f"--- {node.name} ({binding.relative_path}) ---",
+                            snapshot,
+                        ]
+                    )
+                )
+        if source_snapshots:
+            sections.append(
+                "\n".join(
+                    ["[SOURCE ASSET SNAPSHOT] — current upstream asset content in workspace:"]
+                    + source_snapshots
+                )
+            )
 
     target = job.vector.target
     mandatory_contexts = tuple(
@@ -1407,26 +1619,65 @@ def _assemble_prompt(
             target_lines.append(f"  exists: {str(target_binding.exists).lower()}")
         sections.append("\n".join(target_lines))
 
-    fp_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_P]
+    declared_obligation_policy = (
+        declared_obligation_ledger_policy_for_job(job) if result_path else None
+    )
+    declared_fulfillment_obligations = (
+        declared_fulfillment_obligations_for_job(job, workspace_root=workspace_root)
+        if declared_obligation_policy is not None
+        else []
+    )
     assessment_contract = ""
-    if fp_failing and result_path:
-        ev_assessments = [
-            f'{{"evaluator": "{ev.name}", "result": "pass|fail", "evidence": "..."}}'
-            for ev in fp_failing
+    if declared_fulfillment_obligations and result_path:
+        fulfillment_assessments = [
+            (
+                f'{{"id": "{obligation["id"]}", "fulfillment_status": "fulfilled|partial|blocked|unfulfilled", '
+                f'"fulfillment_detail": "...", "blocking_reasons": ["..."], "evidence_refs": ["..."]}}'
+            )
+            for obligation in declared_fulfillment_obligations
         ]
         assessment_contract = (
-            f"\n\nWrite assessment JSON to: {result_path}\n"
-            f"Format: {{{{'edge': '{job.vector.name}', 'actor': '<your_agent_id>', 'assessments': [{', '.join(ev_assessments)}]}}}}\n"
-            "The app reads this file and emits assessed events — do NOT call emit-event yourself."
+            f"\n\nWrite fulfillment assessment JSON to: {result_path}\n"
+            f"Format: {{{{'edge': '{job.vector.name}', 'actor': '<your_agent_id>', "
+            f"'fulfillment_assessments': [{', '.join(fulfillment_assessments)}]}}}}\n"
+            "Use the declared fulfillment obligation ids exactly as published for this dispatch. "
+            "The app reads this file, publishes the current fulfillment ledger, and emits discovery events — do NOT call emit-event yourself."
         )
 
     sections.append(
         f"[OUTPUT CONTRACT]\n"
         f"Produce: {target.name} asset\n"
         f"Satisfying markov conditions: {target.markov}\n"
-        f"Evaluators to pass: {[ev.name for ev in pre.failing_evaluators]}"
+        f"Current failing evaluators: {[ev.name for ev in pre.failing_evaluators]}\n"
+        f"Declared fulfillment obligations: {[entry['id'] for entry in declared_fulfillment_obligations]}"
         + assessment_contract
     )
+    if declared_obligation_policy is not None:
+        sections.append(
+            "\n".join(
+                [
+                    "[DECLARED OBLIGATION LEDGER POLICY]",
+                    f"  declaration_family: {declared_obligation_policy['declaration_family']}",
+                    f"  obligation_source_ref: {declared_obligation_policy['obligation_source_ref']}",
+                    f"  obligation_kind: {declared_obligation_policy['obligation_kind']}",
+                    f"  certification_scope: {declared_obligation_policy['certification_scope']}",
+                    f"  carry_rule: {declared_obligation_policy['carry_rule']}",
+                    f"  fulfillment_rule: {declared_obligation_policy['fulfillment_rule']}",
+                    f"  evidence_policy: {declared_obligation_policy['evidence_policy']}",
+                ]
+            )
+        )
+        if declared_obligation_policy.get("adapter_ref"):
+            sections.append(
+                "\n".join(
+                    [
+                        "[DECLARED OBLIGATION LEDGER ADAPTER]",
+                        f"  signal_key: {declared_obligation_policy.get('signal_key', '')}",
+                        f"  adapter_ref: {declared_obligation_policy.get('adapter_ref', '')}",
+                        f"  derivation_rule: {declared_obligation_policy.get('derivation_rule', '')}",
+                    ]
+                )
+            )
 
     execution_lines = [
         "[EXECUTION RULES]",

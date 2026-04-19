@@ -12,13 +12,56 @@ from pathlib import Path
 from typing import Any
 
 
+_INSTALLED_ODD_SDLC_CODE_RELATIVE = Path(".genesis") / "odd_sdlc" / "python" / "code"
+_MANAGER_DOMAIN_CONTRACT_NAME = "odd_manager.domain-world"
+_MANAGER_DOMAIN_CONTRACT_VERSION = "v1"
+_SUPPORTED_QUERY_CONTRACTS: dict[tuple[str, str], dict[str, Any]] = {
+    (
+        "odd_sdlc.query-domain",
+        "v10",
+    ): {
+        "expected_top_level_keys": (
+            "query_contract",
+            "workspace_root",
+            "analysis_manifest",
+            "semantic_facets",
+            "asset_types",
+            "asset_families",
+            "assets",
+            "ambiguity_register",
+            "requirement_closure_register",
+            "collections",
+            "functions",
+            "edge_contracts",
+            "programs",
+            "work_act_types",
+            "jobs",
+            "graph_functions",
+            "bindings",
+            "gaps",
+        ),
+        "source_contract_ref": "odd_sdlc.query_contract.query_domain_contract",
+        "source_domain_model_ref": "odd_sdlc.domain_model",
+        "source_query_ref": "odd_sdlc.query.query_domain",
+    }
+}
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def _configure_imports(workspace_root: Path) -> None:
     odd_manager_root = Path(__file__).resolve().parents[3]
-    odd_method_code = (
+    installed_odd_sdlc_code = workspace_root / _INSTALLED_ODD_SDLC_CODE_RELATIVE
+    odd_sdlc_source_code = (
+        odd_manager_root.parent
+        / "odd_sdlc"
+        / "build_tenants"
+        / "python"
+        / "code"
+    )
+    legacy_odd_method_code = (
         odd_manager_root.parent
         / "odd_method"
         / "build_tenants"
@@ -35,7 +78,9 @@ def _configure_imports(workspace_root: Path) -> None:
         / "code"
     )
     desired = [
-        odd_method_code,
+        installed_odd_sdlc_code,
+        odd_sdlc_source_code,
+        legacy_odd_method_code,
         abiogenesis_code,
         workspace_root / ".genesis",
         odd_manager_root / ".genesis",
@@ -89,7 +134,12 @@ def _collect_ids(events: list[dict[str, Any]], key: str) -> list[str]:
 
 _REQUIREMENT_METADATA_RE = re.compile(r"^\*\*(.+?)\*\*:\s*(.*)$")
 _BULLET_METADATA_RE = re.compile(r"^- ([A-Za-z0-9_-]+):\s*(.*)$")
-_REQUIREMENT_ID_RE = re.compile(r"\bREQ-[A-Z0-9-]+\b")
+_REQUIREMENT_ID_RE = re.compile(r"\b(?:REQ|RIC)-[A-Z0-9-]+\b")
+_REQUIREMENT_HEADING_RE = re.compile(r"^(?:REQ|RIC)-[A-Z0-9-]+\b")
+_REQUIREMENT_TABLE_ROW_RE = re.compile(
+    r"^\|\s*((?:REQ|RIC)-[A-Z0-9-]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|"
+)
+_INTENT_REF_RE = re.compile(r"\bINT-[A-Z0-9-]+\b")
 _BACKTICK_REF_RE = re.compile(r"`([^`]+)`")
 _PATH_REF_RE = re.compile(
     r"(?<![:\w])("
@@ -129,6 +179,17 @@ def _normalize_requirement_family_title(raw: str) -> str:
         if prefix.strip().lower() == "requirement family":
             return suffix.strip()
     return cleaned
+
+
+def _normalize_requirement_section_heading(raw: str) -> tuple[str, list[str]]:
+    cleaned = raw.strip()
+    traces = _dedupe_strings([match.group(0) for match in _INTENT_REF_RE.finditer(cleaned)])
+    for divider in (" — ", " - "):
+        if divider in cleaned:
+            cleaned = cleaned.split(divider, 1)[0].strip()
+            break
+    cleaned = re.sub(r"^\d+\.\s*", "", cleaned).strip()
+    return cleaned or raw.strip(), traces
 
 
 def _requirement_tone(status: str | None) -> str:
@@ -480,6 +541,58 @@ def _parse_requirement_block(
     }
 
 
+def _parse_requirement_table_row(
+    *,
+    workspace_root: Path,
+    source_path: Path,
+    family_title: str,
+    section_traces: list[str],
+    requirement_id: str,
+    requirement_title: str,
+    priority: str,
+    requirement_type: str,
+    closure_entry: dict[str, Any] | None,
+) -> dict[str, Any]:
+    coverage = closure_entry if isinstance(closure_entry, dict) else None
+    coverage_status = (
+        str(coverage.get("status")).strip()
+        if coverage and isinstance(coverage.get("status"), str)
+        else None
+    )
+    return {
+        "requirement_id": requirement_id,
+        "title": requirement_title or requirement_id,
+        "summary": requirement_title or requirement_id,
+        "family": "",
+        "family_title": family_title,
+        "family_status": None,
+        "priority": _clean_requirement_value(priority),
+        "type": _clean_requirement_value(requirement_type),
+        "status": coverage_status,
+        "delivery_status": _requirement_tone(coverage_status),
+        "traces_to": section_traces,
+        "derives_from": [],
+        "authority_refs": list(coverage.get("authority_refs", [])) if coverage else [],
+        "current_requirement_refs": list(coverage.get("current_requirement_refs", []))
+        if coverage
+        else [],
+        "implementation_claim_refs": list(coverage.get("implementation_claim_refs", []))
+        if coverage
+        else [],
+        "planned_test_claim_refs": list(coverage.get("planned_test_claim_refs", []))
+        if coverage
+        else [],
+        "test_claim_refs": list(coverage.get("test_claim_refs", [])) if coverage else [],
+        "code_refs": list(coverage.get("code_refs", [])) if coverage else [],
+        "test_refs": list(coverage.get("test_refs", [])) if coverage else [],
+        "testcase_authority_refs": list(coverage.get("testcase_authority_refs", []))
+        if coverage
+        else [],
+        "acceptance_criteria": [],
+        "source_path": str(source_path.relative_to(workspace_root)),
+    }
+
+
 def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
     requirements_root = workspace_root / "specification" / "requirements"
     if not requirements_root.exists():
@@ -498,6 +611,8 @@ def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
 
         family_title = source_path.stem
         family_metadata: dict[str, str] = {}
+        section_title = family_title
+        section_traces: list[str] = []
         current_requirement_id: str | None = None
         current_requirement_title = ""
         current_block_lines: list[str] = []
@@ -534,10 +649,35 @@ def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
                         metadata_match.group(2)
                     )
                     continue
-            if stripped.startswith("### REQ"):
+            if stripped.startswith("### "):
+                heading_text = stripped.removeprefix("###").strip()
+                if _REQUIREMENT_HEADING_RE.match(heading_text):
+                    flush_current_requirement()
+                    current_requirement_id, current_requirement_title = _normalize_requirement_heading(
+                        heading_text
+                    )
+                    continue
                 flush_current_requirement()
-                current_requirement_id, current_requirement_title = _normalize_requirement_heading(
-                    stripped.removeprefix("###").strip()
+                section_title, section_traces = _normalize_requirement_section_heading(
+                    heading_text
+                )
+                continue
+            table_match = _REQUIREMENT_TABLE_ROW_RE.match(stripped)
+            if table_match:
+                flush_current_requirement()
+                requirement_id = table_match.group(1).strip()
+                projected.append(
+                    _parse_requirement_table_row(
+                        workspace_root=workspace_root,
+                        source_path=source_path,
+                        family_title=section_title,
+                        section_traces=section_traces,
+                        requirement_id=requirement_id,
+                        requirement_title=_clean_requirement_value(table_match.group(2)),
+                        priority=_clean_requirement_value(table_match.group(3)),
+                        requirement_type=_clean_requirement_value(table_match.group(4)),
+                        closure_entry=closure_index.get(requirement_id),
+                    )
                 )
                 continue
             if current_requirement_id is not None:
@@ -624,7 +764,7 @@ def _configure_read_only_domain_fallbacks() -> None:
                 stage="workspace_scan",
             )
 
-    # odd_method currently refreshes these registers eagerly during query composition.
+    # odd_sdlc currently refreshes these registers eagerly during query composition.
     # When odd_manager observes an external workspace it may be able to read that
     # workspace without being allowed to rewrite its runtime files, so fall back
     # to an in-memory rebuild instead of dropping to degraded mode.
@@ -661,6 +801,66 @@ def _empty_query_contract() -> dict[str, Any]:
         "top_level_keys": [],
         "runtime_model": "abg-native",
         "query_model": "odd-domain-plugin",
+    }
+
+
+def _normalize_query_contract(query_contract: Any) -> dict[str, Any]:
+    payload = query_contract if isinstance(query_contract, dict) else {}
+    fallback = _empty_query_contract()
+    top_level_keys = payload.get("top_level_keys")
+    return {
+        "name": str(payload.get("name") or fallback["name"]),
+        "version": str(payload.get("version") or fallback["version"]),
+        "top_level_keys": _dedupe_strings(
+            [str(item).strip() for item in top_level_keys]
+            if isinstance(top_level_keys, list)
+            else []
+        ),
+        "runtime_model": str(payload.get("runtime_model") or fallback["runtime_model"]),
+        "query_model": str(payload.get("query_model") or fallback["query_model"]),
+    }
+
+
+def _project_domain_contract(query_contract: dict[str, Any]) -> dict[str, Any]:
+    source_name = str(query_contract.get("name") or "")
+    source_version = str(query_contract.get("version") or "")
+    observed_top_level_keys = _dedupe_strings(
+        [str(item).strip() for item in query_contract.get("top_level_keys", [])]
+    )
+    supported_source_versions = [
+        {"name": name, "version": version}
+        for name, version in sorted(_SUPPORTED_QUERY_CONTRACTS.keys())
+    ]
+    supported = _SUPPORTED_QUERY_CONTRACTS.get((source_name, source_version))
+    expected_top_level_keys = (
+        list(supported.get("expected_top_level_keys", ())) if supported else []
+    )
+    missing_top_level_keys = [
+        key for key in expected_top_level_keys if key not in observed_top_level_keys
+    ]
+    extra_top_level_keys = [
+        key for key in observed_top_level_keys if key not in expected_top_level_keys
+    ]
+    if source_version == "unavailable":
+        compatibility = "unavailable"
+    elif supported and not missing_top_level_keys:
+        compatibility = "supported"
+    else:
+        compatibility = "unsupported"
+    return {
+        "projection_name": _MANAGER_DOMAIN_CONTRACT_NAME,
+        "projection_version": _MANAGER_DOMAIN_CONTRACT_VERSION,
+        "source_name": source_name,
+        "source_version": source_version,
+        "compatibility": compatibility,
+        "supported_sources": supported_source_versions,
+        "observed_top_level_keys": observed_top_level_keys,
+        "expected_top_level_keys": expected_top_level_keys,
+        "missing_top_level_keys": missing_top_level_keys,
+        "extra_top_level_keys": extra_top_level_keys,
+        "source_contract_ref": supported.get("source_contract_ref") if supported else None,
+        "source_domain_model_ref": supported.get("source_domain_model_ref") if supported else None,
+        "source_query_ref": supported.get("source_query_ref") if supported else None,
     }
 
 
@@ -848,9 +1048,11 @@ def _domain_projection(
     graph_functions: list[dict[str, Any]],
     workorders: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    query_contract = _normalize_query_contract(domain_payload.get("query_contract"))
     return {
         "workspace_root": str(domain_payload.get("workspace_root") or workspace_root),
-        "query_contract": domain_payload.get("query_contract") or _empty_query_contract(),
+        "query_contract": query_contract,
+        "domain_contract": _project_domain_contract(query_contract),
         "semantic_facets": list(domain_payload.get("semantic_facets") or []),
         "asset_types": list(domain_payload.get("asset_types") or []),
         "asset_families": list(domain_payload.get("asset_families") or []),
@@ -883,15 +1085,15 @@ def _degraded_world(workspace_root: Path, error: Exception) -> dict[str, Any]:
         "boundary": {
             "runtime_source": "abg_event_model (unavailable)",
             "runtime_aggregate_provider": "abg_projectors (unavailable)",
-            "domain_source": "odd_method_query_library (failed to load)",
-            "graph_derivation": "unavailable because odd_method bootstrap failed",
+            "domain_source": "odd_sdlc_query_library (failed to load)",
+            "graph_derivation": "unavailable because odd_sdlc bootstrap failed",
             "query_cadence": "on_demand",
         },
         "overview": {
             "status": "blocked",
-            "headline": "odd_method domain overlay failed to load.",
+            "headline": "odd_sdlc domain overlay failed to load.",
             "summary": (
-                "odd_manager is running in degraded mode because the odd_method "
+                "odd_manager is running in degraded mode because the odd_sdlc "
                 f"bootstrap failed: {summary}"
             ),
             "total_delta": 0.0,
@@ -911,6 +1113,7 @@ def _degraded_world(workspace_root: Path, error: Exception) -> dict[str, Any]:
         "domain": {
             "workspace_root": str(workspace_root),
             "query_contract": _empty_query_contract(),
+            "domain_contract": _project_domain_contract(_empty_query_contract()),
             "semantic_facets": [],
             "asset_types": [],
             "asset_families": [],
@@ -2192,14 +2395,14 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
         "boundary": {
             "runtime_source": "abg_event_model",
             "runtime_aggregate_provider": "abg_projectors",
-            "domain_source": "odd_method_query_library",
+            "domain_source": "odd_sdlc_query_library",
             "graph_derivation": "descriptive function catalog inputs and outputs plus explicit bindings",
             "query_cadence": "on_demand",
         },
         "overview": {
             "status": overview_status,
             "headline": headline,
-            "summary": "odd_manager composes ABG-native runtime projections with odd_method query overlays without introducing a shadow runtime.",
+            "summary": "odd_manager composes ABG-native runtime projections with odd_sdlc query overlays without introducing a shadow runtime.",
             "total_delta": total_delta,
             "total_assets": len(domain_payload["assets"]),
             "total_workorders": len(workorders),

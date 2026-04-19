@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .events import EventStream, init_stream
+from .provenance import ensure_active_workflow
 
 
 def workspace_bootstrap(path: Path) -> EventStream:
@@ -28,6 +29,7 @@ def workspace_bootstrap(path: Path) -> EventStream:
         ai_ws / "reviews" / "proxy-log",
         ai_ws / "comments" / "claude",
         ai_ws / "agents",
+        ai_ws / "runtime",
     ]
     for d in directories:
         d.mkdir(parents=True, exist_ok=True)
@@ -35,6 +37,8 @@ def workspace_bootstrap(path: Path) -> EventStream:
     events_file = ai_ws / "events" / "events.jsonl"
     if not events_file.exists():
         events_file.touch()
+
+    ensure_active_workflow(path)
 
     stream = EventStream(events_file)
     init_stream(stream)

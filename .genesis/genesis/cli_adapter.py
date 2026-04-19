@@ -11,6 +11,7 @@ Usage:
   python -m genesis start  [--auto] [--human-proxy] [--feature F] [--edge E] [--workspace W]
   python -m genesis iterate [--feature F] [--edge E] [--workspace W]
   python -m genesis gaps    [--feature F] [--workspace W]
+  python -m genesis run-status [--run-id RUN] [--workspace W]
   python -m genesis assess-result --result PATH [--workspace W]
   python -m genesis emit-event --type TYPE [--data JSON] [--workspace W]
   python -m genesis check-tags --type implements|validates --path PATH
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -46,6 +48,8 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="Loop until converged or blocked by F_H gate")
     p_start.add_argument("--human-proxy", action="store_true",
                          help="Allow F_H gates to be evaluated by proxy (requires --auto)")
+    p_start.add_argument("--supervised-root", action="store_true",
+                         help="Run start --auto under root supervision with live recovery/status projection")
     p_start.add_argument("--feature", metavar="F",
                          help="Scope to a specific feature vector ID")
     p_start.add_argument("--edge", metavar="E",
@@ -71,6 +75,13 @@ def _build_parser() -> argparse.ArgumentParser:
     for p in (p_start, p_iter, p_gaps):
         p.add_argument("--module", metavar="MODULE:VAR",
                        help="Module to load (overrides genesis.yml)")
+
+    # ── gen run-status ───────────────────────────────────────────────────────
+    p_status = sub.add_parser("run-status", help="Project live operator-grade run status")
+    p_status.add_argument("--run-id", metavar="RUN",
+                          help="Specific run id to inspect (defaults to latest run in workspace)")
+    p_status.add_argument("--workspace", metavar="W", default=".",
+                          help="Workspace root (default: cwd)")
 
     # ── emit-event ────────────────────────────────────────────────────────────
     p_emit = sub.add_parser("emit-event",
@@ -302,16 +313,23 @@ def _check_tag_coverage(tag_type: str, package_ref: str, scan_path: str) -> int:
 
 def _assess_result_cmd(result_path: str, workspace: Path) -> int:
     """
-    Ingest an F_P result JSON file and emit assessed events.
+    Ingest an F_P result JSON file, publish typed fulfillment truth, and emit assessed events.
 
     This is the app-level consumer that closes the result_path protocol:
-      1. F_P actor writes assessment JSON to result_path
+      1. F_P actor writes fulfillment-assessment JSON to result_path
       2. This command reads it, resolves provenance from the matching manifest
-      3. Emits one assessed{kind: fp} event per assessment entry
+      3. Publishes a merged fulfillment ledger and emits assessed{kind: fp} events
 
     The result file format (as declared in the manifest OUTPUT CONTRACT):
-      {"edge": "X→Y", "actor": "agent_id", "assessments": [
-        {"evaluator": "name", "result": "pass|fail", "evidence": "..."}
+      {"edge": "X→Y", "actor": "agent_id", "fulfillment_assessments": [
+        {
+          "id": "obligation-id",
+          "evaluator": "declared-evaluator-name",
+          "fulfillment_status": "fulfilled|partial|blocked|unfulfilled",
+          "fulfillment_detail": "...",
+          "blocking_reasons": ["..."],
+          "evidence_refs": ["..."]
+        }
       ]}
 
     Callable by both the skill layer (gen-start.md) and the test harness.
@@ -346,13 +364,13 @@ def _emit_event_cmd(event_type: str, data_json: str, workspace: Path) -> int:
     Governance: required fields validated per event type (prime operators).
       approved  — requires: kind (fh_review | fh_intent), edge, actor (human | human-proxy)
         human-proxy actor additionally requires: proxy_log
-      assessed  — requires: kind, edge, evaluator, result (pass | fail)
-        kind=fp additionally requires: spec_hash
+      assessed  — requires: kind, edge
+      kind=fp additionally requires: obligation_id, spec_hash, published_ledger_ref
       revoked   — requires: kind (fh_approval), edge, actor, reason
     """
     import json as _json
 
-    from .provenance import _read_workflow_version
+    from .provenance import WorkflowVersionError, _read_workflow_version
 
     try:
         data = _json.loads(data_json)
@@ -373,19 +391,23 @@ def _emit_event_cmd(event_type: str, data_json: str, workspace: Path) -> int:
             errors.append("human-proxy actor requires 'proxy_log' path field")
     elif event_type == "assessed":
         # Assessed has two schemas split by kind:
-        #   kind=fp       — F_P agent assessment: requires evaluator, spec_hash
+        #   kind=fp        — F_P fulfillment publication pointer: requires obligation_id, spec_hash, published_ledger_ref
         #   kind=fh_review — F_H human rejection: requires actor, reason
-        for fld in ("kind", "edge", "result"):
+        for fld in ("kind", "edge"):
             if fld not in data:
                 errors.append(f"assessed requires '{fld}' field")
         kind = data.get("kind")
         if kind == "fp":
-            # spec_hash is required so bind_fd() can validate the active requirements snapshot.
-            for fld in ("evaluator", "spec_hash"):
+            for fld in ("obligation_id", "spec_hash", "published_ledger_ref"):
                 if fld not in data:
                     errors.append(f"assessed{{kind: fp}} requires '{fld}' field")
-            if data.get("result") not in (None, "pass", "fail"):
-                errors.append("assessed{kind: fp} 'result' must be 'pass' or 'fail'")
+            if "published_ledger_ref" in data:
+                from .fulfillment_ledger import coerce_published_fulfillment_ledger_ref
+
+                try:
+                    coerce_published_fulfillment_ledger_ref(data["published_ledger_ref"])
+                except ValueError as exc:
+                    errors.append(str(exc))
         elif kind == "fh_review":
             for fld in ("actor", "reason"):
                 if fld not in data:
@@ -396,8 +418,8 @@ def _emit_event_cmd(event_type: str, data_json: str, workspace: Path) -> int:
         for fld in ("kind", "edge", "actor", "reason"):
             if fld not in data:
                 errors.append(f"revoked requires '{fld}' field")
-        if data.get("kind") not in (None, "fh_approval", "fp_assessment"):
-            errors.append(f"revoked 'kind' must be 'fh_approval' or 'fp_assessment', got '{data.get('kind')!s}'")
+        if data.get("kind") not in (None, "fh_approval"):
+            errors.append(f"revoked 'kind' must be 'fh_approval', got '{data.get('kind')!s}'")
 
     if event_type == "reset":
         if "scope" not in data:
@@ -422,9 +444,13 @@ def _emit_event_cmd(event_type: str, data_json: str, workspace: Path) -> int:
     # Reads the file directly — emit-event runs pre-stack without a Scope object.
     # Honour the runtime contract: if genesis.yml declares active_workflow, use it.
     _config = _load_project_config(workspace)
-    workflow_version = _read_workflow_version(
-        workspace, _config.get("active_workflow")
-    )
+    try:
+        workflow_version = _read_workflow_version(
+            workspace, _config.get("active_workflow")
+        )
+    except WorkflowVersionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     data["workflow_version"] = workflow_version
     _emit_workspace_event(
         workspace,
@@ -530,6 +556,18 @@ def _emit_workspace_event(
     )
 
 
+def _run_status_cmd(workspace: Path, run_id: str | None) -> int:
+    from .live_status import project_live_run_status
+
+    status = project_live_run_status(
+        workspace,
+        run_id=run_id,
+        runtime_config=_load_project_config(workspace),
+    )
+    print(json.dumps(status, indent=2))
+    return 0
+
+
 def _import_symbol(ref: str, workspace: Path):
     """
     Import MODULE:VAR from workspace. Returns the symbol.
@@ -616,6 +654,7 @@ def _run_start_auto(
 ) -> dict:
     """CLI-side auto loop with engine-owned F_P dispatch and CLI-owned F_H proxy handling."""
     from .dispatch_runtime import auto_dispatch_from_result
+    from .proof_hold import project_proof_hold
     from .services import gen_start
 
     max_auto = 50
@@ -632,6 +671,21 @@ def _run_start_auto(
 
         blocking_reason = result.get("blocking_reason")
         if blocking_reason == "fp_dispatch":
+            proof_hold = project_proof_hold(
+                workspace,
+                edge=result.get("edge") if isinstance(result.get("edge"), str) else None,
+                work_key=result.get("work_key") if isinstance(result.get("work_key"), str) else None,
+                spec_hash=None,
+                workflow_version=None,
+                manifest_id=result.get("manifest_id") if isinstance(result.get("manifest_id"), str) else None,
+                runtime_config=config,
+            )
+            if proof_hold.get("held"):
+                result["status"] = "pending"
+                result["proof_hold"] = proof_hold
+                result["proof_hold_active"] = True
+                result["stopped_by"] = "proof_hold"
+                return result
             dispatch_result = auto_dispatch_from_result(
                 result,
                 workspace,
@@ -639,6 +693,10 @@ def _run_start_auto(
             )
             if dispatch_result.get("status") == "ok":
                 continue
+            if dispatch_result.get("status") == "yield":
+                result.update(dispatch_result)
+                result["stopped_by"] = dispatch_result.get("stopped_by", "yield")
+                return result
             result.update(dispatch_result)
             result["stopped_by"] = dispatch_result.get("stopped_by", "fp_runtime_failure")
             return result
@@ -665,6 +723,103 @@ def _run_start_auto(
     if human_proxy:
         result["human_proxy"] = True
     result["stopped_by"] = "max_iterations"
+    return result
+
+
+def _attach_pending_recovery_contract(result: Mapping[str, object], workspace: Path) -> dict[str, object]:
+    enriched = dict(result)
+    if enriched.get("status") != "pending":
+        return enriched
+
+    manifest_path: Path | None = None
+    manifest_path_value = enriched.get("fp_manifest_path")
+    if isinstance(manifest_path_value, str) and manifest_path_value:
+        manifest_path = Path(manifest_path_value)
+    else:
+        manifest_id = enriched.get("manifest_id")
+        if isinstance(manifest_id, str) and manifest_id:
+            manifest_path = workspace / ".ai-workspace" / "fp_manifests" / f"{manifest_id}.json"
+
+    manifest: dict[str, object] = {}
+    if manifest_path is not None and manifest_path.exists():
+        try:
+            raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw_manifest = {}
+        if isinstance(raw_manifest, Mapping):
+            manifest = dict(raw_manifest)
+
+    result_path = enriched.get("fp_result_path")
+    if not isinstance(result_path, str) or not result_path:
+        manifest_result_path = manifest.get("result_path")
+        if isinstance(manifest_result_path, str) and manifest_result_path:
+            result_path = manifest_result_path
+            enriched["fp_result_path"] = result_path
+
+    recovery: dict[str, object] = {}
+    if isinstance(enriched.get("manifest_id"), str) and enriched["manifest_id"]:
+        recovery["manifest_id"] = enriched["manifest_id"]
+    if manifest_path is not None:
+        recovery["fp_manifest_path"] = str(manifest_path)
+    if isinstance(result_path, str) and result_path:
+        recovery["fp_result_path"] = result_path
+        recovery["next_step"] = "assess-result"
+        recovery["assess_result_command"] = " ".join(
+            shlex.quote(part)
+            for part in (
+                "python",
+                "-m",
+                "genesis",
+                "assess-result",
+                "--result",
+                result_path,
+                "--workspace",
+                str(workspace),
+            )
+        )
+    if recovery:
+        enriched["recovery"] = recovery
+    return enriched
+
+
+def _run_start_auto_supervised(
+    scope,
+    stream,
+    *,
+    workspace: Path,
+    config: dict | None,
+    human_proxy: bool,
+) -> dict:
+    from .live_status import project_live_run_status
+
+    result = _run_start_auto(
+        scope,
+        stream,
+        workspace=workspace,
+        config=config,
+        human_proxy=human_proxy,
+    )
+    result["root_supervision"] = True
+    result["live_status"] = project_live_run_status(workspace, runtime_config=config)
+
+    if (
+        result.get("status") == "error"
+        and result.get("failure_class") == "transport_failure"
+        and isinstance(result.get("live_status"), Mapping)
+        and result["live_status"].get("result_artifact_valid") is True
+    ):
+        resumed = _run_start_auto(
+            scope,
+            stream,
+            workspace=workspace,
+            config=config,
+            human_proxy=human_proxy,
+        )
+        resumed["root_supervision"] = True
+        resumed["resumed_after_transport_failure"] = True
+        resumed["live_status"] = project_live_run_status(workspace, runtime_config=config)
+        return resumed
+
     return result
 
 
@@ -738,6 +893,9 @@ def main() -> None:
     if args.command == "emit-event":
         workspace = Path(args.workspace).resolve()
         sys.exit(_emit_event_cmd(args.type, args.data, workspace))
+    if args.command == "run-status":
+        workspace = Path(args.workspace).resolve()
+        sys.exit(_run_status_cmd(workspace, getattr(args, "run_id", None)))
 
     # --human-proxy requires --auto
     if getattr(args, "human_proxy", False) and not getattr(args, "auto", False):
@@ -760,24 +918,33 @@ def main() -> None:
             sys.path.insert(0, _extra_path)
 
     from .install import workspace_bootstrap
-    stream = workspace_bootstrap(workspace)
-
+    from .provenance import WorkflowVersionError
     from .services import Scope, gen_gaps, gen_iterate, gen_start
+
+    try:
+        stream = workspace_bootstrap(workspace)
+    except WorkflowVersionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     module = _resolve_module(args, workspace)
     configured_worker = _resolve_configured_worker(_config, workspace)
 
-    scope = Scope(
-        module=module,
-        workspace_root=workspace,
-        work_key_filter=getattr(args, "feature", None),
-        edge_filter=getattr(args, "edge", None),
-        runtime_identity=_resolve_runtime_identity(_config, configured_worker),
-        worker=configured_worker,
-        active_workflow_path=_config.get("active_workflow"),
-        workflow_root=_config.get("workflow_root"),
-        runtime_config=_config,
-    )
+    try:
+        scope = Scope(
+            module=module,
+            workspace_root=workspace,
+            work_key_filter=getattr(args, "feature", None),
+            edge_filter=getattr(args, "edge", None),
+            runtime_identity=_resolve_runtime_identity(_config, configured_worker),
+            worker=configured_worker,
+            active_workflow_path=_config.get("active_workflow"),
+            workflow_root=_config.get("workflow_root"),
+            runtime_config=_config,
+        )
+    except WorkflowVersionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Bind active snapshot so work events carry package_snapshot_id.
     from .events import init_snapshot
@@ -787,13 +954,22 @@ def main() -> None:
     if args.command == "start":
         human_proxy = getattr(args, "human_proxy", False)
         if getattr(args, "auto", False):
-            result = _run_start_auto(
-                scope,
-                stream,
-                workspace=workspace,
-                config=_config,
-                human_proxy=human_proxy,
-            )
+            if getattr(args, "supervised_root", False):
+                result = _run_start_auto_supervised(
+                    scope,
+                    stream,
+                    workspace=workspace,
+                    config=_config,
+                    human_proxy=human_proxy,
+                )
+            else:
+                result = _run_start_auto(
+                    scope,
+                    stream,
+                    workspace=workspace,
+                    config=_config,
+                    human_proxy=human_proxy,
+                )
         else:
             result = gen_start(scope, stream, auto=False)
             if human_proxy:
@@ -806,6 +982,7 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
+    result = _attach_pending_recovery_contract(result, workspace)
     print(json.dumps(result, indent=2))
 
     # Exit codes for skill routing:
@@ -813,8 +990,10 @@ def main() -> None:
     #   1 — error (already exited above)
     #   2 — fp_dispatched (F_P actor required; fp_manifest_path in output)
     #   3 — fh_gate_pending (F_H evaluation required; fh_gate.criteria in output)
-    #   4 — fd_gap (deterministic checks still failing after F_P resolved)
+    #   4 — fd_gap (declared deterministic hard stop before constructive transition)
     #   5 — max_iterations (auto-loop limit hit without convergence)
+    #   6 — yield (constructive turn advanced the asset and yielded handoff truth)
+    #   7 — proof_hold (product-layer proof hold stopped redispatch)
     #
     # IMPORTANT: exit 0 means ONLY converged/nothing_to_do — never a blocked run.
     stopped_by = result.get("stopped_by", "")
@@ -826,5 +1005,9 @@ def main() -> None:
         sys.exit(4)
     if stopped_by == "max_iterations":
         sys.exit(5)
+    if stopped_by == "yield":
+        sys.exit(6)
+    if stopped_by == "proof_hold":
+        sys.exit(7)
     if result.get("status") == "error":
         sys.exit(1)

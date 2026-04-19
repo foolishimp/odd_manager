@@ -63,11 +63,21 @@ _REGIME_BY_NAME = {
 }
 
 
-def _escalation_behavior(precomputed: PrecomputedManifest) -> dict[str, object]:
-    policy = resolve_policy_bundle(
-        vector=precomputed.executable_job.vector,
-        graph_function=precomputed.executable_job.graph_function,
-        roles=precomputed.executable_job.job.roles,
+def _escalation_behavior(
+    precomputed: PrecomputedManifest,
+    *,
+    resolved_policy: dict[str, object] | None = None,
+    runtime_config: dict[str, object] | None = None,
+) -> dict[str, object]:
+    policy = (
+        resolved_policy
+        if resolved_policy is not None
+        else resolve_policy_bundle(
+            vector=precomputed.executable_job.vector,
+            graph_function=precomputed.executable_job.graph_function,
+            roles=precomputed.executable_job.job.roles,
+            runtime_config=runtime_config,
+        )
     )
     return materialize_policy_concern(policy, "escalation")
 
@@ -160,6 +170,8 @@ def convergence_from_precomputed(
     precomputed: PrecomputedManifest,
     *,
     round_index: int = 0,
+    resolved_policy: dict[str, object] | None = None,
+    runtime_config: dict[str, object] | None = None,
 ) -> ConvergenceResult:
     """Engine-facing convergence result over one precomputed contract boundary.
 
@@ -176,7 +188,11 @@ def convergence_from_precomputed(
             next_regime=None,
             round_index=round_index,
         )
-    escalation_behavior = _escalation_behavior(precomputed)
+    escalation_behavior = _escalation_behavior(
+        precomputed,
+        resolved_policy=resolved_policy,
+        runtime_config=runtime_config,
+    )
     failing = precomputed.failing_evaluators
     if not failing:
         return ConvergenceResult(

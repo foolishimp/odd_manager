@@ -842,6 +842,15 @@ Examples:
 - no open continuation of a required kind
 - required approval present
 
+Closure is not the same thing as "no remaining deterministic observation."
+
+Post-transform deterministic findings may remain open as runtime fact truth and
+feed correction, continuation, or downstream gap handling without automatically
+failing closure.
+
+Only declared blocker-class conditions should convert those findings into
+closure failure.
+
 ### `role hooks`
 
 Role hooks govern authority, assignment, and approval constraints.
@@ -1010,7 +1019,7 @@ first. Do not misclassify that as a GTL or ABG product failure.
 
 When ABG dispatches `F_P`, the prompt explicitly surfaces:
 
-- deterministic failures that must be cleared before assessment
+- deterministic findings and obligations already observed for the live edge
 - the resolved runtime environment for the live edge
 - whether each binding comes from `external_entry` or `internal_carrier`
 - the output contract and mandatory acceptance contexts
@@ -1018,6 +1027,13 @@ When ABG dispatches `F_P`, the prompt explicitly surfaces:
 
 Builders should expect this prompt shape and use it as the authoritative
 execution contract for one live edge.
+
+Do not read this as "every deterministic finding must be cleared before the
+graph call can close."
+
+The prompt surfaces deterministic observer truth so the builder can act with the
+full live context. Whether an unresolved finding blocks closure is a declared
+policy question, not a blanket transformation-time rule.
 
 ## What To Inspect After A Run
 
@@ -1037,6 +1053,10 @@ Ask these questions:
 - whether proof passed
 - whether closure passed
 - whether the run completed, failed, or was superseded
+
+It is lawful for proof to pass and closure to pass while deterministic findings
+or corrective obligations are still emitted as runtime fact truth, unless the
+declared policy marks them as blocker-class conditions.
 
 The post-mortem audit is the decisive operational surface.
 

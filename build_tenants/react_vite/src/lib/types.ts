@@ -61,6 +61,27 @@ export type QueryContractView = {
   query_model: string;
 };
 
+export type DomainContractSourceView = {
+  name: string;
+  version: string;
+};
+
+export type DomainContractView = {
+  projection_name: string;
+  projection_version: string;
+  source_name: string;
+  source_version: string;
+  compatibility: "supported" | "unsupported" | "unavailable";
+  supported_sources: DomainContractSourceView[];
+  observed_top_level_keys: string[];
+  expected_top_level_keys: string[];
+  missing_top_level_keys: string[];
+  extra_top_level_keys: string[];
+  source_contract_ref: string | null;
+  source_domain_model_ref: string | null;
+  source_query_ref: string | null;
+};
+
 export type AssetFamilyView = {
   name: string;
   description: string;
@@ -244,6 +265,18 @@ export type GapView = {
   delta_summary: string;
   failing: string[];
   passing: string[];
+  carry_converged?: boolean;
+  fulfillment_converged?: boolean;
+  edge_converged?: boolean;
+  carry_delta?: number;
+  fulfillment_delta?: number;
+  combined_delta?: number;
+  blocking_reasons?: string[];
+  expected_count?: number;
+  carried_count?: number;
+  fulfilled_count?: number;
+  missing_count?: number;
+  extra_count?: number;
 };
 
 export type GraphFunctionVectorView = {
@@ -489,6 +522,7 @@ export type SessionServiceState = {
 export type DomainProjection = {
   workspace_root: string;
   query_contract: QueryContractView;
+  domain_contract: DomainContractView;
   semantic_facets: SemanticFacet[];
   asset_types: AssetTypeProfile[];
   asset_families: AssetFamilyView[];

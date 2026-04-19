@@ -27,7 +27,7 @@ Suggested lifecycle states include:
 
 | Entry | Kind | Path | Status | Notes |
 | --- | --- | --- | --- | --- |
-| `common` | shared root | `build_tenants/common/` | Active | Shared realization law across tenants |
+| `common` | shared root | `build_tenants/common/` | In Development | Shared realization law across tenants |
 | `<family>/<variant>` | variant | `build_tenants/<family>/<variant>/` | Planned | Replace with the current tenant candidates for this project |
 
 Record the currently active realization focus explicitly in the table notes or an adjacent short section when more than one tenant exists.

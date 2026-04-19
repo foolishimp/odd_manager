@@ -3,6 +3,8 @@
 **Status**: Draft
 **Scope**: Release-process method for evaluating, tapping, and publishing one point-in-time release cut
 
+Use `GLOSSARY_GUIDE.md` for shared recursive-product terminology.
+
 ---
 
 ## Position
@@ -23,6 +25,21 @@ The only operative version identifier is the tapped release version.
 
 That version is a release-process fact. It is not part of the live project
 specification.
+
+Release handling is downstream of intake triage.
+
+A bug, feature, issue, regression, or release blocker does not enter the method
+through release first. It enters through intake triage first, where the project
+determines:
+
+- the change class
+- the lawful re-entry point
+- the affected scope
+- the downstream build, test, and evidence obligations
+- whether the change remains inside the current release scope
+
+Only after that triage may the change be treated as RC work, a new RC cycle, a
+patch release, or a hotfix.
 
 ---
 
@@ -46,6 +63,9 @@ During the RC window:
 - qualification and operator review continue
 - release notes may remain draft or RC-scoped
 - the candidate branch remains mutable
+
+Those fixes are still intake-triaged changes. The RC window does not authorize
+direct code mutation without explicit scope classification.
 
 What must remain stable during the RC window:
 
@@ -74,21 +94,26 @@ After the tap:
 
 Any further change becomes a new RC cycle, patch release, or hotfix process.
 
+If a project has not ratified a separate patch-release or hotfix method, the
+default post-tap path is a new RC cycle.
+
 ---
 
 ## Candidate Flow
 
-1. Create or update the draft release note for the candidate.
-2. Open or continue an RC branch for the candidate.
-3. Run release-candidate qualification and operator review against that RC branch.
-4. Apply bounded fixes during the RC window while preserving the declared release scope.
-5. When the candidate is accepted, tap the release number.
-6. Update release-scoped assets with the tapped release number.
-7. Finalize the release note for that exact cut.
-8. Commit the release cut.
-9. Push the release commit.
-10. Create and push the release branch with the final name.
-11. Create and push the release tag.
+1. Intake-triage the candidate change set and confirm the lawful release scope.
+2. Create or update the draft release note for the candidate.
+3. Open or continue an RC branch for the candidate.
+4. Run release-candidate qualification and operator review against that RC branch.
+5. Apply bounded fixes during the RC window while preserving the declared release scope.
+6. Re-run the required build, test, and evidence steps for the affected scope.
+7. When the candidate is accepted, tap the release number.
+8. Update release-scoped assets with the tapped release number.
+9. Finalize the release note for that exact cut.
+10. Commit the release cut.
+11. Push the release commit.
+12. Create and push the release branch with the final name.
+13. Create and push the release tag.
 
 ---
 

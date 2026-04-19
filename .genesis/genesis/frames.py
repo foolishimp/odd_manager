@@ -23,7 +23,7 @@ from gtl.module_model import Module
 from gtl.work_model import Job, Role
 
 from .binding import ExecutableJob
-from .correction import find_latest_reset
+from .correction import find_latest_reset, reset_applies_to_scope
 from .events import EventStream
 from .lineage import spawn
 from .selection import (
@@ -1705,6 +1705,10 @@ def project_frame_events(events: list[dict], frame_id: str) -> dict[str, Any]:
         status = "not_started"
         for event in events:
             data = event.get("data", {})
+            if event.get("event_type") == "reset":
+                if reset_applies_to_scope(event, edge=step.edge, work_key=step.child_key):
+                    status = "not_started"
+                continue
             if event.get("event_type") == "frame_step_started":
                 if data.get("frame_id") != frame_id or data.get("child_key") != step.child_key:
                     continue
@@ -1717,6 +1721,10 @@ def project_frame_events(events: list[dict], frame_id: str) -> dict[str, Any]:
                 if data.get("edge") != step.edge or data.get("work_key") != step.child_key:
                     continue
                 status = "converged"
+            if event.get("event_type") == "edge_reopened":
+                if data.get("edge") != step.edge or data.get("work_key") != step.child_key:
+                    continue
+                status = "in_progress"
         step_states.append(
             {
                 "child_key": step.child_key,

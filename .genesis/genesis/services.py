@@ -59,10 +59,8 @@ def _read_carry_forward(scope: "Scope") -> list[dict]:
     When scope.workflow_root is set (from genesis.yml runtime contract), it is
     used as the base directory. Otherwise falls back to .genesis/workflows/.
 
-    Returns [] if workflow_version is "unknown", file absent, or key missing.
+    Returns [] if the manifest is absent or key missing.
     """
-    if scope.workflow_version == "unknown":
-        return []
     workflow, version = scope.workflow_version.split("@", 1)
     parts = workflow.split(".", 1)
     pkg_name = parts[0]
@@ -97,8 +95,8 @@ class Scope:
         derived directly from Module via module_to_executable_jobs().
 
     workflow_version: derived at construction from active-workflow.json.
-        "{workflow}@{version}" when file present and valid; "unknown" otherwise.
-        When "unknown", provenance checks are bypassed.
+        "{workflow}@{version}" when file present and valid.
+        Missing or malformed workflow metadata is a runtime defect.
 
     Runtime identity is distinct from worker binding. `build` remains nullable
     reporting metadata, not canonical worker/role/binding truth.
@@ -115,7 +113,7 @@ class Scope:
     work_key: Optional[str] = None    # work identity (ADR-023); None = global scope
     run_id: Optional[str] = None      # attempt identity (ADR-023); None = global scope
     runtime_config: dict = field(default_factory=dict)
-    workflow_version: str = field(init=False, default="unknown")
+    workflow_version: str = field(init=False, default="")
 
     def __post_init__(self) -> None:
         if self.module is None:
@@ -194,6 +192,7 @@ def gen_gaps(scope: Scope, stream: EventStream) -> dict:
         requirements=scope.module.metadata.get("requirements", ()),
         workflow_version=scope.workflow_version,
         runtime_identity=scope.runtime_identity,
+        runtime_config=scope.runtime_config,
         edge_filter=scope.edge_filter,
         work_key_filter=scope.work_key_filter,
         carry_forward=_read_carry_forward(scope),

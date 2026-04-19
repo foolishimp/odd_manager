@@ -8,7 +8,7 @@ emit_reset_followups turns reset into authoritative runtime termination truth.
 from __future__ import annotations
 
 
-ACTIVE_RUN_STATES = frozenset({"queued", "pending", "started", "dispatched"})
+ACTIVE_RUN_STATES = frozenset({"queued", "pending", "started", "dispatched", "yielded"})
 
 
 def _event_value(event: dict, key: str):

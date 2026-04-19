@@ -46,6 +46,7 @@ _VECTOR_LOCAL_EVENT_TYPES = frozenset(
     {
         "vector_started",
         "edge_converged",
+        "edge_reopened",
         "fp_dispatched",
         "fh_gate_pending",
         "found",
@@ -374,4 +375,8 @@ def emit(
         from .correction import emit_reset_followups
 
         emit_reset_followups(active_stream, record)
+    if event_type in ("approved", "revoked"):
+        from .fulfillment_followups import emit_fulfillment_transition_followups
+
+        emit_fulfillment_transition_followups(active_stream, record)
     return record

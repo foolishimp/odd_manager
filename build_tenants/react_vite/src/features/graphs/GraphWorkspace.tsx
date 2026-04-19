@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, WheelEvent as ReactWheelEvent } from "react";
-import { buildGraphLayout, combineTone } from "../../lib/graph";
+import { buildGraphLayout, combineTone, type GraphLayout, type PositionedGraphNode } from "../../lib/graph";
 import type { CommandName, GraphNodeView, GraphView, NavigatorMode } from "../../lib/types";
 
 type GraphWorkspaceProps = {
@@ -25,6 +25,7 @@ const ZOOM_STEP = 0.15;
 const MINIMAP_WIDTH = 180;
 const MINIMAP_HEIGHT = 80;
 const RAIL_ROWS = 2;
+const RAIL_COLUMN_WIDTH = 176;
 
 type Viewport = {
   left: number;
@@ -527,47 +528,242 @@ function GraphRail({
   onSelectNode: (node: GraphNodeView) => void;
 }) {
   const layout = buildGraphLayout(graph);
-  const orderedNodes = [...layout.nodes].sort((left, right) => left.x - right.x || left.y - right.y);
-  const columns = Array.from(
-    { length: Math.ceil(orderedNodes.length / RAIL_ROWS) },
-    (_, index) => orderedNodes.slice(index * RAIL_ROWS, index * RAIL_ROWS + RAIL_ROWS),
-  );
+  const topLaneRef = useRef<HTMLDivElement | null>(null);
+  const bottomLaneRef = useRef<HTMLDivElement | null>(null);
+  const rail = useMemo(() => buildRailModel(layout, selectedNodeId), [layout, selectedNodeId]);
+
+  useEffect(() => {
+    if (!rail.focusRange) {
+      return;
+    }
+    const center = ((rail.focusRange.start + rail.focusRange.end + 1) * RAIL_COLUMN_WIDTH) / 2;
+    for (const element of [topLaneRef.current, bottomLaneRef.current]) {
+      if (!element) {
+        continue;
+      }
+      const nextLeft = Math.max(center - element.clientWidth / 2, 0);
+      element.scrollTo({ left: nextLeft, behavior: "smooth" });
+    }
+  }, [rail.focusRange]);
 
   return (
-    <div className="operate-nav">
-      <div className="operate-nav__track operate-nav__track--double-row">
-        {columns.map((column, index) => {
-          const nextColumn = columns[index + 1] ?? null;
-          const primaryTone =
-            nextColumn && column[0]
-              ? connectorTone(column[0].status, nextColumn[0]?.status ?? nextColumn[1]?.status ?? column[0].status)
-              : null;
-          const secondarySource = column[1] ?? column[0] ?? null;
-          const secondaryTarget = nextColumn?.[1] ?? nextColumn?.[0] ?? null;
-          const secondaryTone =
-            secondarySource && secondaryTarget
-              ? connectorTone(secondarySource.status, secondaryTarget.status)
-              : primaryTone;
+    <div className="operate-nav operate-nav--pivot">
+      <div className="operate-nav__legend">
+        <span className="panel__eyebrow">Compressed Navigator</span>
+        <p>Two guarded lanes over the same left-to-right process order. Selecting a ticket centers its direct neighborhood.</p>
+      </div>
+      <div className="operate-nav__lane-shell">
+        <GraphRailLane
+          ref={topLaneRef}
+          lane="top"
+          columns={rail.columns}
+          selectedNodeId={selectedNodeId}
+          relatedNodeIds={rail.relatedNodeIds}
+          onSelectNode={onSelectNode}
+        />
+        <GraphRailLane
+          ref={bottomLaneRef}
+          lane="bottom"
+          columns={rail.columns}
+          selectedNodeId={selectedNodeId}
+          relatedNodeIds={rail.relatedNodeIds}
+          onSelectNode={onSelectNode}
+        />
+      </div>
+    </div>
+  );
+}
+
+type RailColumn = {
+  key: string;
+  index: number;
+  topNode: PositionedGraphNode | null;
+  bottomNode: PositionedGraphNode | null;
+  topConnectorTone: GraphNodeView["status"] | null;
+  bottomConnectorTone: GraphNodeView["status"] | null;
+  topConnectorEmphasis: "selected" | "related" | "muted" | null;
+  bottomConnectorEmphasis: "selected" | "related" | "muted" | null;
+  hiddenCount: number;
+};
+
+type RailModel = {
+  columns: RailColumn[];
+  relatedNodeIds: Set<string>;
+  focusRange: { start: number; end: number } | null;
+};
+
+function buildRailModel(layout: GraphLayout, selectedNodeId: string | null): RailModel {
+  const buckets = new Map<number, PositionedGraphNode[]>();
+  for (const node of layout.nodes) {
+    const bucket = buckets.get(node.x) ?? [];
+    bucket.push(node);
+    buckets.set(node.x, bucket);
+  }
+
+  const relatedNodeIds = new Set<string>();
+  if (selectedNodeId) {
+    for (const segment of layout.segments) {
+      if (segment.from === selectedNodeId) {
+        relatedNodeIds.add(segment.to);
+      }
+      if (segment.to === selectedNodeId) {
+        relatedNodeIds.add(segment.from);
+      }
+    }
+  }
+
+  const orderedBuckets = [...buckets.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, nodes]) => nodes.sort((left, right) => left.y - right.y || left.label.localeCompare(right.label)));
+
+  const nodeToColumnIndex = new Map<string, number>();
+  orderedBuckets.forEach((bucket, index) => {
+    bucket.forEach((node) => nodeToColumnIndex.set(node.id, index));
+  });
+
+  const columns = orderedBuckets.map((bucket, index) => {
+    const prioritized = [...bucket].sort((left, right) => {
+      const leftRank = railPriority(left.id, selectedNodeId, relatedNodeIds);
+      const rightRank = railPriority(right.id, selectedNodeId, relatedNodeIds);
+      return leftRank - rightRank || left.y - right.y || left.label.localeCompare(right.label);
+    });
+    const visible = prioritized.slice(0, RAIL_ROWS).sort((left, right) => left.y - right.y);
+    return {
+      key: bucket.map((node) => node.id).join(":"),
+      index,
+      topNode: visible[0] ?? null,
+      bottomNode: visible[1] ?? null,
+      topConnectorTone: null,
+      bottomConnectorTone: null,
+      topConnectorEmphasis: null,
+      bottomConnectorEmphasis: null,
+      hiddenCount: Math.max(bucket.length - visible.length, 0),
+    };
+  });
+
+  for (let index = 0; index < columns.length - 1; index += 1) {
+    const current = columns[index];
+    const next = columns[index + 1];
+    if (current.topNode && next.topNode) {
+      current.topConnectorTone = connectorTone(current.topNode.status, next.topNode.status);
+      current.topConnectorEmphasis = connectorEmphasis(current.topNode.id, next.topNode.id, selectedNodeId, relatedNodeIds);
+    }
+    if (current.bottomNode && next.bottomNode) {
+      current.bottomConnectorTone = connectorTone(current.bottomNode.status, next.bottomNode.status);
+      current.bottomConnectorEmphasis = connectorEmphasis(
+        current.bottomNode.id,
+        next.bottomNode.id,
+        selectedNodeId,
+        relatedNodeIds,
+      );
+    }
+  }
+
+  const focusColumnIndexes = new Set<number>();
+  if (selectedNodeId) {
+    const selectedColumn = nodeToColumnIndex.get(selectedNodeId);
+    if (selectedColumn != null) {
+      focusColumnIndexes.add(selectedColumn);
+    }
+    relatedNodeIds.forEach((nodeId) => {
+      const relatedColumn = nodeToColumnIndex.get(nodeId);
+      if (relatedColumn != null) {
+        focusColumnIndexes.add(relatedColumn);
+      }
+    });
+  }
+
+  const orderedFocus = [...focusColumnIndexes].sort((left, right) => left - right);
+  const focusRange =
+    orderedFocus.length > 0
+      ? {
+          start: Math.max(orderedFocus[0] - 1, 0),
+          end: Math.min(orderedFocus[orderedFocus.length - 1] + 1, columns.length - 1),
+        }
+      : null;
+
+  return {
+    columns,
+    relatedNodeIds,
+    focusRange,
+  };
+}
+
+function railPriority(nodeId: string, selectedNodeId: string | null, relatedNodeIds: Set<string>) {
+  if (selectedNodeId && nodeId === selectedNodeId) {
+    return 0;
+  }
+  if (relatedNodeIds.has(nodeId)) {
+    return 1;
+  }
+  return 2;
+}
+
+function connectorEmphasis(
+  leftId: string,
+  rightId: string,
+  selectedNodeId: string | null,
+  relatedNodeIds: Set<string>,
+) {
+  if (selectedNodeId && (leftId === selectedNodeId || rightId === selectedNodeId)) {
+    return "selected";
+  }
+  if (relatedNodeIds.has(leftId) || relatedNodeIds.has(rightId)) {
+    return "related";
+  }
+  return selectedNodeId ? "muted" : null;
+}
+
+const GraphRailLane = forwardRef<HTMLDivElement, {
+  lane: "top" | "bottom";
+  columns: RailColumn[];
+  selectedNodeId: string | null;
+  relatedNodeIds: Set<string>;
+  onSelectNode: (node: GraphNodeView) => void;
+}>(function GraphRailLane({ lane, columns, selectedNodeId, relatedNodeIds, onSelectNode }, ref) {
+  return (
+    <div ref={ref} className={`operate-nav__lane operate-nav__lane--${lane}`}>
+      <div
+        className="operate-nav__lane-track"
+        style={{ gridTemplateColumns: `repeat(${columns.length}, ${RAIL_COLUMN_WIDTH}px)` }}
+      >
+        {columns.map((column) => {
+          const node = lane === "top" ? column.topNode : column.bottomNode;
+          const connectorTone = lane === "top" ? column.topConnectorTone : column.bottomConnectorTone;
+          const connectorState =
+            lane === "top" ? column.topConnectorEmphasis : column.bottomConnectorEmphasis;
+          const stateClass =
+            node?.id === selectedNodeId
+              ? "is-selected"
+              : node && relatedNodeIds.has(node.id)
+                ? "is-related"
+                : selectedNodeId
+                  ? "is-muted"
+                  : "";
           return (
-            <div key={column.map((node) => node.id).join(":")} className="operate-nav__column-wrap">
-              <div className={`operate-nav__column ${column.length === 1 ? "is-single" : ""}`}>
-                {column.map((node) => (
-                  <button
-                    key={node.id}
-                    type="button"
-                    className={`operate-nav__stop ${node.status} ${node.id === selectedNodeId ? "is-selected" : ""}`}
-                    onClick={() => onSelectNode(node)}
-                  >
-                    <span className={`operate-nav__signal ${node.status}`} />
-                    <span className="operate-nav__label">{node.label}</span>
-                  </button>
-                ))}
-              </div>
-              {nextColumn ? (
-                <div className="operate-nav__column-connectors" aria-hidden="true">
-                  <span className={`operate-nav__connector operate-nav__connector--lane ${primaryTone ?? ""}`} />
-                  <span className={`operate-nav__connector operate-nav__connector--lane ${secondaryTone ?? ""}`} />
-                </div>
+            <div key={`${lane}:${column.key}`} className="operate-nav__lane-slot">
+              {node ? (
+                <button
+                  type="button"
+                  className={`operate-nav__stop ${node.status} ${stateClass}`}
+                  onClick={() => onSelectNode(node)}
+                >
+                  <span className={`operate-nav__signal ${node.status}`} />
+                  <span className="operate-nav__label">{node.label}</span>
+                  {lane === "top" && column.hiddenCount > 0 ? (
+                    <span className="operate-nav__overflow" title={`${column.hiddenCount} additional node(s) are collapsed in this stage`}>
+                      +{column.hiddenCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : (
+                <div className="operate-nav__spacer" aria-hidden="true" />
+              )}
+              {connectorTone ? (
+                <span
+                  className={`operate-nav__connector operate-nav__connector--lane ${connectorTone} ${connectorState ? `is-${connectorState}` : ""}`}
+                  aria-hidden="true"
+                />
               ) : null}
             </div>
           );
@@ -575,7 +771,7 @@ function GraphRail({
       </div>
     </div>
   );
-}
+});
 
 function GraphMap({
   graph,
@@ -589,6 +785,7 @@ function GraphMap({
   const layout = buildGraphLayout(graph);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const pendingAnchorRef = useRef<ZoomAnchor | null>(null);
+  const lastCenteredSelectionRef = useRef<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [viewport, setViewport] = useState<Viewport>({
     left: 0,
@@ -657,6 +854,29 @@ function GraphMap({
     pendingAnchorRef.current = null;
     updateViewport();
   }, [updateViewport, zoom]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element || !selectedNodeId) {
+      lastCenteredSelectionRef.current = null;
+      return;
+    }
+    const node = positions.get(selectedNodeId);
+    if (!node) {
+      return;
+    }
+    const selectionKey = `${graph.id}:${selectedNodeId}`;
+    if (lastCenteredSelectionRef.current === selectionKey) {
+      return;
+    }
+    lastCenteredSelectionRef.current = selectionKey;
+    element.scrollTo({
+      left: Math.max(node.x * zoom - element.clientWidth / 2, 0),
+      top: Math.max(node.y * zoom - element.clientHeight / 2, 0),
+      behavior: "smooth",
+    });
+    requestAnimationFrame(() => updateViewport());
+  }, [graph.id, positions, selectedNodeId, updateViewport, zoom]);
 
   function applyZoom(nextZoom: number, offsetX: number, offsetY: number) {
     const element = viewportRef.current;

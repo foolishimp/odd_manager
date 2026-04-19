@@ -18,7 +18,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from gtl.operator_model import Evaluator, Rule, F_D, F_H, F_P
 from gtl.graph import Attrs, GraphVector
@@ -35,6 +35,8 @@ from .binding import (
     ContextResolver,
     bind_fd,
     bind_fp,
+    declared_obligation_ledger_policy_for_job,
+    declared_fulfillment_obligations_for_job,
 )
 from .convergence import (
     convergence_from_precomputed,
@@ -43,6 +45,7 @@ from .convergence import (
 )
 from .correction import find_latest_reset
 from .events import EventContext, EventStream, emit
+from .fulfillment_ledger import resolve_published_fulfillment_ledger
 from .frames import (
     FoldBackOutcome,
     InvocationFrame,
@@ -71,6 +74,7 @@ from .frames import (
 from .identity import RuntimeIdentity
 from .materialization import MaterializationRequest, derive_bundle, materialize_graph_function
 from .policy import materialize_policy_concern, resolve_policy_bundle
+from .proof_hold import project_proof_holds
 from .provenance import spec_hash_for
 from .selection import (
     SelectionDecision,
@@ -83,6 +87,53 @@ from .subwork import LeafTask
 
 
 # ── Traversal ────────────────────────────────────────────────────────────────
+
+
+def _edge_uses_fulfillment_carrier(job: ExecutableJob) -> bool:
+    """F_P-managed edges converge only through the fulfillment carrier path."""
+    return any(ev.regime is F_P for ev in job.evaluators)
+
+
+def _project_fulfillment_edge_converged(
+    stream: EventStream,
+    *,
+    job: ExecutableJob,
+    workflow_version: str,
+    spec_hash: str,
+    work_key: str | None,
+    certified_keys: set[tuple[str, str | None]],
+) -> bool:
+    cert_key = (job.vector.name, work_key)
+    if cert_key in certified_keys:
+        return False
+    ledger = resolve_published_fulfillment_ledger(
+        stream.all_events(),
+        edge=job.vector.name,
+        work_key=work_key,
+        spec_hash=spec_hash,
+        current_workflow_version=workflow_version,
+        workspace=stream.path.parent.parent.parent,
+    )
+    if ledger is None or not bool(ledger.get("edge_converged")):
+        return False
+    _emit_event(
+        stream,
+        "edge_converged",
+        {
+            "edge": job.vector.name,
+            "vector_id": job.vector.id,
+            "target": job.vector.target.name,
+            "work_key": work_key,
+            "delta": 0,
+            "certified_by": "published_fulfillment_ledger",
+        },
+        context=EventContext(
+            workflow_version=workflow_version,
+            work_key=work_key,
+        ),
+    )
+    certified_keys.add(cert_key)
+    return True
 
 
 @dataclass(frozen=True)
@@ -152,6 +203,10 @@ class TraversalRuntime:
     resolved_policy: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not self.workflow_version or self.workflow_version == "unknown":
+            from .provenance import _read_workflow_version
+
+            self.workflow_version = _read_workflow_version(self.workspace_root)
         if self.runtime_identity is None:
             self.runtime_identity = RuntimeIdentity(build_id=self.build)
         else:
@@ -345,6 +400,8 @@ def _execution_index(stream: EventStream) -> RecursiveExecutionIndex:
             return index
         if event_type == "edge_converged" and data.get("target"):
             index.certified_keys.add((data.get("edge", ""), data.get("work_key")))
+        elif event_type == "edge_reopened":
+            index.certified_keys.discard((data.get("edge", ""), data.get("work_key")))
         elif event_type == "frame_step_completed":
             index.completed_steps.add(
                 (
@@ -810,6 +867,7 @@ def derive_operational_gaps(
     requirements: tuple | list = (),
     workflow_version: str = "unknown",
     runtime_identity: RuntimeIdentity | None = None,
+    runtime_config: dict | None = None,
     edge_filter: str | None = None,
     work_key_filter: str | None = None,
     carry_forward: list[dict] | None = None,
@@ -826,9 +884,11 @@ def derive_operational_gaps(
             "reason": "no jobs in scope — check --feature and --edge flags",
         }
 
-    certified_keys = _current_certified_keys(list(operative.all_events))
+    all_events = list(operative.all_events)
+    certified_keys = _current_certified_keys(all_events)
     resolver = ContextResolver(workspace_root)
     results: list[dict] = []
+    proof_hold_identities: list[dict[str, Any]] = []
     carry_forward = carry_forward or []
 
     for job in operative.jobs:
@@ -871,26 +931,64 @@ def derive_operational_gaps(
             if work_key is not None:
                 entry["work_key"] = work_key
             results.append(entry)
+            proof_hold_identities.append(
+                {
+                    "edge": job.vector.name,
+                    "work_key": work_key,
+                    "spec_hash": spec_hash,
+                    "workflow_version": workflow_version,
+                }
+            )
 
             cert_key = work_key if work_key is not None else work_key_filter
             if delta == 0.0 and (job.vector.name, cert_key) not in certified_keys:
-                _emit_event(
-                    stream,
-                    "edge_converged",
-                    {
-                        "edge": job.vector.name,
-                        "vector_id": job.vector.id,
-                        "target": job.vector.target.name,
-                        "work_key": work_key or work_key_filter,
-                        "delta": 0,
-                        "certified_by": "gen_gaps",
-                    },
-                    context=EventContext(
+                if _edge_uses_fulfillment_carrier(job):
+                    _project_fulfillment_edge_converged(
+                        stream,
+                        job=job,
                         workflow_version=workflow_version,
-                        work_key=work_key,
-                    ),
-                )
-                certified_keys.add((job.vector.name, cert_key))
+                        spec_hash=spec_hash,
+                        work_key=work_key or work_key_filter,
+                        certified_keys=certified_keys,
+                    )
+                else:
+                    _emit_event(
+                        stream,
+                        "edge_converged",
+                        {
+                            "edge": job.vector.name,
+                            "vector_id": job.vector.id,
+                            "target": job.vector.target.name,
+                            "work_key": work_key or work_key_filter,
+                            "delta": 0,
+                            "certified_by": "gen_gaps",
+                        },
+                        context=EventContext(
+                            workflow_version=workflow_version,
+                            work_key=work_key,
+                        ),
+                    )
+                    certified_keys.add((job.vector.name, cert_key))
+
+    proof_holds = project_proof_holds(
+        workspace_root,
+        proof_hold_identities,
+        runtime_config=runtime_config,
+        all_events=all_events,
+    )
+    for entry, identity in zip(results, proof_hold_identities, strict=False):
+        proof_hold = proof_holds.get(
+            (
+                identity["edge"],
+                identity["work_key"],
+                identity["spec_hash"],
+                identity["workflow_version"],
+            )
+        )
+        if proof_hold is None:
+            continue
+        entry["proof_hold"] = proof_hold
+        entry["proof_hold_active"] = bool(proof_hold.get("held"))
 
     total_delta = sum(entry["delta"] for entry in results)
     scope_info: dict = {
@@ -974,16 +1072,29 @@ def derive_operational_state(
     }
 
 
-def _blocking_reason(pre: PrecomputedManifest) -> str | None:
+def _blocking_reason(
+    pre: PrecomputedManifest,
+    *,
+    resolved_policy: dict | None = None,
+    runtime_config: dict | None = None,
+) -> str | None:
     """Return the typed blocking reason for one precomputed traversal state."""
+    if any(ev.regime is F_D for ev in pre.failing_evaluators):
+        conv = convergence_from_precomputed(
+            pre.executable_job.vector.id,
+            pre,
+            resolved_policy=resolved_policy,
+            runtime_config=runtime_config,
+        )
+        if conv.next_regime is F_P and conv.next_action in ("continue", "escalate"):
+            return "fp_dispatch"
+        if conv.next_regime is F_H and conv.next_action in ("continue", "escalate"):
+            return "fh_gate"
+        return "fd_gap"
     if any(ev.regime is F_P for ev in pre.failing_evaluators):
         return "fp_dispatch"
-    if any(ev.regime is F_H for ev in pre.failing_evaluators) and not any(
-        ev.regime in (F_D, F_P) for ev in pre.failing_evaluators
-    ):
+    if any(ev.regime is F_H for ev in pre.failing_evaluators):
         return "fh_gate"
-    if any(ev.regime is F_D for ev in pre.failing_evaluators):
-        return "fd_gap"
     return None
 
 
@@ -1195,9 +1306,13 @@ def _append_recursive_state(
 def _current_certified_keys(all_events: list[dict]) -> set[tuple[str, str | None]]:
     certified_keys: set[tuple[str, str | None]] = set()
     for event in all_events:
-        if event.get("event_type") != "edge_converged":
-            continue
         data = event.get("data", {})
+        event_type = event.get("event_type")
+        if event_type == "edge_reopened":
+            certified_keys.discard((data.get("edge", ""), data.get("work_key")))
+            continue
+        if event_type != "edge_converged":
+            continue
         if not data.get("target"):
             continue
         reset = find_latest_reset(all_events, edge=data.get("edge"), work_key=data.get("work_key"))
@@ -1481,26 +1596,41 @@ def _iterated_outcome(
             runtime_config=runtime.runtime_config,
         )
     pre = runtime.precomputed
-    blocking_reason = _blocking_reason(pre)
+    blocking_reason = _blocking_reason(
+        pre,
+        resolved_policy=runtime.resolved_policy,
+        runtime_config=runtime.runtime_config,
+    )
 
     fd_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_D]
     fp_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_P]
     fh_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_H]
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     edge_slug = vector.name.replace("→", "_").replace("↔", "_")
     manifest_id = f"{edge_slug}_{ts}"
     active_frame = _active_frame_for_runtime(runtime)
 
     from .run import find_pending_run
 
-    if fp_failing:
+    dispatch_requires_fp = blocking_reason == "fp_dispatch"
+
+    if dispatch_requires_fp:
         pending = find_pending_run(
             runtime.stream.all_events(),
             vector.name,
             work_key=runtime.work_key,
         )
         if pending is not None:
+            manifest_path = None
+            if pending.manifest_id:
+                candidate = (
+                    runtime.workspace_root
+                    / ".ai-workspace"
+                    / "fp_manifests"
+                    / f"{pending.manifest_id}.json"
+                )
+                manifest_path = str(candidate)
             if active_frame is not None:
                 frame, step = active_frame
                 pending_context = _event_context(
@@ -1533,12 +1663,20 @@ def _iterated_outcome(
                 "edge": vector.name,
                 "blocking_reason": "fp_dispatch",
             }
+            if pending.manifest_id:
+                result["manifest_id"] = pending.manifest_id
+            if manifest_path is not None:
+                result["fp_manifest_path"] = manifest_path
             next_metadata = dict(surface.metadata)
             next_metadata["traversal_outcome"] = {
                 "status": "pending",
                 "pending_run_id": pending.run_id,
                 "blocking_reason": "fp_dispatch",
             }
+            if pending.manifest_id:
+                next_metadata["traversal_outcome"]["manifest_id"] = pending.manifest_id
+            if manifest_path is not None:
+                next_metadata["traversal_outcome"]["fp_manifest_path"] = manifest_path
             return TraversalOutcome(
                 surface=WorkSurface(
                     events=surface.events,
@@ -1556,7 +1694,7 @@ def _iterated_outcome(
     event_context = _event_context(runtime, run_id=run_id, active_frame=active_frame)
 
     result_path = ""
-    if fp_failing:
+    if dispatch_requires_fp:
         fp_results_dir = runtime.workspace_root / ".ai-workspace" / "fp_results"
         fp_results_dir.mkdir(parents=True, exist_ok=True)
         result_path = str(fp_results_dir / f"{manifest_id}.json")
@@ -1645,6 +1783,7 @@ def _iterated_outcome(
 
     iter_surface = _realize_iteration(
         bound,
+        blocking_reason=blocking_reason,
         leaf_tasks=list(runtime.leaf_tasks) if runtime.leaf_tasks else None,
         on_leaf_dispatch=runtime.on_leaf_dispatch,
         leaf_task_inputs=runtime.leaf_task_inputs,
@@ -1669,7 +1808,9 @@ def _iterated_outcome(
     if runtime.work_key is not None:
         result["work_key"] = runtime.work_key
 
-    if not (fd_failing or fp_failing or fh_failing):
+    if not _edge_uses_fulfillment_carrier(runtime.executable_job) and not (
+        fd_failing or fp_failing or fh_failing
+    ):
         proof_event = _emit_event(
             runtime.stream,
             "proof_passed",
@@ -1744,10 +1885,13 @@ def _iterated_outcome(
             ),
         )
 
-    if fp_failing:
+    if dispatch_requires_fp:
         manifests_dir = runtime.workspace_root / ".ai-workspace" / "fp_manifests"
         manifests_dir.mkdir(parents=True, exist_ok=True)
         manifest_file = manifests_dir / f"{manifest_id}.json"
+        declared_obligation_policy = declared_obligation_ledger_policy_for_job(
+            runtime.executable_job
+        )
 
         src = vector.source
         if isinstance(src, tuple):
@@ -1790,7 +1934,20 @@ def _iterated_outcome(
                     "regime": ev.regime.__name__,
                     "description": ev.description,
                 }
-                for ev in fp_failing
+                for ev in pre.failing_evaluators
+            ],
+            "fulfillment_obligations": declared_fulfillment_obligations_for_job(
+                runtime.executable_job,
+                workspace_root=runtime.workspace_root,
+            ),
+            "obligation_ledger_policy": declared_obligation_policy,
+            "fd_failures": [
+                {
+                    "name": ev.name,
+                    "binding": ev.binding,
+                    "description": ev.description,
+                }
+                for ev in fd_failing
             ],
             "fd_results": pre.fd_results,
             "delta": pre.delta,
@@ -1958,24 +2115,35 @@ def _advance_current_recursive_state(
         if conv.aggregate_state != "closed":
             continue
         if cert_key not in execution_index.certified_keys:
-            _emit_event(
-                stream,
-                "edge_converged",
-                {
-                    "edge": step.edge,
-                    "vector_id": step.executable_job.vector.id,
-                    "target": step.executable_job.vector.target.name,
-                    "work_key": step.child_key,
-                    "delta": 0,
-                    "certified_by": "frame_progress",
-                },
-                context=EventContext(
+            if _edge_uses_fulfillment_carrier(step.executable_job):
+                if _project_fulfillment_edge_converged(
+                    stream,
+                    job=step.executable_job,
                     workflow_version=workflow_version,
+                    spec_hash=spec_hash,
                     work_key=step.child_key,
-                ),
-            )
-            execution_index.certified_keys.add(cert_key)
-            progressed = True
+                    certified_keys=execution_index.certified_keys,
+                ):
+                    progressed = True
+            else:
+                _emit_event(
+                    stream,
+                    "edge_converged",
+                    {
+                        "edge": step.edge,
+                        "vector_id": step.executable_job.vector.id,
+                        "target": step.executable_job.vector.target.name,
+                        "work_key": step.child_key,
+                        "delta": 0,
+                        "certified_by": "frame_progress",
+                    },
+                    context=EventContext(
+                        workflow_version=workflow_version,
+                        work_key=step.child_key,
+                    ),
+                )
+                execution_index.certified_keys.add(cert_key)
+                progressed = True
         if step_key not in execution_index.completed_steps:
             _emit_event(
                 stream,
@@ -2237,6 +2405,8 @@ def traverse(
 
 def _realize_iteration(
     bound_job: BoundJob,
+    *,
+    blocking_reason: str | None = None,
     leaf_tasks: Optional[list[LeafTask]] = None,
     on_leaf_dispatch: Optional[Callable[[LeafTask, dict], tuple[dict | None, str | None]]] = None,
     run_id: Optional[str] = None,
@@ -2257,7 +2427,7 @@ def _realize_iteration(
     fh_failing = [ev for ev in pre.failing_evaluators if ev.regime is F_H]
 
     if fd_failing:
-        kind = "fd_findings" if fp_failing else "fd_gap"
+        kind = "fd_findings" if fp_failing or blocking_reason == "fp_dispatch" else "fd_gap"
         events.append({
             "event_type": "found",
             "data": {

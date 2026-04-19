@@ -6,6 +6,9 @@
 
 **Relation**: Refines `SPEC_METHOD.md`. For graph-native work, this is the stronger method surface.
 
+Use `GLOSSARY_GUIDE.md` for shared terminology unless this method explicitly
+narrows a term for graph-native work.
+
 ---
 
 ## Domain View
@@ -75,6 +78,24 @@ The practical consequence is simple:
 the product should be walkable by hand in the same terms that automation uses.
 
 If automation cannot be explained as a lawful manual traversal over declared assets and vectors, the automation is ahead of the method.
+
+This method also inherits the recursive product taxonomy from
+`SPEC_METHOD.md`.
+
+For graph-native work, keep the distinction explicit between:
+
+- the released graph-native product
+- the installed instance of that product
+- the mutable source project building the next release cut
+- `PRODUCT.md` as the product-definition surface of that mutable source project
+
+Where a graph-native product is also world-model-driven:
+
+- `GRAPH_METHOD.md` governs graph-native execution, traversal, and graph law
+- `WORLD_MODEL_METHOD.md` governs world-model semantics, publication, and
+  composition law
+
+Those methods compose over the same product rather than replacing one another.
 
 ---
 

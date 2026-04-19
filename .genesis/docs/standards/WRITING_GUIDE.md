@@ -2,7 +2,7 @@
 
 **Governance**: Maintained by the methodology author. Read-only for agents unless explicitly asked to revise it.
 
-**Scope**: Applies to human-facing prose written for this repo.
+**Scope**: Applies to human-facing prose written for this repo, including the practical writing of goals, intent, product, requirements, design documents, and ADRs.
 
 ---
 
@@ -89,3 +89,57 @@ Design should sound structural.
 Commentary should sound analytical.
 
 If the tone does not match the authority layer, rewrite it.
+
+---
+
+## Specification Artifact Practice
+
+`SPEC_METHOD.md` is the constitutional authority for specification-layer roles and closure.
+
+This guide handles the practical writing discipline for those artifacts.
+
+When writing specification artifacts:
+
+- state the current live truth, not a narrated transition
+- keep each sentence in the right layer
+- remove stale law instead of carrying it forward for comfort
+- keep design detail out of constitutional layers unless the detail is itself constitutional
+
+If a sentence sounds informative but does not change authority, constraint, or derivability, cut it.
+
+---
+
+## Practical Layer Checks
+
+When writing or revising a specification artifact, ask:
+
+1. Can the next downstream layer derive from this?
+2. Does this artifact state current truth rather than work in progress?
+3. Does any sentence belong in a lower layer instead?
+
+If any answer is wrong, rewrite or delete.
+
+---
+
+## Current-Surface Writing
+
+Active specification should describe the current constitutional surface in present tense.
+
+If something is no longer live:
+
+- delete it
+- supersede it
+- or move it to commentary
+
+Do not leave dead law in the active surface.
+
+During a change wave, prefer terms such as:
+
+- active
+- current
+- base
+- live
+- shared
+- tenant-local
+
+Use explicit version labels only for tapped release facts or clearly historical material.

@@ -1,0 +1,32 @@
+{
+  "analysis_fingerprint": "3d54a21fbb80973a8aa420bc9d15b2571d559a65bcd993a898f9c864893eaa8f",
+  "analysis_manifest_path": ".ai-workspace/runtime/odd_sdlc-analysis-manifest.json",
+  "declared_output_dir": "build_tenants/react_vite/",
+  "project_profile": {
+    "ambiguity_risk_appetite": "medium",
+    "build_execution_contract": "",
+    "declared_output_dir": "build_tenants/react_vite/",
+    "deployment_contract": "",
+    "language": "",
+    "output_dir": "build_tenants/react_vite/",
+    "project_kind": "software-project",
+    "project_slug": "odd_manager",
+    "realization_mode": "selected_output_tree",
+    "resolution_reason": "canonical_tenant_root",
+    "root_code_policy": "reject",
+    "runtime_observation_contract": "",
+    "tenant_name": "react_vite",
+    "test_execution_contract": "",
+    "test_runner": "",
+    "workspace_name": "odd_manager"
+  },
+  "ready": true,
+  "resolution_reason": "canonical_tenant_root",
+  "schema_version": "v1",
+  "selected_output_dir": "build_tenants/react_vite/",
+  "stage": "install_release",
+  "workspace_mode": "installed_target",
+  "workspace_name": "odd_manager",
+  "workspace_root": "/Users/jim/src/apps/odd_manager",
+  "workspace_state_kind": "odd_sdlc.workspace_state"
+}

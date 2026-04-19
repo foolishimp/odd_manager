@@ -16,7 +16,13 @@ from typing import Any
 
 from .events import EventContext, EventStream, emit
 from .result_ingest import ingest_fp_result, validate_fp_result_payload
-from .transport import classify_failure, dispatch_agent
+from .transport import (
+    ArtifactObservation,
+    classify_failure,
+    dispatch_agent,
+    dispatch_agent_supervised,
+    inspect_result_artifact,
+)
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -244,6 +250,73 @@ def _emit_result_defect(
     )
 
 
+def _artifact_event_data(
+    artifact: ArtifactObservation | None,
+    *,
+    result_path: str,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "result_path": result_path,
+    }
+    if artifact is None:
+        data["artifact_status"] = "unknown"
+        return data
+    data["artifact_status"] = artifact.status
+    if artifact.failure_class is not None:
+        data["artifact_failure_class"] = artifact.failure_class
+    if artifact.detail:
+        data["artifact_detail"] = artifact.detail
+    if artifact.size is not None:
+        data["artifact_size"] = artifact.size
+    if artifact.mtime_ns is not None:
+        data["artifact_mtime_ns"] = artifact.mtime_ns
+    return data
+
+
+def _ingest_preserved_result(
+    workspace: Path,
+    manifest_map: Mapping[str, Any],
+    *,
+    result_path: str,
+    emit_salvage_event: bool,
+    salvage_mode: str,
+) -> dict[str, Any]:
+    stream = EventStream.open(workspace)
+    call_id = manifest_map.get("call_id") if isinstance(manifest_map.get("call_id"), str) else None
+    run_id = manifest_map.get("run_id") if isinstance(manifest_map.get("run_id"), str) else None
+    if emit_salvage_event:
+        emit(
+            "worker_turn_salvaged",
+            {
+                "call_id": call_id,
+                "edge": manifest_map.get("edge"),
+                "result_path": result_path,
+                "salvage_mode": salvage_mode,
+            },
+            stream=stream,
+            context=_event_context_for_manifest(
+                manifest_map,
+                aggregate_type="graph_call",
+                aggregate_id=call_id or f"call-{manifest_map.get('manifest_id')}",
+                parent_aggregate_id=run_id,
+            ),
+        )
+    ingest_summary = ingest_fp_result(
+        result_path,
+        workspace,
+        manifest_data=manifest_map,
+        active_workflow_path=(
+            manifest_map.get("active_workflow")
+            if isinstance(manifest_map.get("active_workflow"), str)
+            else None
+        ),
+    )
+    summary = dict(ingest_summary)
+    summary["call_id"] = call_id
+    summary["salvage_mode"] = salvage_mode
+    return summary
+
+
 def dispatch_bound_manifest_via_transport(
     manifest: Mapping[str, Any],
     workspace: Path,
@@ -269,6 +342,9 @@ def dispatch_bound_manifest_via_transport(
     timeout = hook_config_map.get("timeout")
     if not isinstance(timeout, int) or timeout <= 0:
         timeout = None
+    dispatch_mode = hook_config_map.get("mode")
+    if not isinstance(dispatch_mode, str) or not dispatch_mode:
+        dispatch_mode = "supervised"
 
     stream = EventStream.open(workspace)
     call_id = manifest_map.get("call_id") if isinstance(manifest_map.get("call_id"), str) else f"call-{manifest_id}"
@@ -300,24 +376,71 @@ def dispatch_bound_manifest_via_transport(
             "edge": manifest_map.get("edge"),
             "agent": agent,
             "manifest_id": manifest_id,
+            "dispatch_mode": dispatch_mode,
         },
         stream=stream,
         context=call_context,
     )
 
-    result = dispatch_agent(
-        prompt,
-        str(workspace),
-        agent=agent,
-        timeout=timeout or 300,
-        config=config,
-    )
+    def _progress_callback(data: dict[str, Any]) -> None:
+        event_type = str(data.get("event_type") or "").strip()
+        if not event_type:
+            return
+        payload = {
+            "call_id": call_id,
+            "edge": manifest_map.get("edge"),
+            "agent": agent,
+        }
+        payload.update({key: value for key, value in data.items() if key != "event_type"})
+        emit(
+            event_type,
+            payload,
+            stream=stream,
+            context=call_context,
+        )
+
+    if dispatch_mode == "raw":
+        result = dispatch_agent(
+            prompt,
+            str(workspace),
+            agent=agent,
+            timeout=timeout or 300,
+            config=config,
+        )
+    else:
+        result = dispatch_agent_supervised(
+            prompt,
+            str(workspace),
+            agent=agent,
+            timeout=timeout or 300,
+            config=config,
+            result_path=result_path,
+            payload_validator=validate_fp_result_payload,
+            manifest=manifest_map,
+            progress_callback=_progress_callback,
+        )
     failure_class = classify_failure(
         result,
         result_path,
         payload_validator=validate_fp_result_payload,
+        manifest=manifest_map,
     )
+    artifact = inspect_result_artifact(
+        result_path,
+        payload_validator=validate_fp_result_payload,
+        manifest=manifest_map,
+    )
+    if failure_class is None and artifact.valid and (result.timed_out or result.returncode != 0):
+        return _ingest_preserved_result(
+            workspace,
+            manifest_map,
+            result_path=result_path,
+            emit_salvage_event=True,
+            salvage_mode="transport_failure_preserved_artifact",
+        )
+
     if failure_class is not None:
+        diagnostic_output = result.stderr[:500] if result.stderr.strip() else result.stdout[:500]
         worker_failed = emit(
             "worker_turn_failed",
             {
@@ -327,7 +450,10 @@ def dispatch_bound_manifest_via_transport(
                 "failure_class": failure_class,
                 "returncode": result.returncode,
                 "timed_out": result.timed_out,
-                "stderr": result.stderr[:500],
+                "stderr": diagnostic_output,
+                "dispatch_mode": dispatch_mode,
+                "supervision_mode": result.supervision_mode,
+                **_artifact_event_data(artifact, result_path=result_path),
             },
             stream=stream,
             context=call_context,
@@ -357,6 +483,7 @@ def dispatch_bound_manifest_via_transport(
                 "continuation_kind": "retry",
                 "call_id": call_id,
                 "caused_by_event_id": graph_call_failed["event_id"],
+                "recovery_state": artifact.status if artifact is not None else "missing_artifact",
             },
             stream=stream,
             context=_event_context_for_manifest(
@@ -398,6 +525,10 @@ def dispatch_bound_manifest_via_transport(
             "edge": manifest_map.get("edge"),
             "agent": agent,
             "returncode": result.returncode,
+            "dispatch_mode": dispatch_mode,
+            "supervision_mode": result.supervision_mode,
+            "artifact_observed_live": result.artifact_observed_live,
+            "salvaged_from_artifact": result.salvaged_from_artifact,
         },
         stream=stream,
         context=call_context,
@@ -422,6 +553,24 @@ def dispatch_bound_manifest_via_transport(
     return summary
 
 
+def dispatch_bound_manifest_via_supervised_transport(
+    manifest: Mapping[str, Any],
+    workspace: Path,
+    *,
+    config: Mapping[str, Any] | None = None,
+    hook_config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Published supervised dispatch capability over the standard transport boundary."""
+    merged_hook_config = dict(_mapping(hook_config))
+    merged_hook_config["mode"] = "supervised"
+    return dispatch_bound_manifest_via_transport(
+        manifest,
+        workspace,
+        config=config,
+        hook_config=merged_hook_config,
+    )
+
+
 def auto_dispatch_from_result(
     result: Mapping[str, Any],
     workspace: Path,
@@ -432,14 +581,20 @@ def auto_dispatch_from_result(
     Resolve the dispatch policy for one pending F_P manifest and execute it.
     """
     manifest_path_value = result.get("fp_manifest_path")
-    if not isinstance(manifest_path_value, str) or not manifest_path_value:
+    manifest_path: Path | None = None
+    if isinstance(manifest_path_value, str) and manifest_path_value:
+        manifest_path = Path(manifest_path_value)
+    else:
+        manifest_id = result.get("manifest_id")
+        if isinstance(manifest_id, str) and manifest_id:
+            manifest_path = workspace / ".ai-workspace" / "fp_manifests" / f"{manifest_id}.json"
+    if manifest_path is None:
         return _emit_result_defect(
             result,
             workspace,
             failure_class="policy_config_defect",
             reason="pending F_P result is missing fp_manifest_path",
         )
-    manifest_path = Path(manifest_path_value)
     if not manifest_path.exists():
         return _emit_result_defect(
             result,
@@ -449,6 +604,21 @@ def auto_dispatch_from_result(
         )
 
     manifest = _read_json(manifest_path, label=f"manifest file {manifest_path}")
+    manifest_result_path = manifest.get("result_path")
+    if isinstance(manifest_result_path, str) and manifest_result_path:
+        artifact = inspect_result_artifact(
+            manifest_result_path,
+            payload_validator=validate_fp_result_payload,
+            manifest=manifest,
+        )
+        if artifact.valid:
+            return _ingest_preserved_result(
+                workspace,
+                manifest,
+                result_path=manifest_result_path,
+                emit_salvage_event=True,
+                salvage_mode="idempotent_reentry",
+            )
     resolved_policy = manifest.get("resolved_policy")
     if not isinstance(resolved_policy, Mapping):
         from .policy import resolve_policy_bundle

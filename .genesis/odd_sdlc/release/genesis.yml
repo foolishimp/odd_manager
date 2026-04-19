@@ -1,0 +1,9 @@
+# odd_sdlc runtime contract
+module: odd_sdlc.gtl_module:MODULE
+package: odd_sdlc.gtl_module:MODULE
+domain_package: odd_sdlc
+runtime_backend: claude
+asset_binding_contract: {"asset_id_key":"asset_id","assets_key":"assets","command":["python","-m","odd_sdlc","query-domain","--workspace","."],"exists_key":"checkpoint.exists","path_kind_key":"checkpoint.path_kind","relative_path_key":"metadata.relative_path","uri_key":"uri"}
+pythonpath:
+  - .genesis
+  - .genesis/odd_sdlc/python/code

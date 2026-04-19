@@ -4,7 +4,7 @@
 # set package, worker, and runtime_contract when they install.
 # Without a domain package, the engine has no graph to iterate.
 #
-# runtime_contract: path/to/domain/genesis.yml
+runtime_contract: .genesis/odd_sdlc/release/genesis.yml
 # package: your_domain.package:package
 # worker:  your_domain.package:worker
 # runtime_build: codex

@@ -5,6 +5,7 @@ Tenant-local Playwright smoke coverage for `odd_manager` lives here.
 Primary commands:
 
 ```sh
+npm run test:runtime
 npm run test:e2e
 npm run test:e2e:headed
 ```

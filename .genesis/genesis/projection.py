@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .correction import reset_applies_to_scope
 from .events import EventStream
 
 
@@ -43,6 +44,10 @@ def project(
         from .continuation import project_continuation
 
         return project_continuation(stream.all_events(), instance_id)
+    if asset_type == "run_status":
+        from .live_status import project_live_run_status
+
+        return project_live_run_status(stream.path.parent.parent.parent, run_id=instance_id)
 
     events = stream.all_events()
 
@@ -56,6 +61,24 @@ def project(
     if work_key is not None:
         state["work_key"] = work_key
 
+    def _reset_applies(event: dict[str, Any]) -> bool:
+        data = event.get("data", {})
+        candidate_work_key = work_key
+        if candidate_work_key is None and instance_id != "current":
+            candidate_work_key = instance_id
+        candidate_edge = None
+        if data.get("scope") == "edge":
+            reset_edge = data.get("edge")
+            if isinstance(reset_edge, str) and "→" in reset_edge:
+                target = reset_edge.split("→", 1)[1].strip()
+                if target == asset_type:
+                    candidate_edge = reset_edge
+        return reset_applies_to_scope(
+            event,
+            edge=candidate_edge,
+            work_key=candidate_work_key,
+        )
+
     for event in events:
         data = event.get("data", {})
         etype = event.get("event_type", "")
@@ -65,6 +88,12 @@ def project(
             event_wk = data.get("work_key")
             if event_wk is not None and event_wk != work_key:
                 continue
+
+        if etype == "reset" and _reset_applies(event):
+            state["event_count"] += 1
+            state["status"] = "not_started"
+            state["edges_converged"] = []
+            continue
 
         relevant = (
             data.get("instance_id") == instance_id
@@ -92,6 +121,13 @@ def project(
                 state["edges_converged"].append(edge_name)
             if data.get("target") == asset_type:
                 state["status"] = "converged"
+
+        elif etype == "edge_reopened":
+            edge_name = data.get("edge", "")
+            if edge_name in state["edges_converged"]:
+                state["edges_converged"].remove(edge_name)
+            if data.get("target") == asset_type:
+                state["status"] = "in_progress"
 
         elif etype == "project_initialized":
             state["initialized"] = True

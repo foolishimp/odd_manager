@@ -23,6 +23,7 @@ def broad_fp_first_bundle(config: Mapping[str, Any] | None = None) -> dict[str, 
     """Return the broad ABG3 reference policy bundle."""
     config_map = _mapping(config)
     dispatch_config = _mapping(config_map.get("dispatch"))
+    dispatch_config.setdefault("mode", "supervised")
     evaluation_config = _mapping(config_map.get("evaluation"))
     escalation_config = _mapping(config_map.get("escalation"))
     proof_config = _mapping(config_map.get("proof"))
@@ -30,7 +31,7 @@ def broad_fp_first_bundle(config: Mapping[str, Any] | None = None) -> dict[str, 
 
     return {
         "dispatch": {
-            "ref": "genesis.dispatch_runtime:dispatch_bound_manifest_via_transport",
+            "ref": "genesis.dispatch_runtime:dispatch_bound_manifest_via_supervised_transport",
             "config": dispatch_config,
         },
         "evaluation": {
@@ -50,6 +51,14 @@ def broad_fp_first_bundle(config: Mapping[str, Any] | None = None) -> dict[str, 
             "config": closure_config,
         },
     }
+
+
+def supervised_fp_bundle(config: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """Published ABG bundle with supervised probabilistic dispatch as the declared default."""
+    config_map = _mapping(config)
+    dispatch = _mapping(config_map.get("dispatch"))
+    dispatch.setdefault("mode", "supervised")
+    return broad_fp_first_bundle({**config_map, "dispatch": dispatch})
 
 
 def evaluation_declared_then_generic(config: Mapping[str, Any] | None = None) -> dict[str, Any]:

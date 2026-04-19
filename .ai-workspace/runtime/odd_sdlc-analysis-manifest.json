@@ -1,0 +1,454 @@
+{
+  "analysis_fingerprint": "3d54a21fbb80973a8aa420bc9d15b2571d559a65bcd993a898f9c864893eaa8f",
+  "declared_root": "build_tenants/react_vite/",
+  "manifest_kind": "odd_sdlc.analysis_manifest",
+  "published_artifacts": [
+    {
+      "artifact_kind": "ambiguity_register",
+      "fingerprint": "0bbad6130eb4847becfc54d5eb8e359b44f0f615b0a12893900ca194dd63a486",
+      "last_written": 1776581464415272044,
+      "path": ".ai-workspace/runtime/odd_sdlc-ambiguity-register.json"
+    },
+    {
+      "artifact_kind": "requirement_closure_register",
+      "fingerprint": "69ee796f85eec2bbb0edb62ac1ca228c77ed4f8b9a8ca014507aea371bc0cb7b",
+      "last_written": 1776581464805503667,
+      "path": ".ai-workspace/runtime/odd_sdlc-requirement-closure.json"
+    },
+    {
+      "artifact_kind": "requirement_closure_prompt_context",
+      "fingerprint": "a06a28090b69185df766745e3daac1041bad73732a4a003e5711d85c662e5fec",
+      "last_written": 1776581464391058708,
+      "path": ".ai-workspace/runtime/odd_sdlc-requirement-closure-context.md"
+    }
+  ],
+  "schema_version": "v1",
+  "selected_root": "build_tenants/react_vite/",
+  "source_inputs": [
+    {
+      "exists": true,
+      "fingerprint": "48e6ae594aa58a7cdb05dd3870592b0934b6353ebd038733e528b8a5c07cbabb",
+      "input_kind": "project_constraints",
+      "path": ".ai-workspace/context/project_constraints.yml"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0462dd0ecab68a8b5eff331d77f359b623c79e946c7af2bd075bd56ab4ba1d9b",
+      "input_kind": "runtime_contract",
+      "path": ".genesis/odd_sdlc/release/genesis.yml"
+    },
+    {
+      "exists": true,
+      "fingerprint": "691748978ac542633c6b218acbdbb26d81b2c54ea43660f2916f6a81b947d175",
+      "input_kind": "constitutional_surface",
+      "path": "specification/GOALS.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "15d3e38573b79b0e0ceecdd43edeb8d150aa621dcd24949d0b8075445d1f4270",
+      "input_kind": "constitutional_surface",
+      "path": "specification/INTENT.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "ec2652df3accc286783110d0e086085d29cc544ece5f4e76edfe4a5be4914976",
+      "input_kind": "constitutional_surface",
+      "path": "specification/PRODUCT.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "9c5631fc1350ad0ec2818d88e93e74ecb4d66c49dd51831ff78b708dd14a52d8",
+      "input_kind": "declared_input",
+      "path": "specification/domain/DOMAIN_MODEL.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "39860a1b6f29131c7e4eb4abf7debf5fc989d12d4eecfdaa3c0c730cc305842c",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/00-imported-sources.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "edbc1022389b4505edb7c1f0a50ae9e74dbb44b0ecc1f094b593b92ef888e315",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/00-starter.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "810ca7342bfc7cbaa2601b0699879f7ac17a5669ba1005c632c6627ec708abeb",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/01-control-plane-boundary.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "02dce700fac3a198936a2c94e9ebcf344ce4518ba7bad3da3f93ed26df89dde9",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/02-canonical-ontology.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "fd5b3205869434c79a2fb0f66d3e2c30b70aa8648144be449c259ba09b3f41ff",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/03-read-model-and-projection.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "fbf733e975ed9e982dd9de5e680223632bfa935f81bd485621e737f1509af412",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/04-orientation-and-navigation.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "bb595046ace4e17c64fb4b71ff87dbdd283794efaeb3d15bfa451fa5e02deb4c",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/05-inspection-governance-and-evidence.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "eb9f5c2ae1d3709ae622be43d72cfc0a0af18b87c2a815f48c9e3ff4ed0bcf51",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/06-operator-workbench.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "6a7f435e66bfbde4590d23709f67e14a16c3f688e8d307dd5da00c3568b8fd77",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/07-live-coordination-and-durable-record.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "49b412aff1baf893b73a0e3314a7410af8339fc06a347b93838b15a6eed5ec6c",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/08-session-workspace-and-provider-adapters.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "36feacfb07caf33d3dff68bcc4ef40767adef0d50fd932c64fac4bb5e4d64eb0",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/09-verification-and-traceability.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "1d41a7e48e90fd8969d34a111b0b275d9f461c13989726c980bd38361706c399",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0ed470cc57fad29ce08272d0da7e2220e3f60a4300f89dfb3ca08b5598e18f38",
+      "input_kind": "requirement_surface",
+      "path": "specification/requirements/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "2871d0b390c1b824749f1ee9f94e15231c89e505e69a1ad528d2632e2b443b25",
+      "input_kind": "scenario_surface",
+      "path": "specification/scenarios/01-requirements-and-process-entry-lenses.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "452b22d64e4b7eeb14a4b3029ada9116037671bb40aa652d71849577b7cfb386",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/TENANT_REGISTRY.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "e88790f0521229ca41cadc82af434908e5d8782748ccc93eb287d0e2fb5efae8",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/common/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "adf07a43873dc04cf0f6e8f8825490322ff7c970ee2fee19da0fde40f61abe18",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/common/design/ODD_MANAGER_DASHBOARD.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0c4f1f741a7d1e2a3eacda3af4fffcb9ea7b90e695771af601cdcd117144244b",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/common/design/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0236d71e75b917f4b008474478eda7662e62fc7b11cc7409b8299b2e26f3ef96",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "d3828a0e82f7573acc29ea15636b29599018da6223527b5a999b9c9aa5f071b6",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/code/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "498d1f4da2b9677815381e168bed5f820a9d7defeef32683662232ad865ec73a",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/code/__init__.py"
+    },
+    {
+      "exists": true,
+      "fingerprint": "3e072be2d11e4a8d4ba888493014e2ee927070176cb5b6969b83bbe45715b748",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/code/app_bootstrap.py"
+    },
+    {
+      "exists": true,
+      "fingerprint": "cd1c46a239fa2dea9b5465147afba0b5191bfb59c7912e6da9e1deb34b4a5856",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/design/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "76e33d7a4a75d77644eec20f6d5d3611894320eab05e36580d29cf90c28a4490",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/design/fp/INTENT.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "73ae7b2b62b0daf1c4b9a543c7c18288b34aba04d8b928acc014a0fc5397c73a",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/design/fp/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "1432362afe35b5816259e6bef0163ffc38db6639557cd4541d2804ff04d02991",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/project_package/python/design/fp/edge-overrides/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "4534e3b8fbee7fa0b39cd3ef1d7388fef2b1efb62884682506f84e38fcf77b90",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "b1c3c7385829e34036227b02cbbd502d88cd45a66d96855a87036e03d9648278",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/package.json"
+    },
+    {
+      "exists": true,
+      "fingerprint": "24a2f29fab9639f3b79822ed87294e91c988639435b774a56757e9fdc53047dc",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/playwright.config.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "6109b109db19f6d253033acc3a4dece23247614b4409c5be56ba31e622c3dc62",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/vite.config.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "ae0febca7f98508a7c40c76f247f7a29523d8a1aba20d79fc6b6bdfe26a02623",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/runtime/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "9f28b368badccc04b65f94a420b4187778b52d08c637c5bdd41f7fa1af87e658",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/runtime/odd_manager_world.py"
+    },
+    {
+      "exists": true,
+      "fingerprint": "6cf0c0d62764dadd7ef8023e7dd19cbc1e185c00c780a8466ef271aa82072599",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/runtime/oddterm_service.py"
+    },
+    {
+      "exists": true,
+      "fingerprint": "4075f13f87cce228f9844a2c563301a9aff8e3ad337d3adc1526aadb642e7c9b",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/runtime/tests/test_odd_manager_world.py"
+    },
+    {
+      "exists": true,
+      "fingerprint": "c3b407663a2bfaf50937db4b4e45c300038b262b2764be0074cd55abde210120",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/app/App.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "806173917b12038a05079d5d10bee3b6679a7222e4c95bfc41ff737f0979b0a6",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/app/main.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "61d8c17b442f6247416b14a2ebc12391781a3a96d5ce1a04fc99d7f65efb5a91",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/components/MarkdownDocument.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "92f0d291c454a8552c6468444ef2e6c131a8cfa67114fe68b5e46e3a0eac601d",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/components/WidgetFrame.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "b58623f26ae50c6b92c12cf1ab82cf53f0dd58982cb7738a773c8c6c61c66f24",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/builder/BuilderPanel.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "20e135bd78d4a4a21ca39b5816f49b711a2f43419ceae0c7ef47491345c4e8ab",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/graphs/GraphWorkspace.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "5a4f4cb7fe7077d72037a57d09f04f3236b9fa7cb40b70c52502d7c47ca0d684",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/home/HomePanel.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "6345009f11411535d5b836186764e29cbfadf06582508b4de0b47d65942359f9",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/inspector/InspectorPanel.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "bdef99267bcb09a4090898f7044a51e21208dd38a512f0d4e7341ea3253cf8e2",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/oddboard/OddBoardWidget.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "f0ac0525eef29377dcb152f71a428d69177ab53a6833fa625ae13b2e5be55c43",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/oddboard/useOddConsoleState.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "1f6da21a92a88e4005c9b5652b4e61b722caa461d5616cee3639c8ecfb15b64c",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/oddterm/OddTermPanel.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0220b3f009d217203a589debe7a9e68dc87ff6e44ce8d7f5afbbbc1b675b15b9",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/oddterm/OddTermWorkspaceWidget.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "69c5f2043aa2e7a5f6653502e2a1d8aab71db4daaf5717341b4e9623e7a519e4",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/process/ProcessWorkspace.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "b4c37e276e4287d6d6b7aea7ac0d489c36c39a4e51f8636b15fe462d9ada537a",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/project-selector/FolderBrowser.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "c6dbd3d272985b8715f015819be9f2426e5ea98d071a7f060e7c39231d29a7a9",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/project-selector/ProjectSelector.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "b8422b2b0a4ca097907d87b510fa223b96269064e400c916df199ba0892c8dd3",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/requirements/RequirementsWorkspace.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "2c90711c4a7d7610f7acac2a40fd3cdb12387ce2778a1d59f37015bb3fce7034",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/runtime/RuntimePanel.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "0bdc50a0b96a10b0d233e7dcf565e830a2ab1ca5c4ca59c8a0b9eca086e417b8",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/features/runtime/useSessionServiceState.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "fd00d0d274b8c33d603451d4817f6c282d8306fcfc8491c10395e658d2048bc5",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/layout/AppShell.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "5e4b67f4651a898d12bfd87d480ef3e779149dcc26e3c938eee06cd17baf25fd",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/api.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "774cf1282f104360e331bcb434a8702af010ada418263f20e02d3a526185445b",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/collaboration.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "6eb476aa5fa27332b54e5b69fbf72eccf8f690e5deffaad95360440d24d9a49e",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/graph.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "94875ed6a151c3530cacd56b65e1871fca955eb56e80c8dfb0b6252f0ff774e9",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/presentation.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "703693e6c822f9e0a729a08856c4a8c9badd460bfaf9ffb98ca68b28be111f6e",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/situation.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "489d30983a7c62cceafb50233b5929845b796da141cfb4e7a66f65e9096c1dbb",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/textPresentation.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "5d55a5c4ea07bf5bab925f9654f050366033de5466afd6fd773ed44a59a6fa53",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/lib/types.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "840ac2f55ded8bbdbf0d21b77c04640b134c9c61b5de47ef33d136f48488d76e",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/src/routes/WorkspaceRoute.tsx"
+    },
+    {
+      "exists": true,
+      "fingerprint": "20ad0fdafadd23520daf4dabdf1b20e81908bc4ec7c3df81b4fcd191dd1f98b8",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/tests/README.md"
+    },
+    {
+      "exists": true,
+      "fingerprint": "e4dee3bcab5c4bd8a459fb6c72e1125b8105e9cdb5b6ecb29d6fa514fe5ddca1",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/tests/e2e/odd-manager-collaboration.spec.ts"
+    },
+    {
+      "exists": true,
+      "fingerprint": "3bdcab4077850bf8f1f1b1e5163252d9401c8976de32f9b005c06d1125fc48de",
+      "input_kind": "realization_surface",
+      "path": "build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts"
+    }
+  ],
+  "stage": "install_release",
+  "workspace_mode": "installed_target",
+  "workspace_name": "odd_manager",
+  "workspace_root": "/Users/jim/src/apps/odd_manager",
+  "workspace_state_path": ".ai-workspace/runtime/odd_sdlc-workspace-state.json"
+}

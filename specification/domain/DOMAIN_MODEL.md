@@ -257,13 +257,41 @@ An emitted ABG event or replay-derived runtime truth surface.
 A projected delta from convergence for one asset, asset collection, graph, or
 callable boundary.
 
+Where the managed builder line publishes per-edge obligation ledgers, a gap
+carries separate carry and fulfillment truth rather than one blended scalar:
+
+- `carry_converged` — the obligation set is correctly accounted for with no
+  silent drops or extra obligations
+- `fulfillment_converged` — each carried obligation is actually realized
+- `edge_converged` — carry and fulfillment are both converged; the primary
+  closure signal
+- `carry_delta` and `fulfillment_delta` — separate pressure indicators
+- `combined_delta` — a derived convenience projection, not the primary closure
+  signal
+
 Gap interpretation may begin as provisional descriptive detail until the
 builder line publishes a more stable gap library.
+
+### EdgeObligationLedger
+
+A per-edge published accounting surface emitted by the builder line for each
+constructive edge that carries explicit obligations.
+
+Each ledger records the obligation source and derivation rule, expected and
+carried obligation counts, per-obligation carry and fulfillment status,
+blocking reasons, and evidence refs.
+
+`odd_manager` observes this surface as a query-derived domain overlay. It does
+not own the obligation semantics or the fulfillment rules.
 
 ### ConvergenceTarget
 
 The declared condition under which one asset, asset collection, or graph
 boundary counts as converged.
+
+Where the builder line publishes obligation ledgers, edge convergence is the
+compound condition `carry_converged AND fulfillment_converged`. A bare blended
+scalar is a derived convenience, not the primary closure signal.
 
 Convergence explanation may be partial when the upstream builder line has not
 yet published richer closure semantics.
@@ -323,7 +351,7 @@ The emerging builder/domain line owns:
 - work-act types
 - ambiguity register
 - capability contracts and capability-gated stop states
-- convergence targets and gap interpretation
+- convergence targets, gap interpretation, and edge obligation ledgers
 
 ### GTL Layer
 
@@ -375,6 +403,8 @@ semantics.
 - domain `ambiguity_register` -> manager ambiguity posture and inspection views
 - domain capability contracts and stop states -> manager bounded-stop
   explanation surfaces
+- domain `edge_obligation_ledger` -> manager gap carry/fulfillment separation
+  in projected gap views
 
 ## Derived Objects
 

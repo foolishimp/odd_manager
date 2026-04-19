@@ -123,15 +123,16 @@ Acceptance Criteria
 ### REQ-OM-PROJ-009 - Runtime projections are ABG-native and domain overlays are query-derived
 
 The product shall derive runtime projections from ABG-native truth and derive
-domain overlays from `odd_method` query logic rather than asking one side to
-masquerade as the other.
+domain overlays from active domain-package query logic rather than asking one
+side to masquerade as the other.
 
 Acceptance Criteria
 - `run`, `graph_call`, `continuation`, `frame`, and event-derived runtime
   status are projected from ABG truth
 - asset views, binding views, function catalog views, asset-family and program
   views, ambiguity register views, capability-posture views, and gap or
-  convergence overlays may be projected from `odd_method` query-library results
+  convergence overlays may be projected from domain-package query-library
+  results
 - the composed UI can identify whether a field came from ABG runtime
   projection, ODD domain query, or manager-derived summary
 - the first query cadence may be on-demand rather than background-synchronized
@@ -149,6 +150,51 @@ Acceptance Criteria
   unrecognized drift
 - incompatible upstream query-contract changes are surfaced as explicit
   integration work rather than hidden behind silent field dropping
+
+### REQ-OM-PROJ-013 - Core system projections remain available across domain contracts
+
+`odd_manager` shall keep core GTL/ABG projections available even when the
+active workspace uses an unrecognized or partially supported domain contract.
+
+Acceptance Criteria
+- runtime, history, provenance, evidence, traceability, and other core
+  GTL/ABG projections remain available independently of domain-pack support
+- unsupported domain contracts degrade to explicit domain-compatibility state
+  rather than to total world failure where core projections remain lawful
+- domain-contract compatibility state is itself projected as explicit world
+  information
+
+### REQ-OM-PROJ-014 - Domain UI-pack resolution is explicit and versioned
+
+`odd_manager` shall resolve domain-specific pages and actions through an
+explicit manager-side compatibility layer keyed by published domain-contract
+identity and version.
+
+Acceptance Criteria
+- the manager can determine whether a compatible domain UI pack exists for the
+  active domain contract
+- domain-specific tabs, labels, and actions are selected through that explicit
+  compatibility layer rather than through repo-name or path heuristics
+- one manager installation can support more than one domain contract version or
+  more than one `odd_*` domain line through separate compatible packs
+- incompatibility is surfaced explicitly rather than silently dropping fields or
+  rendering stale domain actions
+
+### REQ-OM-PROJ-012 - Gap projections preserve carry and fulfillment separation
+
+`odd_manager` shall preserve the managed domain package's separation of carry and
+fulfillment truth in its gap projections rather than merging them into a
+blended delta scalar.
+
+Acceptance Criteria
+- projected gap views include `carry_converged`, `fulfillment_converged`, and
+  `edge_converged` as distinct fields where the managed domain package
+  publishes them
+- the manager does not treat `combined_delta` as the primary closure signal
+- carry blocking reasons and fulfillment blocking reasons can be inspected
+  separately where the managed domain package publishes them
+- span aggregation views preserve separate carry and fulfillment aggregates
+  where the managed domain package publishes them
 
 ### REQ-OM-PROJ-011 - Ambiguity and capability posture is projected as first-class world state
 

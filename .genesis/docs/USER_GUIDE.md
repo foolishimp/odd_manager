@@ -63,6 +63,33 @@ The load-bearing split is:
 - ABG executes graph calls, emits runtime facts, opens continuations, and
   projects what holds
 
+## Installed Surface Ownership
+
+One installed workspace may contain mixed-provenance surfaces.
+
+Treat them by owner:
+
+- project-owned authority
+  - imported or authored `specification/*`
+  - project `README.md`
+- kernel-owned installed surfaces
+  - `.genesis/*`
+  - installed docs under `.genesis/docs/`
+  - the generic GTL bootloader section written into `CLAUDE.md` / `AGENTS.md`
+- domain-installer-owned surfaces
+  - runtime-contract overlays such as `.odd_sdlc/release/genesis.yml`
+  - domain governance preambles written into `CLAUDE.md` / `AGENTS.md`
+  - generated workspace read models and normalization artifacts under
+    `.ai-workspace/`
+
+Use the highest-authority surface for the question you are answering:
+
+- project identity and business meaning: project-owned authority
+- GTL/ABG substrate law: kernel-owned surfaces
+- workspace operation under a domain package: domain-installer-owned surfaces
+
+Do not collapse these into one ownership bucket.
+
 ## Core Builder Model
 
 The user-facing builder vocabulary is:

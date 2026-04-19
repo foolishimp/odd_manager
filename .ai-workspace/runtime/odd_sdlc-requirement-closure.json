@@ -1,0 +1,2971 @@
+{
+  "project_profile": {
+    "ambiguity_risk_appetite": "medium",
+    "build_execution_contract": "",
+    "declared_output_dir": "build_tenants/react_vite/",
+    "deployment_contract": "",
+    "language": "",
+    "output_dir": "build_tenants/react_vite/",
+    "project_kind": "software-project",
+    "project_slug": "odd_manager",
+    "realization_mode": "selected_output_tree",
+    "resolution_reason": "canonical_tenant_root",
+    "root_code_policy": "reject",
+    "runtime_observation_contract": "",
+    "tenant_name": "react_vite",
+    "test_execution_contract": "",
+    "test_runner": "",
+    "workspace_name": "odd_manager"
+  },
+  "register_kind": "odd_sdlc.requirement_closure_register",
+  "requirements": [
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-001 - odd_manager is a separate control-plane product boundary"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-001 - odd_manager is a separate control-plane product boundary"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-002 - The product does not create a shadow runtime"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-002 - The product does not create a shadow runtime"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-003 - Legacy transport metaphors are not canonical ontology"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-003 - Legacy transport metaphors are not canonical ontology"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-004 - The emerging builder line remains a separate ownership boundary"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-004 - The emerging builder line remains a separate ownership boundary"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-005 - Shared design law hardens before tenant-local implementation"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-005 - Shared design law hardens before tenant-local implementation"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-006 - Operator actions remain lawful and context-derived"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-006 - Operator actions remain lawful and context-derived"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-BND-007 - Runtime truth and domain query overlays remain separate ownership lines"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/01-control-plane-boundary.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-BND-007 - Runtime truth and domain query overlays remain separate ownership lines"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-BND-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-001 - Live coordination remains distinct from durable record"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-001 - Live coordination remains distinct from durable record"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-002 - Durable topics are canonical persistent discussion objects"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-002 - Durable topics are canonical persistent discussion objects"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-003 - Live rooms open over durable topics and attached assets"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-003 - Live rooms open over durable topics and attached assets"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-004 - Promotion and reattachment preserve provenance"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-004 - Promotion and reattachment preserve provenance"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-005 - Room context includes attached assets and visible participants"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-005 - Room context includes attached assets and visible participants"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-006 - Direct worker-to-asset work remains visible and attributable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-006 - Direct worker-to-asset work remains visible and attributable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-COL-007 - Room delivery uses participant membership and receipt state"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/07-live-coordination-and-durable-record.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-COL-007 - Room delivery uses participant membership and receipt state"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-COL-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-001 - Supervisory information is organized into explicit categories"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-001 - Supervisory information is organized into explicit categories"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-002 - Information categories have primary owners"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-002 - Information categories have primary owners"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-003 - Local inspection explains why the selected object exists"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-003 - Local inspection explains why the selected object exists"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-004 - Local inspection explains route, runtime, and consequence"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-004 - Local inspection explains route, runtime, and consequence"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-005 - Governance decisions are visible, contextualized, and attributable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-005 - Governance decisions are visible, contextualized, and attributable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-INS-006 - Evidence and raw detail are progressively disclosed"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/05-inspection-governance-and-evidence.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-INS-006 - Evidence and raw detail are progressively disclosed"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-INS-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-001 - Distinct entry lenses share one world model"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-001 - Distinct entry lenses share one world model"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-002 - Requirements View is requirement-first"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-002 - Requirements View is requirement-first"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-003 - Process View is build-activity-first"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-003 - Process View is build-activity-first"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-004 - Shared widget architecture is reusable across entry lenses"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-004 - Shared widget architecture is reusable across entry lenses"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-005 - Widgets are collapsible and progressively disclosed"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-005 - Widgets are collapsible and progressively disclosed"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-006 - Displayed objects and totals are drillable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-006 - Displayed objects and totals are drillable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-007 - Requirement workbench exposes downstream reality"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-007 - Requirement workbench exposes downstream reality"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-008 - Ticket and comment authority remain distinct in delivery views"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-008 - Ticket and comment authority remain distinct in delivery views"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-008",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-LNS-009 - Board and session workspace remain ubiquitous tools"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/10-entry-lenses-and-delivery-workspaces.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-LNS-009 - Board and session workspace remain ubiquitous tools"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-LNS-009",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-001 - The home surface answers immediate supervisory questions"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-001 - The home surface answers immediate supervisory questions"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-002 - The primary orientation surface is a graph workspace"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-002 - The primary orientation surface is a graph workspace"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-003 - The operator can move between multiple graphs without losing context"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-003 - The operator can move between multiple graphs without losing context"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-004 - Simplified topology remains traceable to underlying truth"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-004 - Simplified topology remains traceable to underlying truth"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-005 - Drill-down stays tethered to visible world context"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-005 - Drill-down stays tethered to visible world context"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-006 - Compressed and expanded navigation modes share one world model"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-006 - Compressed and expanded navigation modes share one world model"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-007 - Derived lenses remain truthful and object-appropriate"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-007 - Derived lenses remain truthful and object-appropriate"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-008 - Orientation surfaces share one published visual language"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-008 - Orientation surfaces share one published visual language"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-008",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-NAV-009 - The graph workspace keeps a dense supervisory spatial aesthetic"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/04-orientation-and-navigation.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-NAV-009 - The graph workspace keeps a dense supervisory spatial aesthetic"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-NAV-009",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-001 - The product exposes canonical supervisory objects"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-001 - The product exposes canonical supervisory objects"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-002 - One workspace may expose multiple graphs"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-002 - One workspace may expose multiple graphs"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-003 - Published callable functions are surfaced as workorders"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-003 - Published callable functions are surfaced as workorders"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-004 - Work vectors, outcomes, and transitions remain derived views"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-004 - Work vectors, outcomes, and transitions remain derived views"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-005 - Continuations remain derived runtime obligations"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-005 - Continuations remain derived runtime obligations"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-006 - Policy, proof, provenance, and closure are first-class"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-006 - Policy, proof, provenance, and closure are first-class"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-007 - A published domain model exists inside odd_manager"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-007 - A published domain model exists inside odd_manager"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-008 - Ownership boundaries across language, runtime, builder, and UI are explicit"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-008 - Ownership boundaries across language, runtime, builder, and UI are explicit"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-008",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-009 - Derived lenses remain projections over the same world"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-009 - Derived lenses remain projections over the same world"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-009",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-010 - Placeholder builder detail is allowed when canonical identity is present"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-010 - Placeholder builder detail is allowed when canonical identity is present"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-010",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-011 - Published ambiguity and capability objects are first-class supervisory truth"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-011 - Published ambiguity and capability objects are first-class supervisory truth"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-011",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-ONT-012 - Edge obligation ledger carry and fulfillment are distinct supervisory surfaces"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/02-canonical-ontology.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-ONT-012 - Edge obligation ledger carry and fulfillment are distinct supervisory surfaces"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-ONT-012",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-001 - The managed system is projected as a live workspace world"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-001 - The managed system is projected as a live workspace world"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-002 - Authoritative projections exist for graph and runtime aggregates"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-002 - Authoritative projections exist for graph and runtime aggregates"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-003 - Distinct runtime identities remain distinct"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-003 - Distinct runtime identities remain distinct"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-004 - Operational status distinguishes the important kinds of waiting and failure"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-004 - Operational status distinguishes the important kinds of waiting and failure"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-005 - Cost and context delivery remain inspectable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-005 - Cost and context delivery remain inspectable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-006 - Typed asset semantics remain visible in projections"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-006 - Typed asset semantics remain visible in projections"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-007 - Derived summaries never overwrite authoritative truth"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-007 - Derived summaries never overwrite authoritative truth"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-008 - Missing builder detail is represented as explicit placeholder state"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-008 - Missing builder detail is represented as explicit placeholder state"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-008",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-009 - Runtime projections are ABG-native and domain overlays are query-derived"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-009 - Runtime projections are ABG-native and domain overlays are query-derived"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-009",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-010 - Query-contract metadata is explicit and drift-detectable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-010 - Query-contract metadata is explicit and drift-detectable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-010",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-011 - Ambiguity and capability posture is projected as first-class world state"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-011 - Ambiguity and capability posture is projected as first-class world state"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-011",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-PROJ-012 - Gap projections preserve carry and fulfillment separation"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/03-read-model-and-projection.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-PROJ-012 - Gap projections preserve carry and fulfillment separation"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-PROJ-012",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-001 - The product provides a durable session workspace"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-001 - The product provides a durable session workspace"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-002 - Multiple labeled sessions are supported"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-002 - Multiple labeled sessions are supported"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-003 - Session history is preserved and manageable"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-003 - Session history is preserved and manageable"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-004 - Sessions can attach to and detach from live rooms without losing identity"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-004 - Sessions can attach to and detach from live rooms without losing identity"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-005 - Sharing from sessions into rooms is explicit and bounded"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-005 - Sharing from sessions into rooms is explicit and bounded"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-006 - Provider adapters can provision named participants over the generic session substrate"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-006 - Provider adapters can provision named participants over the generic session substrate"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-007 - The generic session substrate remains separate from provider-specific behavior"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-007 - The generic session substrate remains separate from provider-specific behavior"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-007",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-008 - Existing sessions can bootstrap room-capable participants"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-008 - Existing sessions can bootstrap room-capable participants"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-008",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-SES-009 - Stream injection is bootstrap-only for provider adapters"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/08-session-workspace-and-provider-adapters.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-SES-009 - Stream injection is bootstrap-only for provider adapters"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-SES-009",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-001 - Every live requirement family has downstream closure"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-001 - Every live requirement family has downstream closure"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-002 - Capability claims require scenario bundles"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-002 - Capability claims require scenario bundles"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-003 - Installed development proof is required for operator-facing capability claims"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-003 - Installed development proof is required for operator-facing capability claims"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-004 - Significant paths are declared and exercised"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-004 - Significant paths are declared and exercised"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-005 - Operator-visible claims remain traceable to source truth"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-005 - Operator-visible claims remain traceable to source truth"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-VER-006 - Post-mortem audit remains decisive"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/09-verification-and-traceability.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-VER-006 - Post-mortem audit remains decisive"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-VER-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-001 - The product provides a workspace-scoped operator workbench"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-001 - The product provides a workspace-scoped operator workbench"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-001",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-002 - The workbench is selection-aware but not selection-bound"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-002 - The workbench is selection-aware but not selection-bound"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-002",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-003 - Conversational and explicit controls share one operator-intent surface"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-003 - Conversational and explicit controls share one operator-intent surface"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-003",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-004 - The workbench may drive UI focus intentionally"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-004 - The workbench may drive UI focus intentionally"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-004",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-005 - Multi-participant interaction is supported"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-005 - Multi-participant interaction is supported"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-005",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    },
+    {
+      "authority_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "authority_statements": [
+        "### REQ-OM-WRK-006 - Structured action and attachment are first-class workbench events"
+      ],
+      "behavioral_code_refs": [],
+      "behavioral_test_refs": [],
+      "blocking_reasons": [],
+      "carry_status": "carried",
+      "code_refs": [],
+      "current_requirement_refs": [
+        "specification/requirements/06-operator-workbench.md"
+      ],
+      "current_requirement_statements": [
+        "### REQ-OM-WRK-006 - Structured action and attachment are first-class workbench events"
+      ],
+      "fulfillment_detail": "specified",
+      "fulfillment_status": "not_fulfilled",
+      "implementation_claim_refs": [],
+      "implementation_design_claim_refs": [],
+      "implementation_module_claim_refs": [],
+      "planned_test_claim_refs": [],
+      "planned_test_design_claim_refs": [],
+      "planned_test_module_claim_refs": [],
+      "present_in_authority": true,
+      "present_in_current_requirement_surface": true,
+      "requirement_id": "REQ-OM-WRK-006",
+      "status": "specified",
+      "test_refs": [],
+      "test_run_archive_refs": [],
+      "testcase_authority_refs": []
+    }
+  ],
+  "schema_version": "v1",
+  "stage": "install_release",
+  "summary": {
+    "carry_counts": {
+      "carried": 83
+    },
+    "fulfillment_counts": {
+      "not_fulfilled": 83
+    },
+    "fulfillment_detail_counts": {
+      "specified": 83
+    },
+    "missing_from_current_requirement_surface": 0,
+    "missing_intent_ids_from_goals": 0,
+    "orphan_code_files": 85,
+    "orphan_test_files": 3,
+    "requirements_missing_code_traceability": 83,
+    "requirements_missing_planned_test_traceability": 83,
+    "requirements_missing_test_traceability": 83,
+    "requirements_with_unexpected_planned_test_traceability": 0,
+    "requirements_with_unexpected_realized_test_traceability": 0,
+    "status_counts": {
+      "specified": 83
+    },
+    "total_live_requirements": 83
+  },
+  "traceability": {
+    "code_file_count": 85,
+    "code_refs": {},
+    "code_root": "build_tenants/react_vite",
+    "orphan_code_files": [
+      "build_tenants/react_vite/dist/assets/_baseUniq-BMbNlFml.js",
+      "build_tenants/react_vite/dist/assets/arc-C4S_VnFx.js",
+      "build_tenants/react_vite/dist/assets/architectureDiagram-Q4EWVU46-BVN-DmKJ.js",
+      "build_tenants/react_vite/dist/assets/blockDiagram-DXYQGD6D-D8FtC1Tv.js",
+      "build_tenants/react_vite/dist/assets/c4Diagram-AHTNJAMY-aZYb6LMQ.js",
+      "build_tenants/react_vite/dist/assets/channel-BlY7ZZ9a.js",
+      "build_tenants/react_vite/dist/assets/chunk-4BX2VUAB-DX5WWH9P.js",
+      "build_tenants/react_vite/dist/assets/chunk-4TB4RGXK-C2Jz5crc.js",
+      "build_tenants/react_vite/dist/assets/chunk-55IACEB6-CKzgH-ba.js",
+      "build_tenants/react_vite/dist/assets/chunk-EDXVE4YY-DEQoFTdH.js",
+      "build_tenants/react_vite/dist/assets/chunk-FMBD7UC4-DosliVLH.js",
+      "build_tenants/react_vite/dist/assets/chunk-OYMX7WX6-Ct7J5_i4.js",
+      "build_tenants/react_vite/dist/assets/chunk-QZHKN3VN-CgunNcV4.js",
+      "build_tenants/react_vite/dist/assets/chunk-YZCP3GAM-k6WPdfxc.js",
+      "build_tenants/react_vite/dist/assets/classDiagram-6PBFFD2Q-g_n8lyIe.js",
+      "build_tenants/react_vite/dist/assets/classDiagram-v2-HSJHXN6E-g_n8lyIe.js",
+      "build_tenants/react_vite/dist/assets/clone-APOWZkpa.js",
+      "build_tenants/react_vite/dist/assets/cose-bilkent-S5V4N54A-CHiWE3rX.js",
+      "build_tenants/react_vite/dist/assets/cytoscape.esm-CyJtwmzi.js",
+      "build_tenants/react_vite/dist/assets/dagre-KV5264BT-BIRKbHsj.js",
+      "build_tenants/react_vite/dist/assets/defaultLocale-DX6XiGOO.js",
+      "build_tenants/react_vite/dist/assets/diagram-5BDNPKRD-BQjaq8ys.js",
+      "build_tenants/react_vite/dist/assets/diagram-G4DWMVQ6-CoTvX_nw.js",
+      "build_tenants/react_vite/dist/assets/diagram-MMDJMWI5-6ZG6PCy-.js",
+      "build_tenants/react_vite/dist/assets/diagram-TYMM5635-BE2mf4tb.js",
+      "build_tenants/react_vite/dist/assets/erDiagram-SMLLAGMA-N4Q_6Fax.js",
+      "build_tenants/react_vite/dist/assets/flowDiagram-DWJPFMVM-CTAgk1U_.js",
+      "build_tenants/react_vite/dist/assets/ganttDiagram-T4ZO3ILL-CjCX82gA.js",
+      "build_tenants/react_vite/dist/assets/gitGraphDiagram-UUTBAWPF-OsCmYkMF.js",
+      "build_tenants/react_vite/dist/assets/graph-CNAwyrtY.js",
+      "build_tenants/react_vite/dist/assets/index-A-PH-0rd.js",
+      "build_tenants/react_vite/dist/assets/infoDiagram-42DDH7IO-BxVDZte-.js",
+      "build_tenants/react_vite/dist/assets/init-Gi6I4Gst.js",
+      "build_tenants/react_vite/dist/assets/ishikawaDiagram-UXIWVN3A-KqsPeOGG.js",
+      "build_tenants/react_vite/dist/assets/journeyDiagram-VCZTEJTY-C0bXxyC6.js",
+      "build_tenants/react_vite/dist/assets/kanban-definition-6JOO6SKY-cwoNbB6X.js",
+      "build_tenants/react_vite/dist/assets/katex-DkKDou_j.js",
+      "build_tenants/react_vite/dist/assets/layout-BsivFimt.js",
+      "build_tenants/react_vite/dist/assets/linear-BQ2qIq-V.js",
+      "build_tenants/react_vite/dist/assets/min-B6Q_4tbr.js",
+      "build_tenants/react_vite/dist/assets/mindmap-definition-QFDTVHPH-PnVXg7fm.js",
+      "build_tenants/react_vite/dist/assets/ordinal-Cboi1Yqb.js",
+      "build_tenants/react_vite/dist/assets/pieDiagram-DEJITSTG-CKaFCyex.js",
+      "build_tenants/react_vite/dist/assets/quadrantDiagram-34T5L4WZ-CiPI1Jdn.js",
+      "build_tenants/react_vite/dist/assets/requirementDiagram-MS252O5E-Bf9y7dD5.js",
+      "build_tenants/react_vite/dist/assets/sankeyDiagram-XADWPNL6-DZ--wQGs.js",
+      "build_tenants/react_vite/dist/assets/sequenceDiagram-FGHM5R23-D-dW_cd3.js",
+      "build_tenants/react_vite/dist/assets/stateDiagram-FHFEXIEX-C0sZxP5I.js",
+      "build_tenants/react_vite/dist/assets/stateDiagram-v2-QKLJ7IA2-D416rdpE.js",
+      "build_tenants/react_vite/dist/assets/timeline-definition-GMOUNBTQ-ClE5oMSD.js",
+      "build_tenants/react_vite/dist/assets/vennDiagram-DHZGUBPP-DbWAyr-7.js",
+      "build_tenants/react_vite/dist/assets/wardley-RL74JXVD-CowtkJMM.js",
+      "build_tenants/react_vite/dist/assets/wardleyDiagram-NUSXRM2D-Cu5-yOvg.js",
+      "build_tenants/react_vite/dist/assets/xychartDiagram-5P7HB3ND-I9OO6bp4.js",
+      "build_tenants/react_vite/playwright.config.ts",
+      "build_tenants/react_vite/runtime/odd_manager_world.py",
+      "build_tenants/react_vite/runtime/oddterm_service.py",
+      "build_tenants/react_vite/src/app/App.tsx",
+      "build_tenants/react_vite/src/app/main.tsx",
+      "build_tenants/react_vite/src/components/MarkdownDocument.tsx",
+      "build_tenants/react_vite/src/components/WidgetFrame.tsx",
+      "build_tenants/react_vite/src/features/builder/BuilderPanel.tsx",
+      "build_tenants/react_vite/src/features/graphs/GraphWorkspace.tsx",
+      "build_tenants/react_vite/src/features/home/HomePanel.tsx",
+      "build_tenants/react_vite/src/features/inspector/InspectorPanel.tsx",
+      "build_tenants/react_vite/src/features/oddboard/OddBoardWidget.tsx",
+      "build_tenants/react_vite/src/features/oddboard/useOddConsoleState.ts",
+      "build_tenants/react_vite/src/features/oddterm/OddTermPanel.tsx",
+      "build_tenants/react_vite/src/features/oddterm/OddTermWorkspaceWidget.tsx",
+      "build_tenants/react_vite/src/features/process/ProcessWorkspace.tsx",
+      "build_tenants/react_vite/src/features/project-selector/FolderBrowser.tsx",
+      "build_tenants/react_vite/src/features/project-selector/ProjectSelector.tsx",
+      "build_tenants/react_vite/src/features/requirements/RequirementsWorkspace.tsx",
+      "build_tenants/react_vite/src/features/runtime/RuntimePanel.tsx",
+      "build_tenants/react_vite/src/features/runtime/useSessionServiceState.ts",
+      "build_tenants/react_vite/src/layout/AppShell.tsx",
+      "build_tenants/react_vite/src/lib/api.ts",
+      "build_tenants/react_vite/src/lib/collaboration.ts",
+      "build_tenants/react_vite/src/lib/graph.ts",
+      "build_tenants/react_vite/src/lib/presentation.ts",
+      "build_tenants/react_vite/src/lib/situation.ts",
+      "build_tenants/react_vite/src/lib/textPresentation.ts",
+      "build_tenants/react_vite/src/lib/types.ts",
+      "build_tenants/react_vite/src/routes/WorkspaceRoute.tsx",
+      "build_tenants/react_vite/vite.config.ts"
+    ],
+    "orphan_test_files": [
+      "build_tenants/react_vite/runtime/tests/test_odd_manager_world.py",
+      "build_tenants/react_vite/tests/e2e/odd-manager-collaboration.spec.ts",
+      "build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts"
+    ],
+    "test_file_count": 3,
+    "test_refs": {}
+  },
+  "workspace_root": "/Users/jim/src/apps/odd_manager"
+}

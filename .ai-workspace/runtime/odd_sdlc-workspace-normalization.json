@@ -1,0 +1,63 @@
+{
+  "actions": [
+    {
+      "detail": "removed copied root README so installed workspace guidance comes from bootloader and runtime surfaces only",
+      "kind": "remove_legacy_root_readme",
+      "path": "/Users/jim/src/apps/odd_manager/README.md"
+    },
+    {
+      "detail": "updated deterministic project bootstrap read model from imported authority",
+      "kind": "update_project_bootstrap",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/context/project_bootstrap.md"
+    },
+    {
+      "detail": "updated workspace identity and canonicalized the active project tenant root for spec-method operation",
+      "kind": "normalize_project_constraints",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/context/project_constraints.yml"
+    },
+    {
+      "detail": "removed the legacy project-scoped tenant scaffold because downstream realization is canonical under `build_tenants/react_vite/`",
+      "kind": "remove_legacy_project_tenant_scaffold",
+      "path": "/Users/jim/src/apps/odd_manager/build_tenants/odd_manager/react_vite"
+    },
+    {
+      "detail": "rewrote tenant registry to the canonical multi-tenant project realization topology",
+      "kind": "update_tenant_registry",
+      "path": "/Users/jim/src/apps/odd_manager/build_tenants/TENANT_REGISTRY.md"
+    },
+    {
+      "detail": "published ambiguity register from deterministic normalization and topology inspection",
+      "kind": "update_ambiguity_register",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/runtime/odd_sdlc-ambiguity-register.json"
+    },
+    {
+      "detail": "published requirement closure register from deterministic traceability inspection",
+      "kind": "update_requirement_closure_register",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/runtime/odd_sdlc-requirement-closure.json"
+    },
+    {
+      "detail": "published compact requirement closure builder context for odd_sdlc execution",
+      "kind": "update_requirement_closure_prompt_context",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/runtime/odd_sdlc-requirement-closure-context.md"
+    },
+    {
+      "detail": "published odd_sdlc analysis manifest for explicit analysis identity and artifact attribution",
+      "kind": "update_analysis_manifest",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/runtime/odd_sdlc-analysis-manifest.json"
+    },
+    {
+      "detail": "published odd_sdlc workspace state for explicit runtime readiness and root selection",
+      "kind": "update_workspace_state",
+      "path": "/Users/jim/src/apps/odd_manager/.ai-workspace/runtime/odd_sdlc-workspace-state.json"
+    }
+  ],
+  "analysis_manifest_path": ".ai-workspace/runtime/odd_sdlc-analysis-manifest.json",
+  "changed": true,
+  "defaults_with_provenance": [],
+  "platform": "react_vite",
+  "project_slug": "odd_manager",
+  "report_path": ".ai-workspace/runtime/odd_sdlc-workspace-normalization.json",
+  "workspace_name": "odd_manager",
+  "workspace_root": "/Users/jim/src/apps/odd_manager",
+  "workspace_state_path": ".ai-workspace/runtime/odd_sdlc-workspace-state.json"
+}

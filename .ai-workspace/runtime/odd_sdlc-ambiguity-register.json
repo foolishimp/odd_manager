@@ -1,0 +1,198 @@
+{
+  "ambiguities": [
+    {
+      "affected_assets": [
+        "build_execution_surface",
+        "ambiguity_register_surface"
+      ],
+      "ambiguity_id": "missing-build-execution-capability",
+      "blocking": true,
+      "class": "execution_stage_without_declared_capability",
+      "competing_interpretations": [
+        "construction-only lane with no declared build_execution_contract",
+        "capability-declared lane for build_execution_contract"
+      ],
+      "current_resolution": "Declare the build execution contract before treating build execution as a governed operational transition.",
+      "decision_basis": "Declare the build execution contract before treating build execution as a governed operational transition.",
+      "decision_event_refs": [],
+      "decision_owner": "policy",
+      "decision_status": "hard_blocked",
+      "description": "A later executional or operational stage is in the domain model but its governing technology capability is not declared in the active build tenant.",
+      "evidence_refs": [
+        ".ai-workspace/context/project_constraints.yml"
+      ],
+      "expected_resolving_edge": "prepare_build_execution_surface",
+      "first_seen_at": "normalize_workspace",
+      "hard_stop": true,
+      "introduced_by": "normalize_workspace",
+      "invariant_refs": [
+        "REQ-F-ODDSDLC-026",
+        "REQ-F-ODDSDLC-027",
+        "REQ-F-ODDSDLC-028"
+      ],
+      "last_seen_at": "install_release",
+      "observed_state": {
+        "declared_value": "",
+        "field_name": "build_execution_contract",
+        "tenant_name": "react_vite"
+      },
+      "policy_action": "hard_block",
+      "risk_appetite": "medium",
+      "severity": "major",
+      "status": "pending_capability",
+      "title": "Required capability `build_execution_contract` is not declared"
+    },
+    {
+      "affected_assets": [
+        "deployment_surface",
+        "ambiguity_register_surface"
+      ],
+      "ambiguity_id": "missing-deployment-capability",
+      "blocking": true,
+      "class": "execution_stage_without_declared_capability",
+      "competing_interpretations": [
+        "construction-only lane with no declared deployment_contract",
+        "capability-declared lane for deployment_contract"
+      ],
+      "current_resolution": "Declare the deployment contract before treating deployment as an admissible governed stage.",
+      "decision_basis": "Declare the deployment contract before treating deployment as an admissible governed stage.",
+      "decision_event_refs": [],
+      "decision_owner": "policy",
+      "decision_status": "hard_blocked",
+      "description": "A later executional or operational stage is in the domain model but its governing technology capability is not declared in the active build tenant.",
+      "evidence_refs": [
+        ".ai-workspace/context/project_constraints.yml"
+      ],
+      "expected_resolving_edge": "prepare_deployment_surface",
+      "first_seen_at": "module_build",
+      "hard_stop": true,
+      "introduced_by": "module_build",
+      "invariant_refs": [
+        "REQ-F-ODDSDLC-026",
+        "REQ-F-ODDSDLC-027",
+        "REQ-F-ODDSDLC-028"
+      ],
+      "last_seen_at": "install_release",
+      "observed_state": {
+        "declared_value": "",
+        "field_name": "deployment_contract",
+        "tenant_name": "react_vite"
+      },
+      "policy_action": "hard_block",
+      "risk_appetite": "medium",
+      "severity": "major",
+      "status": "pending_capability",
+      "title": "Required capability `deployment_contract` is not declared"
+    },
+    {
+      "affected_assets": [
+        "runtime_observation_surface",
+        "ambiguity_register_surface"
+      ],
+      "ambiguity_id": "missing-runtime-observation-capability",
+      "blocking": true,
+      "class": "execution_stage_without_declared_capability",
+      "competing_interpretations": [
+        "construction-only lane with no declared runtime_observation_contract",
+        "capability-declared lane for runtime_observation_contract"
+      ],
+      "current_resolution": "Declare the runtime observation contract before treating runtime return as governed evidence.",
+      "decision_basis": "Declare the runtime observation contract before treating runtime return as governed evidence.",
+      "decision_event_refs": [],
+      "decision_owner": "policy",
+      "decision_status": "hard_blocked",
+      "description": "A later executional or operational stage is in the domain model but its governing technology capability is not declared in the active build tenant.",
+      "evidence_refs": [
+        ".ai-workspace/context/project_constraints.yml"
+      ],
+      "expected_resolving_edge": "derive_runtime_observation_surface",
+      "first_seen_at": "module_build",
+      "hard_stop": true,
+      "introduced_by": "module_build",
+      "invariant_refs": [
+        "REQ-F-ODDSDLC-026",
+        "REQ-F-ODDSDLC-027",
+        "REQ-F-ODDSDLC-028"
+      ],
+      "last_seen_at": "install_release",
+      "observed_state": {
+        "declared_value": "",
+        "field_name": "runtime_observation_contract",
+        "tenant_name": "react_vite"
+      },
+      "policy_action": "hard_block",
+      "risk_appetite": "medium",
+      "severity": "major",
+      "status": "pending_capability",
+      "title": "Required capability `runtime_observation_contract` is not declared"
+    },
+    {
+      "affected_assets": [
+        "code_surface",
+        "ambiguity_register_surface"
+      ],
+      "ambiguity_id": "multiple-realization-roots",
+      "blocking": false,
+      "class": "multiple_realization_roots",
+      "competing_interpretations": [],
+      "current_resolution": "No longer detected during deterministic workspace normalization or workspace scan.",
+      "decision_basis": "selected_interpretation=build_tenants/python/",
+      "decision_event_refs": [],
+      "decision_owner": "",
+      "decision_status": "resolved",
+      "description": "The workspace declares one realization root while other workspace trees, including sibling build_tenants, also appear to contain governed product realization.",
+      "evidence_refs": [
+        ".ai-workspace/context/project_constraints.yml",
+        "build_tenants/python/",
+        "build_tenants/react_vite"
+      ],
+      "expected_resolving_edge": "select_implementation_stack_profile",
+      "first_seen_at": "normalize_workspace",
+      "hard_stop": false,
+      "introduced_by": "normalize_workspace",
+      "invariant_refs": [
+        "REQ-F-ODDSDLC-022",
+        "REQ-F-ODDSDLC-027",
+        "REQ-F-ODDSDLC-028"
+      ],
+      "last_seen_at": "install_release",
+      "observed_state": {},
+      "policy_action": "escalate_fh",
+      "risk_appetite": "medium",
+      "severity": "major",
+      "status": "resolved",
+      "title": "Multiple plausible realization roots are present"
+    }
+  ],
+  "project_profile": {
+    "ambiguity_risk_appetite": "medium",
+    "build_execution_contract": "",
+    "declared_output_dir": "build_tenants/react_vite/",
+    "deployment_contract": "",
+    "language": "",
+    "output_dir": "build_tenants/react_vite/",
+    "project_kind": "software-project",
+    "project_slug": "odd_manager",
+    "realization_mode": "selected_output_tree",
+    "resolution_reason": "canonical_tenant_root",
+    "root_code_policy": "reject",
+    "runtime_observation_contract": "",
+    "tenant_name": "react_vite",
+    "test_execution_contract": "",
+    "test_runner": "",
+    "workspace_name": "odd_manager"
+  },
+  "register_kind": "odd_sdlc.ambiguity_register",
+  "schema_version": "v2",
+  "stage": "install_release",
+  "summary": {
+    "active": 3,
+    "blocking": 3,
+    "status_counts": {
+      "pending_capability": 3,
+      "resolved": 1
+    },
+    "total": 4
+  },
+  "workspace_root": "/Users/jim/src/apps/odd_manager"
+}
