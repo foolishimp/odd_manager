@@ -4,7 +4,7 @@ title: Refactor consuming UX widgets (OddBoard, OddTerm, workspace pages) under 
 change_class: realization_refactor
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Bring every existing odd_manager UX widget that consumes a new AssetSurface (CommentAssetSurface, SessionAssetSurface, TicketAssetSurface) under UX_METHOD compliance, with declared State/Msg/Update/Cmd, AssetSurface action-registry binding, and passing Msg-replay tests.
 re_entry_point: realization
