@@ -3,7 +3,7 @@ id: T-008
 title: Realize CommentAssetSurface (message board) over .ai-workspace/comments
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Implement the read half of CommentAssetSurface — typed projection over .ai-workspace/comments/<agent>/*.md with author-as-agent metadata derivation and POSTING_GUIDE-aware frontmatter parsing — plus a scaffold pane proving end-to-end live read.
 change_class: realization_refactor
