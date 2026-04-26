@@ -1,7 +1,8 @@
 # Design Module — AssetSurface Contract and `.ai-workspace` Topology Binding
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-04-26
+**Ratified**: 2026-04-26 — open decisions ratified per recommendation: collection-of-collections is a small follow-up out of T-006 scope; cross-collection joins handled per-surface for now and promoted to chassis only if pattern recurs; authorization slot reserved at the action precondition (no enforcement until multi-user requirement surfaces).
 **Tenant**: cross-tenant (instantiated per tenant under `build_tenants/<tenant>/`)
 **Closes ticket**: T-006
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
@@ -250,11 +251,13 @@ This means the chassis preserves ODD's append-only / projection-over-history sem
 
 ---
 
-## 10. Open Decisions
+## 10. Decisions (ratified 2026-04-26)
 
-1. **Collection of Collections** — should there be a meta-`AssetSurface` exposing the registry of available `AssetSurface` instances (so MCP can publish a discovery resource)? Recommended: yes, as a small follow-up. Out of scope for T-006.
-2. **Cross-collection joins** — when a UX surface needs to render a Comment with its referenced Ticket inline, who joins? Options: per-surface inspector handles the join via secondary `Query API` calls, or a join helper in the chassis. Recommended: per-surface for now; promote to chassis if pattern recurs.
-3. **Authorization** — currently every consumer can invoke every action. If multi-user authorization is added (unlikely in single-operator odd_manager but possible in shared deployments), the action precondition slot is the place to enforce it. No design change needed; flagging for future awareness.
+All three open decisions ratified per recommendation. Alternatives preserved below for design-history traceability.
+
+1. **Collection of Collections** — **deferred** as a small follow-up. A meta-`AssetSurface` exposing the registry of available `AssetSurface` instances would let MCP publish a discovery resource; out of T-006 scope; ticket TBD when needed.
+2. **Cross-collection joins** — **per-surface** until pattern recurs. When a UX surface needs to render a Comment with its referenced Ticket inline, the per-surface inspector handles the join via secondary `Query API` calls. Promote to chassis if the pattern appears in three or more surfaces.
+3. **Authorization** — **slot reserved at action precondition; no enforcement now**. The §2.5 action precondition is the place where any future multi-user authorization would land. No design change required for the current single-operator deployment; flagged here so the slot is visible.
 
 ---
 
