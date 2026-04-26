@@ -3,7 +3,7 @@ id: T-006
 title: Define AssetSurface contract and .ai-workspace topology design module
 type: feature
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Author one shared design-module surface that defines the AssetSurface chassis and binds the .ai-workspace typed collections to it, so per-collection realization tickets instantiate one contract instead of inventing six.
 change_class: design_reframe

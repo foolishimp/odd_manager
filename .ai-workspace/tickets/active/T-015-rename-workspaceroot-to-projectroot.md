@@ -3,7 +3,7 @@ id: T-015
 title: Rename workspaceRoot to projectRoot tenant-wide
 type: chore
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Resolve the workspaceRoot (path) vs workspace_profile (identity) collision noted in src/lib/types.ts:565 by renaming every path-bearing workspaceRoot to projectRoot, retaining workspace_profile for governance identity.
 change_class: realization_refactor

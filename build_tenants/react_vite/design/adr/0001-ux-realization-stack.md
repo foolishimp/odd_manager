@@ -1,7 +1,8 @@
 # ADR 0001 — UX Realization Stack
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-04-26
+**Ratified**: 2026-04-26 — open decisions ratified per recommendation: Zod for runtime validation; single tenant-local `cmdMiddleware`; state persistence deferred until a concrete requirement surfaces (likely T-009 SessionAssetSurface).
 **Tenant**: `react_vite`
 **Closes ticket**: T-013
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
@@ -99,14 +100,16 @@ For runtime validation at the seam (RPC responses, MCP payloads, file-loaded rec
 
 ---
 
-## Open Decisions (for user ratification before T-006 closes)
+## Decisions (ratified 2026-04-26)
 
-1. **Runtime validator** — recommended Zod; alternatives:
+All three open decisions ratified per recommendation. Alternatives preserved below for design-history traceability.
+
+1. **Runtime validator** — **Zod** ratified. Alternatives considered:
    - **Effect-TS Schema** — higher-purity FP, error channel, composable; smaller community; steeper learning curve. Choose if the project intends to adopt Effect-TS for the broader effect surface.
    - **TypeBox** — JSON Schema-shaped, smallest runtime footprint; less ergonomic for derived TS types.
    - **RTK alone (no runtime validation)** — accepts compile-time types only; not method-compliant if the FE/BE seam carries any external input.
-2. **Cmd middleware pattern shape** — recommended a single tenant-local `cmdMiddleware` that pattern-matches `cmd/*` action types; alternative is per-domain middleware (one per `AssetSurface`). Single middleware is simpler; per-domain is more isolated. Recommend single until a clear domain-coupling problem appears.
-3. **State persistence** — RTK has `redux-persist` and several alternatives; not addressed in this ADR. Open until a state-persistence requirement surfaces (likely from T-009 SessionAssetSurface for transcript reference stability).
+2. **Cmd middleware pattern shape** — **single tenant-local `cmdMiddleware`** ratified. Pattern-matches `cmd/*` action types. Alternative considered: per-domain middleware (one per `AssetSurface`); rejected as premature isolation until a concrete domain-coupling problem appears.
+3. **State persistence** — **deferred** until a concrete requirement surfaces (likely T-009 SessionAssetSurface for transcript reference stability). RTK has `redux-persist` and alternatives; choice deferred to the ticket that needs it.
 
 ---
 
@@ -120,7 +123,7 @@ For runtime validation at the seam (RPC responses, MCP payloads, file-loaded rec
 - [x] Rationale paragraph present (Consequences section)
 - [ ] Cross-referenced from T-006 design module — pending T-006 activation
 - [ ] Cross-referenced from T-010 widget evaluation — pending T-010 activation
-- [ ] Open decisions ratified by user — pending
+- [x] Open decisions ratified by user — 2026-04-26
 
 ---
 
