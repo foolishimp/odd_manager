@@ -3,7 +3,7 @@ id: T-011
 title: Publish MCP data layer and agent-interop contract over AssetSurfaces
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Publish the AssetSurface collections as MCP resources and tools so coding agents (Claude Code, Codex) read and write workspace state through one typed projection, with author-as-agent identity attributed automatically.
 change_class: realization_refactor
