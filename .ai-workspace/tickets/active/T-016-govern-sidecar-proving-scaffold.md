@@ -3,7 +3,7 @@ id: T-016
 title: Govern sidecar proving scaffold lifecycle
 type: chore
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Bring the standalone sidecar demo at runtime/dev/sidecar-demo.mjs under explicit STDO-UX governance with banner enforcement and a declared retirement point at T-010 closure, so the scaffold is not mistaken for production UX and does not accrete features outside its proving role.
 change_class: realization_refactor
