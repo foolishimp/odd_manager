@@ -3,7 +3,7 @@ id: T-009
 title: Realize SessionAssetSurface read path and scaffold sessions pane
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Implement the read half of SessionAssetSurface — typed projection over the runtime session registry returning typed SessionRecord — plus a scaffold pane that lists sessions with their project / agent_type / cwd / status. Spawn / attach / kill (T-020) and server-restart survival (T-021) follow.
 change_class: realization_refactor
