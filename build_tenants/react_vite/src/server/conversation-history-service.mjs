@@ -21,24 +21,24 @@ function slugifySegment(value) {
     .slice(0, 64) || "item";
 }
 
-function cacheKey(workspaceRoot, historyId) {
-  return `${resolve(workspaceRoot)}::${historyId}`;
+function cacheKey(projectRoot, historyId) {
+  return `${resolve(projectRoot)}::${historyId}`;
 }
 
-export function conversationHistoryRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/conversation_history");
+export function conversationHistoryRoot(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/conversation_history");
 }
 
-function conversationHistoryDirectory(workspaceRoot, historyId) {
-  return join(conversationHistoryRoot(workspaceRoot), historyId);
+function conversationHistoryDirectory(projectRoot, historyId) {
+  return join(conversationHistoryRoot(projectRoot), historyId);
 }
 
-function conversationHistoryMetaPath(workspaceRoot, historyId) {
-  return join(conversationHistoryDirectory(workspaceRoot, historyId), "meta.json");
+function conversationHistoryMetaPath(projectRoot, historyId) {
+  return join(conversationHistoryDirectory(projectRoot, historyId), "meta.json");
 }
 
-function conversationHistoryEntriesPath(workspaceRoot, historyId) {
-  return join(conversationHistoryDirectory(workspaceRoot, historyId), "entries.ndjson");
+function conversationHistoryEntriesPath(projectRoot, historyId) {
+  return join(conversationHistoryDirectory(projectRoot, historyId), "entries.ndjson");
 }
 
 function trimBufferTail(text, maxBytes) {
@@ -59,14 +59,14 @@ function readJsonFile(filePath) {
   }
 }
 
-function loadCacheRecord(workspaceRoot, historyId) {
-  const key = cacheKey(workspaceRoot, historyId);
+function loadCacheRecord(projectRoot, historyId) {
+  const key = cacheKey(projectRoot, historyId);
   const existing = historyCache.get(key);
   if (existing) {
     return existing;
   }
 
-  const entriesPath = conversationHistoryEntriesPath(workspaceRoot, historyId);
+  const entriesPath = conversationHistoryEntriesPath(projectRoot, historyId);
   const record = {
     historyBytes: 0,
     tailLines: [],
@@ -83,13 +83,13 @@ function loadCacheRecord(workspaceRoot, historyId) {
   return record;
 }
 
-function persistMeta(workspaceRoot, historyId, meta) {
-  mkdirSync(conversationHistoryDirectory(workspaceRoot, historyId), { recursive: true });
-  writeFileSync(conversationHistoryMetaPath(workspaceRoot, historyId), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+function persistMeta(projectRoot, historyId, meta) {
+  mkdirSync(conversationHistoryDirectory(projectRoot, historyId), { recursive: true });
+  writeFileSync(conversationHistoryMetaPath(projectRoot, historyId), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
 
-function pruneHistoryWithinBudget(workspaceRoot, historyId, cacheRecord) {
-  const entriesPath = conversationHistoryEntriesPath(workspaceRoot, historyId);
+function pruneHistoryWithinBudget(projectRoot, historyId, cacheRecord) {
+  const entriesPath = conversationHistoryEntriesPath(projectRoot, historyId);
   if (!existsSync(entriesPath)) {
     cacheRecord.historyBytes = 0;
     cacheRecord.tailLines = [];
@@ -127,7 +127,7 @@ export function sessionConversationHistoryId(sessionId) {
 }
 
 export function ensureConversationHistory(
-  workspaceRoot,
+  projectRoot,
   {
     historyId,
     ownerKind,
@@ -139,7 +139,7 @@ export function ensureConversationHistory(
     throw new Error("conversation history id is required");
   }
 
-  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+  const resolvedWorkspaceRoot = resolve(projectRoot);
   const metaPath = conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId);
   const current = existsSync(metaPath) ? readJsonFile(metaPath) : null;
   const timestamp = nowIso();
@@ -156,7 +156,7 @@ export function ensureConversationHistory(
       }
     : {
         conversationHistoryId: historyId,
-        workspaceRoot: resolvedWorkspaceRoot,
+        projectRoot: resolvedWorkspaceRoot,
         ownerKind: ownerKind ?? "unknown",
         ownerRef: ownerRef ?? historyId,
         metadata: {
@@ -171,8 +171,8 @@ export function ensureConversationHistory(
   return next;
 }
 
-export function updateConversationMetadata(workspaceRoot, historyId, metadata = {}) {
-  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+export function updateConversationMetadata(projectRoot, historyId, metadata = {}) {
+  const resolvedWorkspaceRoot = resolve(projectRoot);
   const existing =
     readJsonFile(conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId)) ??
     ensureConversationHistory(resolvedWorkspaceRoot, {
@@ -196,7 +196,7 @@ export function updateConversationMetadata(workspaceRoot, historyId, metadata = 
 }
 
 export function appendConversationEntry(
-  workspaceRoot,
+  projectRoot,
   historyId,
   {
     entryKind = "note",
@@ -205,7 +205,7 @@ export function appendConversationEntry(
     createdAt = nowIso(),
   } = {},
 ) {
-  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+  const resolvedWorkspaceRoot = resolve(projectRoot);
   ensureConversationHistory(resolvedWorkspaceRoot, {
     historyId,
     ownerKind: "unknown",
@@ -239,8 +239,8 @@ export function appendConversationEntry(
   return entry;
 }
 
-export function loadConversationHistory(workspaceRoot, historyId, options = {}) {
-  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+export function loadConversationHistory(projectRoot, historyId, options = {}) {
+  const resolvedWorkspaceRoot = resolve(projectRoot);
   const meta = readJsonFile(conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId));
   if (!meta) {
     return {
@@ -259,8 +259,8 @@ export function loadConversationHistory(workspaceRoot, historyId, options = {}) 
   };
 }
 
-export function listConversationHistories(workspaceRoot, options = {}) {
-  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+export function listConversationHistories(projectRoot, options = {}) {
+  const resolvedWorkspaceRoot = resolve(projectRoot);
   const root = conversationHistoryRoot(resolvedWorkspaceRoot);
   if (!existsSync(root)) {
     return [];
@@ -286,8 +286,8 @@ export function listConversationHistories(workspaceRoot, options = {}) {
   return histories;
 }
 
-export function loadConversationHistoryStats(workspaceRoot, historyId) {
-  const cacheRecord = loadCacheRecord(workspaceRoot, historyId);
+export function loadConversationHistoryStats(projectRoot, historyId) {
+  const cacheRecord = loadCacheRecord(projectRoot, historyId);
   return {
     historyBytes: cacheRecord.historyBytes,
     retainedLineCount: cacheRecord.tailLines.length,
@@ -325,8 +325,8 @@ export function conversationEntryText(entry, options = {}) {
   return "";
 }
 
-export function extractConversationRange(workspaceRoot, historyId, options = {}) {
-  const { meta, entries } = loadConversationHistory(workspaceRoot, historyId, {
+export function extractConversationRange(projectRoot, historyId, options = {}) {
+  const { meta, entries } = loadConversationHistory(projectRoot, historyId, {
     limit: options.entryCount ?? options.limit ?? 120,
   });
   const sanitizeTerminalText = Boolean(options.sanitizeTerminalText);

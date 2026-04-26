@@ -42,6 +42,7 @@ type ProcessWorkspaceProps = {
 
 type ProcessFilter = {
   id:
+    | "observed_surfaces"
     | "active_work"
     | "blocked"
     | "ready_handoff"
@@ -57,6 +58,7 @@ type ProcessFilter = {
 type ProcessRecord = {
   key: string;
   selection: Selection;
+  recordClass: "observed_surface" | "workflow_step" | "work_order" | "blocker" | "run";
   eyebrow: string;
   tone: Tone;
   title: string;
@@ -97,16 +99,189 @@ type ProcessContext = {
   gapSummary: string | null;
 };
 
+type TrackedProcessLens = {
+  id: "accounting_ledger" | "transformation_provenance";
+  title: string;
+  summary: string;
+  primaryRequirementId: string;
+  relatedRequirementIds: string[];
+  governingAssetIds: string[];
+  outputAssetIds: string[];
+};
+
+type ProcessBuilderLens = "now" | "blocked" | "done" | "map";
+
+type ProcessStageId =
+  | "bootstrap"
+  | "design"
+  | "scenarios"
+  | "build"
+  | "test"
+  | "release"
+  | "runtime";
+
+type ProcessLaneId = "upstream" | "in_flight" | "carried" | "blocked" | "handoff";
+
 const PROCESS_EXPLORER_LIST_ID = "process-explorer-list";
 
+const OBSERVED_PROCESS_ASSET_TYPES = new Set([
+  "ambiguity_register_surface",
+  "requirement_closure_register_surface",
+  "requirement_surface",
+  "feature_decomp_surface",
+  "uat_testcases_surface",
+  "design_surface",
+  "review_assessment_surface",
+  "consensus_decision_surface",
+  "reviewed_design_surface",
+  "testcase_authority_surface",
+  "scenario_surface",
+  "implementation_design_surface",
+  "implementation_stack_profile",
+  "implementation_module_surface",
+  "test_design_surface",
+  "test_stack_profile",
+  "test_module_surface",
+  "test_run_archive_surface",
+  "release_surface",
+  "work_request_surface",
+  "operational_evidence_surface",
+  "deployment_record_surface",
+  "runtime_observation_surface",
+  "maintenance_plan_surface",
+]);
+
+const PREFERRED_PROCESS_RECORD_KEYS = [
+  "requirement:REQ-ACC-002",
+  "requirement:REQ-TRV-005",
+  "asset:requirement_surface",
+  "asset:testcase_authority_surface",
+  "asset:design_surface",
+  "asset:scenario_surface",
+  "asset:implementation_design_surface",
+  "asset:test_design_surface",
+  "asset:test_run_archive_surface",
+  "asset:release_surface",
+  "asset:runtime_observation_surface",
+];
+
+const TRACKED_PROCESS_LENSES: TrackedProcessLens[] = [
+  {
+    id: "accounting_ledger",
+    title: "Accounting Ledger",
+    summary: "Track ledger output, accounting invariants, and run completion gates across edge traversal.",
+    primaryRequirementId: "REQ-ACC-002",
+    relatedRequirementIds: ["REQ-ACC-001", "REQ-ACC-004", "REQ-ENG-004"],
+    governingAssetIds: ["requirement_surface", "testcase_authority_surface"],
+    outputAssetIds: ["test_run_archive_surface", "release_surface"],
+  },
+  {
+    id: "transformation_provenance",
+    title: "Transformation Provenance",
+    summary: "Track run manifest, lineage, and audit traceability through transformation and replay.",
+    primaryRequirementId: "REQ-TRV-005",
+    relatedRequirementIds: ["REQ-TRV-005-A", "REQ-TRV-005-B", "REQ-INT-003"],
+    governingAssetIds: ["requirement_surface", "design_surface", "scenario_surface"],
+    outputAssetIds: ["test_run_archive_surface", "runtime_observation_surface", "release_surface"],
+  },
+];
+
+const PROCESS_STAGE_DEFINITIONS: Array<{
+  id: ProcessStageId;
+  number: string;
+  label: string;
+  summary: string;
+  keywords: string[];
+}> = [
+  {
+    id: "bootstrap",
+    number: "01",
+    label: "Bootstrap",
+    summary: "intent, product, goals, requirements",
+    keywords: ["bootstrap", "intent", "product", "goal", "requirement", "ambiguity_register", "closure"],
+  },
+  {
+    id: "design",
+    number: "02",
+    label: "Design",
+    summary: "features, review, consensus",
+    keywords: ["design", "feature", "review", "consensus", "decomp"],
+  },
+  {
+    id: "scenarios",
+    number: "03",
+    label: "Scenarios",
+    summary: "uat, scenarios, testcase authority",
+    keywords: ["scenario", "uat", "testcase_authority", "acceptance"],
+  },
+  {
+    id: "build",
+    number: "04",
+    label: "Build",
+    summary: "implementation design and modules",
+    keywords: ["build", "implementation", "impl", "module", "stack", "code"],
+  },
+  {
+    id: "test",
+    number: "05",
+    label: "Test",
+    summary: "proof, test modules, run archive",
+    keywords: ["test", "qualification", "proof", "archive"],
+  },
+  {
+    id: "release",
+    number: "06",
+    label: "Release",
+    summary: "release and deployment records",
+    keywords: ["release", "deployment", "handoff"],
+  },
+  {
+    id: "runtime",
+    number: "07",
+    label: "Runtime",
+    summary: "runs, continuations, observations",
+    keywords: ["runtime", "run", "continuation", "observation", "operational", "maintenance"],
+  },
+];
+
+const PROCESS_BUILDER_LENSES: Array<{
+  id: ProcessBuilderLens;
+  label: string;
+  summary: string;
+}> = [
+  { id: "now", label: "Now", summary: "Current movable work in the selected pipeline stage." },
+  { id: "blocked", label: "Blocked", summary: "Fail-closed, hard-stop, or intervention-bearing process objects." },
+  { id: "done", label: "Done", summary: "Converged or handoff-ready process objects." },
+  { id: "map", label: "Map", summary: "The existing process graph remains available as a direct map lens." },
+];
+
+const PROCESS_LANE_DEFINITIONS: Array<{
+  id: ProcessLaneId;
+  label: string;
+  summary: string;
+}> = [
+  { id: "upstream", label: "Upstream Inputs", summary: "Settled carriers feeding the selected stage." },
+  { id: "in_flight", label: "In Flight", summary: "Active, pending, or currently moving process objects." },
+  { id: "carried", label: "Carried", summary: "Attention or gated items that are carried forward." },
+  { id: "blocked", label: "Blocked", summary: "Fail-closed or hard-stop conditions." },
+  { id: "handoff", label: "Handoff Ready", summary: "Produced outputs that can move to the next lane." },
+];
+
 const PROCESS_FILTERS: ProcessFilter[] = [
+  {
+    id: "observed_surfaces",
+    label: "Observed SDLC Surfaces",
+    tone: "active",
+    description: "Generated odd_sdlc requirement, design, qualification, execution, release, and runtime surfaces published by the selected workspace.",
+    matches: (record) => record.recordClass === "observed_surface",
+  },
   {
     id: "active_work",
     label: "Active Work",
     tone: "active",
     description: "Workflow steps, workorders, and runs that are currently moving through the technical lane.",
     matches: (record) =>
-      record.selection.kind !== "ambiguity" &&
+      record.recordClass !== "blocker" &&
       (record.tone === "active" || record.tone === "pending" || record.tone === "gated"),
   },
   {
@@ -167,7 +342,7 @@ export function ProcessWorkspace({
     null;
   const processRecords = useMemo(() => buildProcessRecords(world), [world]);
   const [search, setSearch] = useState("");
-  const [activeFilterId, setActiveFilterId] = useState<ProcessFilter["id"]>("active_work");
+  const [activeFilterId, setActiveFilterId] = useState<ProcessFilter["id"]>("observed_surfaces");
   const [focusedProcessKey, setFocusedProcessKey] = useState<string | null>(null);
   const [explorerFocusToken, setExplorerFocusToken] = useState(0);
   const [selectedProcessGraphId, setSelectedProcessGraphId] = useState<string>(
@@ -202,13 +377,17 @@ export function ProcessWorkspace({
       ),
     [activeFilter, processRecords, search],
   );
+  const preferredVisibleRecord = useMemo(
+    () => pickDefaultProcessRecord(visibleRecords) ?? visibleRecords[0] ?? null,
+    [visibleRecords],
+  );
 
   useEffect(() => {
     if (selectedProcessSelection) {
       return;
     }
-    if (!focusedProcessKey && visibleRecords.length) {
-      setFocusedProcessKey(visibleRecords[0].key);
+    if (!focusedProcessKey && preferredVisibleRecord) {
+      setFocusedProcessKey(preferredVisibleRecord.key);
       return;
     }
     if (
@@ -216,14 +395,14 @@ export function ProcessWorkspace({
       visibleRecords.length &&
       !visibleRecords.some((record) => record.key === focusedProcessKey)
     ) {
-      setFocusedProcessKey(visibleRecords[0].key);
+      setFocusedProcessKey(preferredVisibleRecord?.key ?? visibleRecords[0].key);
     }
-  }, [focusedProcessKey, selectedProcessSelection, visibleRecords]);
+  }, [focusedProcessKey, preferredVisibleRecord, selectedProcessSelection, visibleRecords]);
 
   const focusedSelection =
     selectedProcessSelection ??
     processRecords.find((record) => record.key === focusedProcessKey)?.selection ??
-    visibleRecords[0]?.selection ??
+    preferredVisibleRecord?.selection ??
     processRecords[0]?.selection ??
     null;
   const focusedContext = focusedSelection ? resolveProcessContext(world, focusedSelection) : null;
@@ -240,6 +419,32 @@ export function ProcessWorkspace({
     !isProcessPrimarySelection(world, selection)
       ? selection
       : null;
+  const processMap = (
+    <GraphWorkspace
+      graphs={graphs}
+      selectedGraphId={selectedProcessGraphId}
+      onSelectGraph={setSelectedProcessGraphId}
+      selectedNodeId={selectedNodeId}
+      onSelectNode={onSelectNode}
+      mode={navigatorMode}
+      onChangeMode={onChangeNavigatorMode}
+      runningCommand={runningCommand}
+      onRefresh={onRefresh}
+      onIterate={onIterate}
+      onStartAuto={onStartAuto}
+      showOverviewSections={false}
+      detailPane={
+        <div className="graph-detail-stack">
+          <InspectorPanel
+            world={world}
+            selection={selection ?? { kind: "graph", id: selectedProcessGraphId }}
+            selectedGraphId={selectedProcessGraphId}
+            onSelectSelection={onSelectSelection}
+          />
+        </div>
+      }
+    />
+  );
 
   const focusExplorer = () => {
     setExplorerFocusToken((current) => current + 1);
@@ -274,7 +479,7 @@ export function ProcessWorkspace({
           }}
           onSearchChange={setSearch}
           onClearFilter={() => {
-            setActiveFilterId("active_work");
+            setActiveFilterId("observed_surfaces");
             focusExplorer();
           }}
           onClearSearch={() => {
@@ -285,32 +490,7 @@ export function ProcessWorkspace({
             setFocusedProcessKey(selectionKey(nextSelection));
             onSelectSelection(nextSelection);
           }}
-          map={
-            <GraphWorkspace
-              graphs={graphs}
-              selectedGraphId={selectedProcessGraphId}
-              onSelectGraph={setSelectedProcessGraphId}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={onSelectNode}
-              mode={navigatorMode}
-              onChangeMode={onChangeNavigatorMode}
-              runningCommand={runningCommand}
-              onRefresh={onRefresh}
-              onIterate={onIterate}
-              onStartAuto={onStartAuto}
-              showOverviewSections={false}
-              detailPane={
-                <div className="graph-detail-stack">
-                  <InspectorPanel
-                    world={world}
-                    selection={selection ?? { kind: "graph", id: selectedProcessGraphId }}
-                    selectedGraphId={selectedProcessGraphId}
-                    onSelectSelection={onSelectSelection}
-                  />
-                </div>
-              }
-            />
-          }
+          map={processMap}
         >
           <ProcessWorkbench
             world={world}
@@ -322,6 +502,504 @@ export function ProcessWorkspace({
         </ProcessNavigatorWidget>
       </div>
     </div>
+  );
+}
+
+export function ProcessKanbanWorkspace({
+  world,
+  selection,
+  selectedNodeId,
+  navigatorMode,
+  onChangeNavigatorMode,
+  onSelectNode,
+  onSelectSelection,
+  runningCommand,
+  onRefresh,
+  onIterate,
+  onStartAuto,
+}: ProcessWorkspaceProps) {
+  const graphs = world.graph_set.graphs;
+  const processGraph =
+    graphs.find((graph) => graph.id === "graph.bootstrap") ??
+    graphs[0] ??
+    null;
+  const processRecords = useMemo(() => buildProcessRecords(world), [world]);
+  const [focusedProcessKey, setFocusedProcessKey] = useState<string | null>(null);
+  const [selectedProcessGraphId, setSelectedProcessGraphId] = useState<string>(
+    processGraph?.id ?? "",
+  );
+  const [builderLens, setBuilderLens] = useState<ProcessBuilderLens>("now");
+  const [activeBuilderStageId, setActiveBuilderStageId] = useState<ProcessStageId>("scenarios");
+
+  const selectedProcessSelection =
+    selection && isProcessPrimarySelection(world, selection) ? selection : null;
+
+  useEffect(() => {
+    if (selectedProcessSelection) {
+      setFocusedProcessKey(selectionKey(selectedProcessSelection));
+    }
+  }, [selectedProcessSelection]);
+
+  useEffect(() => {
+    if (!processGraph) {
+      return;
+    }
+    setSelectedProcessGraphId((current) =>
+      graphs.some((graph) => graph.id === current) ? current : processGraph.id,
+    );
+  }, [graphs, processGraph]);
+
+  const preferredRecord = pickDefaultProcessRecord(processRecords) ?? processRecords[0] ?? null;
+  const focusedSelection =
+    selectedProcessSelection ??
+    processRecords.find((record) => record.key === focusedProcessKey)?.selection ??
+    preferredRecord?.selection ??
+    null;
+  const focusedContext = focusedSelection ? resolveProcessContext(world, focusedSelection) : null;
+  const focusedRecord =
+    focusedContext && processRecords.find((record) => record.key === focusedContext.key)
+      ? processRecords.find((record) => record.key === focusedContext.key) ?? null
+      : focusedContext
+        ? contextToRecord(focusedContext)
+        : preferredRecord;
+
+  if (!processGraph) {
+    return (
+      <div className="workspace-view process-page">
+        <section className="panel panel--context">
+          <div className="empty-state">
+            <strong>No process graph is projected.</strong>
+            <p>The current workspace did not publish a process-flow map for the Kanban View.</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const processMap = (
+    <GraphWorkspace
+      graphs={graphs}
+      selectedGraphId={selectedProcessGraphId}
+      onSelectGraph={setSelectedProcessGraphId}
+      selectedNodeId={selectedNodeId}
+      onSelectNode={onSelectNode}
+      mode={navigatorMode}
+      onChangeMode={onChangeNavigatorMode}
+      runningCommand={runningCommand}
+      onRefresh={onRefresh}
+      onIterate={onIterate}
+      onStartAuto={onStartAuto}
+      showOverviewSections={false}
+      detailPane={
+        <div className="graph-detail-stack">
+          <InspectorPanel
+            world={world}
+            selection={selection ?? { kind: "graph", id: selectedProcessGraphId }}
+            selectedGraphId={selectedProcessGraphId}
+            onSelectSelection={onSelectSelection}
+          />
+        </div>
+      }
+    />
+  );
+
+  return (
+    <div className="workspace-view process-page">
+      <ProcessBuilderView
+        world={world}
+        records={processRecords}
+        focusedRecord={focusedRecord}
+        focusedContext={focusedContext}
+        activeStageId={activeBuilderStageId}
+        lens={builderLens}
+        map={processMap}
+        onChangeStage={setActiveBuilderStageId}
+        onChangeLens={setBuilderLens}
+        onSelectRecord={(nextSelection) => {
+          setFocusedProcessKey(selectionKey(nextSelection));
+          onSelectSelection(nextSelection);
+        }}
+        onSelectSelection={onSelectSelection}
+      />
+    </div>
+  );
+}
+
+function ProcessBuilderView({
+  world,
+  records,
+  focusedRecord,
+  focusedContext,
+  activeStageId,
+  lens,
+  map,
+  onChangeStage,
+  onChangeLens,
+  onSelectRecord,
+  onSelectSelection,
+}: {
+  world: ManagerWorld;
+  records: ProcessRecord[];
+  focusedRecord: ProcessRecord | null;
+  focusedContext: ProcessContext | null;
+  activeStageId: ProcessStageId;
+  lens: ProcessBuilderLens;
+  map: ReactNode;
+  onChangeStage: (stageId: ProcessStageId) => void;
+  onChangeLens: (lens: ProcessBuilderLens) => void;
+  onSelectRecord: (selection: Selection) => void;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  const stageStats = useMemo(() => buildProcessStageStats(records), [records]);
+  const fallbackStageId = useMemo(() => pickDefaultBuilderStage(records), [records]);
+  const activeStageHasRecords = stageStats.some((stage) => stage.id === activeStageId && stage.count > 0);
+  const effectiveStageId = activeStageHasRecords ? activeStageId : fallbackStageId;
+
+  useEffect(() => {
+    if (!activeStageHasRecords && activeStageId !== fallbackStageId) {
+      onChangeStage(fallbackStageId);
+    }
+  }, [activeStageHasRecords, activeStageId, fallbackStageId, onChangeStage]);
+
+  const lensRecords = useMemo(
+    () => filterProcessRecordsForBuilderLens(records, lens, effectiveStageId),
+    [effectiveStageId, lens, records],
+  );
+  const laneGroups = useMemo(() => groupProcessRecordsByLane(lensRecords), [lensRecords]);
+  const fallbackRecord = focusedRecord ?? lensRecords[0] ?? records[0] ?? null;
+  const displayContext =
+    focusedContext ??
+    (fallbackRecord ? resolveProcessContext(world, fallbackRecord.selection) : null);
+  const displayRecord =
+    displayContext && records.find((record) => record.key === displayContext.key)
+      ? records.find((record) => record.key === displayContext.key) ?? null
+      : fallbackRecord;
+  const activeStage = PROCESS_STAGE_DEFINITIONS.find((stage) => stage.id === effectiveStageId);
+  const workspaceName = workspaceDisplayName(world.project_root);
+  const domainLabel = labelWorkspacePack(world.workspace_profile.active_domain_pack);
+
+  return (
+    <div className="workspace-stack process-page__main">
+      <section className="process-builder">
+        <header className="process-builder__header">
+          <div>
+            <span className="panel__eyebrow">Kanban View</span>
+            <h2>{workspaceName}</h2>
+            <p>
+              A board-oriented view over the same live projection: pipeline stage, state lens,
+              movable cards, and focused process-object detail.
+            </p>
+          </div>
+          <div className="process-builder__identity">
+            <span>{domainLabel}</span>
+            <strong>{world.workspace_profile.primary_identity}</strong>
+            <small>{records.length} process records projected</small>
+          </div>
+        </header>
+
+        <div className="process-builder__spine" role="tablist" aria-label="Pipeline stages">
+          {stageStats.map((stage) => (
+            <button
+              key={stage.id}
+              type="button"
+              role="tab"
+              aria-selected={stage.id === effectiveStageId}
+              className={`process-builder-stage process-builder-stage--${stage.tone} ${
+                stage.id === effectiveStageId ? "is-active" : ""
+              }`}
+              onClick={() => onChangeStage(stage.id)}
+            >
+              <span>Stage {stage.number}</span>
+              <strong>{stage.label}</strong>
+              <small>{stage.summary}</small>
+              <em>
+                {stage.count ? `${stage.count} object${stage.count === 1 ? "" : "s"}` : "not projected"}
+              </em>
+            </button>
+          ))}
+        </div>
+
+        <div className="process-builder__lensbar">
+          <div>
+            <span className="panel__eyebrow">Lens</span>
+            <strong>{activeStage?.label ?? "Pipeline"} · {PROCESS_BUILDER_LENSES.find((item) => item.id === lens)?.label}</strong>
+          </div>
+          <div className="process-builder__lenses" role="tablist" aria-label="Process state lenses">
+            {PROCESS_BUILDER_LENSES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={item.id === lens}
+                className={`process-builder-lens ${item.id === lens ? "is-active" : ""}`}
+                onClick={() => onChangeLens(item.id)}
+                title={item.summary}
+              >
+                {item.label}
+                <span>{countProcessBuilderLensRecords(records, item.id, effectiveStageId)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {lens === "map" ? (
+          <div className="process-builder__map-layout">
+            <div className="process-builder__map">{map}</div>
+            <ProcessBuilderFocusPanel
+              context={displayContext}
+              record={displayRecord}
+              world={world}
+              onSelectSelection={onSelectSelection}
+            />
+          </div>
+        ) : (
+          <div className="process-builder__body">
+            <ProcessBuilderBoard
+              laneGroups={laneGroups}
+              focusedRecord={displayRecord}
+              onSelectRecord={onSelectRecord}
+            />
+            <ProcessBuilderFocusPanel
+              context={displayContext}
+              record={displayRecord}
+              world={world}
+              onSelectSelection={onSelectSelection}
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ProcessBuilderBoard({
+  laneGroups,
+  focusedRecord,
+  onSelectRecord,
+}: {
+  laneGroups: Map<ProcessLaneId, ProcessRecord[]>;
+  focusedRecord: ProcessRecord | null;
+  onSelectRecord: (selection: Selection) => void;
+}) {
+  return (
+    <div className="process-builder-board">
+      {PROCESS_LANE_DEFINITIONS.map((lane) => {
+        const laneRecords = laneGroups.get(lane.id) ?? [];
+        return (
+          <section key={lane.id} className={`process-builder-lane process-builder-lane--${lane.id}`}>
+            <div className="process-builder-lane__header">
+              <div>
+                <strong>{lane.label}</strong>
+                <p>{lane.summary}</p>
+              </div>
+              <span>{laneRecords.length}</span>
+            </div>
+            <div className="process-builder-lane__cards">
+              {laneRecords.length ? (
+                laneRecords.slice(0, 8).map((record) => (
+                  <button
+                    key={record.key}
+                    type="button"
+                    className={`process-builder-card process-builder-card--${record.tone} ${
+                      focusedRecord?.key === record.key ? "is-selected" : ""
+                    }`}
+                    onClick={() => onSelectRecord(record.selection)}
+                  >
+                    <span className="panel__eyebrow">{record.eyebrow}</span>
+                    <strong>{record.title}</strong>
+                    <p>{record.summary}</p>
+                    <div className="process-builder-card__meta">
+                      <span>{record.inputCount}/{record.outputCount} io</span>
+                      <span>{record.requirementCount} req</span>
+                      {record.runtimeCount ? <span>{record.runtimeCount} runtime</span> : null}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="process-builder-lane__empty">No records in this lane for the active lens.</div>
+              )}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProcessBuilderFocusPanel({
+  context,
+  record,
+  world,
+  onSelectSelection,
+}: {
+  context: ProcessContext | null;
+  record: ProcessRecord | null;
+  world: ManagerWorld;
+  onSelectSelection: (selection: Selection) => void;
+}) {
+  if (!context) {
+    return (
+      <aside className="process-builder-focus">
+        <div className="empty-state">
+          <strong>No process object is focused.</strong>
+          <p>Select a card or map object to populate this panel.</p>
+        </div>
+      </aside>
+    );
+  }
+
+  const stage = PROCESS_STAGE_DEFINITIONS.find((item) => item.id === processStageForRecord(record ?? contextToRecord(context)));
+  const deliveryRecords = buildActivityItems(context.tickets, context.comments);
+
+  return (
+    <aside className="process-builder-focus">
+      <div className="process-builder-focus__crumb">
+        <span>{stage?.label ?? "Process"}</span>
+        <span>{context.category}</span>
+        <span className={`status-chip ${context.tone}`}>{context.tone}</span>
+      </div>
+      <h3>{context.title}</h3>
+      <p className="process-builder-focus__summary">{context.summary}</p>
+
+      <div className="process-builder-focus__metrics">
+        <div>
+          <span>{context.inputTitle}</span>
+          <strong>{context.inputs.length}</strong>
+        </div>
+        <div>
+          <span>{context.outputTitle}</span>
+          <strong>{context.outputs.length}</strong>
+        </div>
+        <div>
+          <span>Requirements</span>
+          <strong>{context.requirementIds.length}</strong>
+        </div>
+        <div>
+          <span>Runtime</span>
+          <strong>{context.runs.length + context.callIds.length + context.continuationIds.length}</strong>
+        </div>
+      </div>
+
+      <section className="process-builder-focus__section process-builder-focus__section--action">
+        <span className="panel__eyebrow">Next Lawful Action</span>
+        <strong>{context.nextAction}</strong>
+      </section>
+
+      <ProcessBuilderReferenceGroup
+        title={context.inputTitle}
+        items={context.inputs}
+        world={world}
+        onSelectSelection={onSelectSelection}
+      />
+      <ProcessBuilderReferenceGroup
+        title={context.outputTitle}
+        items={context.outputs}
+        world={world}
+        onSelectSelection={onSelectSelection}
+      />
+      <ProcessBuilderReferenceGroup
+        title="Requirement Impact"
+        items={context.requirementIds}
+        world={world}
+        onSelectSelection={onSelectSelection}
+      />
+      <ProcessBuilderReferenceGroup
+        title="Governing Context"
+        items={context.governingRefs}
+        world={world}
+        onSelectSelection={onSelectSelection}
+        collapsedAfter={6}
+      />
+
+      {context.ambiguities.length || context.gapSummary ? (
+        <section className="process-builder-focus__section process-builder-focus__section--blocked">
+          <span className="panel__eyebrow">Open Blockers</span>
+          {context.gapSummary ? <strong>{context.gapSummary}</strong> : null}
+          {context.ambiguities.slice(0, 3).map((entry) => (
+            <button
+              key={entry.ambiguity_id}
+              type="button"
+              className="process-builder-blocker"
+              onClick={() => onSelectSelection({ kind: "ambiguity", id: entry.ambiguity_id })}
+            >
+              <strong>{entry.ambiguity_id}</strong>
+              <span>{entry.next_lawful_action || entry.operator_headline}</span>
+            </button>
+          ))}
+        </section>
+      ) : null}
+
+      {context.runs.length ? (
+        <section className="process-builder-focus__section">
+          <span className="panel__eyebrow">Latest Execution</span>
+          {context.runs.slice(0, 3).map((run) => (
+            <button
+              key={run.instance_id}
+              type="button"
+              className="process-builder-run"
+              onClick={() => onSelectSelection({ kind: "run", id: run.instance_id })}
+            >
+              <strong>{run.run_id ?? run.instance_id}</strong>
+              <span>{[run.status, run.edge, run.failure_class].filter(Boolean).join(" · ")}</span>
+            </button>
+          ))}
+        </section>
+      ) : null}
+
+      {deliveryRecords.length ? (
+        <section className="process-builder-focus__section">
+          <span className="panel__eyebrow">Delivery Records</span>
+          {deliveryRecords.slice(0, 3).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="process-builder-run"
+              onClick={() => onSelectSelection({ kind: "surface", id: item.sourcePath })}
+            >
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+            </button>
+          ))}
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function ProcessBuilderReferenceGroup({
+  title,
+  items,
+  world,
+  onSelectSelection,
+  collapsedAfter = 5,
+}: {
+  title: string;
+  items: string[];
+  world: ManagerWorld;
+  onSelectSelection: (selection: Selection) => void;
+  collapsedAfter?: number;
+}) {
+  const visibleItems = items.slice(0, collapsedAfter);
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <section className="process-builder-focus__section">
+      <span className="panel__eyebrow">{title}</span>
+      <div className="process-builder-ref-list">
+        {visibleItems.map((item) => {
+          const nextSelection = selectionForProcessReference(item, world);
+          return nextSelection ? (
+            <button key={`${title}:${item}`} type="button" onClick={() => onSelectSelection(nextSelection)}>
+              {item}
+            </button>
+          ) : (
+            <span key={`${title}:${item}`}>{item}</span>
+          );
+        })}
+        {items.length > visibleItems.length ? <span>+ {items.length - visibleItems.length} more</span> : null}
+      </div>
+    </section>
   );
 }
 
@@ -438,7 +1116,7 @@ function ProcessNavigatorWidget({
                 Focused: {focusedRecord.title}
               </span>
             ) : null}
-            {activeFilter.id !== "active_work" ? (
+            {activeFilter.id !== "observed_surfaces" ? (
               <button type="button" className="status-chip converged" onClick={onClearFilter}>
                 Clear Filter
               </button>
@@ -880,12 +1558,160 @@ function ProcessReferenceStrip({
   );
 }
 
+function buildProcessStageStats(records: ProcessRecord[]) {
+  return PROCESS_STAGE_DEFINITIONS.map((stage) => {
+    const stageRecords = records.filter((record) => processStageForRecord(record) === stage.id);
+    const blocked = stageRecords.filter((record) => record.hasFailure || record.tone === "blocked").length;
+    const active = stageRecords.filter((record) =>
+      record.tone === "active" || record.tone === "pending" || record.tone === "gated" || record.tone === "attention",
+    ).length;
+    const done = stageRecords.filter((record) => record.tone === "converged").length;
+    const tone: Tone = blocked
+      ? "blocked"
+      : active
+        ? "active"
+        : stageRecords.length
+          ? "converged"
+          : "pending";
+    return {
+      ...stage,
+      count: stageRecords.length,
+      blocked,
+      active,
+      done,
+      tone,
+    };
+  });
+}
+
+function pickDefaultBuilderStage(records: ProcessRecord[]): ProcessStageId {
+  const activeRecord = records.find((record) =>
+    record.tone === "active" || record.tone === "pending" || record.tone === "gated" || record.tone === "blocked",
+  );
+  if (activeRecord) {
+    return processStageForRecord(activeRecord);
+  }
+  return records[0] ? processStageForRecord(records[0]) : "bootstrap";
+}
+
+function filterProcessRecordsForBuilderLens(
+  records: ProcessRecord[],
+  lens: ProcessBuilderLens,
+  stageId: ProcessStageId,
+) {
+  if (lens === "blocked") {
+    return records.filter((record) => record.hasFailure || record.tone === "blocked");
+  }
+  if (lens === "done") {
+    return records.filter((record) => record.tone === "converged" || processLaneForRecord(record) === "handoff");
+  }
+  if (lens === "map") {
+    return records;
+  }
+  const stageRecords = records.filter((record) => processStageForRecord(record) === stageId);
+  const movableRecords = stageRecords.filter((record) => record.tone !== "converged");
+  return movableRecords.length ? movableRecords : stageRecords;
+}
+
+function countProcessBuilderLensRecords(
+  records: ProcessRecord[],
+  lens: ProcessBuilderLens,
+  stageId: ProcessStageId,
+) {
+  return filterProcessRecordsForBuilderLens(records, lens, stageId).length;
+}
+
+function groupProcessRecordsByLane(records: ProcessRecord[]) {
+  const groups = new Map<ProcessLaneId, ProcessRecord[]>();
+  for (const lane of PROCESS_LANE_DEFINITIONS) {
+    groups.set(lane.id, []);
+  }
+  for (const record of records) {
+    groups.get(processLaneForRecord(record))?.push(record);
+  }
+  return groups;
+}
+
+function processLaneForRecord(record: ProcessRecord): ProcessLaneId {
+  if (record.hasFailure || record.tone === "blocked") {
+    return "blocked";
+  }
+  if (record.tone === "gated" || record.tone === "attention") {
+    return "carried";
+  }
+  if (record.tone === "active" || record.tone === "pending") {
+    return "in_flight";
+  }
+  if (record.outputCount > 0 || record.tone === "converged") {
+    return "handoff";
+  }
+  return "upstream";
+}
+
+function processStageForRecord(record: ProcessRecord): ProcessStageId {
+  const source = `${record.title} ${record.summary} ${record.queryText}`.toLowerCase();
+  if (record.recordClass === "run" || /\b(runtime|run|continuation|observation|operational|maintenance)\b/.test(source)) {
+    return "runtime";
+  }
+  if (/\b(release|deployment|handoff)\b/.test(source)) {
+    return "release";
+  }
+  if (/\b(test_run|test_module|test_design|qualification|proof|archive)\b/.test(source)) {
+    return "test";
+  }
+  if (/\b(implementation|impl_|impl\b|build|module|stack|code)\b/.test(source)) {
+    return "build";
+  }
+  if (/\b(scenario|uat|testcase_authority|acceptance)\b/.test(source)) {
+    return "scenarios";
+  }
+  if (/\b(design|feature|review|consensus|decomp)\b/.test(source)) {
+    return "design";
+  }
+  if (
+    /\b(bootstrap|intent|product|goal|requirement|ambiguity_register|requirement_closure|closure)\b/.test(source) ||
+    record.selection.kind === "requirement"
+  ) {
+    return "bootstrap";
+  }
+  return "bootstrap";
+}
+
+function workspaceDisplayName(projectRoot: string) {
+  return projectRoot.split("/").filter(Boolean).at(-1) ?? projectRoot;
+}
+
+function labelWorkspacePack(pack: ManagerWorld["workspace_profile"]["active_domain_pack"]) {
+  if (!pack) {
+    return "Managed workspace";
+  }
+  return pack
+    .split("_")
+    .map((segment) => segment.toUpperCase())
+    .join(" ");
+}
+
 function buildProcessRecords(world: ManagerWorld): ProcessRecord[] {
   const records: ProcessRecord[] = [
-    ...world.domain.functions.map((fn) => contextToRecord(resolveFunctionContext(world, fn))),
-    ...world.domain.workorders.map((workorder) => contextToRecord(resolveWorkOrderContext(world, workorder))),
-    ...world.domain.ambiguity_register.ambiguities.map((entry) => contextToRecord(resolveAmbiguityContext(world, entry))),
-    ...world.runtime.runs.map((run) => contextToRecord(resolveRunContext(world, run))),
+    ...TRACKED_PROCESS_LENSES.flatMap((lens) => {
+      const context = resolveTrackedRequirementContext(world, lens);
+      return context ? [contextToTypedRecord(context, "observed_surface")] : [];
+    }),
+    ...selectObservedProcessAssets(world.domain.assets).map((asset) =>
+      contextToTypedRecord(resolveAssetContext(world, asset), "observed_surface"),
+    ),
+    ...world.domain.functions.map((fn) =>
+      contextToTypedRecord(resolveFunctionContext(world, fn), "workflow_step"),
+    ),
+    ...world.domain.workorders.map((workorder) =>
+      contextToTypedRecord(resolveWorkOrderContext(world, workorder), "work_order"),
+    ),
+    ...world.domain.ambiguity_register.ambiguities.map((entry) =>
+      contextToTypedRecord(resolveAmbiguityContext(world, entry), "blocker"),
+    ),
+    ...world.runtime.runs.map((run) =>
+      contextToTypedRecord(resolveRunContext(world, run), "run"),
+    ),
   ];
   return records.sort(compareProcessRecords);
 }
@@ -909,6 +1735,18 @@ function resolveProcessContext(world: ManagerWorld, selection: Selection): Proce
     case "run": {
       const run = world.runtime.runs.find((item) => item.instance_id === selection.id);
       return run ? resolveRunContext(world, run) : null;
+    }
+    case "requirement": {
+      const trackedLens = TRACKED_PROCESS_LENSES.find(
+        (lens) => lens.primaryRequirementId === selection.id,
+      );
+      if (trackedLens) {
+        return resolveTrackedRequirementContext(world, trackedLens);
+      }
+      const requirement = world.domain.requirements.find(
+        (item) => item.requirement_id === selection.id,
+      );
+      return requirement ? resolveRequirementContext(world, requirement) : null;
     }
     case "asset": {
       const asset = world.domain.assets.find((item) => item.asset_id === selection.id);
@@ -1116,23 +1954,43 @@ function resolveAssetContext(world: ManagerWorld, asset: AssetView): ProcessCont
   const producers = world.domain.functions.filter((fn) => fn.outputs.some((node) => boundNodes.includes(node)));
   const consumers = world.domain.functions.filter((fn) => fn.inputs.some((node) => boundNodes.includes(node)));
   const relatedRequirements = resolveRequirementsForRefs(world.domain.requirements, assetRefs(asset));
+  const linkedAmbiguities = resolveAmbiguitiesForRequirementsAndAssets(
+    relatedRequirements,
+    [asset.asset_id],
+    world.domain.ambiguity_register.ambiguities,
+  );
   const runIds = uniqueRefs([
     ...producers.flatMap((fn) => fn.run_ids),
     ...consumers.flatMap((fn) => fn.run_ids),
   ]);
+  const runtimeTone =
+    producers.some((fn) => fn.status === "active" || fn.status === "pending" || fn.status === "gated") ||
+    consumers.some((fn) => fn.status === "active" || fn.status === "pending" || fn.status === "gated") ||
+    runIds.length > 0
+      ? "active"
+      : "converged";
+  const tone: Tone =
+    asset.metadata.exists === "false"
+      ? "blocked"
+      : linkedAmbiguities.some((entry) => entry.blocking || entry.hard_stop)
+        ? "blocked"
+        : linkedAmbiguities.length
+          ? "attention"
+          : runtimeTone;
 
   return {
     key: selectionKey({ kind: "asset", id: asset.asset_id }),
     selection: { kind: "asset", id: asset.asset_id },
     eyebrow: "Artifact",
     title: asset.asset_id,
-    summary: `${describeCanonicalTerm(asset.declared_type)} · ${asset.kind}`,
-    tone: asset.metadata.exists === "false" ? "blocked" : "converged",
+    summary: `${describeCanonicalTerm(asset.declared_type)} · ${asset.metadata.relative_path ?? asset.kind}`,
+    tone,
     category: "Artifact",
     nextAction:
       asset.metadata.exists === "false"
         ? "Materialize the missing artifact before relying on downstream consumers."
-        : "Inspect the producing and consuming steps to confirm the current handoff.",
+        : linkedAmbiguities[0]?.next_lawful_action ??
+          "Inspect the producing and consuming steps to confirm the current handoff.",
     inputTitle: "Upstream Producers",
     inputs: uniqueRefs(producers.map((fn) => fn.label)),
     outputTitle: "Downstream Consumers",
@@ -1150,12 +2008,136 @@ function resolveAssetContext(world: ManagerWorld, asset: AssetView): ProcessCont
     ].filter(Boolean))),
     tickets: resolveTicketsForRequirements(relatedRequirements, world.domain.tickets),
     comments: resolveCommentsForRequirements(relatedRequirements, world.domain.comments),
-    ambiguities: resolveAmbiguitiesForRequirementsAndAssets(
-      relatedRequirements,
-      [asset.asset_id],
-      world.domain.ambiguity_register.ambiguities,
-    ),
+    ambiguities: linkedAmbiguities,
     runs: resolveRunsByIds(world.runtime.runs, runIds),
+    callIds: [],
+    continuationIds: [],
+    gapSummary: null,
+  };
+}
+
+function resolveTrackedRequirementContext(
+  world: ManagerWorld,
+  lens: TrackedProcessLens,
+): ProcessContext | null {
+  const relatedRequirements = uniqueRequirements(
+    [lens.primaryRequirementId, ...lens.relatedRequirementIds]
+      .map((requirementId) =>
+        world.domain.requirements.find((requirement) => requirement.requirement_id === requirementId),
+      )
+      .filter((requirement): requirement is RequirementView => Boolean(requirement)),
+  );
+  if (!relatedRequirements.length) {
+    return null;
+  }
+  const governingPaths = lens.governingAssetIds
+    .map((assetId) => surfacePathForAssetId(world, assetId))
+    .filter((path): path is string => Boolean(path));
+  const outputPaths = lens.outputAssetIds
+    .map((assetId) => surfacePathForAssetId(world, assetId))
+    .filter((path): path is string => Boolean(path));
+  const relatedAssetIds = uniqueRefs([...lens.governingAssetIds, ...lens.outputAssetIds]);
+  const linkedAmbiguities = resolveAmbiguitiesForRequirementsAndAssets(
+    relatedRequirements,
+    relatedAssetIds,
+    world.domain.ambiguity_register.ambiguities,
+  );
+  const tone: Tone =
+    linkedAmbiguities.some((entry) => entry.blocking || entry.hard_stop)
+      ? "blocked"
+      : relatedRequirements.some((requirement) => requirement.delivery_status === "pending")
+        ? "pending"
+        : relatedRequirements.some((requirement) => requirement.delivery_status === "attention")
+          ? "attention"
+          : "active";
+
+  return {
+    key: selectionKey({ kind: "requirement", id: lens.primaryRequirementId }),
+    selection: { kind: "requirement", id: lens.primaryRequirementId },
+    eyebrow: "Tracking Asset",
+    title: lens.title,
+    summary: lens.summary,
+    tone,
+    category: "Tracking Asset",
+    nextAction:
+      linkedAmbiguities[0]?.next_lawful_action ??
+      "Inspect the governing requirements, testcase authority, and observed evidence surfaces together.",
+    inputTitle: "Governing Inputs",
+    inputs: uniqueRefs([
+      ...governingPaths,
+      ...gatherGoverningRefs(relatedRequirements),
+    ]),
+    outputTitle: "Observed Outputs",
+    outputs: uniqueRefs(outputPaths),
+    requirementIds: relatedRequirements.map((requirement) => requirement.requirement_id),
+    governingRefs: uniqueRefs([
+      ...governingPaths,
+      ...gatherGoverningRefs(relatedRequirements),
+    ]),
+    implementationRefs: gatherImplementationRefs(relatedRequirements),
+    testRefs: uniqueRefs([
+      ...gatherTestRefs(relatedRequirements),
+      ...outputPaths,
+    ]),
+    moduleAreas: deriveModuleAreas(gatherImplementationRefs(relatedRequirements)),
+    tickets: resolveTicketsForRequirements(relatedRequirements, world.domain.tickets),
+    comments: resolveCommentsForRequirements(relatedRequirements, world.domain.comments),
+    ambiguities: linkedAmbiguities,
+    runs: [],
+    callIds: [],
+    continuationIds: [],
+    gapSummary: null,
+  };
+}
+
+function resolveRequirementContext(world: ManagerWorld, requirement: RequirementView): ProcessContext {
+  const relatedRequirements = [requirement];
+  const linkedAmbiguities = resolveAmbiguitiesForRequirementsAndAssets(
+    relatedRequirements,
+    [],
+    world.domain.ambiguity_register.ambiguities,
+  );
+  const tone: Tone =
+    linkedAmbiguities.some((entry) => entry.blocking || entry.hard_stop)
+      ? "blocked"
+      : requirement.delivery_status;
+  return {
+    key: selectionKey({ kind: "requirement", id: requirement.requirement_id }),
+    selection: { kind: "requirement", id: requirement.requirement_id },
+    eyebrow: "Requirement Trace",
+    title: `${requirement.requirement_id} · ${requirement.title}`,
+    summary: requirement.summary,
+    tone,
+    category: "Requirement Trace",
+    nextAction:
+      linkedAmbiguities[0]?.next_lawful_action ??
+      "Inspect the linked implementation, qualification, and evidence surfaces for this requirement.",
+    inputTitle: "Governing Inputs",
+    inputs: uniqueRefs([
+      requirement.source_path,
+      ...requirement.traces_to,
+      ...requirement.derives_from,
+      ...requirement.authority_refs,
+      ...requirement.current_requirement_refs,
+    ]),
+    outputTitle: "Observed Outputs",
+    outputs: uniqueRefs([
+      ...requirement.implementation_claim_refs,
+      ...requirement.code_refs,
+      ...requirement.testcase_authority_refs,
+      ...requirement.test_refs,
+      ...requirement.test_claim_refs,
+      ...requirement.planned_test_claim_refs,
+    ]),
+    requirementIds: [requirement.requirement_id],
+    governingRefs: gatherGoverningRefs(relatedRequirements),
+    implementationRefs: gatherImplementationRefs(relatedRequirements),
+    testRefs: gatherTestRefs(relatedRequirements),
+    moduleAreas: deriveModuleAreas(gatherImplementationRefs(relatedRequirements)),
+    tickets: resolveTicketsForRequirements(relatedRequirements, world.domain.tickets),
+    comments: resolveCommentsForRequirements(relatedRequirements, world.domain.comments),
+    ambiguities: linkedAmbiguities,
+    runs: [],
     callIds: [],
     continuationIds: [],
     gapSummary: null,
@@ -1192,6 +2174,8 @@ function selectionForProcessReference(value: string, world: ManagerWorld): Selec
 
 function isProcessPrimarySelection(world: ManagerWorld, selection: Selection) {
   switch (selection.kind) {
+    case "requirement":
+      return world.domain.requirements.some((item) => item.requirement_id === selection.id);
     case "function":
       return world.domain.functions.some((item) => item.id === selection.id);
     case "workorder":
@@ -1200,8 +2184,6 @@ function isProcessPrimarySelection(world: ManagerWorld, selection: Selection) {
       return world.domain.ambiguity_register.ambiguities.some((item) => item.ambiguity_id === selection.id);
     case "run":
       return world.runtime.runs.some((item) => item.instance_id === selection.id);
-    case "asset":
-      return world.domain.assets.some((item) => item.asset_id === selection.id);
     default:
       return false;
   }
@@ -1212,6 +2194,13 @@ function selectionKey(selection: Selection) {
 }
 
 function contextToRecord(context: ProcessContext): ProcessRecord {
+  return contextToTypedRecord(context, defaultRecordClassForSelection(context.selection));
+}
+
+function contextToTypedRecord(
+  context: ProcessContext,
+  recordClass: ProcessRecord["recordClass"],
+): ProcessRecord {
   const queryText = [
     context.title,
     context.summary,
@@ -1229,6 +2218,7 @@ function contextToRecord(context: ProcessContext): ProcessRecord {
   return {
     key: context.key,
     selection: context.selection,
+    recordClass,
     eyebrow: context.eyebrow,
     tone: context.tone,
     title: context.title,
@@ -1247,7 +2237,57 @@ function contextToRecord(context: ProcessContext): ProcessRecord {
   };
 }
 
+function defaultRecordClassForSelection(selection: Selection): ProcessRecord["recordClass"] {
+  switch (selection.kind) {
+    case "requirement":
+      return "observed_surface";
+    case "asset":
+      return "observed_surface";
+    case "function":
+      return "workflow_step";
+    case "workorder":
+      return "work_order";
+    case "ambiguity":
+      return "blocker";
+    case "run":
+      return "run";
+    default:
+      return "workflow_step";
+  }
+}
+
+function isObservedProcessAsset(asset: AssetView) {
+  return OBSERVED_PROCESS_ASSET_TYPES.has(asset.declared_type);
+}
+
+function selectObservedProcessAssets(assets: AssetView[]) {
+  return assets.filter(isObservedProcessAsset);
+}
+
+function pickDefaultProcessRecord(records: ProcessRecord[]) {
+  if (!records.length) {
+    return null;
+  }
+  const byKey = new Map(records.map((record) => [record.key, record]));
+  for (const key of PREFERRED_PROCESS_RECORD_KEYS) {
+    const match = byKey.get(key);
+    if (match) {
+      return match;
+    }
+  }
+  return records[0] ?? null;
+}
+
 function compareProcessRecords(left: ProcessRecord, right: ProcessRecord) {
+  const leftPreferred = PREFERRED_PROCESS_RECORD_KEYS.indexOf(left.key);
+  const rightPreferred = PREFERRED_PROCESS_RECORD_KEYS.indexOf(right.key);
+  if (leftPreferred !== -1 || rightPreferred !== -1) {
+    const normalizedLeft = leftPreferred === -1 ? Number.MAX_SAFE_INTEGER : leftPreferred;
+    const normalizedRight = rightPreferred === -1 ? Number.MAX_SAFE_INTEGER : rightPreferred;
+    if (normalizedLeft !== normalizedRight) {
+      return normalizedLeft - normalizedRight;
+    }
+  }
   const byTone = toneRank(left.tone) - toneRank(right.tone);
   if (byTone !== 0) {
     return byTone;
@@ -1257,6 +2297,12 @@ function compareProcessRecords(left: ProcessRecord, right: ProcessRecord) {
     return byRuntime;
   }
   return left.title.localeCompare(right.title);
+}
+
+function surfacePathForAssetId(world: ManagerWorld, assetId: string) {
+  return (
+    world.domain.assets.find((asset) => asset.asset_id === assetId)?.metadata.relative_path ?? null
+  );
 }
 
 function toneRank(tone: Tone) {

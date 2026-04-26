@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { OddTermPanel } from "./OddTermPanel";
 import type { AgentConsoleState, TrainId } from "../../lib/collaboration";
 
@@ -6,7 +6,7 @@ const TERMINAL_WORKSPACE_COLLAPSED_STORAGE_KEY = "oman-oddterm-workspace-collaps
 const TERMINAL_WORKSPACE_PINNED_STORAGE_KEY = "oman-oddterm-workspace-pinned";
 
 type OddTermWorkspaceWidgetProps = {
-  workspaceRoot: string;
+  projectRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -17,7 +17,7 @@ type OddTermWorkspaceWidgetProps = {
 };
 
 export function OddTermWorkspaceWidget({
-  workspaceRoot,
+  projectRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -26,12 +26,12 @@ export function OddTermWorkspaceWidget({
   error,
   onRefreshConsole,
 }: OddTermWorkspaceWidgetProps) {
-  const autoExpandedWorkspaceRef = useRef<string | null>(null);
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") {
-      return false;
+      return true;
     }
-    return window.localStorage.getItem(TERMINAL_WORKSPACE_COLLAPSED_STORAGE_KEY) === "true";
+    const stored = window.localStorage.getItem(TERMINAL_WORKSPACE_COLLAPSED_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
   });
   const [pinned, setPinned] = useState(() => {
     if (typeof window === "undefined") {
@@ -59,19 +59,6 @@ export function OddTermWorkspaceWidget({
     () => consoleState?.oddterm.sessions.filter((session) => session.status === "live").length ?? 0,
     [consoleState],
   );
-
-  useEffect(() => {
-    if (loading) {
-      return;
-    }
-    if (autoExpandedWorkspaceRef.current === workspaceRoot) {
-      return;
-    }
-    autoExpandedWorkspaceRef.current = workspaceRoot;
-    if (sessionCount === 0) {
-      setCollapsed(false);
-    }
-  }, [workspaceRoot, loading, sessionCount]);
 
   const collapsedSummary =
     sessionCount === 0
@@ -206,7 +193,7 @@ export function OddTermWorkspaceWidget({
         </div>
       ) : (
         <OddTermPanel
-          workspaceRoot={workspaceRoot}
+          projectRoot={projectRoot}
           selectedTrainId={selectedTrainId}
           selectedStationId={selectedStationId}
           selectedEdgeId={selectedEdgeId}

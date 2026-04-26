@@ -1,28 +1,36 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function waitForWorldProjection(page: Page) {
-  await expect(page.getByRole("heading", { name: "Odd Manager" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Refresh World" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Odd (Manager|SDLC|World Model)/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open workspace selector" })).toBeVisible();
 }
 
-async function ensureExpanded(page: Page, buttonName: string) {
-  const expandButton = page.getByRole("button", { name: buttonName });
-  if (await expandButton.count()) {
-    await expandButton.click();
+async function ensureExpanded(page: Page, expandButtonName: string, collapseButtonName: string) {
+  const collapseButton = page.getByRole("button", { name: collapseButtonName });
+  if (await collapseButton.count()) {
+    return;
   }
+  const expandButton = page.getByRole("button", { name: expandButtonName });
+  await expect(expandButton).toBeVisible();
+  await expandButton.click();
+  await expect(collapseButton).toBeVisible();
 }
 
 async function oddtermSurface(page: Page) {
-  await ensureExpanded(page, "Expand terminal workspace");
+  await ensureExpanded(page, "Expand terminal workspace", "Collapse terminal workspace");
   const widget = page.locator("#terminal-workspace-widget");
   await expect(widget).toBeVisible();
+  await expect(
+    widget.getByRole("button", { name: /New Local Shell|\+ New Local Shell|Create First Local Shell/ }),
+  ).toBeVisible();
   return widget;
 }
 
 async function oddchatSurface(page: Page) {
-  await ensureExpanded(page, "Expand oddboard");
+  await ensureExpanded(page, "Expand oddboard", "Collapse oddboard");
   const widget = page.locator("#agent-console-widget");
   await expect(widget).toBeVisible();
+  await expect(widget.getByRole("tab", { name: "OddChat" })).toBeVisible();
   await page.getByRole("tab", { name: "OddChat" }).click();
   return widget;
 }

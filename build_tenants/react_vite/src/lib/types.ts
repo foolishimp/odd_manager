@@ -257,7 +257,7 @@ export type AmbiguityEntryView = {
 export type AmbiguityRegisterView = {
   register_kind: string;
   schema_version: string;
-  workspace_root: string;
+  project_root: string;
   stage: string;
   project_profile: Record<string, unknown>;
   summary: {
@@ -533,7 +533,7 @@ export type SessionServiceState = {
 };
 
 export type DomainProjection = {
-  workspace_root: string;
+  project_root: string;
   query_contract: QueryContractView;
   domain_contract: DomainContractView;
   semantic_facets: SemanticFacet[];
@@ -563,7 +563,7 @@ export type DomainProjection = {
 };
 
 export type ManagerWorld = {
-  workspace_root: string;
+  project_root: string;
   generated_at: string;
   workspace_profile: WorkspaceProfile;
   boundary: BoundaryInfo;

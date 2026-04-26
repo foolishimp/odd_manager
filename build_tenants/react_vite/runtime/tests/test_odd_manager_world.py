@@ -23,10 +23,10 @@ world = _load_world_module()
 class RequirementProjectionTests(unittest.TestCase):
     def test_projects_block_style_requirement_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_root = Path(temp_dir)
-            requirements_root = workspace_root / "specification" / "requirements"
+            project_root = Path(temp_dir)
+            requirements_root = project_root / "specification" / "requirements"
             requirements_root.mkdir(parents=True)
-            runtime_root = workspace_root / ".ai-workspace" / "runtime"
+            runtime_root = project_root / ".ai-workspace" / "runtime"
             runtime_root.mkdir(parents=True)
 
             (requirements_root / "00-starter.md").write_text(
@@ -68,7 +68,7 @@ class RequirementProjectionTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            projected = world._project_requirements(workspace_root)
+            projected = world._project_requirements(project_root)
 
             self.assertEqual(len(projected), 1)
             requirement = projected[0]
@@ -91,10 +91,10 @@ class RequirementProjectionTests(unittest.TestCase):
 
     def test_projects_table_style_requirement_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_root = Path(temp_dir)
-            requirements_root = workspace_root / "specification" / "requirements"
+            project_root = Path(temp_dir)
+            requirements_root = project_root / "specification" / "requirements"
             requirements_root.mkdir(parents=True)
-            runtime_root = workspace_root / ".ai-workspace" / "runtime"
+            runtime_root = project_root / ".ai-workspace" / "runtime"
             runtime_root.mkdir(parents=True)
 
             (requirements_root / "10-generated-bootstrap.md").write_text(
@@ -123,7 +123,7 @@ class RequirementProjectionTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            projected = world._project_requirements(workspace_root)
+            projected = world._project_requirements(project_root)
 
             self.assertEqual(len(projected), 3)
             indexed = {entry["requirement_id"]: entry for entry in projected}
@@ -152,7 +152,7 @@ class DomainContractProjectionTests(unittest.TestCase):
                 "version": "v10",
                 "top_level_keys": [
                     "query_contract",
-                    "workspace_root",
+                    "project_root",
                     "analysis_manifest",
                     "semantic_facets",
                     "asset_types",
@@ -187,18 +187,138 @@ class DomainContractProjectionTests(unittest.TestCase):
         self.assertEqual(projected["source_domain_model_ref"], "odd_sdlc.domain_model")
         self.assertEqual(projected["source_query_ref"], "odd_sdlc.query.query_domain")
 
+    def test_supports_v16_query_contract_shape(self) -> None:
+        projected = world._project_domain_contract(
+            {
+                "name": "odd_sdlc.query-domain",
+                "version": "v16",
+                "top_level_keys": [
+                    "query_contract",
+                    "project_root",
+                    "semantic_facets",
+                    "asset_types",
+                    "asset_families",
+                    "assets",
+                    "start_target_catalog",
+                    "asset_ownership_index",
+                    "operational_capabilities",
+                    "ambiguity_register",
+                    "requirement_closure_register",
+                    "collections",
+                    "functions",
+                    "edge_contracts",
+                    "execution_contract_surface",
+                    "programs",
+                    "work_act_types",
+                    "jobs",
+                    "graph_functions",
+                    "bindings",
+                    "gap_dossier",
+                ],
+            }
+        )
+
+        self.assertEqual(projected["compatibility"], "supported")
+        self.assertEqual(projected["source_version"], "v16")
+        self.assertEqual(projected["missing_top_level_keys"], [])
+        self.assertEqual(projected["extra_top_level_keys"], [])
+
     def test_marks_unknown_contract_versions_unsupported(self) -> None:
         projected = world._project_domain_contract(
             {
                 "name": "odd_sdlc.query-domain",
                 "version": "v99",
-                "top_level_keys": ["query_contract", "workspace_root"],
+                "top_level_keys": ["query_contract", "project_root"],
             }
         )
 
         self.assertEqual(projected["compatibility"], "unsupported")
         self.assertEqual(projected["expected_top_level_keys"], [])
         self.assertEqual(projected["source_contract_ref"], None)
+
+
+class GapPayloadProjectionTests(unittest.TestCase):
+    def test_projects_v16_gap_dossier_into_manager_gap_overlay(self) -> None:
+        projected = world._domain_gap_payload(
+            {
+                "gap_dossier": {
+                    "schema_version": "v1",
+                    "scope": "workspace",
+                    "summary": {
+                        "gap_count": 1,
+                        "graph_total_delta": 1.0,
+                        "total_delta": 1.0,
+                    },
+                    "dossiers": [
+                        {
+                            "edge": "prepare_build_execution_surface",
+                            "route_binding": {"state": "blocked_stale_analysis"},
+                            "resumption_trigger": "analysis_published",
+                            "gap_truth": {
+                                "gap_kind": "graph_edge_gap",
+                                "total_delta": 1.0,
+                                "failing": [
+                                    "build_execution_dependency_surfaces_present",
+                                ],
+                                "graph_failing": [
+                                    "build_execution_surface_semantically_converged",
+                                ],
+                            },
+                            "triage": {
+                                "authority_basis": {
+                                    "failing_evaluators": [
+                                        "build_execution_surface_semantically_converged",
+                                    ]
+                                },
+                                "realized_basis": {
+                                    "delta": 1.0,
+                                    "delta_summary": "delta = 2",
+                                },
+                            },
+                        }
+                    ],
+                }
+            }
+        )
+
+        self.assertFalse(projected["converged"])
+        self.assertEqual(projected["total_delta"], 1.0)
+        self.assertEqual(projected["graph_total_delta"], 1.0)
+        self.assertEqual(len(projected["gaps"]), 1)
+        gap = projected["gaps"][0]
+        self.assertEqual(gap["edge"], "prepare_build_execution_surface")
+        self.assertEqual(gap["delta"], 1.0)
+        self.assertEqual(gap["route_state"], "blocked_stale_analysis")
+        self.assertEqual(gap["resumption_trigger"], "analysis_published")
+        self.assertEqual(
+            gap["failing"],
+            [
+                "build_execution_dependency_surfaces_present",
+                "build_execution_surface_semantically_converged",
+            ],
+        )
+
+    def test_keeps_unpublished_gap_dossier_non_converged(self) -> None:
+        projected = world._domain_gap_payload(
+            {
+                "gap_dossier": {
+                    "published": False,
+                    "unavailable_reason": "published_analysis_stale",
+                    "summary": {
+                        "published": False,
+                        "unavailable_reason": "published_analysis_stale",
+                        "gap_count": 0,
+                    },
+                    "dossiers": [],
+                }
+            }
+        )
+
+        self.assertFalse(projected["converged"])
+        self.assertFalse(projected["graph_converged"])
+        self.assertFalse(projected["carry_converged"])
+        self.assertFalse(projected["fulfillment_converged"])
+        self.assertEqual(projected["unavailable_reason"], "published_analysis_stale")
 
 
 if __name__ == "__main__":

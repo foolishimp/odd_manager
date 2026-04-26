@@ -4,21 +4,21 @@ import { resolve } from "node:path";
 const emitter = new EventEmitter();
 emitter.setMaxListeners(200);
 
-function keyForWorkspace(workspaceRoot) {
-  return `workspace:${resolve(workspaceRoot)}`;
+function keyForWorkspace(projectRoot) {
+  return `workspace:${resolve(projectRoot)}`;
 }
 
-export function emitAgentConsoleEvent(workspaceRoot, payload = {}) {
-  emitter.emit(keyForWorkspace(workspaceRoot), {
+export function emitAgentConsoleEvent(projectRoot, payload = {}) {
+  emitter.emit(keyForWorkspace(projectRoot), {
     type: "odd-console-updated",
-    workspaceRoot: resolve(workspaceRoot),
+    projectRoot: resolve(projectRoot),
     timestamp: new Date().toISOString(),
     ...payload,
   });
 }
 
-export function subscribeAgentConsoleEvents(workspaceRoot, listener) {
-  const key = keyForWorkspace(workspaceRoot);
+export function subscribeAgentConsoleEvents(projectRoot, listener) {
+  const key = keyForWorkspace(projectRoot);
   emitter.on(key, listener);
   return () => {
     emitter.off(key, listener);

@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-NAV-*`
 **Status**: Active
 **Category**: Capability
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-NAV-001 - The home surface answers immediate supervisory questions
 
@@ -118,3 +118,21 @@ Acceptance Criteria
   surfaces and lightweight overlay controls
 - emphasis, selection, relatedness, and muted state are legible without
   obscuring object identity or evidence access
+
+### REQ-OM-NAV-010 - The common loader chooses identity-appropriate landing pages
+
+The product shall start from one common workspace loader that resolves the
+selected workspace's primary identity before opening domain-specific landing
+pages.
+
+Acceptance Criteria
+- the operator chooses a workspace through one common loader surface rather
+  than through separate per-domain launchers
+- after selection, the manager resolves the workspace's primary identity before
+  choosing domain tabs or landing pages
+- identity-specific landing pages can differ between `odd_sdlc`,
+  `odd_world_model`, and later supported `odd_*` lines without forking the
+  whole shell
+- if identity cannot be resolved confidently, the manager falls back to an
+  explicit compatibility or unknown-identity state rather than silently
+  choosing the wrong domain landing page

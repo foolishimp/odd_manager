@@ -45,12 +45,12 @@ function sessionAliases(session) {
   return Array.from(aliases).filter(Boolean);
 }
 
-function attachedTopicSessions(workspaceRoot, topic) {
+function attachedTopicSessions(projectRoot, topic) {
   if (!topic) {
     return [];
   }
 
-  const pool = loadGTermPoolState(workspaceRoot);
+  const pool = loadGTermPoolState(projectRoot);
   const sessionsById = new Map(pool.sessions.map((session) => [session.id, session]));
   return topic.attachedSessionIds
     .map((sessionId) => sessionsById.get(sessionId))
@@ -80,10 +80,10 @@ function stripDirectMention(body, session) {
   return compact || String(body ?? "").trim();
 }
 
-function resolveTopicContext(workspaceRoot, roomId) {
+function resolveTopicContext(projectRoot, roomId) {
   const directRoom = parseTopicSessionRoomId(roomId);
   if (directRoom) {
-    const topic = loadGBoardTopicById(workspaceRoot, directRoom.topicId);
+    const topic = loadGBoardTopicById(projectRoot, directRoom.topicId);
     if (!topic) {
       return {
         topic: null,
@@ -91,7 +91,7 @@ function resolveTopicContext(workspaceRoot, roomId) {
       };
     }
 
-    const attachedSessions = attachedTopicSessions(workspaceRoot, topic);
+    const attachedSessions = attachedTopicSessions(projectRoot, topic);
     return {
       topic,
       targetSession:
@@ -100,7 +100,7 @@ function resolveTopicContext(workspaceRoot, roomId) {
   }
 
   return {
-    topic: loadGBoardTopicByRoomId(workspaceRoot, roomId),
+    topic: loadGBoardTopicByRoomId(projectRoot, roomId),
     targetSession: null,
   };
 }
@@ -110,9 +110,9 @@ function submittedRoomInput(body) {
   return trimmed ? `${trimmed}\r` : "";
 }
 
-function hasRoomParticipant(workspaceRoot, sessionId, roomId) {
+function hasRoomParticipant(projectRoot, sessionId, roomId) {
   return (
-    listOddChatParticipants(workspaceRoot, {
+    listOddChatParticipants(projectRoot, {
       sessionId,
       roomId,
       connectedOnly: true,
@@ -121,13 +121,13 @@ function hasRoomParticipant(workspaceRoot, sessionId, roomId) {
 }
 
 export function resolvePostedRoom(
-  workspaceRoot,
+  projectRoot,
   {
     roomId = "workspace",
     body,
   } = {},
 ) {
-  const resolved = resolveTopicContext(workspaceRoot, roomId);
+  const resolved = resolveTopicContext(projectRoot, roomId);
   const trimmedBody = String(body ?? "").trim();
 
   if (!resolved.topic) {
@@ -143,12 +143,14 @@ export function resolvePostedRoom(
     return {
       roomId,
       targetSessionId: resolved.targetSession.id,
+      targetSessionIds: [resolved.targetSession.id],
       privateChannel: true,
       body: stripDirectMention(trimmedBody, resolved.targetSession),
+      recipientSessionIds: null,
     };
   }
 
-  const attachedSessions = attachedTopicSessions(workspaceRoot, resolved.topic);
+  const attachedSessions = attachedTopicSessions(projectRoot, resolved.topic);
   const mentionedSessions = mentionedWorkerHandles(trimmedBody)
     .map((handle) => findAttachedSessionByHandle(attachedSessions, handle))
     .filter(Boolean);
@@ -156,26 +158,35 @@ export function resolvePostedRoom(
     new Map(mentionedSessions.map((session) => [session.id, session])).values(),
   );
 
-  if (uniqueMentionedSessions.length === 1) {
-    const targetSession = uniqueMentionedSessions[0];
+  if (uniqueMentionedSessions.length > 0) {
+    const targetSessionIds = uniqueMentionedSessions.map((session) => session.id);
     return {
-      roomId: topicSessionRoomId(resolved.topic.id, targetSession.id),
-      targetSessionId: targetSession.id,
-      privateChannel: true,
-      body: stripDirectMention(trimmedBody, targetSession),
+      roomId: resolved.topic.roomId,
+      targetSessionId: targetSessionIds[0] ?? null,
+      targetSessionIds,
+      privateChannel: false,
+      body: trimmedBody,
+      recipientSessionIds: targetSessionIds,
     };
   }
+
+  const roomRecipientSessionIds = attachedSessions
+    .map((session) => session.id)
+    .filter((sessionId) => resolved.topic.roomRecipientSessionIds.includes(sessionId));
 
   return {
     roomId: resolved.topic.roomId,
     targetSessionId: null,
+    targetSessionIds: roomRecipientSessionIds,
     privateChannel: false,
     body: trimmedBody,
+    recipientSessionIds:
+      roomRecipientSessionIds.length === attachedSessions.length ? null : roomRecipientSessionIds,
   };
 }
 
 export async function dispatchAgentReplies(
-  workspaceRoot,
+  projectRoot,
   {
     roomId = "workspace",
     body,
@@ -184,22 +195,22 @@ export async function dispatchAgentReplies(
     edgeId = null,
   } = {},
 ) {
-  const resolved = resolvePostedRoom(workspaceRoot, {
+  const resolved = resolvePostedRoom(projectRoot, {
     roomId,
     body,
   });
-  const topicContext = resolveTopicContext(workspaceRoot, resolved.roomId);
+  const topicContext = resolveTopicContext(projectRoot, resolved.roomId);
   const topic = topicContext.topic;
   if (!topic) {
     return [];
   }
 
-  const attachedSessions = attachedTopicSessions(workspaceRoot, topic);
+  const attachedSessions = attachedTopicSessions(projectRoot, topic);
   const targetSessions = resolved.privateChannel
     ? attachedSessions.filter((session) => session.id === resolved.targetSessionId)
-    : attachedSessions;
+    : attachedSessions.filter((session) => resolved.targetSessionIds.includes(session.id));
   const legacyTargetSessions = targetSessions.filter(
-    (session) => !hasRoomParticipant(workspaceRoot, session.id, resolved.roomId),
+    (session) => !hasRoomParticipant(projectRoot, session.id, resolved.roomId),
   );
 
   const input = submittedRoomInput(resolved.body);
@@ -208,7 +219,7 @@ export async function dispatchAgentReplies(
   }
 
   const deliveries = targetSessions
-    .filter((session) => hasRoomParticipant(workspaceRoot, session.id, resolved.roomId))
+    .filter((session) => hasRoomParticipant(projectRoot, session.id, resolved.roomId))
     .map((session) => ({
       sessionId: session.id,
       roomId: resolved.roomId,
@@ -220,7 +231,7 @@ export async function dispatchAgentReplies(
     ...deliveries,
     ...legacyTargetSessions.map((session) => {
     try {
-      sendGTermSessionRoomInput(workspaceRoot, session.id, {
+      sendGTermSessionRoomInput(projectRoot, session.id, {
         data: input,
         roomId: resolved.roomId,
         selectedTrainId: selectedTrainId ?? topic.selectedTrainId ?? null,

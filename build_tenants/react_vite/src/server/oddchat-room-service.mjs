@@ -68,6 +68,11 @@ function messageEntryKind(kind) {
 
 function projectRoomMessage(entry) {
   const payload = entry?.payload ?? {};
+  const recipientSessionIds = Array.isArray(payload.recipientSessionIds)
+    ? payload.recipientSessionIds
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    : null;
   return {
     id: entry.entryId ?? `${timestampStamp()}_${randomUUID().slice(0, 8)}`,
     roomId: payload.roomId ?? "workspace",
@@ -80,6 +85,7 @@ function projectRoomMessage(entry) {
     source: payload.source ?? "live",
     messageKind: payload.messageKind ?? "chat",
     relatedSessionId: payload.relatedSessionId ?? null,
+    recipientSessionIds,
     selectedTrainId: payload.selectedTrainId ?? null,
     stationId: payload.stationId ?? null,
     edgeId: payload.edgeId ?? null,
@@ -87,9 +93,9 @@ function projectRoomMessage(entry) {
   };
 }
 
-function ensureRoomHistory(workspaceRoot, roomId) {
+function ensureRoomHistory(projectRoot, roomId) {
   const historyId = roomConversationHistoryId(roomId);
-  ensureConversationHistory(workspaceRoot, {
+  ensureConversationHistory(projectRoot, {
     historyId,
     ownerKind: "oddchat_room",
     ownerRef: roomId,
@@ -101,7 +107,7 @@ function ensureRoomHistory(workspaceRoot, roomId) {
 }
 
 export function appendLiveRoomMessage(
-  workspaceRoot,
+  projectRoot,
   {
     roomId = "workspace",
     senderId = "operator",
@@ -111,6 +117,7 @@ export function appendLiveRoomMessage(
     kind = "chat",
     source = "live",
     relatedSessionId = null,
+    recipientSessionIds = null,
     selectedTrainId = null,
     stationId = null,
     edgeId = null,
@@ -121,8 +128,18 @@ export function appendLiveRoomMessage(
     throw new Error("live room message body is required");
   }
 
-  const historyId = ensureRoomHistory(workspaceRoot, roomId);
-  const entry = appendConversationEntry(workspaceRoot, historyId, {
+  const normalizedRecipientSessionIds = Array.isArray(recipientSessionIds)
+    ? Array.from(
+        new Set(
+          recipientSessionIds
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean),
+        ),
+      )
+    : null;
+
+  const historyId = ensureRoomHistory(projectRoot, roomId);
+  const entry = appendConversationEntry(projectRoot, historyId, {
     entryKind: messageEntryKind(kind),
     actorRef: {
       id: senderId,
@@ -140,6 +157,10 @@ export function appendLiveRoomMessage(
       source,
       messageKind: kind,
       relatedSessionId,
+      recipientSessionIds:
+        normalizedRecipientSessionIds && normalizedRecipientSessionIds.length
+          ? normalizedRecipientSessionIds
+          : null,
       selectedTrainId,
       stationId,
       edgeId,
@@ -148,7 +169,7 @@ export function appendLiveRoomMessage(
 
   const message = projectRoomMessage(entry);
 
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-message",
     roomId,
     messageId: message.id,
@@ -157,22 +178,22 @@ export function appendLiveRoomMessage(
   return message;
 }
 
-export function loadRoomMessages(workspaceRoot, roomId, limit = null) {
+export function loadRoomMessages(projectRoot, roomId, limit = null) {
   const historyId = roomConversationHistoryId(roomId);
-  const { entries } = loadConversationHistory(workspaceRoot, historyId, {
+  const { entries } = loadConversationHistory(projectRoot, historyId, {
     limit: limit ?? undefined,
   });
   return entries.map(projectRoomMessage);
 }
 
-export function loadLiveRoomMessages(workspaceRoot) {
-  const histories = listConversationHistories(workspaceRoot, {
+export function loadLiveRoomMessages(projectRoot) {
+  const histories = listConversationHistories(projectRoot, {
     ownerKind: "oddchat_room",
   });
 
   const messages = [];
   for (const history of histories) {
-    const { entries } = loadConversationHistory(workspaceRoot, history.conversationHistoryId);
+    const { entries } = loadConversationHistory(projectRoot, history.conversationHistoryId);
     for (const entry of entries) {
       messages.push(projectRoomMessage(entry));
     }

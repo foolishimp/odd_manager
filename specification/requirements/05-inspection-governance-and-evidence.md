@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-INS-*`
 **Status**: Active
 **Category**: Capability
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-INS-001 - Supervisory information is organized into explicit categories
 

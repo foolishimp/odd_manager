@@ -1,3 +1,4 @@
+import { labelWorkspaceIdentity } from "../../lib/presentation";
 import { useEffect, useState } from "react";
 import { FolderBrowser } from "./FolderBrowser";
 import { scanForOddWorkspaces } from "../../lib/collaboration";
@@ -243,7 +244,11 @@ export function ProjectSelector({
                     disabled={disabled || scanning}
                   >
                     <span className="project-selector__workspace-name">{entry.name}</span>
-                    <span className="project-selector__workspace-path">{entry.markers.join(" · ")}</span>
+                    <span className="project-selector__workspace-path">
+                      {entry.profile
+                        ? `${labelWorkspaceIdentity(entry.profile.primary_identity)} · ${entry.markers.join(" · ")}`
+                        : entry.markers.join(" · ")}
+                    </span>
                     <span className="project-selector__workspace-path">{entry.path}</span>
                   </button>
                 ))}

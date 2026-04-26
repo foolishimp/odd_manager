@@ -14,7 +14,7 @@ import {
 import type { GChatTopic, GTermPoolState, TrainId } from "../../lib/collaboration";
 
 type GTermPanelProps = {
-  workspaceRoot: string;
+  projectRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -26,11 +26,12 @@ type GTermPanelProps = {
 type TerminalStatus = "connecting" | "connected" | "closed" | "error";
 type LayoutMode = "single" | "split-vertical" | "split-horizontal";
 type JoinProvider = "codex" | "claude";
+type TerminalFontPreset = "small" | "medium" | "large";
 
 type TerminalEvent =
   | {
       type: "ready";
-      workspaceRoot: string;
+      projectRoot: string;
       shell: string;
       pid: number;
       backend?: string;
@@ -52,6 +53,13 @@ type TerminalEvent =
 const ODDTERM_TOPIC_SELECTIONS_STORAGE_KEY = "oman-oddterm-topic-selections";
 const ODDTERM_PROVIDER_SELECTIONS_STORAGE_KEY = "oman-oddterm-provider-selections";
 const ODDTERM_AGENT_PANEL_COLLAPSED_STORAGE_KEY = "oman-oddterm-agent-panel-collapsed";
+const ODDTERM_FONT_PRESET_STORAGE_KEY = "oman-oddterm-font-preset";
+
+const TERMINAL_FONT_SIZES: Record<TerminalFontPreset, number> = {
+  small: 12,
+  medium: 13,
+  large: 15,
+};
 
 function readStoredMap(storageKey: string) {
   if (typeof window === "undefined") {
@@ -72,10 +80,10 @@ function inferJoinProvider(session: GTermPoolState["sessions"][number]): JoinPro
   return provider === "codex" || provider === "claude" ? provider : null;
 }
 
-function socketUrl(workspaceRoot: string, sessionId: string) {
+function socketUrl(projectRoot: string, sessionId: string) {
   const url = new URL("/api/oddterm", window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("workspaceRoot", workspaceRoot);
+  url.searchParams.set("projectRoot", projectRoot);
   url.searchParams.set("sessionId", sessionId);
   return url.toString();
 }
@@ -105,7 +113,7 @@ function terminalTheme() {
 }
 
 export function OddTermPanel({
-  workspaceRoot,
+  projectRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -119,6 +127,13 @@ export function OddTermPanel({
     }
     const stored = window.localStorage.getItem("oman-oddterm-layout");
     return stored === "split-vertical" || stored === "split-horizontal" ? stored : "single";
+  });
+  const [fontPreset, setFontPreset] = useState<TerminalFontPreset>(() => {
+    if (typeof window === "undefined") {
+      return "medium";
+    }
+    const stored = window.localStorage.getItem(ODDTERM_FONT_PRESET_STORAGE_KEY);
+    return stored === "small" || stored === "large" || stored === "medium" ? stored : "medium";
   });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [primarySessionId, setPrimarySessionId] = useState<string | null>(() => {
@@ -190,6 +205,13 @@ export function OddTermPanel({
     }
     window.localStorage.setItem("oman-oddterm-layout", layoutMode);
   }, [layoutMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(ODDTERM_FONT_PRESET_STORAGE_KEY, fontPreset);
+  }, [fontPreset]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -284,12 +306,12 @@ export function OddTermPanel({
     }
     setCreatingSession(true);
     try {
-      const created = await createGTermSession(workspaceRoot, {
+      const created = await createGTermSession(projectRoot, {
         selectedTrainId,
         stationId: selectedStationId,
         edgeId: selectedEdgeId,
       });
-      await selectGTermSession(workspaceRoot, created.session.id);
+      await selectGTermSession(projectRoot, created.session.id);
       await onRefreshConsole();
       if (layoutMode === "single" || !primarySessionId) {
         setPrimarySessionId(created.session.id);
@@ -324,7 +346,7 @@ export function OddTermPanel({
       [sessionId]: provider,
     }));
     try {
-      await launchShellAgent(workspaceRoot, {
+      await launchShellAgent(projectRoot, {
         sessionId,
         provider,
       });
@@ -348,7 +370,7 @@ export function OddTermPanel({
     setJoiningTopicKey(joinKey);
     setAgentActionError(null);
     try {
-      await joinShellAgentTopic(workspaceRoot, {
+      await joinShellAgentTopic(projectRoot, {
         sessionId,
         topicId,
         provider,
@@ -382,7 +404,7 @@ export function OddTermPanel({
                 onClick={() => {
                   setPrimarySessionId(session.id);
                   setActiveSessionId(session.id);
-                  void selectGTermSession(workspaceRoot, session.id);
+                  void selectGTermSession(projectRoot, session.id);
                 }}
             >
               <strong>{session.label}</strong>
@@ -434,6 +456,23 @@ export function OddTermPanel({
             </label>
           ) : null}
 
+          <label className="agent-console__secondary-picker">
+            <span>Font</span>
+            <select
+              value={fontPreset}
+              onChange={(event) => {
+                const nextPreset = event.target.value;
+                if (nextPreset === "small" || nextPreset === "medium" || nextPreset === "large") {
+                  setFontPreset(nextPreset);
+                }
+              }}
+            >
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </label>
+
           {activeSession ? (
             <div className="agent-console__terminal-session-meta">
               {activeSession.attachedTrainId ? <span className="summary-pill summary-pill--view">{activeSession.attachedTrainId}</span> : null}
@@ -451,7 +490,7 @@ export function OddTermPanel({
           visibleSessions.map((session, index) => (
             <TerminalSessionPane
               key={session.id}
-              workspaceRoot={workspaceRoot}
+              projectRoot={projectRoot}
               session={session}
               selectedTrainId={selectedTrainId}
               selectedStationId={selectedStationId}
@@ -478,6 +517,7 @@ export function OddTermPanel({
               onJoinTopic={handleJoinTopic}
               onToggleAgentPanel={handleToggleAgentPanel}
               onRefreshConsole={onRefreshConsole}
+              fontPreset={fontPreset}
             />
           ))
         ) : (
@@ -504,7 +544,7 @@ export function OddTermPanel({
 }
 
 type TerminalSessionPaneProps = {
-  workspaceRoot: string;
+  projectRoot: string;
   session: GTermPoolState["sessions"][number];
   selectedTrainId: TrainId;
   selectedStationId: string | null;
@@ -529,10 +569,11 @@ type TerminalSessionPaneProps = {
   onJoinTopic: (sessionId: string, topicId: string, provider: JoinProvider) => Promise<void>;
   onToggleAgentPanel: (sessionId: string) => void;
   onRefreshConsole: () => Promise<void>;
+  fontPreset: TerminalFontPreset;
 };
 
 function TerminalSessionPane({
-  workspaceRoot,
+  projectRoot,
   session,
   selectedTrainId,
   selectedStationId,
@@ -557,9 +598,11 @@ function TerminalSessionPane({
   onJoinTopic,
   onToggleAgentPanel,
   onRefreshConsole,
+  fontPreset,
 }: TerminalSessionPaneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const statusRef = useRef<TerminalStatus>(session.status === "closed" ? "closed" : "connecting");
   const [status, setStatus] = useState<TerminalStatus>(session.status === "closed" ? "closed" : "connecting");
@@ -618,7 +661,7 @@ function TerminalSessionPane({
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: "\"JetBrains Mono\", \"IBM Plex Mono\", monospace",
-      fontSize: 13,
+      fontSize: TERMINAL_FONT_SIZES[fontPreset],
       lineHeight: 1.25,
       scrollback: 4000,
       theme: terminalTheme(),
@@ -630,9 +673,10 @@ function TerminalSessionPane({
     fitAddon.fit();
     terminal.options.disableStdin = session.status === "closed";
     terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
     updateStatus(session.status === "closed" ? "closed" : "connecting", terminal);
 
-    const socket = new WebSocket(socketUrl(workspaceRoot, session.id));
+    const socket = new WebSocket(socketUrl(projectRoot, session.id));
     socketRef.current = socket;
 
     function send(payload: Record<string, unknown>) {
@@ -656,11 +700,8 @@ function TerminalSessionPane({
     });
     resizeObserver.observe(terminalHost);
 
-    const keyDisposable = terminal.onKey(({ key, domEvent }) => {
-      if (domEvent.metaKey) {
-        return;
-      }
-      sendInput(key);
+    const inputDisposable = terminal.onData((data) => {
+      sendInput(data);
     });
 
     socket.addEventListener("open", () => {
@@ -721,14 +762,41 @@ function TerminalSessionPane({
 
     return () => {
       resizeObserver.disconnect();
-      keyDisposable.dispose();
+      inputDisposable.dispose();
       socket.close();
       socketRef.current = null;
+      fitAddonRef.current = null;
       fitAddon.dispose();
       terminal.dispose();
       terminalRef.current = null;
     };
-  }, [workspaceRoot, session.id, instanceKey, autoFocus]);
+  }, [projectRoot, session.id, instanceKey, autoFocus]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+    const nextFontSize = TERMINAL_FONT_SIZES[fontPreset];
+    if (terminal.options.fontSize === nextFontSize) {
+      return;
+    }
+    terminal.options.fontSize = nextFontSize;
+    window.requestAnimationFrame(() => {
+      fitAddonRef.current?.fit();
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      socket.send(
+        JSON.stringify({
+          type: "resize",
+          cols: terminal.cols,
+          rows: terminal.rows,
+        }),
+      );
+    });
+  }, [fontPreset]);
 
   return (
     <div className="agent-console__terminal-shell" onClick={onActivate}>
@@ -758,13 +826,13 @@ function TerminalSessionPane({
             event.stopPropagation();
             if (status === "closed") {
               void (async () => {
-                const created = await createGTermSession(workspaceRoot, {
+                const created = await createGTermSession(projectRoot, {
                   selectedTrainId: session.attachedTrainId ?? selectedTrainId,
                   stationId: session.attachedStationId ?? selectedStationId,
                   edgeId: session.attachedEdgeId ?? selectedEdgeId,
                   label: session.label,
                 });
-                await selectGTermSession(workspaceRoot, created.session.id);
+                await selectGTermSession(projectRoot, created.session.id);
                 await onRefreshConsole();
                 if (layoutMode === "single" || primarySessionId === session.id) {
                   onSetPrimarySessionId(created.session.id);
@@ -792,7 +860,7 @@ function TerminalSessionPane({
             }
             setRenaming(true);
             try {
-              await renameGTermSession(workspaceRoot, session.id, nextLabel.trim());
+              await renameGTermSession(projectRoot, session.id, nextLabel.trim());
               await onRefreshConsole();
             } finally {
               setRenaming(false);
@@ -810,7 +878,7 @@ function TerminalSessionPane({
             setPromoting(true);
             setPromotionState("idle");
             try {
-              await promoteGTermSession(workspaceRoot, {
+              await promoteGTermSession(projectRoot, {
                 sessionId: session.id,
                 selectedTrainId,
                 stationId: selectedStationId,
@@ -849,7 +917,7 @@ function TerminalSessionPane({
             }
             setClosing(true);
             try {
-              await closeGTermSession(workspaceRoot, session.id);
+              await closeGTermSession(projectRoot, session.id);
               await onRefreshConsole();
             } finally {
               setClosing(false);

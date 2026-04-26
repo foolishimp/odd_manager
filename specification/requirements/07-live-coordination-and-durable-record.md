@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-COL-*`
 **Status**: Active
 **Category**: Capability
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-COL-001 - Live coordination remains distinct from durable record
 

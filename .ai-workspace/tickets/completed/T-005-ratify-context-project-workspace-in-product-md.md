@@ -3,7 +3,7 @@ id: T-005
 title: Ratify Context (Project × Workspace) in PRODUCT.md
 type: feature
 ticket_category: build_wave
-status: active
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Promote the Context concept from commentary to constitutional product surface so downstream realization can cite a stable definition rather than re-deriving it per widget.
 change_class: product_reprice

@@ -182,13 +182,13 @@ async function parseServiceJson(response) {
   return payload;
 }
 
-function buildSessionServiceUrl(pathname, workspaceRoot, extraParams = {}) {
+function buildSessionServiceUrl(pathname, projectRoot, extraParams = {}) {
   if (!sessionServiceBaseUrl) {
     return null;
   }
   const nextUrl = new URL(pathname, sessionServiceBaseUrl);
-  if (workspaceRoot) {
-    nextUrl.searchParams.set("workspaceRoot", workspaceRoot);
+  if (projectRoot) {
+    nextUrl.searchParams.set("projectRoot", projectRoot);
   }
   for (const [key, value] of Object.entries(extraParams)) {
     if (value !== null && value !== undefined && value !== "") {
@@ -198,7 +198,7 @@ function buildSessionServiceUrl(pathname, workspaceRoot, extraParams = {}) {
   return nextUrl;
 }
 
-async function loadSessionServiceSnapshot(workspaceRoot) {
+async function loadSessionServiceSnapshot(projectRoot) {
   const observedAt = new Date().toISOString();
   if (!sessionServiceBaseUrl) {
     return {
@@ -214,8 +214,8 @@ async function loadSessionServiceSnapshot(workspaceRoot) {
 
   try {
     const [runsPayload, workersPayload] = await Promise.all([
-      fetch(buildSessionServiceUrl("/api/runs", workspaceRoot)).then(parseServiceJson),
-      fetch(buildSessionServiceUrl("/api/workers", workspaceRoot)).then(parseServiceJson),
+      fetch(buildSessionServiceUrl("/api/runs", projectRoot)).then(parseServiceJson),
+      fetch(buildSessionServiceUrl("/api/workers", projectRoot)).then(parseServiceJson),
     ]);
     return {
       configured: true,
@@ -239,8 +239,8 @@ async function loadSessionServiceSnapshot(workspaceRoot) {
   }
 }
 
-async function postSessionServiceCommand(pathname, body = {}, workspaceRoot = null) {
-  const serviceUrl = buildSessionServiceUrl(pathname, workspaceRoot);
+async function postSessionServiceCommand(pathname, body = {}, projectRoot = null) {
+  const serviceUrl = buildSessionServiceUrl(pathname, projectRoot);
   if (!serviceUrl) {
     throw new Error("odd_sdlc_service is not configured for odd_manager");
   }
@@ -264,9 +264,9 @@ function humanizeName(value) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function workspaceDisplayName(workspaceRoot) {
-  const segments = String(workspaceRoot).split("/").filter(Boolean);
-  const baseName = segments.at(-1) ?? workspaceRoot;
+function workspaceDisplayName(projectRoot) {
+  const segments = String(projectRoot).split("/").filter(Boolean);
+  const baseName = segments.at(-1) ?? projectRoot;
   if (baseName === "workspace" && segments.length >= 2) {
     return humanizeName(segments.at(-2) ?? baseName);
   }
@@ -277,8 +277,8 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
 }
 
-function readWorkspaceText(workspaceRoot, relativePath) {
-  const absolutePath = join(workspaceRoot, relativePath);
+function readWorkspaceText(projectRoot, relativePath) {
+  const absolutePath = join(projectRoot, relativePath);
   if (!existsSync(absolutePath)) {
     return null;
   }
@@ -355,14 +355,14 @@ function knownIdentityFromName(value) {
   return null;
 }
 
-function detectPrimaryIdentity(workspaceRoot) {
+function detectPrimaryIdentity(projectRoot) {
   const explicitInstallSignals = [
     [".genesis/odd_world_model/release/install_manifest.json", "odd_world_model"],
     [".genesis/odd_sdlc/release/install_manifest.json", "odd_sdlc"],
     [".genesis/odd_manager/release/install_manifest.json", "odd_manager"],
   ];
   for (const [relativePath, identity] of explicitInstallSignals) {
-    if (hasWorkspaceMarker(workspaceRoot, relativePath)) {
+    if (hasWorkspaceMarker(projectRoot, relativePath)) {
       return identity;
     }
   }
@@ -374,20 +374,20 @@ function detectPrimaryIdentity(workspaceRoot) {
     "specification/PRODUCT.md",
     "specification/INTENT.md",
   ]) {
-    const identity = knownIdentityFromText(readWorkspaceText(workspaceRoot, relativePath));
+    const identity = knownIdentityFromText(readWorkspaceText(projectRoot, relativePath));
     if (identity) {
       return identity;
     }
   }
 
-  const namedIdentity = knownIdentityFromName(workspaceRoot.split("/").filter(Boolean).at(-1) ?? workspaceRoot);
+  const namedIdentity = knownIdentityFromName(projectRoot.split("/").filter(Boolean).at(-1) ?? projectRoot);
   if (namedIdentity) {
     return namedIdentity;
   }
 
   if (
-    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
+    hasWorkspaceMarker(projectRoot, ".odd_sdlc") ||
+    hasWorkspaceMarker(projectRoot, ".genesis/odd_sdlc/release/genesis.yml")
   ) {
     return "odd_sdlc";
   }
@@ -395,13 +395,13 @@ function detectPrimaryIdentity(workspaceRoot) {
   return "unknown";
 }
 
-function detectGovernanceIdentities(workspaceRoot) {
+function detectGovernanceIdentities(projectRoot) {
   return uniqueStrings([
-    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
+    hasWorkspaceMarker(projectRoot, ".odd_sdlc") ||
+    hasWorkspaceMarker(projectRoot, ".genesis/odd_sdlc/release/genesis.yml")
       ? "odd_sdlc"
       : null,
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_world_model/release/genesis.yml")
+    hasWorkspaceMarker(projectRoot, ".genesis/odd_world_model/release/genesis.yml")
       ? "odd_world_model"
       : null,
   ]);
@@ -421,15 +421,15 @@ function workspaceShellTitle(primaryIdentity, activeDomainPack) {
   return "Odd Manager";
 }
 
-function profileWorkspace(workspaceRoot) {
-  const primaryIdentity = detectPrimaryIdentity(workspaceRoot);
-  const governanceIdentities = detectGovernanceIdentities(workspaceRoot);
+function profileWorkspace(projectRoot) {
+  const primaryIdentity = detectPrimaryIdentity(projectRoot);
+  const governanceIdentities = detectGovernanceIdentities(projectRoot);
   const activeDomainPack =
     primaryIdentity === "odd_sdlc" || primaryIdentity === "odd_world_model"
       ? primaryIdentity
       : null;
   const markers = uniqueStrings([
-    ...classifyOddWorkspace(workspaceRoot),
+    ...classifyOddWorkspace(projectRoot),
     primaryIdentity !== "unknown" ? `identity:${primaryIdentity}` : null,
     ...governanceIdentities.map((identity) => `governance:${identity}`),
   ]);
@@ -472,9 +472,9 @@ function oddNameSignal(name) {
   );
 }
 
-function readOddProductSignal(workspaceRoot) {
+function readOddProductSignal(projectRoot) {
   for (const relativePath of ["README.md", "specification/PRODUCT.md", "specification/INTENT.md"]) {
-    const absolutePath = join(workspaceRoot, relativePath);
+    const absolutePath = join(projectRoot, relativePath);
     if (!existsSync(absolutePath)) {
       continue;
     }
@@ -490,19 +490,19 @@ function readOddProductSignal(workspaceRoot) {
   return null;
 }
 
-function hasWorkspaceMarker(workspaceRoot, relativePath) {
-  return existsSync(join(workspaceRoot, relativePath));
+function hasWorkspaceMarker(projectRoot, relativePath) {
+  return existsSync(join(projectRoot, relativePath));
 }
 
-function classifyOddWorkspace(workspaceRoot) {
+function classifyOddWorkspace(projectRoot) {
   const markers = [];
-  const baseName = workspaceRoot.split("/").filter(Boolean).at(-1) ?? workspaceRoot;
+  const baseName = projectRoot.split("/").filter(Boolean).at(-1) ?? projectRoot;
 
   if (oddNameSignal(baseName)) {
     markers.push(`name:${baseName}`);
   }
 
-  const buildTenantsRoot = join(workspaceRoot, "build_tenants");
+  const buildTenantsRoot = join(projectRoot, "build_tenants");
   if (existsSync(buildTenantsRoot)) {
     try {
       const tenantNames = readdirSync(buildTenantsRoot, { withFileTypes: true })
@@ -517,29 +517,29 @@ function classifyOddWorkspace(workspaceRoot) {
     }
   }
 
-  const docSignal = readOddProductSignal(workspaceRoot);
+  const docSignal = readOddProductSignal(projectRoot);
   if (docSignal) {
     markers.push(`doc:${docSignal}`);
   }
 
-  if (hasWorkspaceMarker(workspaceRoot, ".odd_sdlc")) {
+  if (hasWorkspaceMarker(projectRoot, ".odd_sdlc")) {
     markers.push("runtime:.odd_sdlc");
   }
 
   if (
-    hasWorkspaceMarker(workspaceRoot, ".genesis/gtl") ||
-    hasWorkspaceMarker(workspaceRoot, ".genesis/docs/standards/SPEC_METHOD.md")
+    hasWorkspaceMarker(projectRoot, ".genesis/gtl") ||
+    hasWorkspaceMarker(projectRoot, ".genesis/docs/standards/SPEC_METHOD.md")
   ) {
     markers.push("runtime:.genesis");
   }
 
-  if (hasWorkspaceMarker(workspaceRoot, "build_tenants/TENANT_REGISTRY.md")) {
+  if (hasWorkspaceMarker(projectRoot, "build_tenants/TENANT_REGISTRY.md")) {
     markers.push("tenant:registry");
   }
 
   if (
-    hasWorkspaceMarker(workspaceRoot, "AGENTS.md") &&
-    hasWorkspaceMarker(workspaceRoot, "CLAUDE.md")
+    hasWorkspaceMarker(projectRoot, "AGENTS.md") &&
+    hasWorkspaceMarker(projectRoot, "CLAUDE.md")
   ) {
     markers.push("bootstrap:agent-surfaces");
   }
@@ -799,7 +799,7 @@ const server = createServer(async (request, response) => {
 
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
-      writeJson(response, 200, { ok: true, workspaceRoot: defaultWorkspaceRoot });
+      writeJson(response, 200, { ok: true, projectRoot: defaultWorkspaceRoot });
       return;
     }
 
@@ -816,20 +816,20 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/odd-console") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-      writeJson(response, 200, loadAgentConsoleState(workspaceRoot));
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
+      writeJson(response, 200, loadAgentConsoleState(projectRoot));
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/odd-console/stream") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeSseHeaders(response);
       writeSseEvent(response, "connected", {
-        workspaceRoot,
+        projectRoot,
         timestamp: new Date().toISOString(),
       });
 
-      const unsubscribe = subscribeAgentConsoleEvents(workspaceRoot, (payload) => {
+      const unsubscribe = subscribeAgentConsoleEvents(projectRoot, (payload) => {
         writeSseEvent(response, "odd-console-updated", payload);
       });
 
@@ -849,22 +849,22 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/world") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
-        ...(await runHelper(["world", "--workspace", workspaceRoot])),
-        workspace_profile: profileWorkspace(workspaceRoot),
+        ...(await runHelper(["world", "--workspace", projectRoot])),
+        workspace_profile: profileWorkspace(projectRoot),
       });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/session-service") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-      writeJson(response, 200, await loadSessionServiceSnapshot(workspaceRoot));
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
+      writeJson(response, 200, await loadSessionServiceSnapshot(projectRoot));
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/surface") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       const relativePath = url.searchParams.get("relativePath");
       if (!relativePath) {
         writeJson(response, 400, { error: "surface requests require relativePath" });
@@ -876,7 +876,7 @@ const server = createServer(async (request, response) => {
         await runHelper([
           "surface",
           "--workspace",
-          workspaceRoot,
+          projectRoot,
           "--relative-path",
           relativePath,
         ]),
@@ -886,13 +886,13 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/commands/run") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       const command = body.command;
       if (!["gaps", "iterate", "start"].includes(command)) {
         writeJson(response, 400, { error: `unsupported command: ${command}` });
         return;
       }
-      const args = ["command", command, "--workspace", workspaceRoot];
+      const args = ["command", command, "--workspace", projectRoot];
       if (command === "start" && body.auto) {
         args.push("--auto");
       }
@@ -902,7 +902,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/session-service/run/approve") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       if (!body.runId) {
         writeJson(response, 400, { error: "approve requires runId" });
         return;
@@ -915,7 +915,7 @@ const server = createServer(async (request, response) => {
           {
             edge: body.edge ?? null,
           },
-          workspaceRoot,
+          projectRoot,
         ),
       );
       return;
@@ -923,7 +923,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/session-service/run/reject") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       if (!body.runId) {
         writeJson(response, 400, { error: "reject requires runId" });
         return;
@@ -941,7 +941,7 @@ const server = createServer(async (request, response) => {
             edge: body.edge ?? null,
             reason: body.reason,
           },
-          workspaceRoot,
+          projectRoot,
         ),
       );
       return;
@@ -949,11 +949,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/odd-console/comment") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        createGBoardComment(workspaceRoot, {
+        createGBoardComment(projectRoot, {
           roomId: body.roomId,
           body: body.body,
           selectedTrainId: body.selectedTrainId,
@@ -966,11 +966,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        createGChatTopic(workspaceRoot, {
+        createGChatTopic(projectRoot, {
           title: body.title,
           sourceRecordId: body.sourceRecordId,
           selectedTrainId: body.selectedTrainId,
@@ -983,11 +983,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/attach-record") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        attachGChatTopicRecord(workspaceRoot, {
+        attachGChatTopicRecord(projectRoot, {
           topicId: body.topicId,
           recordId: body.recordId,
         }),
@@ -997,11 +997,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/attach-session") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        attachGChatTopicSession(workspaceRoot, {
+        attachGChatTopicSession(projectRoot, {
           topicId: body.topicId,
           sessionId: body.sessionId,
         }),
@@ -1010,7 +1010,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/room") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       const roomId = url.searchParams.get("roomId");
       if (!roomId) {
         writeJson(response, 400, { error: "room requests require roomId" });
@@ -1020,16 +1020,16 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, {
         ok: true,
         roomId,
-        messages: loadRoomMessages(workspaceRoot, roomId, limit),
+        messages: loadRoomMessages(projectRoot, roomId, limit),
       });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/participants") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        participants: listOddChatParticipants(workspaceRoot, {
+        participants: listOddChatParticipants(projectRoot, {
           roomId: firstString(url.searchParams.get("roomId")),
           topicId: firstString(url.searchParams.get("topicId")),
           sessionId: firstString(url.searchParams.get("sessionId")),
@@ -1042,11 +1042,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/join") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        joinRoomParticipant(workspaceRoot, {
+        joinRoomParticipant(projectRoot, {
           sessionId: body.sessionId,
           participantId: body.participantId,
           provider: body.provider,
@@ -1061,11 +1061,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/leave") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        leaveRoomParticipant(workspaceRoot, {
+        leaveRoomParticipant(projectRoot, {
           participantId: body.participantId,
           sessionId: body.sessionId,
           provider: body.provider,
@@ -1075,11 +1075,11 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/participant/status") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        getRoomParticipantStatus(workspaceRoot, {
+        getRoomParticipantStatus(projectRoot, {
           participantId: firstString(url.searchParams.get("participantId")),
           sessionId: firstString(url.searchParams.get("sessionId")),
           provider: firstString(url.searchParams.get("provider")),
@@ -1090,11 +1090,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/read") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        readRoomParticipant(workspaceRoot, {
+        readRoomParticipant(projectRoot, {
           participantId: body.participantId,
           sessionId: body.sessionId,
           provider: body.provider,
@@ -1108,11 +1108,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/wait") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        await waitRoomParticipant(workspaceRoot, {
+        await waitRoomParticipant(projectRoot, {
           participantId: body.participantId,
           sessionId: body.sessionId,
           provider: body.provider,
@@ -1127,11 +1127,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/message") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        postRoomParticipantMessage(workspaceRoot, {
+        postRoomParticipantMessage(projectRoot, {
           participantId: body.participantId,
           sessionId: body.sessionId,
           provider: body.provider,
@@ -1144,11 +1144,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/bootstrap-agent") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        await launchRoomParticipantBootstrap(workspaceRoot, {
+        await launchRoomParticipantBootstrap(projectRoot, {
           topicId: body.topicId,
           sessionId: body.sessionId,
           provider: body.provider,
@@ -1159,11 +1159,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/add-participant") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        await addTopicParticipant(workspaceRoot, {
+        await addTopicParticipant(projectRoot, {
           topicId: body.topicId,
           provider: body.provider,
           role: body.role,
@@ -1175,11 +1175,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/room-recipients") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        setGChatTopicRoomRecipients(workspaceRoot, {
+        setGChatTopicRoomRecipients(projectRoot, {
           topicId: body.topicId,
           sessionIds: body.sessionIds,
         }),
@@ -1189,11 +1189,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/launch-agent") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        launchShellAgent(workspaceRoot, {
+        launchShellAgent(projectRoot, {
           sessionId: body.sessionId,
           provider: body.provider,
         }),
@@ -1203,11 +1203,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/join-topic") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        await joinShellAgentTopic(workspaceRoot, {
+        await joinShellAgentTopic(projectRoot, {
           sessionId: body.sessionId,
           topicId: body.topicId,
           provider: body.provider,
@@ -1218,15 +1218,15 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/odd-console/message") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
-      const posted = createGChatMessage(workspaceRoot, {
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
+      const posted = createGChatMessage(projectRoot, {
         roomId: body.roomId,
         body: body.body,
         selectedTrainId: body.selectedTrainId,
         stationId: body.stationId,
         edgeId: body.edgeId,
       });
-      void dispatchAgentReplies(workspaceRoot, {
+      void dispatchAgentReplies(projectRoot, {
         roomId: body.roomId,
         body: body.body,
         selectedTrainId: body.selectedTrainId,
@@ -1241,10 +1241,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        session: createGTermSession(workspaceRoot, {
+        session: createGTermSession(projectRoot, {
           selectedTrainId: body.selectedTrainId || null,
           stationId: body.stationId || null,
           edgeId: body.edgeId || null,
@@ -1256,10 +1256,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/ensure") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        session: ensureGTermSession(workspaceRoot, {
+        session: ensureGTermSession(projectRoot, {
           selectedTrainId: body.selectedTrainId || null,
           stationId: body.stationId || null,
           edgeId: body.edgeId || null,
@@ -1271,38 +1271,38 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/rename") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        session: renameGTermSession(workspaceRoot, body.sessionId, body.label),
+        session: renameGTermSession(projectRoot, body.sessionId, body.label),
       });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/close") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        session: closeGTermSession(workspaceRoot, body.sessionId),
+        session: closeGTermSession(projectRoot, body.sessionId),
       });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/close-all") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        ...closeAllGTermSessions(workspaceRoot),
+        ...closeAllGTermSessions(projectRoot),
       });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/select") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
-      const state = selectGTermSession(workspaceRoot, body.sessionId);
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
+      const state = selectGTermSession(projectRoot, body.sessionId);
       writeJson(response, 200, {
         ok: true,
         activeSessionId: state.activeSessionId,
@@ -1312,11 +1312,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/promote") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(
         response,
         200,
-        createTerminalPromotionComment(workspaceRoot, {
+        createTerminalPromotionComment(projectRoot, {
           sessionId: body.sessionId,
           lineCount: body.lineCount,
           selectedTrainId: body.selectedTrainId,
@@ -1328,10 +1328,10 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/status") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: getIrcGatewayBindingStatus(workspaceRoot, {
+        binding: getIrcGatewayBindingStatus(projectRoot, {
           sessionId: url.searchParams.get("sessionId") || null,
           sessionLabel: url.searchParams.get("sessionLabel") || null,
         }),
@@ -1340,10 +1340,10 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/read") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: readIrcGatewayRoom(workspaceRoot, {
+        binding: readIrcGatewayRoom(projectRoot, {
           sessionId: url.searchParams.get("sessionId") || null,
           sessionLabel: url.searchParams.get("sessionLabel") || null,
           limit: finiteQueryNumber(url.searchParams.get("limit"), 40),
@@ -1353,10 +1353,10 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/who") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const projectRoot = url.searchParams.get("projectRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        ...whoIrcGatewayChannel(workspaceRoot, {
+        ...whoIrcGatewayChannel(projectRoot, {
           sessionId: url.searchParams.get("sessionId") || null,
           sessionLabel: url.searchParams.get("sessionLabel") || null,
           channel: url.searchParams.get("channel") || null,
@@ -1367,10 +1367,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/connect") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: connectIrcGatewayBinding(workspaceRoot, {
+        binding: connectIrcGatewayBinding(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
           topicId: body.topicId || null,
@@ -1391,10 +1391,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/disconnect") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: disconnectIrcGatewayBinding(workspaceRoot, {
+        binding: disconnectIrcGatewayBinding(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
         }),
@@ -1404,10 +1404,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/join") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: joinIrcGatewayChannel(workspaceRoot, {
+        binding: joinIrcGatewayChannel(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
           channel: body.channel || null,
@@ -1418,10 +1418,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/part") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: partIrcGatewayChannel(workspaceRoot, {
+        binding: partIrcGatewayChannel(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
           channel: body.channel || null,
@@ -1433,10 +1433,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/send") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: sendIrcGatewayChannelMessage(workspaceRoot, {
+        binding: sendIrcGatewayChannelMessage(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
           channel: body.channel || null,
@@ -1448,10 +1448,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/dm") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const projectRoot = body.projectRoot || defaultWorkspaceRoot;
       writeJson(response, 200, {
         ok: true,
-        binding: sendIrcGatewayDirectMessage(workspaceRoot, {
+        binding: sendIrcGatewayDirectMessage(projectRoot, {
           sessionId: body.sessionId || null,
           sessionLabel: body.sessionLabel || null,
           nick: body.nick || null,
@@ -1464,7 +1464,7 @@ const server = createServer(async (request, response) => {
     // T-016 closure: AssetSurface read/write endpoints absorbed from the
     // retired sidecar-demo.mjs scaffold. Per project rather than per-request
     // so the surfaces cache properly. SidecarPanel consumes /api/* relative.
-    const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || workspaceRoot || defaultWorkspaceRoot;
+    const surfaceProjectRoot = url.searchParams.get("projectRoot") || projectRoot || defaultWorkspaceRoot;
     const ticketSurface = getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot));
     const commentSurface = getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot));
     const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));

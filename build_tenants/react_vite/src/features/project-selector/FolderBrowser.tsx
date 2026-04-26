@@ -1,3 +1,4 @@
+import { labelWorkspaceIdentity } from "../../lib/presentation";
 import { useCallback, useEffect, useState } from "react";
 import { browsePath } from "../../lib/collaboration";
 import type { FsEntry } from "../../lib/collaboration";
@@ -129,8 +130,14 @@ export function FolderBrowser({
                 </span>
                 <span className="folder-browser__entry-name">{entry.name}</span>
                 {entry.hasWorkspace ? (
-                  <span className="folder-browser__entry-tag" title={entry.markers.join(" · ")}>
-                    managed
+                  <span
+                    className="folder-browser__entry-tag"
+                    title={[
+                      entry.profile?.shell_title ?? "managed workspace",
+                      ...entry.markers,
+                    ].join(" · ")}
+                  >
+                    {entry.profile ? labelWorkspaceIdentity(entry.profile.primary_identity) : "managed"}
                   </span>
                 ) : null}
               </button>

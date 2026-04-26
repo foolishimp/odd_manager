@@ -32,6 +32,19 @@ const serverDir = dirname(fileURLToPath(import.meta.url));
 const oddtermServicePath = resolve(serverDir, "../../runtime/oddterm_service.py");
 const workspaceStores = new Map();
 
+function isPidAlive(pid) {
+  const parsed = Number(pid);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return false;
+  }
+  try {
+    process.kill(parsed, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function sendJson(socket, payload) {
   if (socket.readyState !== WebSocket.OPEN) {
     return;
@@ -39,22 +52,22 @@ function sendJson(socket, payload) {
   socket.send(JSON.stringify(payload));
 }
 
-function runtimeRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/oddterm");
+function runtimeRoot(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/oddterm");
 }
 
-function sessionRoot(workspaceRoot, sessionId) {
-  return join(runtimeRoot(workspaceRoot), sessionId);
+function sessionRoot(projectRoot, sessionId) {
+  return join(runtimeRoot(projectRoot), sessionId);
 }
 
-function sessionMetaPath(workspaceRoot, sessionId) {
-  return join(sessionRoot(workspaceRoot, sessionId), "meta.json");
+function sessionMetaPath(projectRoot, sessionId) {
+  return join(sessionRoot(projectRoot, sessionId), "meta.json");
 }
 
 function serializeSession(session) {
   return {
     id: session.id,
-    workspaceRoot: session.workspaceRoot,
+    projectRoot: session.projectRoot,
     label: session.label,
     archived: Boolean(session.archived),
     status: session.status,
@@ -89,7 +102,7 @@ function persistSessionMeta(session) {
 }
 
 function restoreSessionsFromDisk(store) {
-  const root = runtimeRoot(store.workspaceRoot);
+  const root = runtimeRoot(store.projectRoot);
   if (!existsSync(root)) {
     return;
   }
@@ -100,7 +113,7 @@ function restoreSessionsFromDisk(store) {
     .sort((left, right) => left.localeCompare(right));
 
   for (const sessionId of directories) {
-    const metaPath = sessionMetaPath(store.workspaceRoot, sessionId);
+    const metaPath = sessionMetaPath(store.projectRoot, sessionId);
     if (!existsSync(metaPath)) {
       continue;
     }
@@ -114,7 +127,7 @@ function restoreSessionsFromDisk(store) {
 
     const session = {
       id: sessionId,
-      workspaceRoot: store.workspaceRoot,
+      projectRoot: store.projectRoot,
       label: meta.label || sessionId,
       archived: Boolean(meta.archived),
       status: meta.status === "error" ? "error" : "closed",
@@ -139,7 +152,7 @@ function restoreSessionsFromDisk(store) {
     if (session.archived) {
       continue;
     }
-    ensureConversationHistory(store.workspaceRoot, {
+    ensureConversationHistory(store.projectRoot, {
       historyId: session.conversationHistoryId,
       ownerKind: "oddterm_session",
       ownerRef: session.id,
@@ -148,7 +161,7 @@ function restoreSessionsFromDisk(store) {
         label: session.label,
       },
     });
-    session.historyBytes = loadConversationHistoryStats(store.workspaceRoot, session.conversationHistoryId).historyBytes;
+    session.historyBytes = loadConversationHistoryStats(store.projectRoot, session.conversationHistoryId).historyBytes;
     store.sessions.set(sessionId, session);
     if (!store.activeSessionId) {
       store.activeSessionId = sessionId;
@@ -156,13 +169,13 @@ function restoreSessionsFromDisk(store) {
   }
 }
 
-function ensureWorkspaceStore(workspaceRoot) {
-  const root = resolve(workspaceRoot);
+function ensureWorkspaceStore(projectRoot) {
+  const root = resolve(projectRoot);
   let store = workspaceStores.get(root);
   if (!store) {
     mkdirSync(runtimeRoot(root), { recursive: true });
     store = {
-      workspaceRoot: root,
+      projectRoot: root,
       activeSessionId: null,
       sessions: new Map(),
     };
@@ -193,9 +206,38 @@ function setActiveSession(store, sessionId) {
   store.activeSessionId = sessionId;
 }
 
-function createPosixService(workspaceRoot) {
-  return spawn("python3", [oddtermServicePath, "--workspace-root", workspaceRoot], {
-    cwd: workspaceRoot,
+function reconcileSessionLiveness(store) {
+  for (const session of store.sessions.values()) {
+    if (session.status !== "live") {
+      continue;
+    }
+    if (!Number.isInteger(session.pid) || Number(session.pid) <= 0) {
+      continue;
+    }
+    if (isPidAlive(session.pid)) {
+      continue;
+    }
+    session.status = "closed";
+    session.exitCode ??= 0;
+    session.signal ??= null;
+    updateConversationMetadata(session.projectRoot, session.conversationHistoryId, {
+      label: session.label,
+      state: session.status,
+      shell: session.shell,
+      pid: session.pid,
+      backend: session.backend,
+      lastOutputAt: session.lastOutputAt,
+      selectedTrainId: session.attachedTrainId,
+      stationId: session.attachedStationId,
+      edgeId: session.attachedEdgeId,
+    });
+    persistSessionMeta(session);
+  }
+}
+
+function createPosixService(projectRoot) {
+  return spawn("python3", [oddtermServicePath, "--workspace-root", projectRoot], {
+    cwd: projectRoot,
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       ...process.env,
@@ -204,9 +246,9 @@ function createPosixService(workspaceRoot) {
   });
 }
 
-function createWindowsFallback(workspaceRoot) {
+function createWindowsFallback(projectRoot) {
   return spawn("powershell.exe", [], {
-    cwd: workspaceRoot,
+    cwd: projectRoot,
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       ...process.env,
@@ -364,7 +406,7 @@ function flushPendingRoomMirror(session, force = false) {
   session.pendingRoomMirror = null;
 
   if (content && !isMirrorNoise(content)) {
-    appendLiveRoomMessage(session.workspaceRoot, {
+    appendLiveRoomMessage(session.projectRoot, {
       roomId: mirror.roomId,
       senderId: sessionParticipantId(session.id),
       senderLabel: session.label,
@@ -401,7 +443,7 @@ function recordTerminalPayload(session, payload) {
   session.lastOutputAt = capturedAt;
 
   if (payload.type === "data") {
-    appendConversationEntry(session.workspaceRoot, session.conversationHistoryId, {
+    appendConversationEntry(session.projectRoot, session.conversationHistoryId, {
       entryKind: "output",
       actorRef: {
         id: sessionParticipantId(session.id),
@@ -423,7 +465,7 @@ function recordTerminalPayload(session, payload) {
   }
 
   if (payload.type === "error") {
-    appendConversationEntry(session.workspaceRoot, session.conversationHistoryId, {
+    appendConversationEntry(session.projectRoot, session.conversationHistoryId, {
       entryKind: "system",
       actorRef: {
         id: sessionParticipantId(session.id),
@@ -445,7 +487,7 @@ function recordTerminalPayload(session, payload) {
   }
 
   if (payload.type === "exit") {
-    appendConversationEntry(session.workspaceRoot, session.conversationHistoryId, {
+    appendConversationEntry(session.projectRoot, session.conversationHistoryId, {
       entryKind: "system",
       actorRef: {
         id: sessionParticipantId(session.id),
@@ -464,8 +506,8 @@ function recordTerminalPayload(session, payload) {
     }
   }
 
-  session.historyBytes = loadConversationHistoryStats(session.workspaceRoot, session.conversationHistoryId).historyBytes;
-  updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
+  session.historyBytes = loadConversationHistoryStats(session.projectRoot, session.conversationHistoryId).historyBytes;
+  updateConversationMetadata(session.projectRoot, session.conversationHistoryId, {
     label: session.label,
     state: session.status,
     shell: session.shell,
@@ -478,15 +520,15 @@ function recordTerminalPayload(session, payload) {
   });
 }
 
-function createSession(workspaceRoot, options = {}) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+function createSession(projectRoot, options = {}) {
+  const store = ensureWorkspaceStore(projectRoot);
   const sessionId = randomUUID();
-  const sessionDirectory = sessionRoot(store.workspaceRoot, sessionId);
+  const sessionDirectory = sessionRoot(store.projectRoot, sessionId);
   mkdirSync(sessionDirectory, { recursive: true });
 
   const session = {
     id: sessionId,
-    workspaceRoot: store.workspaceRoot,
+    projectRoot: store.projectRoot,
     label: options.label?.trim() || `shell-${store.sessions.size + 1}`,
     archived: false,
     status: "live",
@@ -502,14 +544,14 @@ function createSession(workspaceRoot, options = {}) {
     exitCode: null,
     signal: null,
     clients: new Set(),
-    metaPath: sessionMetaPath(store.workspaceRoot, sessionId),
+    metaPath: sessionMetaPath(store.projectRoot, sessionId),
     historyBytes: 0,
-    processRef: process.platform === "win32" ? createWindowsFallback(store.workspaceRoot) : createPosixService(store.workspaceRoot),
+    processRef: process.platform === "win32" ? createWindowsFallback(store.projectRoot) : createPosixService(store.projectRoot),
     stdout: null,
     pendingRoomMirror: null,
   };
 
-  ensureConversationHistory(store.workspaceRoot, {
+  ensureConversationHistory(store.projectRoot, {
     historyId: session.conversationHistoryId,
     ownerKind: "oddterm_session",
     ownerRef: session.id,
@@ -537,7 +579,7 @@ function createSession(workspaceRoot, options = {}) {
       session.shell = typeof payload.shell === "string" ? payload.shell : null;
       session.pid = typeof payload.pid === "number" ? payload.pid : null;
       session.backend = typeof payload.backend === "string" ? payload.backend : null;
-      updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
+      updateConversationMetadata(session.projectRoot, session.conversationHistoryId, {
         label: session.label,
         shell: session.shell,
         pid: session.pid,
@@ -610,7 +652,7 @@ function createSession(workspaceRoot, options = {}) {
   store.sessions.set(sessionId, session);
   setActiveSession(store, sessionId);
   persistSessionMeta(session);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessage(store.projectRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: session.label,
@@ -626,8 +668,8 @@ function createSession(workspaceRoot, options = {}) {
   return session;
 }
 
-function resolveSession(workspaceRoot, sessionId) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+function resolveSession(projectRoot, sessionId) {
+  const store = ensureWorkspaceStore(projectRoot);
   if (!sessionId) {
     return null;
   }
@@ -635,7 +677,7 @@ function resolveSession(workspaceRoot, sessionId) {
 }
 
 function replayHistory(session, socket) {
-  const { entries } = loadConversationHistory(session.workspaceRoot, session.conversationHistoryId);
+  const { entries } = loadConversationHistory(session.projectRoot, session.conversationHistoryId);
   for (const entry of entries) {
     const text = conversationEntryText(entry);
     if (text) {
@@ -650,7 +692,7 @@ function attachSocketToSession(session, socket) {
   if (session.shell || session.pid || session.backend) {
     sendJson(socket, {
       type: "ready",
-      workspaceRoot: session.workspaceRoot,
+      projectRoot: session.projectRoot,
       shell: session.shell ?? "shell",
       pid: session.pid ?? 0,
       backend: session.backend ?? "backend-service",
@@ -708,21 +750,21 @@ function attachSocketToSession(session, socket) {
   socket.on("error", detach);
 }
 
-export function createGTermSession(workspaceRoot, options = {}) {
-  return serializeSession(createSession(workspaceRoot, options));
+export function createGTermSession(projectRoot, options = {}) {
+  return serializeSession(createSession(projectRoot, options));
 }
 
-export function ensureGTermSession(workspaceRoot, options = {}) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function ensureGTermSession(projectRoot, options = {}) {
+  const store = ensureWorkspaceStore(projectRoot);
   const existing = resolveSessionByLabel(store, options.label);
   if (existing) {
     return serializeSession(existing);
   }
-  return serializeSession(createSession(workspaceRoot, options));
+  return serializeSession(createSession(projectRoot, options));
 }
 
-export function renameGTermSession(workspaceRoot, sessionId, label) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function renameGTermSession(projectRoot, sessionId, label) {
+  const store = ensureWorkspaceStore(projectRoot);
   const session = store.sessions.get(sessionId);
   if (!session) {
     throw new Error("terminal session not found");
@@ -733,11 +775,11 @@ export function renameGTermSession(workspaceRoot, sessionId, label) {
   }
   const previousLabel = session.label;
   session.label = nextLabel;
-  updateConversationMetadata(store.workspaceRoot, session.conversationHistoryId, {
+  updateConversationMetadata(store.projectRoot, session.conversationHistoryId, {
     label: session.label,
   });
   persistSessionMeta(session);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessage(store.projectRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: nextLabel,
@@ -753,8 +795,8 @@ export function renameGTermSession(workspaceRoot, sessionId, label) {
   return serializeSession(session);
 }
 
-export function closeGTermSession(workspaceRoot, sessionId) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function closeGTermSession(projectRoot, sessionId) {
+  const store = ensureWorkspaceStore(projectRoot);
   const session = store.sessions.get(sessionId);
   if (!session) {
     throw new Error("terminal session not found");
@@ -776,7 +818,7 @@ export function closeGTermSession(workspaceRoot, sessionId) {
   session.status = "closed";
   session.archived = true;
   session.exitCode ??= 0;
-  updateConversationMetadata(store.workspaceRoot, session.conversationHistoryId, {
+  updateConversationMetadata(store.projectRoot, session.conversationHistoryId, {
     label: session.label,
     state: "archived",
     archived: true,
@@ -792,7 +834,7 @@ export function closeGTermSession(workspaceRoot, sessionId) {
   }
   store.sessions.delete(sessionId);
   setActiveSession(store, Array.from(store.sessions.keys())[0] ?? null);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessage(store.projectRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: session.label,
@@ -808,62 +850,63 @@ export function closeGTermSession(workspaceRoot, sessionId) {
   return serializeSession(session);
 }
 
-export function closeAllGTermSessions(workspaceRoot) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function closeAllGTermSessions(projectRoot) {
+  const store = ensureWorkspaceStore(projectRoot);
   const liveSessionIds = Array.from(store.sessions.values())
     .filter((session) => session.status === "live")
     .map((session) => session.id);
 
   const closedSessions = [];
   for (const sessionId of liveSessionIds) {
-    closedSessions.push(closeGTermSession(workspaceRoot, sessionId));
+    closedSessions.push(closeGTermSession(projectRoot, sessionId));
   }
 
   return {
-    workspaceRoot: store.workspaceRoot,
+    projectRoot: store.projectRoot,
     closedSessions,
   };
 }
 
-export function selectGTermSession(workspaceRoot, sessionId) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function selectGTermSession(projectRoot, sessionId) {
+  const store = ensureWorkspaceStore(projectRoot);
   if (!store.sessions.has(sessionId)) {
     throw new Error("terminal session not found");
   }
   setActiveSession(store, sessionId);
-  return loadGTermPoolState(workspaceRoot);
+  return loadGTermPoolState(projectRoot);
 }
 
-export function loadGTermPoolState(workspaceRoot) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function loadGTermPoolState(projectRoot) {
+  const store = ensureWorkspaceStore(projectRoot);
+  reconcileSessionLiveness(store);
   return {
-    workspaceRoot: store.workspaceRoot,
+    projectRoot: store.projectRoot,
     activeSessionId: store.activeSessionId,
     sessions: Array.from(store.sessions.values())
       .map((session) => {
-        session.historyBytes = loadConversationHistoryStats(store.workspaceRoot, session.conversationHistoryId).historyBytes;
+        session.historyBytes = loadConversationHistoryStats(store.projectRoot, session.conversationHistoryId).historyBytes;
         return serializeSession(session);
       })
       .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt))),
   };
 }
 
-export function readGTermSessionTail(workspaceRoot, sessionId, lineCount = 120) {
+export function readGTermSessionTail(projectRoot, sessionId, lineCount = 120) {
   const historyId = sessionConversationHistoryId(sessionId);
-  const extracted = extractConversationRange(resolve(workspaceRoot), historyId, {
+  const extracted = extractConversationRange(resolve(projectRoot), historyId, {
     entryCount: Math.max(1, lineCount),
     sanitizeTerminalText: true,
   });
 
   return {
-    session: loadGTermPoolState(workspaceRoot).sessions.find((entry) => entry.id === sessionId) ?? null,
+    session: loadGTermPoolState(projectRoot).sessions.find((entry) => entry.id === sessionId) ?? null,
     chunks: extracted.entries,
     text: extracted.text,
   };
 }
 
-export function appendGTermSessionEntry(workspaceRoot, sessionId, text, options = {}) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function appendGTermSessionEntry(projectRoot, sessionId, text, options = {}) {
+  const store = ensureWorkspaceStore(projectRoot);
   const session = store.sessions.get(sessionId);
   if (!session) {
     throw new Error("terminal session not found");
@@ -874,7 +917,7 @@ export function appendGTermSessionEntry(workspaceRoot, sessionId, text, options 
     return serializeSession(session);
   }
 
-  appendConversationEntry(session.workspaceRoot, session.conversationHistoryId, {
+  appendConversationEntry(session.projectRoot, session.conversationHistoryId, {
     entryKind: options.chunkKind === "service_event" ? "system" : "output",
     actorRef: {
       id: sessionParticipantId(session.id),
@@ -887,8 +930,8 @@ export function appendGTermSessionEntry(workspaceRoot, sessionId, text, options 
     },
   });
   session.lastOutputAt = new Date().toISOString();
-  session.historyBytes = loadConversationHistoryStats(session.workspaceRoot, session.conversationHistoryId).historyBytes;
-  updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
+  session.historyBytes = loadConversationHistoryStats(session.projectRoot, session.conversationHistoryId).historyBytes;
+  updateConversationMetadata(session.projectRoot, session.conversationHistoryId, {
     label: session.label,
     state: session.status,
     shell: session.shell,
@@ -901,8 +944,8 @@ export function appendGTermSessionEntry(workspaceRoot, sessionId, text, options 
   return serializeSession(session);
 }
 
-export function sendGTermSessionInput(workspaceRoot, sessionId, data) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+export function sendGTermSessionInput(projectRoot, sessionId, data) {
+  const store = ensureWorkspaceStore(projectRoot);
   const session = store.sessions.get(sessionId);
   if (!session) {
     throw new Error("terminal session not found");
@@ -940,7 +983,7 @@ export function sendGTermSessionInput(workspaceRoot, sessionId, data) {
 }
 
 export function sendGTermSessionRoomInput(
-  workspaceRoot,
+  projectRoot,
   sessionId,
   {
     data,
@@ -950,7 +993,7 @@ export function sendGTermSessionRoomInput(
     edgeId = null,
   } = {},
 ) {
-  const store = ensureWorkspaceStore(workspaceRoot);
+  const store = ensureWorkspaceStore(projectRoot);
   const session = store.sessions.get(sessionId);
   if (!session) {
     throw new Error("terminal session not found");
@@ -1007,11 +1050,11 @@ export function attachGTermServer(server, { defaultWorkspaceRoot }) {
   const socketServer = new WebSocketServer({ noServer: true });
 
   socketServer.on("connection", (socket, request, url) => {
-    const workspaceRoot = resolve(url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot);
+    const projectRoot = resolve(url.searchParams.get("projectRoot") || defaultWorkspaceRoot);
     const sessionId = url.searchParams.get("sessionId");
     const session =
-      resolveSession(workspaceRoot, sessionId) ??
-      createSession(workspaceRoot, {
+      resolveSession(projectRoot, sessionId) ??
+      createSession(projectRoot, {
         selectedTrainId: url.searchParams.get("selectedTrainId") || null,
         stationId: url.searchParams.get("stationId") || null,
         edgeId: url.searchParams.get("edgeId") || null,

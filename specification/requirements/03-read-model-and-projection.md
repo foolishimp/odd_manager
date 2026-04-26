@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-PROJ-*`
 **Status**: Active
 **Category**: Constraint / Guarantee
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-PROJ-001 - The managed system is projected as a live workspace world
 
@@ -104,10 +104,10 @@ Acceptance Criteria
 - the UI does not require operators to trust a summary that cannot be expanded
   into its justifying objects and evidence
 
-### REQ-OM-PROJ-008 - Missing builder detail is represented as explicit placeholder state
+### REQ-OM-PROJ-008 - Missing domain-pack detail is represented as explicit placeholder state
 
 The product shall represent missing, provisional, or not-yet-published
-builder-domain detail as explicit placeholder state rather than as silent
+domain-pack detail as explicit placeholder state rather than as silent
 absence or fabricated structure.
 
 Acceptance Criteria
@@ -208,3 +208,35 @@ Acceptance Criteria
   domain explanation where upstream publishes them
 - overview and inspector layers can trace a blocked or carried posture back to
   the governing ambiguity or capability surface
+
+### REQ-OM-PROJ-015 - The first supported odd_sdlc pack projects the observed delivery artifact family
+
+`odd_manager` shall treat the published `odd_sdlc` delivery artifact family as
+first-class domain overlays for the first supported domain pack.
+
+Acceptance Criteria
+- when the active workspace publishes them, projections can surface generated
+  requirement inventory, requirement-closure, ambiguity-register,
+  active-workflow, generated-scenario, testcase-authority, generated-design,
+  test-run-archive, release, and FP ledger/manifest/result surfaces
+- those surfaces remain domain overlays rather than being redefined as
+  GTL/ABG-native runtime primitives
+- missing or stale generated surfaces are represented honestly with explicit
+  absence or staleness state
+- core GTL/ABG runtime projections remain available regardless of whether the
+  full `odd_sdlc` delivery artifact family is present
+
+### REQ-OM-PROJ-016 - Workspace identity and governance identity are projected separately
+
+`odd_manager` shall project the selected workspace's primary project identity
+and governance-package identity as separate world facts.
+
+Acceptance Criteria
+- the manager can project a primary identity such as `odd_sdlc` or
+  `odd_world_model` for the selected workspace
+- the manager can also project the governing package or runtime package where
+  that differs from primary identity
+- domain-page resolution, landing-page selection, and shell framing can consume
+  those projected identity fields without scraping labels out of unrelated UI
+- identity uncertainty is represented explicitly instead of being silently
+  guessed from repo naming alone

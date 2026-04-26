@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 import { emitAgentConsoleEvent, subscribeAgentConsoleEvents } from "./odd-console-events.mjs";
 import { appendLiveRoomMessage, loadRoomMessages } from "./oddchat-room-service.mjs";
 import {
+  attachSessionToGBoardTopic,
   loadGBoardTopicById,
   loadGBoardTopicByRoomId,
 } from "./oddboard-service.mjs";
 import {
+  appendGTermSessionEntry,
+  createGTermSession,
   loadGTermPoolState,
   sendGTermSessionInput,
 } from "./oddterm-pool-service.mjs";
@@ -22,20 +25,24 @@ const CODEX_WORKER_STARTUP_TIMEOUT_MS = 12000;
 const CODEX_WORKER_POLL_INTERVAL_MS = 150;
 const MANAGER_RUNTIME_ROOT = fileURLToPath(new URL("../../runtime/", import.meta.url));
 
-function participantsDirectory(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/oddchat_participants");
+function participantsDirectory(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_participants");
 }
 
-function participantsPath(workspaceRoot) {
-  return join(participantsDirectory(workspaceRoot), "participants.json");
+function participantsPath(projectRoot) {
+  return join(participantsDirectory(projectRoot), "participants.json");
 }
 
-function oddChatWorkersDirectory(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/oddchat_workers");
+function oddChatWorkersDirectory(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_workers");
 }
 
-function oddChatWorkersStatePath(workspaceRoot) {
-  return join(oddChatWorkersDirectory(workspaceRoot), "workers.json");
+function oddChatWorkersStatePath(projectRoot) {
+  return join(oddChatWorkersDirectory(projectRoot), "workers.json");
+}
+
+function oddChatBootstrapDirectory(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_bootstrap");
 }
 
 function readJsonFile(filePath, fallback) {
@@ -89,13 +96,50 @@ function participantLabelFor(provider, sessionLabel) {
   return shellLabel ? `${providerLabel} · ${shellLabel}` : providerLabel;
 }
 
-function ensureStore(workspaceRoot) {
-  mkdirSync(participantsDirectory(workspaceRoot), { recursive: true });
+function normalizeParticipantRole(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "worker";
+  }
+  if (!["worker", "reviewer"].includes(normalized)) {
+    throw new Error("participant role must be worker or reviewer");
+  }
+  return normalized;
 }
 
-function loadState(workspaceRoot) {
-  ensureStore(workspaceRoot);
-  const payload = readJsonFile(participantsPath(workspaceRoot), {
+function nextTopicParticipantLabel(projectRoot, role) {
+  const normalizedRole = normalizeParticipantRole(role);
+  const labels = loadGTermPoolState(projectRoot).sessions
+    .map((session) => String(session.label ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const pattern = new RegExp(`^${normalizedRole}(\\d+)$`);
+  let highest = 0;
+  for (const label of labels) {
+    const match = pattern.exec(label);
+    if (!match) {
+      continue;
+    }
+    highest = Math.max(highest, Number(match[1]) || 0);
+  }
+  return `${normalizedRole}${highest + 1}`;
+}
+
+function addedParticipantAnnouncement(role, sessionLabel, provider) {
+  const roleLabel = normalizeParticipantRole(role);
+  const providerLabel = capitalize(provider);
+  return {
+    title: `Added ${sessionLabel}`,
+    body: `Added ${sessionLabel} as a ${roleLabel} using ${providerLabel}. A linked terminal session is available below.`,
+  };
+}
+
+function ensureStore(projectRoot) {
+  mkdirSync(participantsDirectory(projectRoot), { recursive: true });
+}
+
+function loadState(projectRoot) {
+  ensureStore(projectRoot);
+  const payload = readJsonFile(participantsPath(projectRoot), {
     participants: [],
   });
   const participants = Array.isArray(payload?.participants)
@@ -104,9 +148,9 @@ function loadState(workspaceRoot) {
   return { participants };
 }
 
-function loadWorkerState(workspaceRoot) {
-  mkdirSync(oddChatWorkersDirectory(workspaceRoot), { recursive: true });
-  const payload = readJsonFile(oddChatWorkersStatePath(workspaceRoot), {
+function loadWorkerState(projectRoot) {
+  mkdirSync(oddChatWorkersDirectory(projectRoot), { recursive: true });
+  const payload = readJsonFile(oddChatWorkersStatePath(projectRoot), {
     workers: [],
   });
   const workers = Array.isArray(payload?.workers)
@@ -115,10 +159,10 @@ function loadWorkerState(workspaceRoot) {
   return { workers };
 }
 
-function writeWorkerState(workspaceRoot, state) {
-  mkdirSync(oddChatWorkersDirectory(workspaceRoot), { recursive: true });
+function writeWorkerState(projectRoot, state) {
+  mkdirSync(oddChatWorkersDirectory(projectRoot), { recursive: true });
   writeFileSync(
-    oddChatWorkersStatePath(workspaceRoot),
+    oddChatWorkersStatePath(projectRoot),
     `${JSON.stringify(
       {
         workers: state.workers,
@@ -130,10 +174,10 @@ function writeWorkerState(workspaceRoot, state) {
   );
 }
 
-function writeState(workspaceRoot, state) {
-  ensureStore(workspaceRoot);
+function writeState(projectRoot, state) {
+  ensureStore(projectRoot);
   writeFileSync(
-    participantsPath(workspaceRoot),
+    participantsPath(projectRoot),
     `${JSON.stringify(
       {
         participants: state.participants,
@@ -145,16 +189,16 @@ function writeState(workspaceRoot, state) {
   );
 }
 
-function sessionById(workspaceRoot, sessionId) {
+function sessionById(projectRoot, sessionId) {
   return (
-    loadGTermPoolState(workspaceRoot).sessions.find((session) => session.id === sessionId) ?? null
+    loadGTermPoolState(projectRoot).sessions.find((session) => session.id === sessionId) ?? null
   );
 }
 
-function resolveRoomContext(workspaceRoot, { roomId = null, topicId = null } = {}) {
+function resolveRoomContext(projectRoot, { roomId = null, topicId = null } = {}) {
   const resolvedTopicId = trimmedText(topicId);
   if (resolvedTopicId) {
-    const topic = loadGBoardTopicById(workspaceRoot, resolvedTopicId);
+    const topic = loadGBoardTopicById(projectRoot, resolvedTopicId);
     if (!topic) {
       throw new Error("topic not found");
     }
@@ -173,7 +217,7 @@ function resolveRoomContext(workspaceRoot, { roomId = null, topicId = null } = {
     throw new Error("room id or topic id is required");
   }
 
-  const topic = loadGBoardTopicByRoomId(workspaceRoot, resolvedRoomId);
+  const topic = loadGBoardTopicByRoomId(projectRoot, resolvedRoomId);
   return {
     roomId: resolvedRoomId,
     topicId: topic?.id ?? null,
@@ -184,10 +228,10 @@ function resolveRoomContext(workspaceRoot, { roomId = null, topicId = null } = {
   };
 }
 
-function participantSnapshot(workspaceRoot, participant) {
-  const session = sessionById(workspaceRoot, participant.sessionId);
+function participantSnapshot(projectRoot, participant) {
+  const session = sessionById(projectRoot, participant.sessionId);
   const derivedStatus =
-    participant.status === "connected" && session && session.status !== "live"
+    participant.status === "connected" && (!session || session.status !== "live")
       ? "stale"
       : participant.status;
   return {
@@ -198,9 +242,10 @@ function participantSnapshot(workspaceRoot, participant) {
   };
 }
 
-function listParticipants(workspaceRoot, options = {}) {
-  const state = loadState(workspaceRoot);
+function listParticipants(projectRoot, options = {}) {
+  const state = loadState(projectRoot);
   return state.participants
+    .map((participant) => participantSnapshot(projectRoot, participant))
     .filter((participant) => {
       if (options.sessionId && participant.sessionId !== options.sessionId) {
         return false;
@@ -215,12 +260,27 @@ function listParticipants(workspaceRoot, options = {}) {
         return false;
       }
       return true;
-    })
-    .map((participant) => participantSnapshot(workspaceRoot, participant));
+    });
 }
 
-function resolveParticipant(workspaceRoot, options = {}) {
-  const state = loadState(workspaceRoot);
+function messageVisibleToSession(message, sessionId) {
+  const normalizedSessionId = trimmedText(sessionId);
+  if (!normalizedSessionId) {
+    return true;
+  }
+  const recipientSessionIds = Array.isArray(message?.recipientSessionIds)
+    ? message.recipientSessionIds
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    : [];
+  if (recipientSessionIds.length === 0) {
+    return true;
+  }
+  return recipientSessionIds.includes(normalizedSessionId);
+}
+
+function resolveParticipant(projectRoot, options = {}) {
+  const state = loadState(projectRoot);
   const participantId = trimmedText(options.participantId);
   if (participantId) {
     const participant = state.participants.find((entry) => entry.id === participantId) ?? null;
@@ -245,28 +305,35 @@ function resolveParticipant(workspaceRoot, options = {}) {
   return { state, participant };
 }
 
-function readMessagesSince(workspaceRoot, roomId, cursor, options = {}) {
+function readMessagesSince(projectRoot, roomId, cursor, options = {}) {
   const limit = clampNumber(options.limit, DEFAULT_READ_LIMIT, 1, MAX_READ_LIMIT);
   const excludeSenderId = trimmedText(options.excludeSenderId);
-  const messages = loadRoomMessages(workspaceRoot, roomId);
+  const sessionId = trimmedText(options.sessionId);
+  const messages = loadRoomMessages(projectRoot, roomId);
   const cursorId = trimmedText(cursor);
   const cursorIndex = cursorId ? messages.findIndex((message) => message.id === cursorId) : -1;
-  let windowMessages =
+  let scannedMessages =
     cursorId && cursorIndex >= 0 ? messages.slice(cursorIndex + 1) : messages.slice(-limit);
   let cursorFound = cursorId ? cursorIndex >= 0 : true;
+
+  if (scannedMessages.length > limit) {
+    scannedMessages = scannedMessages.slice(-limit);
+  }
+
+  let windowMessages = scannedMessages;
 
   if (excludeSenderId) {
     windowMessages = windowMessages.filter((message) => message.senderId !== excludeSenderId);
   }
 
-  if (windowMessages.length > limit) {
-    windowMessages = windowMessages.slice(-limit);
+  if (sessionId) {
+    windowMessages = windowMessages.filter((message) => messageVisibleToSession(message, sessionId));
   }
 
   return {
     messages: windowMessages,
     cursorFound,
-    nextCursor: windowMessages.at(-1)?.id ?? cursorId ?? null,
+    nextCursor: scannedMessages.at(-1)?.id ?? cursorId ?? null,
   };
 }
 
@@ -281,7 +348,7 @@ function updateParticipant(state, participantId, updater) {
   return next;
 }
 
-function writeParticipantCursor(workspaceRoot, state, participantId, nextCursor) {
+function writeParticipantCursor(projectRoot, state, participantId, nextCursor) {
   const timestamp = nowIso();
   updateParticipant(state, participantId, (participant) => ({
     ...participant,
@@ -289,7 +356,7 @@ function writeParticipantCursor(workspaceRoot, state, participantId, nextCursor)
     lastReadAt: nextCursor ? timestamp : participant.lastReadAt ?? null,
     updatedAt: timestamp,
   }));
-  writeState(workspaceRoot, state);
+  writeState(projectRoot, state);
 }
 
 function isPidAlive(pid) {
@@ -305,23 +372,23 @@ function isPidAlive(pid) {
   }
 }
 
-function pruneWorkerState(workspaceRoot, state = loadWorkerState(workspaceRoot)) {
+function pruneWorkerState(projectRoot, state = loadWorkerState(projectRoot)) {
   const nextWorkers = state.workers.filter((entry) => isPidAlive(entry.pid));
   if (nextWorkers.length !== state.workers.length) {
     state.workers = nextWorkers;
-    writeWorkerState(workspaceRoot, state);
+    writeWorkerState(projectRoot, state);
   }
   return state;
 }
 
-function codexWorkerLogPath(workspaceRoot, sessionId) {
+function codexWorkerLogPath(projectRoot, sessionId) {
   return join(
-    oddChatWorkersDirectory(workspaceRoot),
+    oddChatWorkersDirectory(projectRoot),
     `codex-${String(sessionId ?? "").trim() || "session"}.log`,
   );
 }
 
-function codexWorkerScriptPath(workspaceRoot) {
+function codexWorkerScriptPath(projectRoot) {
   const scriptPath = resolve(MANAGER_RUNTIME_ROOT, "odd_manager_codex_room_worker.mjs");
   if (!existsSync(scriptPath)) {
     throw new Error("odd_manager codex room worker was not found");
@@ -329,12 +396,12 @@ function codexWorkerScriptPath(workspaceRoot) {
   return scriptPath;
 }
 
-function stopManagedCodexWorker(workspaceRoot, sessionId) {
+function stopManagedCodexWorker(projectRoot, sessionId) {
   const resolvedSessionId = trimmedText(sessionId);
   if (!resolvedSessionId) {
     return;
   }
-  const state = pruneWorkerState(workspaceRoot);
+  const state = pruneWorkerState(projectRoot);
   let changed = false;
   state.workers = state.workers.filter((entry) => {
     if (entry.provider !== "codex" || entry.sessionId !== resolvedSessionId) {
@@ -351,11 +418,11 @@ function stopManagedCodexWorker(workspaceRoot, sessionId) {
     return false;
   });
   if (changed) {
-    writeWorkerState(workspaceRoot, state);
+    writeWorkerState(projectRoot, state);
   }
 }
 
-async function waitForManagedParticipantJoin(workspaceRoot, options = {}) {
+async function waitForManagedParticipantJoin(projectRoot, options = {}) {
   const sessionId = trimmedText(options.sessionId);
   const topicId = trimmedText(options.topicId);
   const provider = normalizeProvider(options.provider);
@@ -369,7 +436,7 @@ async function waitForManagedParticipantJoin(workspaceRoot, options = {}) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const participant = listParticipants(workspaceRoot, {
+    const participant = listParticipants(projectRoot, {
       sessionId,
       topicId,
       connectedOnly: true,
@@ -386,18 +453,28 @@ async function waitForManagedParticipantJoin(workspaceRoot, options = {}) {
   throw new Error("timed out waiting for the managed codex room worker to join the topic");
 }
 
-async function launchManagedCodexTopicJoin(workspaceRoot, join) {
-  stopManagedCodexWorker(workspaceRoot, join.sessionId);
-  const scriptPath = codexWorkerScriptPath(workspaceRoot);
-  const logPath = codexWorkerLogPath(workspaceRoot, join.sessionId);
+async function launchManagedCodexTopicJoin(projectRoot, join) {
+  stopManagedCodexWorker(projectRoot, join.sessionId);
+  const scriptPath = codexWorkerScriptPath(projectRoot);
+  const logPath = codexWorkerLogPath(projectRoot, join.sessionId);
   const outputFd = openSync(logPath, "a");
+
+  appendGTermSessionEntry(
+    projectRoot,
+    join.sessionId,
+    `[oddchat] Starting managed Codex worker for ${join.topicLabel}. The room agent runs detached on the server; this shell remains available as a backing session.\n`,
+    {
+      stream: "control",
+      chunkKind: "service_event",
+    },
+  );
 
   try {
     const child = spawn("node", [scriptPath], {
-      cwd: workspaceRoot,
+      cwd: projectRoot,
       env: {
         ...process.env,
-        OMAN_WORKSPACE_ROOT: workspaceRoot,
+        OMAN_WORKSPACE_ROOT: projectRoot,
         OMAN_SESSION_ID: join.sessionId,
         OMAN_SESSION_LABEL: join.sessionLabel,
         OMAN_TOPIC_ID: join.topicId,
@@ -414,7 +491,7 @@ async function launchManagedCodexTopicJoin(workspaceRoot, join) {
 
     child.unref();
 
-    const state = pruneWorkerState(workspaceRoot);
+    const state = pruneWorkerState(projectRoot);
     state.workers.push({
       provider: "codex",
       sessionId: join.sessionId,
@@ -425,22 +502,32 @@ async function launchManagedCodexTopicJoin(workspaceRoot, join) {
       startedAt: nowIso(),
       logPath,
     });
-    writeWorkerState(workspaceRoot, state);
+    writeWorkerState(projectRoot, state);
 
-    await waitForManagedParticipantJoin(workspaceRoot, {
+    await waitForManagedParticipantJoin(projectRoot, {
       sessionId: join.sessionId,
       topicId: join.topicId,
       provider: "codex",
       pid: child.pid,
     });
 
-    emitAgentConsoleEvent(workspaceRoot, {
+    emitAgentConsoleEvent(projectRoot, {
       kind: "room-participant-managed-worker",
       roomId: join.roomId,
       sessionId: join.sessionId,
       provider: join.provider,
       topicId: join.topicId,
     });
+
+    appendGTermSessionEntry(
+      projectRoot,
+      join.sessionId,
+      `[oddchat] Managed Codex worker connected to ${join.topicLabel}. Replies will appear in the OddChat room; the shell prompt here is idle by design.\n`,
+      {
+        stream: "control",
+        chunkKind: "service_event",
+      },
+    );
 
     return {
       ...join,
@@ -449,31 +536,44 @@ async function launchManagedCodexTopicJoin(workspaceRoot, join) {
       workerPid: child.pid,
       workerLogPath: logPath,
     };
+  } catch (error) {
+    stopManagedCodexWorker(projectRoot, join.sessionId);
+    appendGTermSessionEntry(
+      projectRoot,
+      join.sessionId,
+      `[oddchat] Managed Codex worker failed to join ${join.topicLabel}: ${error instanceof Error ? error.message : String(error)}\n`,
+      {
+        stream: "stderr",
+        chunkKind: "service_event",
+      },
+    );
+    throw error;
   } finally {
     closeSync(outputFd);
   }
 }
 
-export function joinRoomParticipant(workspaceRoot, options = {}) {
+export function joinRoomParticipant(projectRoot, options = {}) {
   const sessionId = trimmedText(options.sessionId);
   if (!sessionId) {
     throw new Error("session id is required");
   }
 
-  const session = sessionById(workspaceRoot, sessionId);
+  const session = sessionById(projectRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
 
   const provider = normalizeProvider(options.provider);
-  const room = resolveRoomContext(workspaceRoot, options);
+  const room = resolveRoomContext(projectRoot, options);
   const participantId = participantIdFor(sessionId, provider);
   const participantLabel =
     trimmedText(options.participantLabel) ?? participantLabelFor(provider, session.label);
-  const state = loadState(workspaceRoot);
+  const state = loadState(projectRoot);
   const timestamp = nowIso();
   const historyLimit = clampNumber(options.historyLimit, DEFAULT_HISTORY_LIMIT, 0, MAX_READ_LIMIT);
-  const history = historyLimit > 0 ? loadRoomMessages(workspaceRoot, room.roomId, historyLimit) : [];
+  const history = historyLimit > 0 ? loadRoomMessages(projectRoot, room.roomId, historyLimit) : [];
+  const visibleHistory = history.filter((message) => messageVisibleToSession(message, session.id));
   const lastReadMessageId = history.at(-1)?.id ?? null;
   const existingIndex = state.participants.findIndex((entry) => entry.id === participantId);
 
@@ -507,8 +607,8 @@ export function joinRoomParticipant(workspaceRoot, options = {}) {
     state.participants.push(nextParticipant);
   }
 
-  writeState(workspaceRoot, state);
-  emitAgentConsoleEvent(workspaceRoot, {
+  writeState(projectRoot, state);
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-participant-joined",
     roomId: room.roomId,
     participantId,
@@ -517,15 +617,15 @@ export function joinRoomParticipant(workspaceRoot, options = {}) {
 
   return {
     ok: true,
-    participant: participantSnapshot(workspaceRoot, nextParticipant),
+    participant: participantSnapshot(projectRoot, nextParticipant),
     room,
-    messages: history,
+    messages: visibleHistory,
     nextCursor: lastReadMessageId,
   };
 }
 
-export function leaveRoomParticipant(workspaceRoot, options = {}) {
-  const { state, participant } = resolveParticipant(workspaceRoot, options);
+export function leaveRoomParticipant(projectRoot, options = {}) {
+  const { state, participant } = resolveParticipant(projectRoot, options);
   const timestamp = nowIso();
   const updated = updateParticipant(state, participant.id, (current) => ({
     ...current,
@@ -533,8 +633,8 @@ export function leaveRoomParticipant(workspaceRoot, options = {}) {
     updatedAt: timestamp,
     leftAt: timestamp,
   }));
-  writeState(workspaceRoot, state);
-  emitAgentConsoleEvent(workspaceRoot, {
+  writeState(projectRoot, state);
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-participant-left",
     roomId: updated.roomId,
     participantId: updated.id,
@@ -542,48 +642,50 @@ export function leaveRoomParticipant(workspaceRoot, options = {}) {
   });
   return {
     ok: true,
-    participant: participantSnapshot(workspaceRoot, updated),
+    participant: participantSnapshot(projectRoot, updated),
   };
 }
 
-export function getRoomParticipantStatus(workspaceRoot, options = {}) {
-  const { participant } = resolveParticipant(workspaceRoot, options);
-  const snapshot = participantSnapshot(workspaceRoot, participant);
-  const unread = readMessagesSince(workspaceRoot, snapshot.roomId, snapshot.lastReadMessageId, {
+export function getRoomParticipantStatus(projectRoot, options = {}) {
+  const { participant } = resolveParticipant(projectRoot, options);
+  const snapshot = participantSnapshot(projectRoot, participant);
+  const unread = readMessagesSince(projectRoot, snapshot.roomId, snapshot.lastReadMessageId, {
     limit: MAX_READ_LIMIT,
     excludeSenderId: snapshot.id,
+    sessionId: snapshot.sessionId,
   });
   return {
     ok: true,
     participant: snapshot,
     unreadCount: unread.messages.length,
     nextCursor: unread.nextCursor,
-    participants: listParticipants(workspaceRoot, {
+    participants: listParticipants(projectRoot, {
       roomId: snapshot.roomId,
       connectedOnly: true,
     }),
   };
 }
 
-export function readRoomParticipant(workspaceRoot, options = {}) {
-  const { state, participant } = resolveParticipant(workspaceRoot, options);
+export function readRoomParticipant(projectRoot, options = {}) {
+  const { state, participant } = resolveParticipant(projectRoot, options);
   if (participant.status !== "connected") {
     throw new Error("room participant is not connected");
   }
 
   const cursor = trimmedText(options.cursor) ?? participant.lastReadMessageId ?? null;
-  const result = readMessagesSince(workspaceRoot, participant.roomId, cursor, {
+  const result = readMessagesSince(projectRoot, participant.roomId, cursor, {
     limit: options.limit,
     excludeSenderId: options.excludeSelf === false ? null : participant.id,
+    sessionId: participant.sessionId,
   });
 
   if (!trimmedText(options.cursor) && result.nextCursor && result.nextCursor !== participant.lastReadMessageId) {
-    writeParticipantCursor(workspaceRoot, state, participant.id, result.nextCursor);
+    writeParticipantCursor(projectRoot, state, participant.id, result.nextCursor);
   }
 
   return {
     ok: true,
-    participant: participantSnapshot(workspaceRoot, state.participants.find((entry) => entry.id === participant.id) ?? participant),
+    participant: participantSnapshot(projectRoot, state.participants.find((entry) => entry.id === participant.id) ?? participant),
     roomId: participant.roomId,
     cursor,
     cursorFound: result.cursorFound,
@@ -592,7 +694,7 @@ export function readRoomParticipant(workspaceRoot, options = {}) {
   };
 }
 
-export async function waitRoomParticipant(workspaceRoot, options = {}) {
+export async function waitRoomParticipant(projectRoot, options = {}) {
   const timeoutMs = clampNumber(
     options.timeoutMs,
     DEFAULT_WAIT_TIMEOUT_MS,
@@ -600,7 +702,7 @@ export async function waitRoomParticipant(workspaceRoot, options = {}) {
     MAX_WAIT_TIMEOUT_MS,
   );
 
-  const readCurrent = () => readRoomParticipant(workspaceRoot, options);
+  const readCurrent = () => readRoomParticipant(projectRoot, options);
   const immediate = readCurrent();
   if (immediate.messages.length > 0) {
     return immediate;
@@ -623,7 +725,7 @@ export async function waitRoomParticipant(workspaceRoot, options = {}) {
       finish(readCurrent());
     }, timeoutMs);
 
-    const unsubscribe = subscribeAgentConsoleEvents(workspaceRoot, (event) => {
+    const unsubscribe = subscribeAgentConsoleEvents(projectRoot, (event) => {
       if (event?.roomId && immediate.roomId && event.roomId !== immediate.roomId) {
         return;
       }
@@ -635,8 +737,8 @@ export async function waitRoomParticipant(workspaceRoot, options = {}) {
   });
 }
 
-export function postRoomParticipantMessage(workspaceRoot, options = {}) {
-  const { state, participant } = resolveParticipant(workspaceRoot, options);
+export function postRoomParticipantMessage(projectRoot, options = {}) {
+  const { state, participant } = resolveParticipant(projectRoot, options);
   if (participant.status !== "connected") {
     throw new Error("room participant is not connected");
   }
@@ -646,7 +748,7 @@ export function postRoomParticipantMessage(workspaceRoot, options = {}) {
     throw new Error("message body is required");
   }
 
-  const message = appendLiveRoomMessage(workspaceRoot, {
+  const message = appendLiveRoomMessage(projectRoot, {
     roomId: participant.roomId,
     senderId: participant.id,
     senderLabel: participant.participantLabel,
@@ -663,11 +765,11 @@ export function postRoomParticipantMessage(workspaceRoot, options = {}) {
     lastPostedAt: timestamp,
     updatedAt: timestamp,
   }));
-  writeState(workspaceRoot, state);
+  writeState(projectRoot, state);
 
   return {
     ok: true,
-    participant: participantSnapshot(workspaceRoot, updated),
+    participant: participantSnapshot(projectRoot, updated),
     message,
   };
 }
@@ -675,6 +777,106 @@ export function postRoomParticipantMessage(workspaceRoot, options = {}) {
 function shQuote(value) {
   const text = String(value ?? "");
   return `'${text.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function writeCodexBootstrapScript(
+  projectRoot,
+  {
+    scriptPath,
+    env,
+    prompt = null,
+    includeIrcApprovals = false,
+    scriptLabel = "session",
+  } = {},
+) {
+  mkdirSync(oddChatBootstrapDirectory(projectRoot), { recursive: true });
+  const filePath = join(
+    oddChatBootstrapDirectory(projectRoot),
+    `codex-room-${String(scriptLabel ?? "session")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-") || "session"}.sh`,
+  );
+  const configArgs = [
+    'mcp_servers.odd_manager_room.command="node"',
+    `mcp_servers.odd_manager_room.args=${JSON.stringify([scriptPath])}`,
+    "mcp_servers.odd_manager_room.startup_timeout_sec=120",
+    ...codexRoomToolApprovalArgs({ includeIrc: includeIrcApprovals }),
+    ...Object.entries(env).map(
+      ([key, value]) =>
+        `mcp_servers.odd_manager_room.env.${key}=${JSON.stringify(String(value))}`,
+    ),
+  ];
+  const lines = [
+    "#!/bin/zsh",
+    "set -euo pipefail",
+    `cd ${shQuote(projectRoot)}`,
+    "exec codex \\",
+    ...configArgs.map((entry, index) => {
+      const isLastConfigArg = index === configArgs.length - 1;
+      const hasPrompt = Boolean(trimmedText(prompt));
+      const needsContinuation = !isLastConfigArg || hasPrompt;
+      return `  -c ${shQuote(entry)}${needsContinuation ? " \\" : ""}`;
+    }),
+    ...(trimmedText(prompt) ? [`  ${shQuote(prompt)}`] : []),
+    "",
+  ];
+  writeFileSync(filePath, `${lines.join("\n")}\n`, "utf8");
+  return filePath;
+}
+
+function writeClaudeBootstrapScript(
+  projectRoot,
+  {
+    scriptPath,
+    env,
+    prompt = null,
+    scriptLabel = "session",
+  } = {},
+) {
+  mkdirSync(oddChatBootstrapDirectory(projectRoot), { recursive: true });
+  const slug =
+    String(scriptLabel ?? "session")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-") || "session";
+  const configPath = join(oddChatBootstrapDirectory(projectRoot), `claude-room-${slug}.config.json`);
+  const filePath = join(oddChatBootstrapDirectory(projectRoot), `claude-room-${slug}.sh`);
+  const config = JSON.stringify(
+    {
+      mcpServers: {
+        odd_manager_room: {
+          type: "stdio",
+          command: "node",
+          args: [scriptPath],
+          env,
+        },
+      },
+    },
+    null,
+    2,
+  );
+  const args = [
+    "--dangerously-skip-permissions",
+    "--strict-mcp-config",
+    "--no-chrome",
+    "--add-dir",
+    projectRoot,
+    "--mcp-config",
+    configPath,
+    ...(trimmedText(prompt) ? ["--", prompt] : []),
+  ];
+  const lines = [
+    "#!/bin/zsh",
+    "set -euo pipefail",
+    `cd ${shQuote(projectRoot)}`,
+    "exec claude \\",
+    ...args.map((arg, index) => `  ${shQuote(arg)}${index === args.length - 1 ? "" : " \\"}`),
+    "",
+  ];
+  writeFileSync(configPath, `${config}\n`, "utf8");
+  writeFileSync(filePath, `${lines.join("\n")}\n`, "utf8");
+  return filePath;
 }
 
 function bootstrapPrompt(topicLabel) {
@@ -701,7 +903,7 @@ function topicJoinSubmitSuffix(provider) {
   return "\r";
 }
 
-function roomMcpScriptPath(workspaceRoot) {
+function roomMcpScriptPath(projectRoot) {
   const scriptPath = resolve(MANAGER_RUNTIME_ROOT, "odd_manager_irc_mcp.mjs");
   if (!existsSync(scriptPath)) {
     throw new Error("odd_manager room MCP adapter was not found");
@@ -709,9 +911,9 @@ function roomMcpScriptPath(workspaceRoot) {
   return scriptPath;
 }
 
-function roomMcpEnv(workspaceRoot, session, provider, options = {}) {
+function roomMcpEnv(projectRoot, session, provider, options = {}) {
   const env = {
-    OMAN_WORKSPACE_ROOT: workspaceRoot,
+    OMAN_WORKSPACE_ROOT: projectRoot,
     OMAN_SESSION_ID: session.id,
     OMAN_SESSION_LABEL: session.label,
     OMAN_AGENT_PROVIDER: provider,
@@ -723,7 +925,7 @@ function roomMcpEnv(workspaceRoot, session, provider, options = {}) {
   return env;
 }
 
-function codexRoomToolApprovalArgs() {
+function codexRoomToolApprovalArgs({ includeIrc = false } = {}) {
   const toolNames = [
     "room_join",
     "room_status",
@@ -731,68 +933,54 @@ function codexRoomToolApprovalArgs() {
     "room_wait",
     "room_send",
     "room_leave",
-    "irc_connect",
-    "irc_status",
-    "irc_join",
-    "irc_part",
-    "irc_send_channel",
-    "irc_send_dm",
-    "irc_read_room",
-    "irc_who",
-    "irc_disconnect",
   ];
+  if (includeIrc) {
+    toolNames.push(
+      "irc_connect",
+      "irc_status",
+      "irc_join",
+      "irc_part",
+      "irc_send_channel",
+      "irc_send_dm",
+      "irc_read_room",
+      "irc_who",
+      "irc_disconnect",
+    );
+  }
   return toolNames.map(
     (toolName) =>
       `mcp_servers.odd_manager_room.tools.${toolName}.approval_mode="approve"`,
   );
 }
 
-function codexBootstrapCommand(scriptPath, workspaceRoot, env, prompt = null) {
-  const configArgs = [
-    'mcp_servers.odd_manager_room.command="node"',
-    `mcp_servers.odd_manager_room.args=${JSON.stringify([scriptPath])}`,
-    "mcp_servers.odd_manager_room.startup_timeout_sec=120",
-    ...codexRoomToolApprovalArgs(),
-    ...Object.entries(env).map(
-      ([key, value]) =>
-        `mcp_servers.odd_manager_room.env.${key}=${JSON.stringify(String(value))}`,
-    ),
-  ];
-  return [
-    `cd ${shQuote(workspaceRoot)}`,
-    "&&",
-    "codex",
-    ...configArgs.flatMap((entry) => ["-c", shQuote(entry)]),
-    ...(trimmedText(prompt) ? [shQuote(prompt)] : []),
-  ].join(" ");
-}
-
-function claudeBootstrapCommand(scriptPath, workspaceRoot, env, prompt = null) {
-  const config = JSON.stringify({
-    mcpServers: {
-      odd_manager_room: {
-        type: "stdio",
-        command: "node",
-        args: [scriptPath],
-        env,
-      },
-    },
+function codexBootstrapCommand(
+  scriptPath,
+  projectRoot,
+  env,
+  prompt = null,
+  { includeIrcApprovals = false, scriptLabel = "session" } = {},
+) {
+  const bootstrapScriptPath = writeCodexBootstrapScript(projectRoot, {
+    scriptPath,
+    env,
+    prompt,
+    includeIrcApprovals,
+    scriptLabel,
   });
-  return [
-    `cd ${shQuote(workspaceRoot)}`,
-    "&&",
-    "claude",
-    "--dangerously-skip-permissions",
-    "--strict-mcp-config",
-    "--add-dir",
-    shQuote(workspaceRoot),
-    "--mcp-config",
-    shQuote(config),
-    ...(trimmedText(prompt) ? ["--", shQuote(prompt)] : []),
-  ].join(" ");
+  return `/bin/zsh ${shQuote(bootstrapScriptPath)}`;
 }
 
-export function buildShellAgentLaunch(workspaceRoot, options = {}) {
+function claudeBootstrapCommand(scriptPath, projectRoot, env, prompt = null) {
+  const bootstrapScriptPath = writeClaudeBootstrapScript(projectRoot, {
+    scriptPath,
+    env,
+    prompt,
+    scriptLabel: env.OMAN_TOPIC_ID ? `${env.OMAN_TOPIC_ID}-${env.OMAN_SESSION_LABEL ?? env.OMAN_SESSION_ID}` : env.OMAN_SESSION_LABEL ?? env.OMAN_SESSION_ID,
+  });
+  return `/bin/zsh ${shQuote(bootstrapScriptPath)}`;
+}
+
+function buildShellAgentLaunch(projectRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -803,18 +991,20 @@ export function buildShellAgentLaunch(workspaceRoot, options = {}) {
     throw new Error("session id is required");
   }
 
-  const session = sessionById(workspaceRoot, sessionId);
+  const session = sessionById(projectRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
 
-  const scriptPath = roomMcpScriptPath(workspaceRoot);
-  const env = roomMcpEnv(workspaceRoot, session, provider);
+  const scriptPath = roomMcpScriptPath(projectRoot);
+  const env = roomMcpEnv(projectRoot, session, provider);
 
   const command =
     provider === "codex"
-      ? codexBootstrapCommand(scriptPath, workspaceRoot, env)
-      : claudeBootstrapCommand(scriptPath, workspaceRoot, env);
+      ? codexBootstrapCommand(scriptPath, projectRoot, env, null, {
+          scriptLabel: session.label ?? session.id,
+        })
+      : claudeBootstrapCommand(scriptPath, projectRoot, env);
 
   return {
     ok: true,
@@ -825,18 +1015,23 @@ export function buildShellAgentLaunch(workspaceRoot, options = {}) {
   };
 }
 
-export function launchShellAgent(workspaceRoot, options = {}) {
-  const launch = buildShellAgentLaunch(workspaceRoot, options);
-  sendGTermSessionInput(workspaceRoot, launch.sessionId, `${launch.command}\n`);
-  emitAgentConsoleEvent(workspaceRoot, {
+export function launchShellAgent(projectRoot, options = {}) {
+  const launch = buildShellAgentLaunch(projectRoot, options);
+  sendGTermSessionInput(projectRoot, launch.sessionId, `${launch.command}\n`);
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-participant-provider-launch",
     sessionId: launch.sessionId,
     provider: launch.provider,
   });
-  return launch;
+  return {
+    ok: true,
+    provider: launch.provider,
+    sessionId: launch.sessionId,
+    sessionLabel: launch.sessionLabel,
+  };
 }
 
-export function buildShellTopicJoin(workspaceRoot, options = {}) {
+function buildShellTopicJoin(projectRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -851,11 +1046,11 @@ export function buildShellTopicJoin(workspaceRoot, options = {}) {
     throw new Error("topic id is required");
   }
 
-  const session = sessionById(workspaceRoot, sessionId);
+  const session = sessionById(projectRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
-  const topic = loadGBoardTopicById(workspaceRoot, topicId);
+  const topic = loadGBoardTopicById(projectRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
@@ -872,13 +1067,13 @@ export function buildShellTopicJoin(workspaceRoot, options = {}) {
   };
 }
 
-export async function joinShellAgentTopic(workspaceRoot, options = {}) {
-  const join = buildShellTopicJoin(workspaceRoot, options);
+export async function joinShellAgentTopic(projectRoot, options = {}) {
+  const join = buildShellTopicJoin(projectRoot, options);
   if (join.provider === "codex") {
-    return launchManagedCodexTopicJoin(workspaceRoot, join);
+    return launchManagedCodexTopicJoin(projectRoot, join);
   }
-  sendGTermSessionInput(workspaceRoot, join.sessionId, `${join.prompt}${topicJoinSubmitSuffix(join.provider)}`);
-  emitAgentConsoleEvent(workspaceRoot, {
+  sendGTermSessionInput(projectRoot, join.sessionId, `${join.prompt}${topicJoinSubmitSuffix(join.provider)}`);
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-participant-topic-join",
     roomId: join.roomId,
     sessionId: join.sessionId,
@@ -886,12 +1081,18 @@ export async function joinShellAgentTopic(workspaceRoot, options = {}) {
     topicId: join.topicId,
   });
   return {
-    ...join,
+    ok: true,
+    provider: join.provider,
+    sessionId: join.sessionId,
+    sessionLabel: join.sessionLabel,
+    topicId: join.topicId,
+    topicLabel: join.topicLabel,
+    roomId: join.roomId,
     mode: "prompt-injection",
   };
 }
 
-export function buildRoomParticipantBootstrap(workspaceRoot, options = {}) {
+function buildRoomParticipantBootstrap(projectRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -906,22 +1107,24 @@ export function buildRoomParticipantBootstrap(workspaceRoot, options = {}) {
     throw new Error("topic id is required");
   }
 
-  const session = sessionById(workspaceRoot, sessionId);
+  const session = sessionById(projectRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
-  const topic = loadGBoardTopicById(workspaceRoot, topicId);
+  const topic = loadGBoardTopicById(projectRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
 
-  const scriptPath = roomMcpScriptPath(workspaceRoot);
-  const env = roomMcpEnv(workspaceRoot, session, provider, { topicId: topic.id });
+  const scriptPath = roomMcpScriptPath(projectRoot);
+  const env = roomMcpEnv(projectRoot, session, provider, { topicId: topic.id });
   const prompt = bootstrapPrompt(topic.label);
   const command =
     provider === "codex"
-      ? codexBootstrapCommand(scriptPath, workspaceRoot, env, prompt)
-      : claudeBootstrapCommand(scriptPath, workspaceRoot, env, prompt);
+      ? codexBootstrapCommand(scriptPath, projectRoot, env, prompt, {
+          scriptLabel: `${topic.id}-${session.label ?? session.id}`,
+        })
+      : claudeBootstrapCommand(scriptPath, projectRoot, env, prompt);
 
   return {
     ok: true,
@@ -935,19 +1138,89 @@ export function buildRoomParticipantBootstrap(workspaceRoot, options = {}) {
   };
 }
 
-export function launchRoomParticipantBootstrap(workspaceRoot, options = {}) {
-  const bootstrap = buildRoomParticipantBootstrap(workspaceRoot, options);
-  sendGTermSessionInput(workspaceRoot, bootstrap.sessionId, `${bootstrap.command}\n`);
-  emitAgentConsoleEvent(workspaceRoot, {
+export async function launchRoomParticipantBootstrap(projectRoot, options = {}) {
+  const bootstrap = buildRoomParticipantBootstrap(projectRoot, options);
+  sendGTermSessionInput(projectRoot, bootstrap.sessionId, `${bootstrap.command}\n`);
+  emitAgentConsoleEvent(projectRoot, {
     kind: "room-participant-bootstrap",
     roomId: bootstrap.roomId,
     sessionId: bootstrap.sessionId,
     provider: bootstrap.provider,
     topicId: bootstrap.topicId,
   });
-  return bootstrap;
+  return {
+    ok: true,
+    provider: bootstrap.provider,
+    sessionId: bootstrap.sessionId,
+    sessionLabel: bootstrap.sessionLabel,
+    topicId: bootstrap.topicId,
+    topicLabel: bootstrap.topicLabel,
+    roomId: bootstrap.roomId,
+    mode: "shell-bootstrap",
+  };
 }
 
-export function listOddChatParticipants(workspaceRoot, options = {}) {
-  return listParticipants(workspaceRoot, options);
+export async function addTopicParticipant(projectRoot, options = {}) {
+  const provider = normalizeProvider(options.provider);
+  if (!["codex", "claude"].includes(provider)) {
+    throw new Error("provider must be codex or claude");
+  }
+
+  const role = normalizeParticipantRole(options.role);
+  const topicId = trimmedText(options.topicId);
+  if (!topicId) {
+    throw new Error("topic id is required");
+  }
+
+  const topic = loadGBoardTopicById(projectRoot, topicId);
+  if (!topic) {
+    throw new Error("topic not found");
+  }
+
+  const label = trimmedText(options.label) ?? nextTopicParticipantLabel(projectRoot, role);
+  const session = createGTermSession(projectRoot, {
+    selectedTrainId: topic.selectedTrainId ?? null,
+    stationId: topic.stationId ?? null,
+    edgeId: topic.edgeId ?? null,
+    label,
+  });
+  const announcement = addedParticipantAnnouncement(role, session.label, provider);
+  attachSessionToGBoardTopic(projectRoot, {
+    topicId: topic.id,
+    sessionId: session.id,
+    announcementTitle: announcement.title,
+    announcementBody: announcement.body,
+    announcementSenderId: "system",
+    announcementSenderLabel: "OddChat",
+  });
+
+  const bootstrap = await launchRoomParticipantBootstrap(projectRoot, {
+    sessionId: session.id,
+    topicId: topic.id,
+    provider,
+  });
+
+  emitAgentConsoleEvent(projectRoot, {
+    kind: "topic-participant-added",
+    topicId: topic.id,
+    roomId: topic.roomId,
+    sessionId: session.id,
+    provider,
+    role,
+  });
+
+  return {
+    ok: true,
+    role,
+    provider,
+    topicId: topic.id,
+    topicLabel: topic.label,
+    roomId: topic.roomId,
+    session,
+    bootstrap,
+  };
+}
+
+export function listOddChatParticipants(projectRoot, options = {}) {
+  return listParticipants(projectRoot, options);
 }

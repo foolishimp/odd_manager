@@ -187,7 +187,7 @@ function describeGraph(graph: GraphView): GraphOverview {
         {
           eyebrow: "Workflow Handoffs",
           value: String(edgeContractNodes.length),
-          description: "Configured handoff rules currently visible from odd_method.",
+          description: "Configured handoff rules currently visible from the selected domain contract.",
           tone: edgeContractNodes.length ? "active" : "attention",
         },
         {

@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-SES-*`
 **Status**: Active
 **Category**: Capability
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-SES-001 - The product provides a durable session workspace
 

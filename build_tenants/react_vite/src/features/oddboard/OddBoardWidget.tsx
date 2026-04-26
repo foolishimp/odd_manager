@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   attachGChatTopicRecord,
+  addTopicParticipant,
   createGBoardTopic,
   postGChatMessage,
+  setTopicRoomRecipients,
 } from "../../lib/collaboration";
 import type {
   AgentConsoleState,
@@ -19,8 +21,10 @@ type ConsoleSurface = "oddboard" | "oddchat";
 type GBoardBrowserMode = "recent" | "browse";
 type GBoardSourceFilter = "all" | GBoardRecordSource;
 type GBoardMetadataFilter = "all" | "other" | string;
-type RoomAction = "topic" | "attach-record" | null;
-type ExplorerSectionId = "topics" | "assets";
+type RoomAction = "topic" | "attach-record" | "add-participant" | "room-recipients" | null;
+type ExplorerSectionId = "topics" | "workers" | "assets";
+type ParticipantRole = "worker" | "reviewer";
+type ParticipantProvider = "codex" | "claude" | "gemini";
 
 const AGENT_CONSOLE_COLLAPSED_STORAGE_KEY = "oman-oddboard-collapsed";
 const ODDCHAT_LIVE_SCROLL_STORAGE_KEY = "oman-oddchat-live-scroll";
@@ -34,8 +38,23 @@ const GBOARD_SOURCE_OPTIONS: Array<{ id: GBoardSourceFilter; label: string }> = 
   { id: "design", label: "Design" },
 ];
 
+const PARTICIPANT_ROLE_OPTIONS: Array<{ id: ParticipantRole; label: string }> = [
+  { id: "worker", label: "Worker" },
+  { id: "reviewer", label: "Reviewer" },
+];
+
+const PARTICIPANT_PROVIDER_OPTIONS: Array<{
+  id: ParticipantProvider;
+  label: string;
+  enabled: boolean;
+}> = [
+  { id: "codex", label: "Codex", enabled: true },
+  { id: "claude", label: "Claude", enabled: true },
+  { id: "gemini", label: "Gemini", enabled: false },
+];
+
 type OddBoardWidgetProps = {
-  workspaceRoot: string;
+  projectRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -101,8 +120,15 @@ function topicAssetKindLabel(assetKind: GChatTopic["assetKind"]) {
   return assetKind;
 }
 
-function topicSessionRoomId(topicId: string, sessionId: string) {
-  return `topic:${topicId}:session:${sessionId}`;
+function sessionRoleFromLabel(label: string | null | undefined): ParticipantRole | null {
+  const normalized = String(label ?? "").trim().toLowerCase();
+  if (normalized.startsWith("worker")) {
+    return "worker";
+  }
+  if (normalized.startsWith("reviewer")) {
+    return "reviewer";
+  }
+  return null;
 }
 
 function nextSelectionId<T extends { id: string }>(items: T[], currentId: string | null) {
@@ -110,7 +136,7 @@ function nextSelectionId<T extends { id: string }>(items: T[], currentId: string
 }
 
 export function OddBoardWidget({
-  workspaceRoot,
+  projectRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -121,9 +147,10 @@ export function OddBoardWidget({
 }: OddBoardWidgetProps) {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") {
-      return false;
+      return true;
     }
-    return window.localStorage.getItem(AGENT_CONSOLE_COLLAPSED_STORAGE_KEY) === "true";
+    const stored = window.localStorage.getItem(AGENT_CONSOLE_COLLAPSED_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
   });
   const [surface, setSurface] = useState<ConsoleSurface>("oddchat");
   const [gboardMode, setGboardMode] = useState<GBoardBrowserMode>("recent");
@@ -135,7 +162,6 @@ export function OddBoardWidget({
   const [draft, setDraft] = useState("");
   const [newTopicTitle, setNewTopicTitle] = useState("");
   const [selectedAssetToAttachId, setSelectedAssetToAttachId] = useState<string | null>(null);
-  const [selectedSessionChannelId, setSelectedSessionChannelId] = useState<string | null>(null);
   const [liveRoomScroll, setLiveRoomScroll] = useState(() => {
     if (typeof window === "undefined") {
       return true;
@@ -145,15 +171,23 @@ export function OddBoardWidget({
   });
   const [collapsedSections, setCollapsedSections] = useState<Record<ExplorerSectionId, boolean>>({
     topics: false,
+    workers: false,
     assets: false,
   });
+  const [participantRole, setParticipantRole] = useState<ParticipantRole>("worker");
+  const [participantProvider, setParticipantProvider] = useState<ParticipantProvider>("codex");
   const [sending, setSending] = useState(false);
   const [roomAction, setRoomAction] = useState<RoomAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const roomMessagesRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const allRecords = consoleState?.oddboard.records ?? [];
   const allTopics = consoleState?.oddchat.topics ?? [];
+  const selectedRoleLabel =
+    PARTICIPANT_ROLE_OPTIONS.find((option) => option.id === participantRole)?.label ?? participantRole;
+  const selectedProviderLabel =
+    PARTICIPANT_PROVIDER_OPTIONS.find((option) => option.id === participantProvider)?.label ?? participantProvider;
 
   const sourceScopedRecords = useMemo(() => {
     if (gboardMode === "recent") {
@@ -216,13 +250,7 @@ export function OddBoardWidget({
 
   const activeRecord = visibleRecords.find((record) => record.id === selectedRecordId) ?? visibleRecords[0] ?? null;
   const activeTopic = allTopics.find((topic) => topic.id === selectedTopicId) ?? allTopics[0] ?? null;
-  const activeSessionChannel =
-    activeTopic?.attachedSessions.find((session) => session.id === selectedSessionChannelId) ?? null;
-  const activeRoomId = activeTopic
-    ? activeSessionChannel
-      ? topicSessionRoomId(activeTopic.id, activeSessionChannel.id)
-      : activeTopic.roomId
-    : null;
+  const activeRoomId = activeTopic?.roomId ?? null;
   const activeMessages = useMemo(
     () => (activeRoomId ? roomMessages(consoleState, activeRoomId) : []),
     [consoleState, activeRoomId],
@@ -246,6 +274,31 @@ export function OddBoardWidget({
   const activeRecordAlreadyAttached = activeTopic
     ? activeTopic.attachedRecords.some((record) => record.id === activeRecord?.id)
     : false;
+  const activeTopicSessionSummaries = useMemo(() => {
+    if (!activeTopic) {
+      return [];
+    }
+    return activeTopic.attachedSessions.map((session) => {
+      const participants = activeTopic.participants.filter((participant) => participant.sessionId === session.id);
+      const connectedParticipants = participants.filter((participant) => participant.status === "connected");
+      const role = sessionRoleFromLabel(session.label);
+      const receivesRoom = activeTopic.roomRecipientSessionIds.includes(session.id);
+      const providerSummary = connectedParticipants.length
+        ? connectedParticipants.map((participant) => participant.provider).join(" / ")
+        : "No agent joined yet";
+      return {
+        session,
+        role,
+        participants,
+        connectedParticipants,
+        receivesRoom,
+        providerSummary,
+      };
+    });
+  }, [activeTopic]);
+  const enabledRoomRecipientCount = activeTopicSessionSummaries.filter(
+    (summary) => summary.receivesRoom,
+  ).length;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -278,20 +331,6 @@ export function OddBoardWidget({
   useEffect(() => {
     setSelectedTopicId((current) => nextSelectionId(allTopics, current));
   }, [allTopics]);
-
-  useEffect(() => {
-    if (!activeTopic) {
-      setSelectedSessionChannelId(null);
-      return;
-    }
-
-    setSelectedSessionChannelId((current) => {
-      if (!current) {
-        return null;
-      }
-      return activeTopic.attachedSessions.some((session) => session.id === current) ? current : null;
-    });
-  }, [activeTopic]);
 
   useEffect(() => {
     setSelectedAssetToAttachId((current) => {
@@ -334,7 +373,7 @@ export function OddBoardWidget({
     setSending(true);
     setActionError(null);
     try {
-      const posted = await postGChatMessage(workspaceRoot, {
+      await postGChatMessage(projectRoot, {
         roomId: activeRoomId,
         body,
         selectedTrainId: activeTopic?.selectedTrainId ?? selectedTrainId,
@@ -342,9 +381,6 @@ export function OddBoardWidget({
         edgeId: activeTopic?.edgeId ?? selectedEdgeId,
       });
       setDraft("");
-      if (posted.targetSessionId) {
-        setSelectedSessionChannelId(posted.targetSessionId);
-      }
       await onRefreshConsole({ background: true });
       setSurface("oddchat");
     } catch (caught) {
@@ -358,7 +394,7 @@ export function OddBoardWidget({
     setRoomAction("topic");
     setActionError(null);
     try {
-      const created = await createGBoardTopic(workspaceRoot, {
+      const created = await createGBoardTopic(projectRoot, {
         title: newTopicTitle.trim() || null,
         selectedTrainId,
         stationId: selectedStationId,
@@ -368,6 +404,9 @@ export function OddBoardWidget({
       setSelectedTopicId(created.topic.id);
       await onRefreshConsole({ background: true });
       setSurface("oddchat");
+      window.requestAnimationFrame(() => {
+        composerRef.current?.focus();
+      });
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -382,9 +421,57 @@ export function OddBoardWidget({
     setRoomAction("attach-record");
     setActionError(null);
     try {
-      await attachGChatTopicRecord(workspaceRoot, {
+      await attachGChatTopicRecord(projectRoot, {
         topicId: activeTopic.id,
         recordId,
+      });
+      await onRefreshConsole({ background: true });
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRoomAction(null);
+    }
+  }
+
+  async function handleAddParticipant() {
+    if (!activeTopic) {
+      setActionError("Create or select a topic before adding a participant.");
+      return;
+    }
+    if (participantProvider === "gemini") {
+      setActionError("Gemini is not wired into the managed room runtime yet.");
+      return;
+    }
+    setRoomAction("add-participant");
+    setActionError(null);
+    try {
+      await addTopicParticipant(projectRoot, {
+        topicId: activeTopic.id,
+        role: participantRole,
+        provider: participantProvider,
+      });
+      await onRefreshConsole({ background: true });
+      setSurface("oddchat");
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRoomAction(null);
+    }
+  }
+
+  async function handleToggleRoomRecipient(sessionId: string) {
+    if (!activeTopic) {
+      return;
+    }
+    const nextSessionIds = activeTopic.roomRecipientSessionIds.includes(sessionId)
+      ? activeTopic.roomRecipientSessionIds.filter((value) => value !== sessionId)
+      : [...activeTopic.roomRecipientSessionIds, sessionId];
+    setRoomAction("room-recipients");
+    setActionError(null);
+    try {
+      await setTopicRoomRecipients(projectRoot, {
+        topicId: activeTopic.id,
+        sessionIds: nextSessionIds,
       });
       await onRefreshConsole({ background: true });
     } catch (caught) {
@@ -421,7 +508,7 @@ export function OddBoardWidget({
             <span className="summary-pill summary-pill--view">{surface}</span>
             {activeTopic ? <span className="summary-pill">{activeTopic.label}</span> : null}
             <span className="summary-pill">{allTopics.length} topic(s)</span>
-            {activeTopic ? <span className="summary-pill">{activeTopic.participants.length} room agent(s)</span> : null}
+            {activeTopic ? <span className="summary-pill">{activeTopic.participants.length} topic participant(s)</span> : null}
             {selectedStationId ? <span className="summary-pill">{selectedStationId}</span> : null}
             {selectedEdgeId ? <span className="summary-pill">{selectedEdgeId}</span> : null}
           </div>
@@ -611,6 +698,12 @@ export function OddBoardWidget({
                   className="agent-console__input"
                   value={newTopicTitle}
                   onChange={(event) => setNewTopicTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleCreateTopic();
+                    }
+                  }}
                   placeholder="New topic of conversation…"
                 />
                 <div className="agent-console__resource-actions">
@@ -637,17 +730,113 @@ export function OddBoardWidget({
                       className={`agent-console__topic-chip${topic.id === activeTopic?.id ? " is-active" : ""}`}
                       onClick={() => {
                         setSelectedTopicId(topic.id);
-                        setSelectedSessionChannelId(null);
                       }}
-                    >
+                      >
                       <strong>{topic.label}</strong>
                       <span>{topic.attachedRecords.length} asset(s)</span>
-                      <span>{topic.participants.length} room agent(s)</span>
+                      <span>{topic.participants.length} topic participant(s)</span>
                       <span>{formatTimestamp(topic.updatedAt)}</span>
                     </button>
                   ))
                 )}
               </div>
+            </ExplorerSection>
+
+            <ExplorerSection
+              title="Participants"
+              tone="workers"
+              collapsed={collapsedSections.workers}
+              onToggle={() => toggleSection("workers")}
+              count={activeTopic?.attachedSessions.length ?? 0}
+            >
+              {activeTopic ? (
+                <>
+                  <div className="agent-console__gchat-new-topic">
+                    <div className="project-selector__tabs" role="tablist" aria-label="Participant roles">
+                      {PARTICIPANT_ROLE_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={participantRole === option.id}
+                          className={`project-selector__tab${participantRole === option.id ? " is-active" : ""}`}
+                          onClick={() => setParticipantRole(option.id)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="project-selector__tabs" role="tablist" aria-label="Participant providers">
+                      {PARTICIPANT_PROVIDER_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={participantProvider === option.id}
+                          className={`project-selector__tab${participantProvider === option.id ? " is-active" : ""}`}
+                          onClick={() => setParticipantProvider(option.id)}
+                          disabled={!option.enabled}
+                          title={option.enabled ? `Add ${option.label}` : `${option.label} is not wired yet`}
+                        >
+                          {option.label}
+                          {!option.enabled ? " (soon)" : ""}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="agent-console__resource-actions">
+                      <button
+                        type="button"
+                        onClick={() => void handleAddParticipant()}
+                        disabled={roomAction === "add-participant"}
+                      >
+                        {roomAction === "add-participant"
+                          ? "Adding..."
+                          : `Add ${selectedRoleLabel} via ${selectedProviderLabel}`}
+                      </button>
+                      <span className="muted">
+                        Creates a linked terminal session below and joins it to this room automatically.
+                      </span>
+                    </div>
+                  </div>
+                  {activeTopicSessionSummaries.length ? (
+                    <div className="agent-console__participant-list">
+                      {activeTopicSessionSummaries.map(
+                        ({ session, role, connectedParticipants, providerSummary, receivesRoom }) => (
+                          <div key={session.id} className="agent-console__participant-card">
+                            <div className="agent-console__participant-copy">
+                              <strong>{session.label}</strong>
+                              <div className="agent-console__participant-badges">
+                                <span className="summary-pill">{role ?? "participant"}</span>
+                                <span className={`summary-pill${connectedParticipants.length ? " summary-pill--ok" : " summary-pill--pending"}`}>
+                                  {connectedParticipants.length ? "joined" : "shell only"}
+                                </span>
+                                <span className="summary-pill">{providerSummary}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className={`agent-console__participant-toggle${receivesRoom ? " is-active" : ""}`}
+                              onClick={() => void handleToggleRoomRecipient(session.id)}
+                              disabled={roomAction === "room-recipients"}
+                            >
+                              {roomAction === "room-recipients" ? "Updating..." : receivesRoom ? "Receives Room" : "Muted"}
+                            </button>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  ) : (
+                    <p className="muted">
+                      No linked participants yet. Add a worker or reviewer here and the backing terminal session below will be created automatically.
+                    </p>
+                  )}
+                  <p className="muted">
+                    Room delivery follows the enabled participants above. Use `@worker1` or `@reviewer1` in a message to override delivery for that one message while keeping everything in the shared room timeline.
+                  </p>
+                </>
+              ) : (
+                <p className="muted">Create or select a topic to manage its room participants.</p>
+              )}
             </ExplorerSection>
 
             <ExplorerSection
@@ -717,15 +906,10 @@ export function OddBoardWidget({
               <>
                 <div className="agent-console__topic-summary">
                   <div>
-                    <span className="panel__eyebrow">{activeSessionChannel ? "Private Worker Channel" : "Live Topic Room"}</span>
-                    <strong>{activeSessionChannel ? `${activeSessionChannel.label} · ${activeTopic.label}` : activeTopic.label}</strong>
+                    <span className="panel__eyebrow">Room Timeline</span>
+                    <strong>{activeTopic.label}</strong>
                   </div>
                   <div className="agent-console__topic-summary-meta">
-                    {activeSessionChannel ? (
-                      <button type="button" className="ghost" onClick={() => setSelectedSessionChannelId(null)}>
-                        Back To Room
-                      </button>
-                    ) : null}
                     <button
                       type="button"
                       className="ghost"
@@ -735,8 +919,9 @@ export function OddBoardWidget({
                     </button>
                     <span className="summary-pill">{activeTopic.originKind}</span>
                     {activeTopic.assetLabel ? <span className="summary-pill">{activeTopic.assetLabel}</span> : null}
-                    {activeSessionChannel ? <span className="summary-pill">{activeSessionChannel.label}</span> : null}
-                    <span className="summary-pill">{activeTopic.participants.length} room agent(s)</span>
+                    <span className="summary-pill">{activeTopic.participants.length} topic participant(s)</span>
+                    <span className="summary-pill">{enabledRoomRecipientCount} receiving room</span>
+                    <span className="summary-pill">{activeTopic.attachedSessions.length} linked session(s)</span>
                     {activeTopic.assetKind ? <span className="summary-pill">{topicAssetKindLabel(activeTopic.assetKind)}</span> : null}
                   </div>
                 </div>
@@ -745,28 +930,43 @@ export function OddBoardWidget({
                   {loading ? <p className="muted">Loading topic conversation…</p> : null}
                   {!loading && !activeMessages.length ? (
                     <p className="muted">
-                      {activeSessionChannel
-                        ? `No private channel activity has been recorded with ${activeSessionChannel.label} yet.`
-                        : "No live room activity has been recorded for this topic yet. Join it from the local shell workspace and start the conversation."}
+                      {activeTopic.attachedSessions.length
+                        ? "No room activity has been recorded for this topic yet. Add a worker, give it the document or ticket context, and keep reviews in the same room."
+                        : "No room activity has been recorded for this topic yet. Add a worker or reviewer here to create the first linked session."}
                     </p>
                   ) : null}
-                  {!loading && activeMessages.length ? activeMessages.map((message) => <MessageCard key={message.id} message={message} />) : null}
+                  {!loading && activeMessages.length
+                    ? activeMessages.map((message) => (
+                        <MessageCard
+                          key={message.id}
+                          message={message}
+                          recipientLabels={(message.recipientSessionIds ?? []).map(
+                            (sessionId) =>
+                              activeTopic.attachedSessions.find((session) => session.id === sessionId)?.label ??
+                              sessionId,
+                          )}
+                        />
+                      ))
+                    : null}
                 </div>
 
                 <div className="agent-console__composer">
                   <label className="panel__eyebrow" htmlFor="agent-console-draft">
-                    Post To {activeSessionChannel ? activeSessionChannel.label : compactTopicLabel(activeTopic)}
+                    Post To {compactTopicLabel(activeTopic)}
                   </label>
                   <textarea
                     id="agent-console-draft"
                     className="agent-console__textarea"
+                    ref={composerRef}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    placeholder={
-                      activeSessionChannel
-                        ? `Send a private message to ${activeSessionChannel.label}…`
-                        : "Send a room message to everyone, or use @shell-name only for a legacy attached-shell route…"
-                    }
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        void handleSend();
+                      }
+                    }}
+                    placeholder="Message the room. Use @worker1 or @reviewer1 to direct one message without leaving the shared timeline."
                   />
                   <div className="agent-console__composer-actions">
                     <button
@@ -785,7 +985,7 @@ export function OddBoardWidget({
               </>
             ) : (
               <div className="project-selector__empty">
-                Create a topic to start a live room, then use the local shell workspace to launch agents and join the topic.
+                Create a topic to start a live room, then add workers and reviewers from this widget.
               </div>
             )}
           </div>
@@ -795,7 +995,13 @@ export function OddBoardWidget({
   );
 }
 
-function MessageCard({ message }: { message: GChatMessage }) {
+function MessageCard({
+  message,
+  recipientLabels = [],
+}: {
+  message: GChatMessage;
+  recipientLabels?: string[];
+}) {
   const title = String(message.title ?? "").trim();
   const content = String(message.content ?? "").trim();
   const showTitle = title.length > 0 && title !== content;
@@ -806,6 +1012,11 @@ function MessageCard({ message }: { message: GChatMessage }) {
         <strong>{message.senderLabel}</strong>
         <div className="agent-console__message-badges">
           <span className="summary-pill">{message.source}</span>
+          {recipientLabels.length ? (
+            <span className="summary-pill summary-pill--gate">
+              To {recipientLabels.join(", ")}
+            </span>
+          ) : null}
           {message.relatedSessionId ? <span className="summary-pill">{message.relatedSessionId.slice(0, 8)}</span> : null}
           <span>{formatTimestamp(message.timestamp)}</span>
         </div>
@@ -826,7 +1037,7 @@ function ExplorerSection({
   children,
 }: {
   title: string;
-  tone: "topics" | "assets";
+  tone: "topics" | "workers" | "assets";
   collapsed: boolean;
   onToggle: () => void;
   count?: number;

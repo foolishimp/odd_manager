@@ -1,7 +1,12 @@
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { AppShell } from "../layout/AppShell";
 import { loadWorld, runCommand } from "../lib/api";
 import { closeAllGTermSessions } from "../lib/collaboration";
+import {
+  defaultPageForWorkspaceProfile,
+  pagesForWorkspaceProfile,
+  subtitleForWorkspaceProfile,
+} from "../lib/presentation";
 import type {
   CommandName,
   GraphNodeView,
@@ -13,7 +18,10 @@ import type {
 } from "../lib/types";
 import { WorkspaceRoute } from "../routes/WorkspaceRoute";
 
-const DEFAULT_WORKSPACE = "/Users/jim/src/apps/odd_manager";
+const LEGACY_MANAGER_WORKSPACE = "/Users/jim/src/apps/odd_manager";
+const DEFAULT_WORKSPACE =
+  "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35";
+const WORKSPACE_STORAGE_KEY = "oman-workspace-root";
 const THEME_STORAGE_KEY = "oman-theme";
 
 function initialTheme(): ThemeMode {
@@ -24,11 +32,22 @@ function initialTheme(): ThemeMode {
   return stored === "dark" ? "dark" : "light";
 }
 
+function initialWorkspace() {
+  if (typeof window === "undefined") {
+    return DEFAULT_WORKSPACE;
+  }
+  const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)?.trim();
+  if (!stored || stored === LEGACY_MANAGER_WORKSPACE) {
+    return DEFAULT_WORKSPACE;
+  }
+  return stored;
+}
+
 export function App() {
-  const [workspaceRoot, setWorkspaceRoot] = useState(DEFAULT_WORKSPACE);
-  const [workspaceDraft, setWorkspaceDraft] = useState(DEFAULT_WORKSPACE);
+  const [projectRoot, setWorkspaceRoot] = useState(initialWorkspace);
+  const [workspaceDraft, setWorkspaceDraft] = useState(initialWorkspace);
   const [world, setWorld] = useState<ManagerWorld | null>(null);
-  const [selectedPage, setSelectedPage] = useState<PageId>("graphs");
+  const [selectedPage, setSelectedPage] = useState<PageId>("requirements");
   const [selectedGraphId, setSelectedGraphId] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -37,22 +56,54 @@ export function App() {
   const [runningCommand, setRunningCommand] = useState<CommandName | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
+  const refreshSequenceRef = useRef(0);
+  const refreshAbortRef = useRef<AbortController | null>(null);
 
-  async function refreshWorld(nextWorkspaceRoot = workspaceRoot) {
+  async function refreshWorld(
+    nextWorkspaceRoot = projectRoot,
+    options?: { resetPage?: boolean },
+  ) {
+    const requestId = refreshSequenceRef.current + 1;
+    refreshSequenceRef.current = requestId;
+    refreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
     setLoadingWorld(true);
     setError(null);
     try {
-      const nextWorld = await loadWorld(nextWorkspaceRoot);
+      const nextWorld = await loadWorld(nextWorkspaceRoot, controller.signal);
+      if (requestId !== refreshSequenceRef.current) {
+        return;
+      }
       startTransition(() => {
         setWorld(nextWorld);
         setSelectedGraphId((current) => ensureGraphSelection(nextWorld, current));
         setSelection((current) => ensureObjectSelection(nextWorld, current));
         setSelectedNodeId((current) => ensureNodeSelection(nextWorld, current));
+        setSelectedPage((current) => {
+          const visiblePages = pagesForWorkspaceProfile(nextWorld.workspace_profile);
+          if (options?.resetPage || !visiblePages.includes(current)) {
+            return defaultPageForWorkspaceProfile(nextWorld.workspace_profile);
+          }
+          return current;
+        });
       });
     } catch (caught) {
+      if (
+        controller.signal.aborted ||
+        (caught instanceof Error && caught.name === "AbortError") ||
+        requestId !== refreshSequenceRef.current
+      ) {
+        return;
+      }
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setLoadingWorld(false);
+      if (requestId === refreshSequenceRef.current) {
+        setLoadingWorld(false);
+      }
+      if (refreshAbortRef.current === controller) {
+        refreshAbortRef.current = null;
+      }
     }
   }
 
@@ -60,8 +111,8 @@ export function App() {
     setRunningCommand(command);
     setError(null);
     try {
-      await runCommand(workspaceRoot, command, { auto });
-      await refreshWorld(workspaceRoot);
+      await runCommand(projectRoot, command, { auto });
+      await refreshWorld(projectRoot);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -87,7 +138,10 @@ export function App() {
   }
 
   useEffect(() => {
-    void refreshWorld(DEFAULT_WORKSPACE);
+    void refreshWorld(projectRoot, { resetPage: true });
+    return () => {
+      refreshAbortRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -96,11 +150,20 @@ export function App() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, projectRoot);
+  }, [projectRoot]);
+
+  const workspaceProfile = world?.workspace_profile ?? null;
+  const visiblePages = pagesForWorkspaceProfile(workspaceProfile);
+  const shellTitle = workspaceProfile?.shell_title ?? "Odd Manager";
+  const shellSubtitle = subtitleForWorkspaceProfile(workspaceProfile);
+
   return (
     <AppShell
       theme={theme}
       onToggleTheme={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
-      workspaceRoot={workspaceRoot}
+      projectRoot={projectRoot}
       workspaceDraft={workspaceDraft}
       onWorkspaceDraftChange={setWorkspaceDraft}
       onApplyWorkspace={(nextWorkspaceRoot) => {
@@ -108,20 +171,25 @@ export function App() {
         if (!targetWorkspace) {
           return;
         }
-        const previousWorkspace = workspaceRoot;
+        const previousWorkspace = projectRoot;
         setWorkspaceRoot(targetWorkspace);
         setWorkspaceDraft(targetWorkspace);
+        setWorld(null);
         setSelectedGraphId("");
         setSelectedNodeId(null);
         setSelection(null);
         setError(null);
-        void refreshWorld(targetWorkspace);
+        void refreshWorld(targetWorkspace, { resetPage: true });
         if (previousWorkspace !== targetWorkspace) {
           void closeAllGTermSessions(previousWorkspace).catch((caught) => {
             setError(caught instanceof Error ? caught.message : String(caught));
           });
         }
       }}
+      shellTitle={shellTitle}
+      shellSubtitle={shellSubtitle}
+      workspaceProfile={workspaceProfile}
+      pages={visiblePages}
       selectedPage={selectedPage}
       onSelectPage={setSelectedPage}
       overview={world?.overview ?? null}
@@ -130,7 +198,7 @@ export function App() {
       error={error}
     >
       <WorkspaceRoute
-        workspaceRoot={workspaceRoot}
+        projectRoot={projectRoot}
         world={world}
         loadingWorld={loadingWorld}
         selectedPage={selectedPage}
@@ -147,7 +215,7 @@ export function App() {
         selection={selection}
         onSelectSelection={applySelection}
         runningCommand={runningCommand}
-        onRefresh={() => void refreshWorld(workspaceRoot)}
+        onRefresh={() => void refreshWorld(projectRoot)}
         onIterate={() => void triggerCommand("iterate")}
         onStartAuto={() => void triggerCommand("start", true)}
       />

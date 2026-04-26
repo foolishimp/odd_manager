@@ -3,7 +3,7 @@
 **Family**: `REQ-OM-LNS-*`
 **Status**: Active
 **Category**: Capability
-**Derives From**: `specification/PRODUCT.md`, `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+**Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ### REQ-OM-LNS-001 - Distinct entry lenses share one world model
 
@@ -130,3 +130,20 @@ Acceptance Criteria
   separate collaboration substrate
 - those tools remain attached to the same managed workspace truth as the entry
   lenses they accompany
+
+### REQ-OM-LNS-010 - Domain entry lenses are selected at the primary-identity level
+
+`odd_manager` shall choose domain entry lenses from the selected workspace's
+primary identity, not by treating every domain page as one flat global tab set.
+
+Acceptance Criteria
+- `Requirements View` and `Process View` are understood as `odd_sdlc`
+  entry lenses inside the `odd_sdlc` domain pack rather than as domain-neutral
+  global tabs
+- `odd_world_model` landing and future world-model pages sit at the same
+  domain-pack level as the `odd_sdlc` pack rather than as peers to
+  `Requirements View` and `Process View`
+- when the selected workspace is primarily `odd_world_model`, the initial
+  landing page and domain page family come from the `odd_world_model` pack
+- the shell title can present the active primary identity, such as `Odd SDLC`
+  or `Odd World Model`, while manager-owned core pages remain cross-domain

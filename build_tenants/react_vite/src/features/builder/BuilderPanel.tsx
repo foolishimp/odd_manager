@@ -170,7 +170,7 @@ export function BuilderPanel({ world, onSelectSelection }: BuilderPanelProps) {
         <div className="panel__heading">
           <div>
             <span className="panel__eyebrow">Model Catalog</span>
-            <h2>The expanded odd_method project model is visible to the manager now.</h2>
+            <h2>The active workspace model is visible to the manager as a governed catalog.</h2>
           </div>
           <p>These objects define the current delivery lane more explicitly than the earlier first slice.</p>
         </div>

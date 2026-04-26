@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -22,7 +23,7 @@ _SUPPORTED_QUERY_CONTRACTS: dict[tuple[str, str], dict[str, Any]] = {
     ): {
         "expected_top_level_keys": (
             "query_contract",
-            "workspace_root",
+            "project_root",
             "analysis_manifest",
             "semantic_facets",
             "asset_types",
@@ -43,7 +44,38 @@ _SUPPORTED_QUERY_CONTRACTS: dict[tuple[str, str], dict[str, Any]] = {
         "source_contract_ref": "odd_sdlc.query_contract.query_domain_contract",
         "source_domain_model_ref": "odd_sdlc.domain_model",
         "source_query_ref": "odd_sdlc.query.query_domain",
-    }
+    },
+    (
+        "odd_sdlc.query-domain",
+        "v16",
+    ): {
+        "expected_top_level_keys": (
+            "query_contract",
+            "project_root",
+            "semantic_facets",
+            "asset_types",
+            "asset_families",
+            "assets",
+            "start_target_catalog",
+            "asset_ownership_index",
+            "operational_capabilities",
+            "ambiguity_register",
+            "requirement_closure_register",
+            "collections",
+            "functions",
+            "edge_contracts",
+            "execution_contract_surface",
+            "programs",
+            "work_act_types",
+            "jobs",
+            "graph_functions",
+            "bindings",
+            "gap_dossier",
+        ),
+        "source_contract_ref": "odd_sdlc.query_contract.query_domain_contract",
+        "source_domain_model_ref": "odd_sdlc.domain_model",
+        "source_query_ref": "odd_sdlc.query.query_domain",
+    },
 }
 
 
@@ -51,9 +83,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _configure_imports(workspace_root: Path) -> None:
+def _configure_imports(project_root: Path) -> None:
     odd_manager_root = Path(__file__).resolve().parents[3]
-    installed_odd_sdlc_code = workspace_root / _INSTALLED_ODD_SDLC_CODE_RELATIVE
+    installed_odd_sdlc_code = project_root / _INSTALLED_ODD_SDLC_CODE_RELATIVE
     odd_sdlc_source_code = (
         odd_manager_root.parent
         / "odd_sdlc"
@@ -82,7 +114,7 @@ def _configure_imports(workspace_root: Path) -> None:
         odd_sdlc_source_code,
         legacy_odd_method_code,
         abiogenesis_code,
-        workspace_root / ".genesis",
+        project_root / ".genesis",
         odd_manager_root / ".genesis",
     ]
     for path in reversed(desired):
@@ -172,6 +204,13 @@ def _normalize_requirement_heading(raw: str) -> tuple[str, str]:
     return text, ""
 
 
+def _is_atomic_requirement_id(value: str) -> bool:
+    parts = [segment for segment in value.strip().split("-") if segment]
+    if len(parts) < 3:
+        return False
+    return any(any(character.isdigit() for character in segment) for segment in parts[2:])
+
+
 def _normalize_requirement_family_title(raw: str) -> str:
     cleaned = raw.strip()
     if ":" in cleaned:
@@ -218,9 +257,9 @@ def _requirement_priority_rank(priority: str | None) -> int:
     return 0
 
 
-def _load_requirement_closure_index(workspace_root: Path) -> dict[str, dict[str, Any]]:
+def _load_requirement_closure_index(project_root: Path) -> dict[str, dict[str, Any]]:
     closure_path = (
-        workspace_root
+        project_root
         / ".ai-workspace"
         / "runtime"
         / "odd_sdlc-requirement-closure.json"
@@ -255,7 +294,7 @@ def _dedupe_strings(items: list[str]) -> list[str]:
     return ordered
 
 
-def _is_workspace_relative_path(workspace_root: Path, candidate: str) -> bool:
+def _is_workspace_relative_path(project_root: Path, candidate: str) -> bool:
     normalized = candidate.strip()
     if not normalized or "://" in normalized or normalized.startswith("/"):
         return False
@@ -274,10 +313,10 @@ def _is_workspace_relative_path(workspace_root: Path, candidate: str) -> bool:
         or normalized.startswith("build_tenants/")
     ):
         return False
-    return (workspace_root / normalized).exists()
+    return (project_root / normalized).exists()
 
 
-def _extract_workspace_refs(text: str, workspace_root: Path) -> list[str]:
+def _extract_workspace_refs(text: str, project_root: Path) -> list[str]:
     candidates: list[str] = []
     for match in _BACKTICK_REF_RE.finditer(text):
         candidates.append(match.group(1).strip())
@@ -287,7 +326,7 @@ def _extract_workspace_refs(text: str, workspace_root: Path) -> list[str]:
         [
             candidate[2:] if candidate.startswith("./") else candidate
             for candidate in candidates
-            if _is_workspace_relative_path(workspace_root, candidate)
+            if _is_workspace_relative_path(project_root, candidate)
         ]
     )
 
@@ -368,8 +407,16 @@ def _ticket_id_from_stem(stem: str) -> str:
     return stem
 
 
-def _project_tickets(workspace_root: Path) -> list[dict[str, Any]]:
-    tickets_root = workspace_root / ".ai-workspace" / "tickets"
+def _parse_markdown_table_cells(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if not stripped.startswith("|") or "|" not in stripped[1:]:
+        return None
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    return cells if cells else None
+
+
+def _project_tickets(project_root: Path) -> list[dict[str, Any]]:
+    tickets_root = project_root / ".ai-workspace" / "tickets"
     if not tickets_root.exists():
         return []
 
@@ -406,17 +453,17 @@ def _project_tickets(workspace_root: Path) -> list[dict[str, Any]]:
                     "created_at": metadata.get("created_at"),
                     "updated_at": metadata.get("updated_at"),
                     "dependencies": _split_record_refs(metadata.get("dependencies")),
-                    "links": _extract_workspace_refs(full_text, workspace_root),
+                    "links": _extract_workspace_refs(full_text, project_root),
                     "linked_requirement_ids": _extract_requirement_ids(full_text),
-                    "linked_surfaces": _extract_workspace_refs(full_text, workspace_root),
-                    "source_path": str(source_path.relative_to(workspace_root)),
+                    "linked_surfaces": _extract_workspace_refs(full_text, project_root),
+                    "source_path": str(source_path.relative_to(project_root)),
                 }
             )
     return projected
 
 
-def _project_comments(workspace_root: Path) -> list[dict[str, Any]]:
-    comments_root = workspace_root / ".ai-workspace" / "comments"
+def _project_comments(project_root: Path) -> list[dict[str, Any]]:
+    comments_root = project_root / ".ai-workspace" / "comments"
     if not comments_root.exists():
         return []
 
@@ -438,7 +485,7 @@ def _project_comments(workspace_root: Path) -> list[dict[str, Any]]:
         full_text = "\n".join(lines)
         projected.append(
             {
-                "id": str(source_path.relative_to(workspace_root)),
+                "id": str(source_path.relative_to(project_root)),
                 "title": title,
                 "summary": summary or title,
                 "author": metadata.get("Author") or source_path.parent.name,
@@ -447,8 +494,8 @@ def _project_comments(workspace_root: Path) -> list[dict[str, Any]]:
                 "source": metadata.get("source"),
                 "addresses": _split_record_refs(metadata.get("Addresses")),
                 "linked_requirement_ids": _extract_requirement_ids(full_text),
-                "linked_surfaces": _extract_workspace_refs(full_text, workspace_root),
-                "source_path": str(source_path.relative_to(workspace_root)),
+                "linked_surfaces": _extract_workspace_refs(full_text, project_root),
+                "source_path": str(source_path.relative_to(project_root)),
             }
         )
     return projected
@@ -456,7 +503,7 @@ def _project_comments(workspace_root: Path) -> list[dict[str, Any]]:
 
 def _parse_requirement_block(
     *,
-    workspace_root: Path,
+    project_root: Path,
     source_path: Path,
     family_title: str,
     family_metadata: dict[str, str],
@@ -537,20 +584,21 @@ def _parse_requirement_block(
         if coverage
         else [],
         "acceptance_criteria": acceptance_criteria,
-        "source_path": str(source_path.relative_to(workspace_root)),
+        "source_path": str(source_path.relative_to(project_root)),
     }
 
 
 def _parse_requirement_table_row(
     *,
-    workspace_root: Path,
+    project_root: Path,
     source_path: Path,
     family_title: str,
     section_traces: list[str],
     requirement_id: str,
     requirement_title: str,
     priority: str,
-    requirement_type: str,
+    requirement_type: str | None,
+    requirement_status: str | None,
     closure_entry: dict[str, Any] | None,
 ) -> dict[str, Any]:
     coverage = closure_entry if isinstance(closure_entry, dict) else None
@@ -559,6 +607,12 @@ def _parse_requirement_table_row(
         if coverage and isinstance(coverage.get("status"), str)
         else None
     )
+    table_status = (
+        _clean_requirement_value(requirement_status)
+        if isinstance(requirement_status, str)
+        else None
+    )
+    effective_status = coverage_status or table_status or None
     return {
         "requirement_id": requirement_id,
         "title": requirement_title or requirement_id,
@@ -567,9 +621,9 @@ def _parse_requirement_table_row(
         "family_title": family_title,
         "family_status": None,
         "priority": _clean_requirement_value(priority),
-        "type": _clean_requirement_value(requirement_type),
-        "status": coverage_status,
-        "delivery_status": _requirement_tone(coverage_status),
+        "type": _clean_requirement_value(requirement_type or "") or None,
+        "status": effective_status,
+        "delivery_status": _requirement_tone(effective_status),
         "traces_to": section_traces,
         "derives_from": [],
         "authority_refs": list(coverage.get("authority_refs", [])) if coverage else [],
@@ -589,16 +643,16 @@ def _parse_requirement_table_row(
         if coverage
         else [],
         "acceptance_criteria": [],
-        "source_path": str(source_path.relative_to(workspace_root)),
+        "source_path": str(source_path.relative_to(project_root)),
     }
 
 
-def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
-    requirements_root = workspace_root / "specification" / "requirements"
+def _project_requirements(project_root: Path) -> list[dict[str, Any]]:
+    requirements_root = project_root / "specification" / "requirements"
     if not requirements_root.exists():
         return []
 
-    closure_index = _load_requirement_closure_index(workspace_root)
+    closure_index = _load_requirement_closure_index(project_root)
     projected: list[dict[str, Any]] = []
 
     for source_path in sorted(requirements_root.glob("*.md")):
@@ -613,6 +667,7 @@ def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
         family_metadata: dict[str, str] = {}
         section_title = family_title
         section_traces: list[str] = []
+        current_table_columns: list[str] = []
         current_requirement_id: str | None = None
         current_requirement_title = ""
         current_block_lines: list[str] = []
@@ -623,7 +678,7 @@ def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
                 return
             projected.append(
                 _parse_requirement_block(
-                    workspace_root=workspace_root,
+                    project_root=project_root,
                     source_path=source_path,
                     family_title=family_title,
                     family_metadata=family_metadata,
@@ -652,30 +707,46 @@ def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
             if stripped.startswith("### "):
                 heading_text = stripped.removeprefix("###").strip()
                 if _REQUIREMENT_HEADING_RE.match(heading_text):
-                    flush_current_requirement()
-                    current_requirement_id, current_requirement_title = _normalize_requirement_heading(
-                        heading_text
-                    )
-                    continue
+                    candidate_id, candidate_title = _normalize_requirement_heading(heading_text)
+                    if _is_atomic_requirement_id(candidate_id):
+                        flush_current_requirement()
+                        current_table_columns = []
+                        current_requirement_id = candidate_id
+                        current_requirement_title = candidate_title
+                        continue
                 flush_current_requirement()
+                current_table_columns = []
                 section_title, section_traces = _normalize_requirement_section_heading(
                     heading_text
                 )
                 continue
+            table_cells = _parse_markdown_table_cells(stripped)
+            if table_cells:
+                normalized_header = [cell.lower() for cell in table_cells]
+                if normalized_header and normalized_header[0] == "id":
+                    current_table_columns = normalized_header
+                    continue
+                if all(re.fullmatch(r"-+", cell.replace(":", "")) for cell in table_cells):
+                    continue
             table_match = _REQUIREMENT_TABLE_ROW_RE.match(stripped)
             if table_match:
                 flush_current_requirement()
                 requirement_id = table_match.group(1).strip()
+                if not _is_atomic_requirement_id(requirement_id):
+                    continue
+                fourth_column = _clean_requirement_value(table_match.group(4))
+                fourth_header = current_table_columns[3] if len(current_table_columns) > 3 else ""
                 projected.append(
                     _parse_requirement_table_row(
-                        workspace_root=workspace_root,
+                        project_root=project_root,
                         source_path=source_path,
                         family_title=section_title,
                         section_traces=section_traces,
                         requirement_id=requirement_id,
                         requirement_title=_clean_requirement_value(table_match.group(2)),
                         priority=_clean_requirement_value(table_match.group(3)),
-                        requirement_type=_clean_requirement_value(table_match.group(4)),
+                        requirement_type=fourth_column if "type" in fourth_header else None,
+                        requirement_status=fourth_column if "status" in fourth_header else None,
                         closure_entry=closure_index.get(requirement_id),
                     )
                 )
@@ -725,58 +796,180 @@ def _prefer_requirement_entry(candidate: dict[str, Any], current: dict[str, Any]
     return score(candidate) > score(current)
 
 
-def _load_app(workspace_root: Path):
-    _configure_imports(workspace_root)
+def _load_app(project_root: Path):
+    _configure_imports(project_root)
     from odd_sdlc.app import bootstrap, initialize
 
-    return initialize(bootstrap(workspace_root=workspace_root))
+    return initialize(bootstrap(project_root=project_root))
 
 
 def _configure_read_only_domain_fallbacks() -> None:
     import odd_sdlc.ambiguity as odd_ambiguity
     import odd_sdlc.app as odd_app
     import odd_sdlc.query as odd_query
-    import odd_sdlc.traceability as odd_traceability
+    import odd_sdlc.workspace_assets as odd_workspace_assets
+
+    try:
+        import odd_sdlc.requirement_closure as odd_requirement_closure
+    except ImportError:
+        odd_requirement_closure = None
+
+    try:
+        import odd_sdlc.traceability as odd_traceability
+    except ImportError:
+        odd_traceability = None
 
     if getattr(odd_query, "_odd_manager_read_only_safe", False):
         return
 
     original_ambiguity_loader = odd_ambiguity.load_or_build_ambiguity_register
     original_traceability_loader = (
-        odd_traceability.load_or_build_requirement_closure_register
+        getattr(odd_traceability, "load_or_build_requirement_closure_register", None)
+        if odd_traceability is not None
+        else None
     )
+    original_requirement_closure_loader = (
+        getattr(
+            odd_requirement_closure,
+            "load_requirement_closure_register_read_model",
+            None,
+        )
+        if odd_requirement_closure is not None
+        else None
+    )
+    requirement_closure_builder = (
+        getattr(odd_requirement_closure, "build_requirement_closure_register", None)
+        if odd_requirement_closure is not None
+        else None
+    ) or (
+        getattr(odd_traceability, "build_requirement_closure_register", None)
+        if odd_traceability is not None
+        else None
+    )
+    original_bootstrap_assets = odd_workspace_assets.bootstrap_assets
+    original_checkpoint_for_path = odd_workspace_assets.checkpoint_for_path
+    cached_assets_by_workspace: dict[str, tuple[Any, ...]] = {}
 
-    def safe_ambiguity_loader(workspace_root: Path) -> dict[str, Any]:
+    def safe_ambiguity_loader(project_root: Path) -> dict[str, Any]:
         try:
-            return original_ambiguity_loader(workspace_root)
+            return original_ambiguity_loader(project_root)
         except PermissionError:
             return odd_ambiguity.build_ambiguity_register(
-                Path(workspace_root),
+                Path(project_root),
                 stage="workspace_scan",
             )
 
-    def safe_traceability_loader(workspace_root: Path) -> dict[str, Any]:
+    def safe_requirement_closure_loader(project_root: Path) -> dict[str, Any]:
+        root = Path(project_root)
+        if callable(original_requirement_closure_loader):
+            try:
+                return original_requirement_closure_loader(root)
+            except PermissionError:
+                if callable(requirement_closure_builder):
+                    return requirement_closure_builder(root, stage="workspace_scan")
+                raise
+        if callable(original_traceability_loader):
+            try:
+                return original_traceability_loader(root)
+            except PermissionError:
+                if callable(requirement_closure_builder):
+                    return requirement_closure_builder(root, stage="workspace_scan")
+                raise
+        if callable(requirement_closure_builder):
+            return requirement_closure_builder(root, stage="workspace_scan")
+        return {
+            "register_kind": "odd_sdlc.requirement_closure_register",
+            "project_root": str(root),
+            "published": False,
+            "summary": {"published": False},
+            "requirements": [],
+        }
+
+    def fast_checkpoint_for_path(path: Path):
+        if not path.exists() or not path.is_dir():
+            return original_checkpoint_for_path(path)
         try:
-            return original_traceability_loader(workspace_root)
-        except PermissionError:
-            return odd_traceability.build_requirement_closure_register(
-                Path(workspace_root),
-                stage="workspace_scan",
+            stat = path.stat()
+            entry_count = sum(1 for _ in path.iterdir())
+            digest_basis = f"{path}:{stat.st_mtime_ns}:{entry_count}"
+            return odd_workspace_assets.AssetCheckpoint(
+                exists=True,
+                path_kind="directory",
+                content_digest=hashlib.sha256(
+                    digest_basis.encode("utf-8")
+                ).hexdigest(),
+                bytes=None,
             )
+        except OSError:
+            return odd_workspace_assets.AssetCheckpoint(
+                exists=True,
+                path_kind="directory",
+                content_digest=None,
+                bytes=None,
+            )
+
+    def cached_bootstrap_assets(project_root: Path):
+        cache_key = str(Path(project_root).resolve())
+        cached = cached_assets_by_workspace.get(cache_key)
+        if cached is not None:
+            return cached
+        assets = original_bootstrap_assets(Path(project_root))
+        cached_assets_by_workspace[cache_key] = assets
+        return assets
+
+    def lightweight_gap_snapshot(app) -> dict[str, Any]:
+        job_count = len(getattr(app.scope().module, "jobs", ()))
+        return {
+            "converged": True,
+            "graph_converged": True,
+            "carry_converged": True,
+            "fulfillment_converged": True,
+            "gaps": [],
+            "jobs_considered": job_count,
+            "open_frames": 0,
+            "graph_total_delta": 0.0,
+            "direct_graph_delta": 0.0,
+            "carry_delta": 0.0,
+            "fulfillment_delta": 0.0,
+            "combined_delta": 0.0,
+            "total_delta": 0.0,
+        }
 
     # odd_sdlc currently refreshes these registers eagerly during query composition.
     # When odd_manager observes an external workspace it may be able to read that
     # workspace without being allowed to rewrite its runtime files, so fall back
-    # to an in-memory rebuild instead of dropping to degraded mode.
+    # to an in-memory rebuild instead of dropping to degraded mode. Also avoid
+    # repeated full-directory checkpoint hashing for large observed code trees.
     odd_ambiguity.load_or_build_ambiguity_register = safe_ambiguity_loader
     odd_app.load_or_build_ambiguity_register = safe_ambiguity_loader
     odd_query.load_or_build_ambiguity_register = safe_ambiguity_loader
-    odd_traceability.load_or_build_requirement_closure_register = (
-        safe_traceability_loader
-    )
-    odd_query.load_or_build_requirement_closure_register = (
-        safe_traceability_loader
-    )
+    if odd_traceability is not None and hasattr(
+        odd_traceability, "load_or_build_requirement_closure_register"
+    ):
+        odd_traceability.load_or_build_requirement_closure_register = (
+            safe_requirement_closure_loader
+        )
+    if odd_requirement_closure is not None and hasattr(
+        odd_requirement_closure,
+        "load_requirement_closure_register_read_model",
+    ):
+        odd_requirement_closure.load_requirement_closure_register_read_model = (
+            safe_requirement_closure_loader
+        )
+    if hasattr(odd_query, "load_or_build_requirement_closure_register"):
+        odd_query.load_or_build_requirement_closure_register = (
+            safe_requirement_closure_loader
+        )
+    if hasattr(odd_query, "load_requirement_closure_register_read_model"):
+        odd_query.load_requirement_closure_register_read_model = (
+            safe_requirement_closure_loader
+        )
+    odd_workspace_assets.checkpoint_for_path = fast_checkpoint_for_path
+    odd_workspace_assets.bootstrap_assets = cached_bootstrap_assets
+    odd_app.bootstrap_assets = cached_bootstrap_assets
+    odd_query.bootstrap_assets = cached_bootstrap_assets
+    odd_app.gap_snapshot = lightweight_gap_snapshot
+    odd_query.gap_snapshot = lightweight_gap_snapshot
     odd_query._odd_manager_read_only_safe = True
 
 
@@ -864,11 +1057,11 @@ def _project_domain_contract(query_contract: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _empty_ambiguity_register(workspace_root: Path) -> dict[str, Any]:
+def _empty_ambiguity_register(project_root: Path) -> dict[str, Any]:
     return {
         "register_kind": "odd_sdlc.ambiguity_register",
         "schema_version": "v2",
-        "workspace_root": str(workspace_root),
+        "project_root": str(project_root),
         "stage": "unavailable",
         "project_profile": {},
         "summary": {
@@ -886,11 +1079,212 @@ def _empty_ambiguity_register(workspace_root: Path) -> dict[str, Any]:
 def _empty_gap_payload() -> dict[str, Any]:
     return {
         "converged": False,
+        "graph_converged": False,
+        "carry_converged": False,
+        "fulfillment_converged": False,
         "gaps": [],
         "jobs_considered": 0,
         "open_frames": 0,
+        "graph_total_delta": 0.0,
+        "direct_graph_delta": 0.0,
+        "carry_delta": 0.0,
+        "fulfillment_delta": 0.0,
+        "combined_delta": 0.0,
         "total_delta": 0.0,
     }
+
+
+def _float_value(value: Any, *, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_gap_payload(payload: Any) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    graph_total_delta = _float_value(raw.get("graph_total_delta"))
+    carry_delta = _float_value(raw.get("carry_delta"))
+    fulfillment_delta = _float_value(raw.get("fulfillment_delta"))
+    combined_delta = _float_value(raw.get("combined_delta"))
+    total_delta = _float_value(raw.get("total_delta"))
+    return {
+        **_empty_gap_payload(),
+        **raw,
+        "converged": bool(raw.get("converged", False)),
+        "graph_converged": (
+            bool(raw["graph_converged"])
+            if isinstance(raw.get("graph_converged"), bool)
+            else graph_total_delta == 0.0
+        ),
+        "carry_converged": (
+            bool(raw["carry_converged"])
+            if isinstance(raw.get("carry_converged"), bool)
+            else carry_delta == 0.0
+        ),
+        "fulfillment_converged": (
+            bool(raw["fulfillment_converged"])
+            if isinstance(raw.get("fulfillment_converged"), bool)
+            else fulfillment_delta == 0.0
+        ),
+        "gaps": [
+            dict(entry)
+            for entry in raw.get("gaps", [])
+            if isinstance(entry, dict)
+        ],
+        "jobs_considered": int(raw.get("jobs_considered") or 0),
+        "open_frames": int(raw.get("open_frames") or 0),
+        "graph_total_delta": graph_total_delta,
+        "direct_graph_delta": _float_value(raw.get("direct_graph_delta")),
+        "carry_delta": carry_delta,
+        "fulfillment_delta": fulfillment_delta,
+        "combined_delta": combined_delta,
+        "total_delta": total_delta,
+    }
+
+
+def _gap_payload_from_gap_dossier(payload: Any) -> dict[str, Any]:
+    dossier = payload if isinstance(payload, dict) else {}
+    summary = dossier.get("summary") if isinstance(dossier.get("summary"), dict) else {}
+    published = dossier.get("published")
+    unpublished = isinstance(published, bool) and not published
+    rows = dossier.get("dossiers") if isinstance(dossier.get("dossiers"), list) else []
+    gaps: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        gap_truth = row.get("gap_truth") if isinstance(row.get("gap_truth"), dict) else {}
+        triage = row.get("triage") if isinstance(row.get("triage"), dict) else {}
+        authority_basis = (
+            triage.get("authority_basis")
+            if isinstance(triage.get("authority_basis"), dict)
+            else {}
+        )
+        realized_basis = (
+            triage.get("realized_basis")
+            if isinstance(triage.get("realized_basis"), dict)
+            else {}
+        )
+        route_binding = (
+            row.get("route_binding") if isinstance(row.get("route_binding"), dict) else {}
+        )
+        edge_name = str(
+            row.get("edge")
+            or gap_truth.get("signal_key")
+            or authority_basis.get("edge")
+            or ""
+        )
+        if not edge_name:
+            continue
+        gaps.append(
+            {
+                "edge": edge_name,
+                "delta": _float_value(
+                    gap_truth.get("total_delta"),
+                    default=_float_value(realized_basis.get("delta")),
+                ),
+                "delta_summary": str(
+                    realized_basis.get("delta_summary")
+                    or gap_truth.get("gap_kind")
+                    or ""
+                ),
+                "failing": _dedupe_strings(
+                    [
+                        str(item)
+                        for item in gap_truth.get("failing", [])
+                        if str(item).strip()
+                    ]
+                    + [
+                        str(item)
+                        for item in gap_truth.get("graph_failing", [])
+                        if str(item).strip()
+                    ]
+                    + [
+                        str(item)
+                        for item in authority_basis.get("failing_evaluators", [])
+                        if str(item).strip()
+                    ]
+                ),
+                "passing": [],
+                "blocking_reasons": _dedupe_strings(
+                    [
+                        str(item)
+                        for item in gap_truth.get("blocking_reasons", [])
+                        if str(item).strip()
+                    ]
+                ),
+                "gap_kind": str(gap_truth.get("gap_kind") or ""),
+                "route_state": str(route_binding.get("state") or ""),
+                "resumption_trigger": str(
+                    row.get("resumption_trigger")
+                    or triage.get("resumption_trigger")
+                    or ""
+                ),
+                "current_work_key": row.get("current_work_key"),
+            }
+        )
+    total_delta = _float_value(
+        summary.get("total_delta"),
+        default=sum(_float_value(gap.get("delta")) for gap in gaps),
+    )
+    graph_total_delta = _float_value(
+        summary.get("graph_total_delta"),
+        default=_float_value(dossier.get("graph_total_delta"), default=total_delta),
+    )
+    carry_delta = _float_value(dossier.get("carry_delta"))
+    fulfillment_delta = _float_value(dossier.get("fulfillment_delta"))
+    combined_delta = _float_value(dossier.get("combined_delta"))
+    converged = (
+        bool(dossier["converged"])
+        if isinstance(dossier.get("converged"), bool)
+        else False if unpublished else total_delta == 0.0 and not gaps
+    )
+    return {
+        "converged": converged,
+        "graph_converged": (
+            bool(dossier["graph_converged"])
+            if isinstance(dossier.get("graph_converged"), bool)
+            else False if unpublished else graph_total_delta == 0.0
+        ),
+        "carry_converged": (
+            bool(dossier["carry_converged"])
+            if isinstance(dossier.get("carry_converged"), bool)
+            else False if unpublished else carry_delta == 0.0
+        ),
+        "fulfillment_converged": (
+            bool(dossier["fulfillment_converged"])
+            if isinstance(dossier.get("fulfillment_converged"), bool)
+            else False if unpublished else fulfillment_delta == 0.0
+        ),
+        "gaps": gaps,
+        "jobs_considered": int(dossier.get("jobs_considered") or 0),
+        "open_frames": int(dossier.get("open_frames") or 0),
+        "graph_total_delta": graph_total_delta,
+        "direct_graph_delta": _float_value(dossier.get("direct_graph_delta")),
+        "carry_delta": carry_delta,
+        "fulfillment_delta": fulfillment_delta,
+        "combined_delta": combined_delta,
+        "total_delta": total_delta,
+        "summary": summary,
+        "gap_dossier_kind": str(
+            dossier.get("gap_dossier_kind") or dossier.get("register_kind") or ""
+        ),
+        "schema_version": str(dossier.get("schema_version") or ""),
+        "scope": str(dossier.get("scope") or "workspace"),
+        "published": published,
+        "unavailable_reason": str(dossier.get("unavailable_reason") or ""),
+    }
+
+
+def _domain_gap_payload(domain_payload: dict[str, Any]) -> dict[str, Any]:
+    raw_gaps = domain_payload.get("gaps")
+    if isinstance(raw_gaps, dict) and any(
+        key in raw_gaps for key in ("gaps", "total_delta", "converged", "jobs_considered")
+    ):
+        return _normalize_gap_payload(raw_gaps)
+    if isinstance(domain_payload.get("gap_dossier"), dict):
+        return _gap_payload_from_gap_dossier(domain_payload.get("gap_dossier"))
+    return _empty_gap_payload()
 
 
 def _ambiguity_operator_fields(entry: dict[str, Any]) -> dict[str, Any]:
@@ -1012,10 +1406,10 @@ def _ambiguity_summary_counts(ambiguity_register: dict[str, Any]) -> dict[str, i
 
 
 def _normalize_ambiguity_register(
-    workspace_root: Path,
+    project_root: Path,
     ambiguity_register: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    register = ambiguity_register if isinstance(ambiguity_register, dict) else _empty_ambiguity_register(workspace_root)
+    register = ambiguity_register if isinstance(ambiguity_register, dict) else _empty_ambiguity_register(project_root)
     normalized_entries = [
         {**entry, **_ambiguity_operator_fields(entry)}
         for entry in register.get("ambiguities", [])
@@ -1041,7 +1435,7 @@ def _normalize_ambiguity_register(
 
 
 def _domain_projection(
-    workspace_root: Path,
+    project_root: Path,
     domain_payload: dict[str, Any],
     *,
     functions: list[dict[str, Any]],
@@ -1049,19 +1443,37 @@ def _domain_projection(
     workorders: list[dict[str, Any]],
 ) -> dict[str, Any]:
     query_contract = _normalize_query_contract(domain_payload.get("query_contract"))
+    gap_payload = _domain_gap_payload(domain_payload)
     return {
-        "workspace_root": str(domain_payload.get("workspace_root") or workspace_root),
+        "project_root": str(domain_payload.get("project_root") or project_root),
         "query_contract": query_contract,
         "domain_contract": _project_domain_contract(query_contract),
         "semantic_facets": list(domain_payload.get("semantic_facets") or []),
         "asset_types": list(domain_payload.get("asset_types") or []),
         "asset_families": list(domain_payload.get("asset_families") or []),
         "assets": list(domain_payload.get("assets") or []),
-        "requirements": _project_requirements(workspace_root),
-        "tickets": _project_tickets(workspace_root),
-        "comments": _project_comments(workspace_root),
+        "start_target_catalog": list(domain_payload.get("start_target_catalog") or []),
+        "asset_ownership_index": list(domain_payload.get("asset_ownership_index") or []),
+        "operational_capabilities": (
+            domain_payload.get("operational_capabilities")
+            if isinstance(domain_payload.get("operational_capabilities"), dict)
+            else {}
+        ),
+        "execution_contract_surface": (
+            domain_payload.get("execution_contract_surface")
+            if isinstance(domain_payload.get("execution_contract_surface"), dict)
+            else {}
+        ),
+        "gap_dossier": (
+            domain_payload.get("gap_dossier")
+            if isinstance(domain_payload.get("gap_dossier"), dict)
+            else {}
+        ),
+        "requirements": _project_requirements(project_root),
+        "tickets": _project_tickets(project_root),
+        "comments": _project_comments(project_root),
         "ambiguity_register": _normalize_ambiguity_register(
-            workspace_root,
+            project_root,
             domain_payload.get("ambiguity_register"),
         ),
         "collections": list(domain_payload.get("collections") or []),
@@ -1073,14 +1485,14 @@ def _domain_projection(
         "jobs": list(domain_payload.get("jobs") or []),
         "graph_functions": graph_functions,
         "workorders": workorders,
-        "gaps": domain_payload.get("gaps") or _empty_gap_payload(),
+        "gaps": gap_payload,
     }
 
 
-def _degraded_world(workspace_root: Path, error: Exception) -> dict[str, Any]:
+def _degraded_world(project_root: Path, error: Exception) -> dict[str, Any]:
     summary = _format_error_summary(error)
     return {
-        "workspace_root": str(workspace_root),
+        "project_root": str(project_root),
         "generated_at": _now_iso(),
         "boundary": {
             "runtime_source": "abg_event_model (unavailable)",
@@ -1111,17 +1523,22 @@ def _degraded_world(workspace_root: Path, error: Exception) -> dict[str, Any]:
             "graphs": [],
         },
         "domain": {
-            "workspace_root": str(workspace_root),
+            "project_root": str(project_root),
             "query_contract": _empty_query_contract(),
             "domain_contract": _project_domain_contract(_empty_query_contract()),
             "semantic_facets": [],
             "asset_types": [],
             "asset_families": [],
             "assets": [],
+            "start_target_catalog": [],
+            "asset_ownership_index": [],
+            "operational_capabilities": {},
+            "execution_contract_surface": {},
+            "gap_dossier": {},
             "requirements": [],
             "tickets": [],
             "comments": [],
-            "ambiguity_register": _empty_ambiguity_register(workspace_root),
+            "ambiguity_register": _empty_ambiguity_register(project_root),
             "collections": [],
             "bindings": [],
             "functions": [],
@@ -2324,27 +2741,28 @@ def _project_graph_set(
     }
 
 
-def _compose_world(workspace_root: Path) -> dict[str, Any]:
-    app = _load_app(workspace_root)
+def _compose_world(project_root: Path) -> dict[str, Any]:
+    app = _load_app(project_root)
     raw_domain_payload = _query_domain_payload(app)
     events = app.stream.all_events()
     runtime_payload = _project_runtime(events)
+    gap_payload = _domain_gap_payload(raw_domain_payload)
     graph_functions = raw_domain_payload.get("graph_functions", [])
     functions = _project_functions(
         raw_domain_payload.get("functions", []),
         graph_functions,
-        raw_domain_payload.get("gaps", {}),
+        gap_payload,
         runtime_payload,
     )
     workorders = _project_workorders(
         raw_domain_payload.get("jobs", []),
         graph_functions,
-        raw_domain_payload.get("gaps", {}),
+        gap_payload,
         runtime_payload,
     )
     graph_function_registry = _project_graph_functions(graph_functions, workorders)
     domain_payload = _domain_projection(
-        workspace_root,
+        project_root,
         raw_domain_payload,
         functions=functions,
         graph_functions=graph_function_registry,
@@ -2368,9 +2786,21 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
     )
     total_gaps = len(domain_payload["gaps"].get("gaps", []))
     total_delta = float(domain_payload["gaps"].get("total_delta", 0))
+    gap_summary = (
+        domain_payload["gaps"].get("summary")
+        if isinstance(domain_payload["gaps"].get("summary"), dict)
+        else {}
+    )
+    gap_analysis_unavailable = (
+        domain_payload["gaps"].get("published") is False
+        or bool(domain_payload["gaps"].get("unavailable_reason"))
+        or gap_summary.get("published") is False
+        or bool(gap_summary.get("unavailable_reason"))
+    )
     ambiguity_counts = _ambiguity_summary_counts(domain_payload["ambiguity_register"])
     workorder_status = _dominant_status([workorder["status"] for workorder in workorders])
-    overview_status = _dominant_status([graph_set["status"], workorder_status])
+    gap_status = "pending" if gap_analysis_unavailable or total_delta > 0 else "converged"
+    overview_status = _dominant_status([graph_set["status"], workorder_status, gap_status])
 
     if ambiguity_counts["blocking"] > 0 or ambiguity_counts["hard_stop"] > 0:
         headline = "Published builder ambiguity currently hard-blocks one or more edges."
@@ -2378,6 +2808,8 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
         headline = "Published builder ambiguity currently requires F_H resolution."
     elif ambiguity_counts["pending_capability"] > 0:
         headline = "Capability-gated builder stages remain pending declaration or ratification."
+    elif gap_analysis_unavailable:
+        headline = "Published gap analysis is stale or unavailable for the current workspace."
     elif workorder_status == "blocked":
         headline = "One or more published workorders are fail-closed."
     elif workorder_status == "gated":
@@ -2390,7 +2822,7 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
         headline = "Descriptive domain gaps remain open across the current graph set."
 
     return {
-        "workspace_root": str(workspace_root),
+        "project_root": str(project_root),
         "generated_at": _now_iso(),
         "boundary": {
             "runtime_source": "abg_event_model",
@@ -2417,8 +2849,8 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
     }
 
 
-def _read_surface(workspace_root: Path, relative_path: str) -> dict[str, Any]:
-    root = workspace_root.resolve()
+def _read_surface(project_root: Path, relative_path: str) -> dict[str, Any]:
+    root = project_root.resolve()
     target = (root / relative_path).resolve()
     target.relative_to(root)
     if not target.exists():
@@ -2473,18 +2905,18 @@ def main(argv: list[str] | None = None) -> int:
     command_parser.add_argument("--auto", action="store_true")
 
     args = parser.parse_args(argv)
-    workspace_root = Path(args.workspace).resolve()
+    project_root = Path(args.workspace).resolve()
 
     if args.command == "world":
         try:
-            result = _compose_world(workspace_root)
+            result = _compose_world(project_root)
         except Exception as error:  # pragma: no cover - degraded fallback
             print(traceback.format_exc(), file=sys.stderr, end="")
-            result = _degraded_world(workspace_root, error)
+            result = _degraded_world(project_root, error)
     elif args.command == "surface":
-        result = _read_surface(workspace_root, args.relative_path)
+        result = _read_surface(project_root, args.relative_path)
     else:
-        app = _load_app(workspace_root)
+        app = _load_app(project_root)
         from odd_sdlc.app import gaps, iterate, start
 
         if args.name == "gaps":

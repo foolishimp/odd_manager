@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -8,9 +8,8 @@ import {
   postRoomParticipantMessage,
   waitRoomParticipant,
 } from "../src/server/oddchat-participant-service.mjs";
-import { loadGTermPoolState } from "../src/server/oddterm-pool-service.mjs";
 
-const workspaceRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? "").trim();
+const projectRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? "").trim();
 const sessionId = String(process.env.OMAN_SESSION_ID ?? "").trim();
 const sessionLabel = String(process.env.OMAN_SESSION_LABEL ?? "").trim();
 const topicId = String(process.env.OMAN_TOPIC_ID ?? "").trim();
@@ -18,7 +17,7 @@ const topicLabel = String(process.env.OMAN_TOPIC_LABEL ?? "").trim() || topicId;
 const provider = "codex";
 const participantLabel = `Codex${sessionLabel ? ` · ${sessionLabel}` : ""}`;
 
-if (!workspaceRoot || !sessionId || !topicId) {
+if (!projectRoot || !sessionId || !topicId) {
   console.error("odd_manager codex room worker requires OMAN_WORKSPACE_ROOT, OMAN_SESSION_ID, and OMAN_TOPIC_ID");
   process.exit(1);
 }
@@ -29,10 +28,41 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sessionMetaPath() {
+  return join(projectRoot, ".ai-workspace/runtime/oddterm", sessionId, "meta.json");
+}
+
+function isPidAlive(pid) {
+  const parsed = Number(pid);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return false;
+  }
+  try {
+    process.kill(parsed, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readSessionMeta() {
+  const filePath = sessionMetaPath();
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 function sessionIsLive() {
-  return (
-    loadGTermPoolState(workspaceRoot).sessions.find((session) => session.id === sessionId)?.status === "live"
-  );
+  const meta = readSessionMeta();
+  if (!meta || meta.archived || meta.status !== "live") {
+    return false;
+  }
+  return isPidAlive(meta.pid);
 }
 
 function messageBody(message) {
@@ -71,7 +101,7 @@ async function runCodexExec(prompt) {
   const args = [
     "exec",
     "-C",
-    workspaceRoot,
+    projectRoot,
     "--skip-git-repo-check",
     "--color",
     "never",
@@ -82,7 +112,7 @@ async function runCodexExec(prompt) {
 
   const exitCode = await new Promise((resolve, reject) => {
     const child = spawn("codex", args, {
-      cwd: workspaceRoot,
+      cwd: projectRoot,
       env: process.env,
       stdio: ["ignore", "inherit", "inherit"],
     });
@@ -107,7 +137,7 @@ async function cleanup() {
   }
   shuttingDown = true;
   try {
-    leaveRoomParticipant(workspaceRoot, {
+    leaveRoomParticipant(projectRoot, {
       sessionId,
       provider,
     });
@@ -129,7 +159,7 @@ async function main() {
     await sleep(250);
   }
 
-  joinRoomParticipant(workspaceRoot, {
+  joinRoomParticipant(projectRoot, {
     sessionId,
     topicId,
     provider,
@@ -137,7 +167,7 @@ async function main() {
     historyLimit: 1,
   });
 
-  postRoomParticipantMessage(workspaceRoot, {
+  postRoomParticipantMessage(projectRoot, {
     sessionId,
     provider,
     text: `Hello from ${participantLabel}. I’m connected on ${topicLabel} and will reply here as messages arrive.`,
@@ -148,7 +178,7 @@ async function main() {
       break;
     }
 
-    const waited = await waitRoomParticipant(workspaceRoot, {
+    const waited = await waitRoomParticipant(projectRoot, {
       sessionId,
       provider,
       excludeSelf: true,
@@ -166,7 +196,7 @@ async function main() {
       continue;
     }
 
-    postRoomParticipantMessage(workspaceRoot, {
+    postRoomParticipantMessage(projectRoot, {
       sessionId,
       provider,
       text: reply,

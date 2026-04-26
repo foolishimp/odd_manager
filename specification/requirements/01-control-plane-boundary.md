@@ -87,6 +87,22 @@ Acceptance Criteria
 - domain labels or summaries remain traceable to their published domain
   contract rather than to UI-local reinterpretation
 
+### REQ-OM-BND-010 - Primary project identity remains separate from governance-package identity
+
+`odd_manager` shall distinguish the selected workspace's primary project
+identity from the governance or runtime package currently operating over it.
+
+Acceptance Criteria
+- a workspace governed by `odd_sdlc` may still present as primarily
+  `odd_world_model` or another `odd_*` project identity
+- domain landing-page selection, shell titling, and domain page-family choice
+  are keyed from primary project identity rather than from governance-package
+  markers alone
+- governance-package identity remains inspectable as separate context instead
+  of being silently collapsed into primary project identity
+- the manager does not force all governed projects into one permanent
+  `odd_sdlc` presentation model
+
 ### REQ-OM-BND-005 - Shared design law hardens before tenant-local implementation
 
 The product shall harden shared design law before committing to tenant-local UI

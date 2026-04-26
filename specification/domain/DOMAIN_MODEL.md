@@ -1,149 +1,173 @@
 # Domain Model — odd_manager
 
-**Version**: 0.1.0
-**Date**: 2026-04-10
+**Version**: 0.3.0
+**Date**: 2026-04-23
 **Status**: Active
 **Derives From**:
 - `specification/INTENT.md`
 - `specification/PRODUCT.md`
 - `specification/requirements/02-canonical-ontology.md`
 - `specification/requirements/03-read-model-and-projection.md`
-- `/Users/jim/src/apps/odd_method/specification/PRODUCT.md`
-- `/Users/jim/src/apps/odd_method/specification/requirements/02-graph-functions.md`
-- `/Users/jim/src/apps/odd_method/specification/requirements/07-asset-typing-and-binding.md`
-- `/Users/jim/src/apps/odd_method/specification/requirements/10-odd-sdlc-software-domain-buildout.md`
-- `/Users/jim/src/apps/odd_method/docs/ODD_SDLC_DISAMBIGUATION_STRATEGY.md`
-- `/Users/jim/src/apps/odd_method/build_tenants/common/design/ODD_SDLC_TRANSLATION.md`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/context/project_bootstrap.md`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/query_contract.py`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/query.py`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/start_targeting.py`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/execution_contract.py`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/project_profile.py`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-ambiguity-register.json`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-requirement-closure.json`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-execution-contract.json`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-gap-dossiers.json`
+- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-workspace-state.json`
 
 ## Purpose
 
 This document publishes the domain model that `odd_manager` observes, projects,
-and acts on.
+and supervises.
 
-It is the shared vocabulary for:
-
-- readers and projection code
+It gives one shared vocabulary for:
+- runtime readers and projector code
 - API and transport surfaces
 - UI and operator-facing panels
-- audit, provenance, and proving surfaces
+- audit, provenance, admission, and closure explanations
 
-This domain model is published inside `odd_manager`, but it remains subordinate
-to the declaration and runtime truth emitted by the managed system.
+The observed workspace listed above is evidence for the active `odd_sdlc`
+semantic contract. It does not define project identity for `odd_manager`.
 
 ## Position
 
-The observed domain is not one permanent project-global graph.
+`odd_manager` owns a cross-domain supervisory core.
 
-One managed workspace may expose:
+That core is extended by domain-specific overlays published by the active
+domain package contract.
 
-- multiple graphs
-- typed assets inside those graphs
-- asset families and asset collections
-- explicit asset bindings into typed nodes
-- published callable functions over those graphs
-- ambiguity and capability posture as current domain truth
+The live observed `odd_sdlc` contract baseline is:
+- manager contract: `odd_manager.domain-world v1`
+- source contract: `odd_sdlc.query-domain v16`
 
-Within `odd_manager`, the manager-facing name for a published callable function
-is `WorkOrder`.
+The current reference observation boundary is therefore a concrete
+`odd_sdlc`-governed workspace like `data_mapper.test38`, not an abstract
+builder sketch and not the older `data_mapper.test35` read model.
 
-A `WorkOrder` remains traceable to the underlying domain function and GTL
-`GraphFunction`. It is not a second executor.
+## Observed Semantic Revision
 
-The manager is allowed to ship against this stable observation contract even
-when the richer `odd_method` semantic library is still changing.
+The prior observed standard was `data_mapper.test35` carrying
+`odd_sdlc.query-domain v10`.
 
-## Stable Observation Contract
+`data_mapper.test38` revises that contract materially:
+- `analysis_manifest` is no longer a stable top-level query-domain surface for
+  manager consumers; it remains provenance feeding other published read models
+- `gaps` is no longer the first-class odd_sdlc publication boundary; the
+  stable surface is now `gap_dossier`
+- the domain package now publishes start-addressability and dispatch truth
+  explicitly through `start_target_catalog`, `asset_ownership_index`, and
+  `execution_contract_surface`
+- execution gating is now first-class through
+  `operational_capabilities`
+- the manager may continue to project a compact `Gap` overlay for UI
+  continuity, but that overlay is now derived from `gap_dossier` when the
+  upstream source contract is `v16`
 
-The latest live `odd_method` model currently gives `odd_manager` enough stable
-shape to observe and supervise:
+This revision changes the meaning of the observed domain pack. It is not just a
+file-count increase.
 
-- `Asset` with stable identity, URI, declared type, provenance, and optional
-  checkpoint material
-- `AssetFamily` as a stable semantic grouping over lifecycle lanes
-- `AssetCollection` as a named bound scope
-- explicit node bindings from typed nodes to concrete asset identities
-- function catalog entries with name, intent, typed inputs, typed outputs, and
-  backing graph-function identity
-- published programs, edge contracts, and work-act types where the builder
-  query library exposes them
-- an ambiguity register with current status, policy action, and expected
-  resolving boundary
-- capability contracts and capability-gated stop states for side-effecting
-  lifecycle stages
-- published cumulative environment contracts where the builder exposes
-  `requires`, `provides`, and `carries`
-- GTL graph-function carriers and ABG runtime aggregates
-- a query-library boundary for domain overlays that ABG does not own
+## Core Observation Contract
 
-`odd_manager` should treat these surfaces as stable enough to build around.
+Across supported domain packages, `odd_manager` supervises:
+- published domain-package identity
+- published query-contract identity and version
+- graph sets
+- assets, asset types, asset families, asset collections, and asset nodes
+- asset bindings
+- workorders and backing GTL graph-function carriers
+- jobs and roles
+- ABG runtime aggregates: run, graph call, frame, continuation, runtime fact
+- policy, ambiguity, capability, execution-admission, provenance, and closure
+  surfaces
+
+These objects are stable enough to remain part of the shared manager ontology.
 
 ## Runtime And Domain Query Boundary
 
-The latest `odd_method` ADR and first-slice requirements ratify this
-composition boundary:
-
+The composition rule is strict:
 - ABG owns runtime event truth and runtime aggregate projections
-- `odd_method` owns read-only domain query logic
-- `odd_manager` composes both into one supervisory UI
+- the active domain package owns read-only domain overlays and domain-specific
+  explanations
+- `odd_manager` composes both into one supervisory world
 
-The query-library side may provide:
-
-- asset views
-- asset-family and collection views
-- asset-type semantics
-- binding views
-- function catalog views
-- program, edge-contract, and work-act-type views
-- ambiguity-register and capability-posture views
-- gap and convergence overlays
-- checkpoint and provenance interpretation
+The domain side may provide:
+- asset and binding views
+- function catalog, program, edge-contract, and work-act-type views
+- ambiguity-register and operational-capability views
+- start-addressability and asset-ownership views
+- admitted execution-contract and per-edge gap-dossier views
+- generated delivery artifacts such as requirement, scenario, design, test,
+  release, and operational-cycle surfaces
 
 It must not redefine:
-
 - `Run`
 - `GraphCall`
-- `Continuation`
 - `Frame`
+- `Continuation`
 - `RuntimeFact`
 
 Those remain ABG-native.
 
-## Provisional Detail Policy
+## First Supported odd_sdlc Artifact Family
 
-The following richer detail may remain provisional while `odd_method` is still
-being updated:
+The first live `odd_sdlc` domain pack is defined against the artifact family
+observed in `data_mapper.test38`.
 
-- deep asset-type semantic libraries
-- polished function intent descriptions
-- full gap interpretation libraries
-- proof and closure hint libraries
-- domain-specific convergence explanation
+### Constitutional And Runtime Inputs
 
-The following currently published upstream truths should not be downgraded to
-placeholder state once they exist:
+- `specification/GOALS.md`
+- `specification/INTENT.md`
+- `specification/PRODUCT.md`
+- `specification/requirements/10-generated-bootstrap.md`
+- `.ai-workspace/runtime/odd_sdlc-requirement-closure.json`
+- `.ai-workspace/runtime/odd_sdlc-ambiguity-register.json`
+- `.ai-workspace/runtime/odd_sdlc-execution-contract.json`
+- `.ai-workspace/runtime/odd_sdlc-gap-dossiers.json`
+- `.ai-workspace/runtime/odd_sdlc-workspace-state.json`
 
-- ambiguity register entries
-- capability contracts
-- policy action over active ambiguity
-- bounded stop states such as `pending_capability`
+### Domain-Specific Delivery Evidence
 
-Where that detail is incomplete, `odd_manager` may project placeholder detail
-cards, badges, or inspector rows.
+- `specification/scenarios/20-generated-uat-testcases.md`
+- `specification/scenarios/30-generated-testcase-authority.md`
+- `specification/scenarios/40-generated-scenarios.md`
+- `build_tenants/<tenant>/design/20-generated-feature-decomp.md`
+- `build_tenants/<tenant>/design/30-generated-odd-design.md`
+- `build_tenants/<tenant>/design/40-generated-implementation-design.md`
+- `build_tenants/<tenant>/design/40-generated-implementation-modules.md`
+- `build_tenants/<tenant>/design/40-generated-test-design.md`
+- `build_tenants/<tenant>/design/60-generated-retrofit-plan.md`
+- `build_tenants/<tenant>/test_env/tests/40-generated-test-modules.md`
+- `build_tenants/<tenant>/release/60-generated-release-surface.md`
+- `docs/45-generated-build-execution.md`
+- `docs/46-generated-build-execution-result.md`
+- `docs/47-generated-test-execution.md`
+- `docs/48-generated-test-execution-result.md`
+- `docs/50-generated-deployment.md`
+- `docs/55-generated-deployment-result.md`
+- `docs/60-generated-runtime-observation.md`
+- `.ai-workspace/fp_ledgers/*`
+- `.ai-workspace/fp_manifests/*`
+- `.ai-workspace/fp_results/*`
 
-Those placeholders are lawful only when they remain anchored to the stable
-objects named above and are labeled as provisional.
+`odd_manager` treats this artifact family as a domain overlay over the shared
+core ontology, not as a replacement ontology.
 
 ## Core Objects
 
+### DomainContract
+
+The published identity of the active domain package and query-contract version.
+
+This object governs compatibility and domain-pack selection inside the manager.
+
 ### GraphSet
 
-A workspace-scoped set of one or more published graphs.
-
-`odd_manager` uses `GraphSet` as the top-level observed topology rather than
-assuming one hidden canonical graph.
-
-Where upstream builder metadata is still thin, a `GraphSet` may initially be a
-derived projection assembled from function catalog and binding surfaces.
+A workspace-scoped set of one or more observed graphs.
 
 ### Asset
 
@@ -152,11 +176,6 @@ A durable surface of truth or produced delivery state identified by URI.
 ### AssetType
 
 The semantic role an asset fulfills in the domain.
-
-An asset type may carry evaluation, descriptive, proof, or closure meaning.
-
-In the current live builder line, the manager must tolerate asset-type detail
-that is still shallow or partially published.
 
 ### AssetFamily
 
@@ -175,12 +194,6 @@ binding.
 
 The dependency topology over typed asset nodes.
 
-An asset graph is a member of a `GraphSet`.
-
-In the first manager implementation, graph topology may be projected from
-published function inputs and outputs plus explicit node-binding truth until the
-builder line publishes richer graph descriptors.
-
 ### AssetBinding
 
 The mapping from one concrete asset or asset collection into one typed asset
@@ -190,29 +203,8 @@ node at call time.
 
 The manager-facing published callable transformation over typed asset nodes.
 
-A `WorkOrder` is realized by a domain function and carried by a GTL
-`GraphFunction`.
-
-While the builder catalog is still evolving, a workorder may initially expose
-only carrier identity, intent, and typed inputs and outputs.
-
-The manager may additionally project the carrier's cumulative environment
-contract when upstream publication exposes it.
-
-### EdgeContract
-
-A published description of one lawful transition boundary, its inputs or
-conditions, and its closure posture.
-
-### Program
-
-A published higher-order workflow grouping over callable carriers and related
-domain structure.
-
-### WorkActType
-
-A published class of constructive or operational software-domain act used to
-explain what kind of work is occurring.
+A `WorkOrder` remains traceable to the underlying domain function and GTL
+`GraphFunction`. It is not a second executor.
 
 ### Job
 
@@ -231,14 +223,6 @@ One engine-owned execution attempt over semantic work.
 
 One engine-owned realization of one published GTL `GraphFunction` boundary.
 
-`odd_manager` does not replace `GraphCall` with a separate runtime aggregate.
-It explains a graph call in terms of the selected `WorkOrder`.
-
-Constructive dispatch is lawful only against the resolved live runtime
-environment for that boundary. The manager should therefore treat missing
-carried bindings or unresolved environment state as first-class runtime
-explanation, not as hidden parameter-passing detail.
-
 ### Frame
 
 One recursive invocation aggregate inside a graph call.
@@ -252,187 +236,162 @@ condition derived from prior event truth.
 
 An emitted ABG event or replay-derived runtime truth surface.
 
-### Gap
-
-A projected delta from convergence for one asset, asset collection, graph, or
-callable boundary.
-
-Where the managed builder line publishes per-edge obligation ledgers, a gap
-carries separate carry and fulfillment truth rather than one blended scalar:
-
-- `carry_converged` — the obligation set is correctly accounted for with no
-  silent drops or extra obligations
-- `fulfillment_converged` — each carried obligation is actually realized
-- `edge_converged` — carry and fulfillment are both converged; the primary
-  closure signal
-- `carry_delta` and `fulfillment_delta` — separate pressure indicators
-- `combined_delta` — a derived convenience projection, not the primary closure
-  signal
-
-Gap interpretation may begin as provisional descriptive detail until the
-builder line publishes a more stable gap library.
-
-### EdgeObligationLedger
-
-A per-edge published accounting surface emitted by the builder line for each
-constructive edge that carries explicit obligations.
-
-Each ledger records the obligation source and derivation rule, expected and
-carried obligation counts, per-obligation carry and fulfillment status,
-blocking reasons, and evidence refs.
-
-`odd_manager` observes this surface as a query-derived domain overlay. It does
-not own the obligation semantics or the fulfillment rules.
-
-### ConvergenceTarget
-
-The declared condition under which one asset, asset collection, or graph
-boundary counts as converged.
-
-Where the builder line publishes obligation ledgers, edge convergence is the
-compound condition `carry_converged AND fulfillment_converged`. A bare blended
-scalar is a derived convenience, not the primary closure signal.
-
-Convergence explanation may be partial when the upstream builder line has not
-yet published richer closure semantics.
-
 ### AmbiguityRegister
 
 A query-derived domain surface that records major ambiguity, current status,
 policy action, affected assets, threatened invariants, and expected resolving
 boundary.
 
-### CapabilityContract
+### OperationalCapabilityProjection
 
-A tenant-local declared capability surface that governs whether executional or
-operational stages are lawful.
+A published capability declaration surface describing whether build execution,
+test execution, deployment, and runtime observation are declared lawful
+operational families in the current workspace.
 
-### BoundedStopState
+### StartTargetCatalog
 
-An honest current posture such as `pending_capability`, `fh_required`, or
-another explicit carried or blocked state that explains why downstream closure
-has not occurred.
+A published list of manager-visible graph-function carriers that are
+start-addressable, including their carrier class, input and output surfaces,
+and execution binding posture.
 
-### PolicySurface
+### AssetOwnershipIndex
 
-A declarative control surface over dispatch, evaluation, escalation, proof, or
-closure.
+A published mapping from an asset surface to the governing start target or work
+item route that is responsible for advancing that asset.
 
-### ProofLane
+### ExecutionContractSurface
 
-A declared evidence and proving surface used to justify capability or closure
-claims.
+The admitted dispatch contract for the next lawful constructive act, including
+scope, normalized target, `until` semantics, proof surface, and provenance of
+the admission basis.
 
-### ProvenanceRecord
+### GapDossier
 
-Attributable lineage that explains how a declaration, binding, call, fact, or
-closure claim came to exist.
+A published per-edge gap-analysis register carrying gap truth, route state,
+triage evidence, resumption trigger, and current execution-contract context.
 
-### ClosureRecord
+### Gap
 
-The operator-facing closure state over an asset, graph, workorder, or run.
+A compact manager projection over one unconverged edge or callable boundary.
 
-## Ownership And Mapping
+For `odd_sdlc.query-domain v10`, this is sourced directly from the published
+`gaps` payload.
 
-### Builder And Domain Layer
+For `odd_sdlc.query-domain v16`, this is derived from `gap_dossier` so current
+manager widgets can remain stable while the upstream model evolves.
 
-The emerging builder/domain line owns:
+## odd_sdlc Extension Objects
 
-- assets
-- asset families
-- asset types
-- asset collections
-- asset nodes
-- asset graphs
-- asset bindings
-- domain functions
-- edge contracts
-- programs
-- work-act types
-- ambiguity register
-- capability contracts and capability-gated stop states
-- convergence targets, gap interpretation, and edge obligation ledgers
+The current `odd_sdlc` pack extends the core ontology with domain objects that
+stay query-derived rather than becoming manager primitives.
 
-### GTL Layer
+### RequirementInventory
 
-GTL owns:
+The generated requirement authority carried by
+`specification/requirements/10-generated-bootstrap.md`.
+
+### RequirementClosureRegister
+
+The current carry and fulfillment status over admitted requirements, as
+published in `.ai-workspace/runtime/odd_sdlc-requirement-closure.json`.
+
+### ScenarioSurface
+
+The generated technical and acceptance scenario surfaces published under
+`specification/scenarios/`.
+
+### TestcaseAuthority
+
+The published admission surface tying requirements to testcase and test-module
+coverage when the asset is materialized.
+
+### GeneratedDesignSurface
+
+One published generated design, decomposition, implementation-design,
+implementation-module, or test-design surface under
+`build_tenants/<tenant>/design/`.
+
+### OperationalCycleSurface
+
+One published build execution, build result, test execution, test result,
+deployment, deployment result, or runtime-observation surface under `docs/`
+or the active tenant output tree.
+
+### ReleaseSurface
+
+The published release posture surface under `build_tenants/<tenant>/release/`.
+
+### FPArtifact
+
+One constructive artifact in `.ai-workspace/fp_ledgers/`,
+`.ai-workspace/fp_manifests/`, or `.ai-workspace/fp_results/`.
+
+## Placeholder Policy
+
+Placeholder detail is lawful only where the active domain package has not yet
+published richer meaning.
+
+The following are not placeholder once published:
+- domain-contract identity
+- generated requirement inventory
+- requirement-closure register
+- ambiguity-register entries
+- operational-capability posture
+- start-target catalog and asset-ownership index
+- admitted execution-contract surface
+- gap-dossier entries
+- generated scenario, testcase-authority, design, release, and
+  operational-cycle surfaces
+
+Missing or stale publication must be represented honestly as absence, staleness,
+or incompatibility state.
+
+## Ownership Rules
+
+### GTL-Owned
 
 - graph structure
 - typed nodes
 - graph functions
 - jobs
 - roles
-- module structure
-- policy hook declarations
 
-### Runtime Layer
+### ABG-Owned
 
-ABG owns:
-
-- runs
-- graph calls
-- frames
-- continuations
-- event emission
-- replay-derived runtime projections
-- worker/backend binding
+- run, graph-call, frame, and continuation aggregates
+- worker and backend identity binding
+- event emission and replay-derived runtime projection
 - proof and closure enforcement
 
-### odd_manager Layer
+### odd_sdlc-Owned For The Current Pack
 
-`odd_manager` owns:
+- generated requirement, scenario, testcase-authority, design, test, release,
+  and operational-cycle artifact families
+- ambiguity and operational-capability overlays
+- start-target and asset-ownership publication
+- admitted execution-contract and per-edge gap-dossier publication
+- domain-specific explanations over software-delivery work
 
-- projections over graph sets, graphs, assets, asset families, collections,
-  bindings, workorders, ambiguity posture, and capability posture
-- operator-facing grouping, orientation, and drilldown
-- derived posture, attention, and readiness views
-- composition of ABG runtime projections with ODD domain query overlays
-- honest placeholder presentation for provisional builder detail
-- attribution and audit presentation
+### odd_manager-Owned
 
-`odd_manager` does not own hidden runtime semantics or hidden builder
-semantics.
-
-## Mapping Rules
-
-- domain `Function` -> manager `WorkOrder` -> GTL `GraphFunction`
-- GTL `GraphFunction` call -> ABG `GraphCall`
-- asset or asset-collection binding -> `AssetBinding`
-- graph topology over typed nodes -> `AssetGraph`
-- one workspace's observable graph topology set -> `GraphSet`
-- domain `ambiguity_register` -> manager ambiguity posture and inspection views
-- domain capability contracts and stop states -> manager bounded-stop
-  explanation surfaces
-- domain `edge_obligation_ledger` -> manager gap carry/fulfillment separation
-  in projected gap views
-
-## Derived Objects
-
-The following may exist in `odd_manager` as derived operator views:
-
-- outcome
-- transition
-- work vector
-- lens
-- readiness score
-- attention queue
-
-These are lawful only when they are projections over the published graph, asset,
-workorder, runtime, policy, and proof model described above.
+- cross-domain page and panel ownership
+- domain-pack compatibility selection
+- composition of ABG runtime truth with domain overlays
+- operator-facing grouping, drill-down, attention, and posture views
+- compatibility projection from source-domain surfaces to stable manager UI
+  slices
+- honest placeholder, absence, and incompatibility presentation
 
 ## Publishing Rules
 
-The published domain model for `odd_manager` must preserve these rules:
-
-1. No assumption of one permanent global graph.
-2. Assets are first-class and typed.
-3. Asset families, collections, and capability-bearing domain overlays are
-   surfaced when upstream publishes them.
-4. Bindings into typed nodes are explicit.
-5. Published callable functions are surfaced as workorders.
-6. Runtime aggregates remain ABG-owned.
-7. Domain query overlays do not redefine runtime aggregates.
-8. Placeholder builder detail stays explicitly provisional.
-9. Published ambiguity and capability posture is not silently downgraded to
-   placeholder state.
-10. Derived operator objects do not become rival source truth.
+1. Core GTL/ABG runtime objects remain stable across domain packages.
+2. The current `odd_sdlc` pack is defined against observed published artifacts
+   and query surfaces, not against older `odd_method`-first assumptions.
+3. Domain overlays extend the core ontology without replacing it.
+4. Generated delivery artifacts remain domain overlays rather than new runtime
+   primitives.
+5. Start-addressability, admitted execution, operational capability, and gap
+   dossiers are first-class domain publications in the current `odd_sdlc`
+   model.
+6. Unsupported or stale domain contracts degrade to explicit compatibility
+   state while leaving core GTL/ABG projections available.

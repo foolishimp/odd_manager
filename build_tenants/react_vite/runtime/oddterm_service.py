@@ -48,7 +48,7 @@ def main() -> int:
     parser.add_argument("--rows", type=int, default=34)
     args = parser.parse_args()
 
-    workspace_root = os.path.abspath(args.workspace_root)
+    project_root = os.path.abspath(args.project_root)
     write_lock = threading.Lock()
     closed = threading.Event()
     shell_path, shell_argv, shell_label = resolve_shell()
@@ -56,7 +56,7 @@ def main() -> int:
     pid, master_fd = pty.fork()
     if pid == 0:
         try:
-            os.chdir(workspace_root)
+            os.chdir(project_root)
             os.environ.pop("NO_COLOR", None)
             os.environ["TERM"] = os.environ.get("TERM", "xterm-256color")
             os.environ["COLORTERM"] = os.environ.get("COLORTERM", "truecolor")
@@ -75,7 +75,7 @@ def main() -> int:
     emit(
         {
             "type": "ready",
-            "workspaceRoot": workspace_root,
+            "workspaceRoot": project_root,
             "shell": shell_label,
             "pid": pid,
             "backend": "python-pty-service",

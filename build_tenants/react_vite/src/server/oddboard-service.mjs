@@ -28,16 +28,16 @@ function timestampStamp(date = new Date()) {
   return `${year}${month}${day}T${hour}${minute}${second}`;
 }
 
-function commentsRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/comments");
+function commentsRoot(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/comments");
 }
 
-function gboardTopicsRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/oddboard/topics");
+function gboardTopicsRoot(projectRoot) {
+  return resolve(projectRoot, ".ai-workspace/runtime/oddboard/topics");
 }
 
-function gboardTopicPath(workspaceRoot, topicId) {
-  return join(gboardTopicsRoot(workspaceRoot), `${topicId}.json`);
+function gboardTopicPath(projectRoot, topicId) {
+  return join(gboardTopicsRoot(projectRoot), `${topicId}.json`);
 }
 
 function commentParticipantLabel(participantId) {
@@ -47,14 +47,24 @@ function commentParticipantLabel(participantId) {
 }
 
 function normalizeTopic(topic) {
+  const attachedSessionIds = Array.isArray(topic?.attachedSessionIds)
+    ? Array.from(new Set(topic.attachedSessionIds.map((value) => String(value))))
+    : [];
   return {
     ...topic,
     attachedRecordIds: Array.isArray(topic?.attachedRecordIds)
       ? topic.attachedRecordIds.map((value) => String(value))
       : [],
-    attachedSessionIds: Array.isArray(topic?.attachedSessionIds)
-      ? topic.attachedSessionIds.map((value) => String(value))
-      : [],
+    attachedSessionIds,
+    roomRecipientSessionIds: Array.isArray(topic?.roomRecipientSessionIds)
+      ? Array.from(
+          new Set(
+            topic.roomRecipientSessionIds
+              .map((value) => String(value))
+              .filter((value) => attachedSessionIds.includes(value)),
+          ),
+        )
+      : attachedSessionIds,
   };
 }
 
@@ -142,10 +152,10 @@ function walkFiles(
   return files;
 }
 
-function pushDocumentRecords(workspaceRoot, records, absolutePaths, { source, sourceLabel }) {
+function pushDocumentRecords(projectRoot, records, absolutePaths, { source, sourceLabel }) {
   for (const absolutePath of absolutePaths) {
     const content = readFileSync(absolutePath, "utf8");
-    const relativePath = relative(workspaceRoot, absolutePath);
+    const relativePath = relative(projectRoot, absolutePath);
     records.push({
       id: `${source}:${relativePath}`,
       roomId: null,
@@ -165,8 +175,8 @@ function pushDocumentRecords(workspaceRoot, records, absolutePaths, { source, so
   }
 }
 
-function loadCommentRecords(workspaceRoot) {
-  const root = commentsRoot(workspaceRoot);
+function loadCommentRecords(projectRoot) {
+  const root = commentsRoot(projectRoot);
   if (!existsSync(root)) {
     return [];
   }
@@ -195,7 +205,7 @@ function loadCommentRecords(workspaceRoot) {
         timestamp: statSync(absolutePath).mtime.toISOString(),
         title: recordTitle(file.name, content),
         content,
-        path: relative(workspaceRoot, absolutePath),
+        path: relative(projectRoot, absolutePath),
         source: "comments",
         sourceLabel: "Comments",
         format: "markdown",
@@ -209,8 +219,8 @@ function loadCommentRecords(workspaceRoot) {
   return records;
 }
 
-function designRoots(workspaceRoot) {
-  const root = resolve(workspaceRoot, "build_tenants");
+function designRoots(projectRoot) {
+  const root = resolve(projectRoot, "build_tenants");
   if (!existsSync(root)) {
     return [];
   }
@@ -234,13 +244,13 @@ function sourcePriority(source) {
   return 3;
 }
 
-export function loadGBoardRecords(workspaceRoot) {
-  const records = [...loadCommentRecords(workspaceRoot)];
+export function loadGBoardRecords(projectRoot) {
+  const records = [...loadCommentRecords(projectRoot)];
 
   pushDocumentRecords(
-    workspaceRoot,
+    projectRoot,
     records,
-    walkFiles(resolve(workspaceRoot, "specification"), {
+    walkFiles(resolve(projectRoot, "specification"), {
       extensions: [".md"],
       ignoredDirectoryNames: ["requirements"],
     }),
@@ -248,17 +258,17 @@ export function loadGBoardRecords(workspaceRoot) {
   );
 
   pushDocumentRecords(
-    workspaceRoot,
+    projectRoot,
     records,
-    walkFiles(resolve(workspaceRoot, "specification/requirements"), {
+    walkFiles(resolve(projectRoot, "specification/requirements"), {
       extensions: [".md"],
     }),
     { source: "requirements", sourceLabel: "Requirements" },
   );
 
-  for (const root of designRoots(workspaceRoot)) {
+  for (const root of designRoots(projectRoot)) {
     pushDocumentRecords(
-      workspaceRoot,
+      projectRoot,
       records,
       walkFiles(root, {
         extensions: [".md", ".yml", ".yaml"],
@@ -284,8 +294,8 @@ export function loadGBoardRecords(workspaceRoot) {
   return records;
 }
 
-export function loadGBoardTopics(workspaceRoot) {
-  const root = gboardTopicsRoot(workspaceRoot);
+export function loadGBoardTopics(projectRoot) {
+  const root = gboardTopicsRoot(projectRoot);
   if (!existsSync(root)) {
     return [];
   }
@@ -309,31 +319,31 @@ export function loadGBoardTopics(workspaceRoot) {
   return topics;
 }
 
-export function loadGBoardTopicByRoomId(workspaceRoot, roomId) {
+export function loadGBoardTopicByRoomId(projectRoot, roomId) {
   if (!roomId) {
     return null;
   }
-  return loadGBoardTopics(workspaceRoot).find((topic) => topic.roomId === roomId) ?? null;
+  return loadGBoardTopics(projectRoot).find((topic) => topic.roomId === roomId) ?? null;
 }
 
-function writeTopic(workspaceRoot, topic) {
-  mkdirSync(gboardTopicsRoot(workspaceRoot), { recursive: true });
+function writeTopic(projectRoot, topic) {
+  mkdirSync(gboardTopicsRoot(projectRoot), { recursive: true });
   writeFileSync(
-    gboardTopicPath(workspaceRoot, topic.id),
+    gboardTopicPath(projectRoot, topic.id),
     `${JSON.stringify(normalizeTopic(topic), null, 2)}\n`,
     "utf8",
   );
 }
 
-function topicById(workspaceRoot, topicId) {
-  return loadGBoardTopics(workspaceRoot).find((topic) => topic.id === topicId) ?? null;
+function topicById(projectRoot, topicId) {
+  return loadGBoardTopics(projectRoot).find((topic) => topic.id === topicId) ?? null;
 }
 
-export function loadGBoardTopicById(workspaceRoot, topicId) {
+export function loadGBoardTopicById(projectRoot, topicId) {
   if (!topicId) {
     return null;
   }
-  return topicById(workspaceRoot, topicId);
+  return topicById(projectRoot, topicId);
 }
 
 function recordExcerpt(content) {
@@ -387,7 +397,7 @@ function topicContextFromSelection({ title, selectedTrainId = null, stationId = 
   };
 }
 
-function topicContextFromRecord(workspaceRoot, sourceRecord) {
+function topicContextFromRecord(projectRoot, sourceRecord) {
   return {
     label: sourceRecord.title,
     originKind: "record",
@@ -419,7 +429,7 @@ function matchingTopic(topics, context) {
 }
 
 export function createGBoardTopic(
-  workspaceRoot,
+  projectRoot,
   {
     title = null,
     sourceRecordId = null,
@@ -428,10 +438,10 @@ export function createGBoardTopic(
     edgeId = null,
   } = {},
 ) {
-  const records = loadGBoardRecords(workspaceRoot);
+  const records = loadGBoardRecords(projectRoot);
   const sourceRecord = sourceRecordId ? records.find((record) => record.id === sourceRecordId) ?? null : null;
   const context = sourceRecord
-    ? topicContextFromRecord(workspaceRoot, sourceRecord)
+    ? topicContextFromRecord(projectRoot, sourceRecord)
     : topicContextFromSelection({ title, selectedTrainId, stationId, edgeId });
 
   const now = new Date().toISOString();
@@ -453,9 +463,10 @@ export function createGBoardTopic(
     edgeId: context.edgeId ?? edgeId,
     attachedRecordIds: sourceRecord ? [sourceRecord.id] : [],
     attachedSessionIds: [],
+    roomRecipientSessionIds: [],
   };
 
-  writeTopic(workspaceRoot, topic);
+  writeTopic(projectRoot, topic);
 
   const body = sourceRecord
     ? [
@@ -475,7 +486,7 @@ export function createGBoardTopic(
         .filter(Boolean)
         .join("\n");
 
-  appendLiveRoomMessage(workspaceRoot, {
+  appendLiveRoomMessage(projectRoot, {
     roomId: topic.roomId,
     senderId: "system",
     senderLabel: "OddBoard",
@@ -488,7 +499,7 @@ export function createGBoardTopic(
     edgeId: topic.edgeId,
   });
 
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "topic-created",
     topicId: topic.id,
     roomId: topic.roomId,
@@ -500,7 +511,7 @@ export function createGBoardTopic(
 export const createOrResumeGBoardTopic = createGBoardTopic;
 
 export function attachRecordToGBoardTopic(
-  workspaceRoot,
+  projectRoot,
   {
     topicId,
     recordId,
@@ -513,12 +524,12 @@ export function attachRecordToGBoardTopic(
     throw new Error("record id is required");
   }
 
-  const topic = topicById(workspaceRoot, topicId);
+  const topic = topicById(projectRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
 
-  const record = loadGBoardRecords(workspaceRoot).find((entry) => entry.id === recordId) ?? null;
+  const record = loadGBoardRecords(projectRoot).find((entry) => entry.id === recordId) ?? null;
   if (!record) {
     throw new Error("record not found");
   }
@@ -532,8 +543,8 @@ export function attachRecordToGBoardTopic(
     updatedAt: new Date().toISOString(),
     attachedRecordIds: [...topic.attachedRecordIds, recordId],
   };
-  writeTopic(workspaceRoot, updated);
-  appendLiveRoomMessage(workspaceRoot, {
+  writeTopic(projectRoot, updated);
+  appendLiveRoomMessage(projectRoot, {
     roomId: updated.roomId,
     senderId: "system",
     senderLabel: "OddChat",
@@ -545,7 +556,7 @@ export function attachRecordToGBoardTopic(
     stationId: updated.stationId,
     edgeId: updated.edgeId,
   });
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "topic-asset-attached",
     topicId: updated.id,
     recordId,
@@ -554,10 +565,14 @@ export function attachRecordToGBoardTopic(
 }
 
 export function attachSessionToGBoardTopic(
-  workspaceRoot,
+  projectRoot,
   {
     topicId,
     sessionId,
+    announcementTitle = null,
+    announcementBody = null,
+    announcementSenderId = null,
+    announcementSenderLabel = null,
   } = {},
 ) {
   if (!topicId) {
@@ -567,12 +582,12 @@ export function attachSessionToGBoardTopic(
     throw new Error("terminal session id is required");
   }
 
-  const topic = topicById(workspaceRoot, topicId);
+  const topic = topicById(projectRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
 
-  const session = loadGTermPoolState(workspaceRoot).sessions.find((entry) => entry.id === sessionId) ?? null;
+  const session = loadGTermPoolState(projectRoot).sessions.find((entry) => entry.id === sessionId) ?? null;
   if (!session) {
     throw new Error("terminal session not found");
   }
@@ -585,14 +600,20 @@ export function attachSessionToGBoardTopic(
     ...topic,
     updatedAt: new Date().toISOString(),
     attachedSessionIds: [...topic.attachedSessionIds, sessionId],
+    roomRecipientSessionIds: Array.from(
+      new Set([...(topic.roomRecipientSessionIds ?? []), sessionId]),
+    ),
   };
-  writeTopic(workspaceRoot, updated);
-  appendLiveRoomMessage(workspaceRoot, {
+  writeTopic(projectRoot, updated);
+  const title = announcementTitle ?? `${session.label} joined the topic`;
+  const body =
+    announcementBody ?? `Attached oddterm ${session.label} to this topic.`;
+  appendLiveRoomMessage(projectRoot, {
     roomId: updated.roomId,
-    senderId: sessionParticipantId(session.id),
-    senderLabel: session.label,
-    title: `${session.label} joined the topic`,
-    body: `Attached oddterm ${session.label} to this topic.`,
+    senderId: announcementSenderId ?? sessionParticipantId(session.id),
+    senderLabel: announcementSenderLabel ?? session.label,
+    title,
+    body,
     kind: "system",
     source: "session",
     relatedSessionId: session.id,
@@ -600,7 +621,7 @@ export function attachSessionToGBoardTopic(
     stationId: updated.stationId,
     edgeId: updated.edgeId,
   });
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "topic-session-attached",
     topicId: updated.id,
     sessionId,
@@ -608,8 +629,93 @@ export function attachSessionToGBoardTopic(
   return updated;
 }
 
+export function setGBoardTopicRoomRecipients(
+  projectRoot,
+  {
+    topicId,
+    sessionIds = [],
+  } = {},
+) {
+  if (!topicId) {
+    throw new Error("topic id is required");
+  }
+
+  const topic = topicById(projectRoot, topicId);
+  if (!topic) {
+    throw new Error("topic not found");
+  }
+
+  const normalizedSessionIds = Array.from(
+    new Set(
+      (Array.isArray(sessionIds) ? sessionIds : [])
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => topic.attachedSessionIds.includes(value)),
+    ),
+  );
+
+  const currentRoomRecipients = topic.roomRecipientSessionIds ?? [];
+  const unchanged =
+    currentRoomRecipients.length === normalizedSessionIds.length &&
+    currentRoomRecipients.every((value, index) => value === normalizedSessionIds[index]);
+  if (unchanged) {
+    return topic;
+  }
+
+  const updated = {
+    ...topic,
+    updatedAt: new Date().toISOString(),
+    roomRecipientSessionIds: normalizedSessionIds,
+  };
+  writeTopic(projectRoot, updated);
+
+  const sessionById = new Map(
+    loadGTermPoolState(projectRoot).sessions.map((session) => [session.id, session]),
+  );
+  const enabledLabels = normalizedSessionIds.map(
+    (sessionId) => sessionById.get(sessionId)?.label ?? sessionId,
+  );
+  const mutedLabels = topic.attachedSessionIds
+    .filter((sessionId) => !normalizedSessionIds.includes(sessionId))
+    .map((sessionId) => sessionById.get(sessionId)?.label ?? sessionId);
+
+  const body =
+    topic.attachedSessionIds.length === 0
+      ? "No linked participants are attached to this topic yet."
+      : normalizedSessionIds.length === 0
+        ? "Room delivery is muted for every linked participant. Re-enable recipients or use an @mention to target a specific participant."
+        : normalizedSessionIds.length === topic.attachedSessionIds.length
+          ? "Everyone attached to this topic now receives room messages by default."
+          : [
+              enabledLabels.length ? `Enabled: ${enabledLabels.join(", ")}` : null,
+              mutedLabels.length ? `Muted: ${mutedLabels.join(", ")}` : null,
+              "Use @worker1 or @reviewer1 to override room delivery for a single message.",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+  appendLiveRoomMessage(projectRoot, {
+    roomId: updated.roomId,
+    senderId: "system",
+    senderLabel: "OddChat",
+    title: "Updated room delivery",
+    body,
+    kind: "system",
+    source: "live",
+    selectedTrainId: updated.selectedTrainId,
+    stationId: updated.stationId,
+    edgeId: updated.edgeId,
+  });
+
+  emitAgentConsoleEvent(projectRoot, {
+    kind: "topic-room-recipients-updated",
+    topicId: updated.id,
+  });
+
+  return updated;
+}
+
 export function createGBoardComment(
-  workspaceRoot,
+  projectRoot,
   {
     roomId = "workspace",
     body,
@@ -624,7 +730,7 @@ export function createGBoardComment(
   }
 
   const authorId = "operator";
-  const authorRoot = join(commentsRoot(workspaceRoot), authorId);
+  const authorRoot = join(commentsRoot(projectRoot), authorId);
   mkdirSync(authorRoot, { recursive: true });
 
   const title = firstMeaningfulLine(trimmed);
@@ -646,21 +752,21 @@ export function createGBoardComment(
 
   writeFileSync(absolutePath, `${headerLines.join("\n")}\n`, "utf8");
 
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "comment-created",
     roomId,
-    path: relative(workspaceRoot, absolutePath),
+    path: relative(projectRoot, absolutePath),
   });
 
   return {
     ok: true,
-    path: relative(workspaceRoot, absolutePath),
+    path: relative(projectRoot, absolutePath),
     title,
   };
 }
 
 export function createGTermPromotionComment(
-  workspaceRoot,
+  projectRoot,
   {
     sessionId,
     lineCount = 120,
@@ -673,7 +779,7 @@ export function createGTermPromotionComment(
     throw new Error("terminal session id is required");
   }
 
-  const promoted = readGTermSessionTail(workspaceRoot, sessionId, lineCount);
+  const promoted = readGTermSessionTail(projectRoot, sessionId, lineCount);
   const body = String(promoted.text ?? "").trim();
   if (!body) {
     throw new Error("terminal session has no retained output to promote");
@@ -682,7 +788,7 @@ export function createGTermPromotionComment(
   const sessionLabel = promoted.session?.label ?? sessionId;
   const title = `OddTerm ${sessionLabel} tail`;
   const authorId = "operator";
-  const authorRoot = join(commentsRoot(workspaceRoot), authorId);
+  const authorRoot = join(commentsRoot(projectRoot), authorId);
   mkdirSync(authorRoot, { recursive: true });
 
   const stamp = timestampStamp();
@@ -708,18 +814,18 @@ export function createGTermPromotionComment(
 
   writeFileSync(absolutePath, `${headerLines.join("\n")}\n`, "utf8");
 
-  emitAgentConsoleEvent(workspaceRoot, {
+  emitAgentConsoleEvent(projectRoot, {
     kind: "comment-created",
     roomId: "workspace",
-    path: relative(workspaceRoot, absolutePath),
+    path: relative(projectRoot, absolutePath),
   });
 
-  appendLiveRoomMessage(workspaceRoot, {
+  appendLiveRoomMessage(projectRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(sessionId),
     senderLabel: sessionLabel,
     title: `${sessionLabel} promoted terminal output`,
-    body: `Promoted the latest retained terminal tail into durable comments: ${relative(workspaceRoot, absolutePath)}`,
+    body: `Promoted the latest retained terminal tail into durable comments: ${relative(projectRoot, absolutePath)}`,
     kind: "promotion",
     source: "session",
     relatedSessionId: sessionId,
@@ -730,15 +836,15 @@ export function createGTermPromotionComment(
 
   return {
     ok: true,
-    path: relative(workspaceRoot, absolutePath),
+    path: relative(projectRoot, absolutePath),
     title,
   };
 }
 
-export function loadGBoardState(workspaceRoot) {
+export function loadGBoardState(projectRoot) {
   return {
-    workspaceRoot,
-    topics: loadGBoardTopics(workspaceRoot),
-    records: loadGBoardRecords(workspaceRoot),
+    projectRoot,
+    topics: loadGBoardTopics(projectRoot),
+    records: loadGBoardRecords(projectRoot),
   };
 }

@@ -50,6 +50,14 @@ type NavigatorTab = {
   path?: string;
 };
 
+type RequirementTrackingLens = {
+  id: "accounting_ledger" | "transformation_provenance";
+  label: string;
+  summary: string;
+  primaryRequirementId: string;
+  relatedRequirementIds: string[];
+};
+
 const REQUIREMENT_FILTERS: RequirementFilter[] = [
   {
     id: "all",
@@ -127,6 +135,27 @@ const NAVIGATOR_TABS: NavigatorTab[] = [
   },
 ];
 
+const REQUIREMENT_TRACKING_LENSES: RequirementTrackingLens[] = [
+  {
+    id: "accounting_ledger",
+    label: "Accounting Ledger",
+    summary: "Ledger output, accounting balance, and run completion gating across edge traversal.",
+    primaryRequirementId: "REQ-ACC-002",
+    relatedRequirementIds: ["REQ-ACC-001", "REQ-ACC-004", "REQ-ENG-004"],
+  },
+  {
+    id: "transformation_provenance",
+    label: "Transformation Provenance",
+    summary: "Run manifest, lineage, and audit traceability carried through transformation.",
+    primaryRequirementId: "REQ-TRV-005",
+    relatedRequirementIds: ["REQ-TRV-005-A", "REQ-TRV-005-B", "REQ-INT-003"],
+  },
+];
+
+const PREFERRED_REQUIREMENT_IDS = REQUIREMENT_TRACKING_LENSES.map(
+  (lens) => lens.primaryRequirementId,
+);
+
 export function RequirementsWorkspace({
   world,
   selection,
@@ -166,6 +195,13 @@ export function RequirementsWorkspace({
     REQUIREMENT_FILTERS.find((filter) => filter.id === activeFilterId) ?? REQUIREMENT_FILTERS[0];
   const activeTab =
     NAVIGATOR_TABS.find((tab) => tab.id === activeTabId) ?? NAVIGATOR_TABS[NAVIGATOR_TABS.length - 1];
+  const trackingLenses = useMemo(
+    () =>
+      REQUIREMENT_TRACKING_LENSES.filter((lens) =>
+        requirements.some((requirement) => requirement.requirement_id === lens.primaryRequirementId),
+      ),
+    [requirements],
+  );
   const visibleRequirements = useMemo(
     () =>
       requirements.filter(
@@ -174,13 +210,17 @@ export function RequirementsWorkspace({
       ),
     [activeFilter, requirements, search],
   );
+  const preferredVisibleRequirement = useMemo(
+    () => pickDefaultRequirement(visibleRequirements, trackingLenses),
+    [trackingLenses, visibleRequirements],
+  );
 
   useEffect(() => {
     if (selectedRequirementId) {
       return;
     }
-    if (!focusedRequirementId && visibleRequirements.length) {
-      setFocusedRequirementId(visibleRequirements[0].requirement_id);
+    if (!focusedRequirementId && preferredVisibleRequirement) {
+      setFocusedRequirementId(preferredVisibleRequirement.requirement_id);
       return;
     }
     if (
@@ -188,13 +228,21 @@ export function RequirementsWorkspace({
       visibleRequirements.length &&
       !visibleRequirements.some((requirement) => requirement.requirement_id === focusedRequirementId)
     ) {
-      setFocusedRequirementId(visibleRequirements[0].requirement_id);
+      setFocusedRequirementId(
+        preferredVisibleRequirement?.requirement_id ?? visibleRequirements[0].requirement_id,
+      );
     }
-  }, [focusedRequirementId, selectedRequirementId, visibleRequirements]);
+  }, [
+    focusedRequirementId,
+    preferredVisibleRequirement,
+    selectedRequirementId,
+    visibleRequirements,
+  ]);
 
   const effectiveRequirementId = selectedRequirementId ?? focusedRequirementId;
   const focusedRequirement =
     requirements.find((requirement) => requirement.requirement_id === effectiveRequirementId) ??
+    preferredVisibleRequirement ??
     visibleRequirements[0] ??
     requirements[0] ??
     null;
@@ -263,6 +311,7 @@ export function RequirementsWorkspace({
           search={search}
           focusToken={explorerFocusToken}
           focusedRequirement={focusedRequirement}
+          trackingLenses={trackingLenses}
           onSelectFilter={handleSelectFilter}
           onSelectTab={setActiveTabId}
           onSearchChange={setSearch}
@@ -286,7 +335,7 @@ export function RequirementsWorkspace({
             />
           ) : (
             <AuthorityWorkbench
-              workspaceRoot={world.workspace_root}
+              projectRoot={world.project_root}
               tab={activeTab}
               totalRequirements={requirements.length}
               onOpenBacklog={() => {
@@ -312,6 +361,7 @@ function BacklogNavigatorWidget({
   search,
   focusToken,
   focusedRequirement,
+  trackingLenses,
   onSelectFilter,
   onSelectTab,
   onSearchChange,
@@ -328,6 +378,7 @@ function BacklogNavigatorWidget({
   search: string;
   focusToken: number;
   focusedRequirement: RequirementView | null;
+  trackingLenses: RequirementTrackingLens[];
   onSelectFilter: (filterId: RequirementFilter["id"]) => void;
   onSelectTab: (tabId: NavigatorTabId) => void;
   onSearchChange: (value: string) => void;
@@ -467,6 +518,32 @@ function BacklogNavigatorWidget({
           </div>
         ) : null}
 
+        {activeTab.id === "requirements" && trackingLenses.length ? (
+          <div className="requirements-authority-summary">
+            {trackingLenses.map((lens) => (
+              <button
+                key={lens.id}
+                type="button"
+                className="odd-card odd-card--interactive"
+                onClick={() => onSelectRequirement(lens.primaryRequirementId)}
+              >
+                <span className="panel__eyebrow">Active Tracking Asset</span>
+                <strong>
+                  {lens.label} · {lens.primaryRequirementId}
+                </strong>
+                <p>{lens.summary}</p>
+                <div className="inline-pills">
+                  {lens.relatedRequirementIds.map((requirementId) => (
+                    <span key={`${lens.id}:${requirementId}`} className="status-chip attention">
+                      {requirementId}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="requirements-page__lens">
           {activeTab.id === "requirements" ? (
             <div className="requirements-page__explorer">
@@ -551,12 +628,12 @@ function BacklogNavigatorWidget({
 }
 
 function AuthorityWorkbench({
-  workspaceRoot,
+  projectRoot,
   tab,
   totalRequirements,
   onOpenBacklog,
 }: {
-  workspaceRoot: string;
+  projectRoot: string;
   tab: NavigatorTab;
   totalRequirements: number;
   onOpenBacklog: () => void;
@@ -575,7 +652,7 @@ function AuthorityWorkbench({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void loadSurface(workspaceRoot, tab.path)
+    void loadSurface(projectRoot, tab.path)
       .then((result) => {
         if (!cancelled) {
           setSurface(result);
@@ -594,7 +671,7 @@ function AuthorityWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [tab.path, workspaceRoot]);
+  }, [tab.path, projectRoot]);
 
   return (
     <div className="workspace-stack">
@@ -1092,6 +1169,15 @@ function selectionForReference(value: string): Selection | null {
 }
 
 function compareRequirements(left: RequirementView, right: RequirementView) {
+  const leftPreferred = PREFERRED_REQUIREMENT_IDS.indexOf(left.requirement_id);
+  const rightPreferred = PREFERRED_REQUIREMENT_IDS.indexOf(right.requirement_id);
+  if (leftPreferred !== -1 || rightPreferred !== -1) {
+    const normalizedLeft = leftPreferred === -1 ? Number.MAX_SAFE_INTEGER : leftPreferred;
+    const normalizedRight = rightPreferred === -1 ? Number.MAX_SAFE_INTEGER : rightPreferred;
+    if (normalizedLeft !== normalizedRight) {
+      return normalizedLeft - normalizedRight;
+    }
+  }
   const byPriority = priorityRank(right.priority) - priorityRank(left.priority);
   if (byPriority !== 0) {
     return byPriority;
@@ -1101,6 +1187,23 @@ function compareRequirements(left: RequirementView, right: RequirementView) {
     return byTone;
   }
   return left.requirement_id.localeCompare(right.requirement_id);
+}
+
+function pickDefaultRequirement(
+  requirements: RequirementView[],
+  trackingLenses: RequirementTrackingLens[],
+) {
+  if (!requirements.length) {
+    return null;
+  }
+  const byId = new Map(requirements.map((requirement) => [requirement.requirement_id, requirement]));
+  for (const lens of trackingLenses) {
+    const match = byId.get(lens.primaryRequirementId);
+    if (match) {
+      return match;
+    }
+  }
+  return requirements[0] ?? null;
 }
 
 function priorityRank(priority: string | null | undefined) {

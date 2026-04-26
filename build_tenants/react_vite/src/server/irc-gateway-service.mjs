@@ -55,12 +55,12 @@ function ircDefaults() {
   };
 }
 
-function ensureWorkspaceStore(workspaceRoot) {
-  const root = resolve(workspaceRoot);
+function ensureWorkspaceStore(projectRoot) {
+  const root = resolve(projectRoot);
   let store = bindingStores.get(root);
   if (!store) {
     store = {
-      workspaceRoot: root,
+      projectRoot: root,
       bindings: new Map(),
     };
     bindingStores.set(root, store);
@@ -161,16 +161,16 @@ function cleanNamesEntry(entry) {
   return String(entry ?? "").replace(/^[@+%&~]+/, "").trim();
 }
 
-function roomContextFor(workspaceRoot, roomId, topicId = null) {
+function roomContextFor(projectRoot, roomId, topicId = null) {
   let topic = null;
 
   if (topicId) {
-    topic = loadGBoardTopicById(workspaceRoot, topicId);
+    topic = loadGBoardTopicById(projectRoot, topicId);
   } else {
     const privateRoom = parseTopicSessionRoomId(roomId);
     topic = privateRoom
-      ? loadGBoardTopicById(workspaceRoot, privateRoom.topicId)
-      : loadGBoardTopicByRoomId(workspaceRoot, roomId);
+      ? loadGBoardTopicById(projectRoot, privateRoom.topicId)
+      : loadGBoardTopicByRoomId(projectRoot, roomId);
   }
 
   return {
@@ -181,8 +181,8 @@ function roomContextFor(workspaceRoot, roomId, topicId = null) {
   };
 }
 
-function sessionSummaryFor(workspaceRoot, { sessionId = null, sessionLabel = null } = {}) {
-  const pool = loadGTermPoolState(workspaceRoot);
+function sessionSummaryFor(projectRoot, { sessionId = null, sessionLabel = null } = {}) {
+  const pool = loadGTermPoolState(projectRoot);
   if (sessionId) {
     return pool.sessions.find((session) => session.id === sessionId) ?? null;
   }
@@ -232,7 +232,7 @@ function appendBindingRoomMessage(binding, payload) {
   if (!body) {
     return null;
   }
-  return appendLiveRoomMessage(binding.workspaceRoot, {
+  return appendLiveRoomMessage(binding.projectRoot, {
     roomId: binding.room.roomId,
     senderId: payload.senderId,
     senderLabel: payload.senderLabel,
@@ -248,10 +248,10 @@ function appendBindingRoomMessage(binding, payload) {
 }
 
 class IrcGatewayBinding {
-  constructor(workspaceRoot, session, options = {}) {
-    this.workspaceRoot = resolve(workspaceRoot);
+  constructor(projectRoot, session, options = {}) {
+    this.projectRoot = resolve(projectRoot);
     this.session = session;
-    this.room = roomContextFor(this.workspaceRoot, options.roomId, options.topicId);
+    this.room = roomContextFor(this.projectRoot, options.roomId, options.topicId);
     this.config = {
       ...ircDefaults(),
       host: String(options.host ?? ircDefaults().host),
@@ -588,9 +588,9 @@ class IrcGatewayBinding {
   }
 }
 
-function bindingFor(workspaceRoot, sessionRef) {
-  const store = ensureWorkspaceStore(workspaceRoot);
-  const session = sessionSummaryFor(workspaceRoot, sessionRef);
+function bindingFor(projectRoot, sessionRef) {
+  const store = ensureWorkspaceStore(projectRoot);
+  const session = sessionSummaryFor(projectRoot, sessionRef);
   if (!session) {
     throw new Error("terminal session not found");
   }
@@ -601,9 +601,9 @@ function bindingFor(workspaceRoot, sessionRef) {
   return binding;
 }
 
-export function connectIrcGatewayBinding(workspaceRoot, options = {}) {
-  const store = ensureWorkspaceStore(workspaceRoot);
-  const session = sessionSummaryFor(workspaceRoot, options);
+export function connectIrcGatewayBinding(projectRoot, options = {}) {
+  const store = ensureWorkspaceStore(projectRoot);
+  const session = sessionSummaryFor(projectRoot, options);
   if (!session) {
     throw new Error("terminal session not found");
   }
@@ -614,15 +614,15 @@ export function connectIrcGatewayBinding(workspaceRoot, options = {}) {
     store.bindings.delete(session.id);
   }
 
-  const binding = new IrcGatewayBinding(workspaceRoot, session, options);
+  const binding = new IrcGatewayBinding(projectRoot, session, options);
   store.bindings.set(session.id, binding);
   binding.connect();
   return binding.snapshot();
 }
 
-export function disconnectIrcGatewayBinding(workspaceRoot, options = {}) {
-  const store = ensureWorkspaceStore(workspaceRoot);
-  const session = sessionSummaryFor(workspaceRoot, options);
+export function disconnectIrcGatewayBinding(projectRoot, options = {}) {
+  const store = ensureWorkspaceStore(projectRoot);
+  const session = sessionSummaryFor(projectRoot, options);
   if (!session) {
     throw new Error("terminal session not found");
   }
@@ -635,41 +635,41 @@ export function disconnectIrcGatewayBinding(workspaceRoot, options = {}) {
   return binding.snapshot();
 }
 
-export function getIrcGatewayBindingStatus(workspaceRoot, options = {}) {
-  return bindingFor(workspaceRoot, options).snapshot();
+export function getIrcGatewayBindingStatus(projectRoot, options = {}) {
+  return bindingFor(projectRoot, options).snapshot();
 }
 
-export function joinIrcGatewayChannel(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function joinIrcGatewayChannel(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   return binding.join(options.channel);
 }
 
-export function partIrcGatewayChannel(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function partIrcGatewayChannel(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   return binding.part(options.channel, options.reason);
 }
 
-export function sendIrcGatewayChannelMessage(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function sendIrcGatewayChannelMessage(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   return binding.sendChannelMessage(options.channel, options.text);
 }
 
-export function sendIrcGatewayDirectMessage(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function sendIrcGatewayDirectMessage(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   return binding.sendDirectMessage(options.nick, options.text);
 }
 
-export function readIrcGatewayRoom(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function readIrcGatewayRoom(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   const limit = Math.max(1, finiteNumber(options.limit, 40));
   return {
     ...binding.snapshot(),
-    messages: loadRoomMessages(binding.workspaceRoot, binding.room.roomId, limit),
+    messages: loadRoomMessages(binding.projectRoot, binding.room.roomId, limit),
   };
 }
 
-export function whoIrcGatewayChannel(workspaceRoot, options = {}) {
-  const binding = bindingFor(workspaceRoot, options);
+export function whoIrcGatewayChannel(projectRoot, options = {}) {
+  const binding = bindingFor(projectRoot, options);
   const requested = normalizeChannels([options.channel])[0];
   const channel =
     requested ||
