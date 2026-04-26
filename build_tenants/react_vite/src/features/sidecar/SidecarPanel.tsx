@@ -22,7 +22,9 @@
 // to lift the active Context up. Pin-to-global semantics: the embedded
 // surface's selection is local; calling onContextChange promotes to global.
 
-import { useEffect, useReducer, useCallback } from 'react';
+import { useEffect, useReducer, useCallback, useRef } from 'react';
+import { Terminal } from 'xterm';
+import 'xterm/css/xterm.css';
 import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
@@ -178,6 +180,41 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     }
   };
 
+  const handleSpawnSession = async () => {
+    if (!state.context) return;
+    try {
+      const r = await fetch(`${backend}/api/sessions/spawn`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          agentType: 'shell',
+          cwd: state.context.project.root,
+          contextAtSpawn: {
+            project: state.context.project.id,
+            workspace: state.context.workspace.id,
+            odd_type: state.context.project.odd_type,
+          },
+        }),
+      });
+      const result = await r.json();
+      dispatch({ type: 'action/result', ok: result.ok, message: result.ok ? `spawned ${result.id}` : undefined, error: result.error });
+      load();
+    } catch (err) {
+      dispatch({ type: 'action/result', ok: false, error: String(err) });
+    }
+  };
+
+  const handleKillSession = async (id: string) => {
+    try {
+      const r = await fetch(`${backend}/api/sessions/${encodeURIComponent(id)}/kill`, { method: 'POST' });
+      const result = await r.json();
+      dispatch({ type: 'action/result', ok: result.ok, message: result.ok ? `killed ${id}` : undefined, error: result.error });
+      load();
+    } catch (err) {
+      dispatch({ type: 'action/result', ok: false, error: String(err) });
+    }
+  };
+
   const handleReplySubmit = async (parentId: string, body: string) => {
     try {
       const r = await fetch(`${backend}/api/comments/${encodeURIComponent(parentId)}/reply`, {
@@ -256,13 +293,16 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
         </Pane>
 
         <Pane title="Sessions" count={state.sessions.records.length}>
+          <div style={{ padding: '6px 12px', borderBottom: '1px solid #2a323d' }}>
+            <button onClick={handleSpawnSession} style={{ ...buttonStyle, width: '100%' }}>+ Spawn shell here</button>
+          </div>
           {state.sessions.records.length === 0 ? (
-            <div style={emptyStyle}>{state.sessions.diagnostic?.notes?.[0] || 'no sessions'}<br /><br /><small>backplane: {state.sessions.diagnostic?.backplane || '—'}</small></div>
+            <div style={emptyStyle}>no sessions yet — click ↑ to spawn one</div>
           ) : state.sessions.records.map((s) => (
             <Row key={s.id} selected={state.selection.kind === 'session' && state.selection.id === s.id} onClick={() => dispatch({ type: 'select', kind: 'session', id: s.id })}>
               <div style={idStyle}>{s.id}</div>
               <div style={titleStyle}>{s.agent_type}</div>
-              <div style={metaStyle}>{s.status}</div>
+              <div style={metaStyle}>{s.status}{s.cwd ? ` · ${s.cwd.split('/').slice(-2).join('/')}` : ''}</div>
             </Row>
           ))}
         </Pane>
@@ -288,7 +328,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
           onReplySubmit={handleReplySubmit}
         />}
         {selectedProject && <ProjectInspector p={selectedProject} />}
-        {selectedSession && <SessionInspector s={selectedSession} />}
+        {selectedSession && <SessionInspector s={selectedSession} onKill={handleKillSession} backend={backend} />}
         {!selectedTicket && !selectedComment && !selectedProject && !selectedSession && (
           <div style={emptyStyle}>select an item from any pane</div>
         )}
@@ -452,20 +492,83 @@ function ProjectInspector({ p }: { p: ProjectRecord }) {
   );
 }
 
-function SessionInspector({ s }: { s: SessionRecord }) {
+function SessionInspector({ s, onKill, backend }: { s: SessionRecord; onKill: (id: string) => void; backend: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (s.status !== 'running') return; // only attach to live sessions
+
+    const term = new Terminal({
+      fontSize: 12,
+      fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+      theme: { background: '#0a0d12', foreground: '#d8e1ec', cursor: '#6aa8ff' },
+      cursorBlink: true,
+      scrollback: 5000,
+    });
+    term.open(containerRef.current);
+    termRef.current = term;
+
+    // WebSocket attach. backend is '' (relative) → connect to current host.
+    const wsProto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHost = backend
+      ? backend.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      : (typeof window !== 'undefined' ? window.location.host : 'localhost:4173');
+    const wsUrl = `${wsProto}://${wsHost}/ws/sessions/${encodeURIComponent(s.id)}`;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (err) {
+      term.write(`\r\n\x1b[31m[connection error: ${err}]\x1b[0m\r\n`);
+      return () => { term.dispose(); };
+    }
+    wsRef.current = ws;
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'replay' && typeof msg.data === 'string') {
+          term.write(msg.data);
+        } else if (msg.type === 'output' && typeof msg.data === 'string') {
+          term.write(msg.data);
+        } else if (msg.type === 'exit') {
+          term.write(`\r\n\x1b[33m[session exited: code=${msg.code}]\x1b[0m\r\n`);
+        } else if (msg.type === 'error') {
+          term.write(`\r\n\x1b[31m[${msg.error}]\x1b[0m\r\n`);
+        }
+      } catch { /* ignore non-JSON frames */ }
+    };
+    ws.onerror = () => { term.write('\r\n\x1b[31m[ws error]\x1b[0m\r\n'); };
+    term.onData((data) => {
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+    });
+
+    return () => {
+      try { ws.close(); } catch { /* ignored */ }
+      term.dispose();
+      termRef.current = null;
+      wsRef.current = null;
+    };
+  }, [s.id, s.status, backend]);
+
   return (
     <div>
       <div style={inspectorIdStyle}>{s.id}</div>
       <h2 style={inspectorTitleStyle}>Session</h2>
+      <div style={actionsStyle}>
+        <button disabled={s.status !== 'running'} onClick={() => onKill(s.id)} style={s.status === 'running' ? buttonStyle : buttonDisabledStyle}>Kill</button>
+        <span style={{ fontSize: 10, color: '#8a96a8' }}>Status: {s.status}</span>
+      </div>
       <MetaGrid items={[
         ['Agent', s.agent_type],
-        ['Status', s.status],
         ['CWD', s.cwd],
         ['Started', s.started_at || '—'],
         ['Project', s.context_at_spawn?.project || '—'],
         ['Workspace', s.context_at_spawn?.workspace || '—'],
         ['Transcript', s.transcript_ref || '—'],
       ]} />
+      <div style={{ marginTop: 12, height: 300, background: '#0a0d12', border: '1px solid #2a323d', borderRadius: 3, padding: 6 }} ref={containerRef} />
     </div>
   );
 }

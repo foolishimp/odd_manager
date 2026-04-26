@@ -3,7 +3,7 @@ id: T-020
 title: Realize SessionAssetSurface spawn / attach / kill plus xterm.js attachment
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Add the interactive half of SessionAssetSurface — spawn / attach / detach / rename / kill actions backed by a real pty, plus a WebSocket-attached xterm.js terminal in the scaffold so the operator can type into a real coding-agent session through the sidecar.
 change_class: realization_refactor

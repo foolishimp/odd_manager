@@ -19,6 +19,7 @@ import { createTicketSurface } from "./ticket-asset-surface-service.mjs";
 import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
+import { spawnSession, killSession, listLiveSessionIds, mountSessionWebSocket } from "./session-pty-service.mjs";
 import { dispatchAgentReplies } from "./odd-plugin-host.mjs";
 import {
   addTopicParticipant,
@@ -1544,6 +1545,28 @@ const server = createServer(async (request, response) => {
       writeJson(response, result.ok ? 200 : 400, result);
       return;
     }
+    // T-020 session pty actions
+    if (request.method === "POST" && url.pathname === "/api/sessions/spawn") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const result = spawnSession(surfaceProjectRoot, parsed);
+      // Invalidate session-surface cache so the new record shows in /api/sessions immediately.
+      sessionSurface.invalidate?.();
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/sessions\/([^/]+)\/kill$/))) {
+      const id = decodeURIComponent(m[1]);
+      const result = killSession(surfaceProjectRoot, id);
+      sessionSurface.invalidate?.();
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/sessions/live") {
+      writeJson(response, 200, { live_ids: listLiveSessionIds() });
+      return;
+    }
 
     writeJson(response, 404, { error: `unknown route: ${url.pathname}` });
   } catch (caught) {
@@ -1554,6 +1577,7 @@ const server = createServer(async (request, response) => {
 });
 
 attachGTermServer(server, { defaultWorkspaceRoot });
+mountSessionWebSocket(server);
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`odd_manager API listening on http://127.0.0.1:${port}`);
