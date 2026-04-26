@@ -3,7 +3,7 @@ id: T-021
 title: Realize SessionAssetSurface server-restart survival
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Make the underlying pty processes survive odd_manager server restart so the original VS-Code-crash failure mode that triggered the wave is fully retired — sessions re-attach automatically with stable transcript references after the server bounces.
 change_class: realization_refactor
