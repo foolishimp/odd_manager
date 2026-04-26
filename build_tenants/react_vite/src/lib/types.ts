@@ -1,15 +1,19 @@
 export type ThemeMode = "light" | "dark";
 export type NavigatorMode = "compressed" | "expanded";
+export type WorkspaceIdentity = string;
 export type PageId =
   | "requirements"
   | "process"
+  | "kanban"
+  | "world_model"
   | "home"
   | "graphs"
   | "runtime"
   | "continuations"
   | "evidence"
   | "builder"
-  | "provenance";
+  | "provenance"
+  | "sidecar";
 export type CommandName = "gaps" | "iterate" | "start";
 export type Tone = "converged" | "pending" | "active" | "gated" | "blocked" | "attention";
 
@@ -19,6 +23,15 @@ export type BoundaryInfo = {
   domain_source: string;
   graph_derivation: string;
   query_cadence: string;
+};
+
+export type WorkspaceProfile = {
+  primary_identity: WorkspaceIdentity;
+  governance_identities: WorkspaceIdentity[];
+  active_domain_pack: "odd_sdlc" | "odd_world_model" | null;
+  shell_title: string;
+  confidence: "high" | "medium" | "low";
+  markers: string[];
 };
 
 export type Overview = {
@@ -552,6 +565,7 @@ export type DomainProjection = {
 export type ManagerWorld = {
   workspace_root: string;
   generated_at: string;
+  workspace_profile: WorkspaceProfile;
   boundary: BoundaryInfo;
   overview: Overview;
   graph_set: GraphSetView;

@@ -12,10 +12,16 @@ import {
   createGChatTopic,
   createTerminalPromotionComment,
   loadAgentConsoleState,
+  setGChatTopicRoomRecipients,
 } from "./odd-console.mjs";
 import { subscribeAgentConsoleEvents } from "./odd-console-events.mjs";
+import { createTicketSurface } from "./ticket-asset-surface-service.mjs";
+import { createCommentSurface } from "./comment-asset-surface-service.mjs";
+import { createSessionSurface } from "./session-asset-surface-service.mjs";
+import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { dispatchAgentReplies } from "./odd-plugin-host.mjs";
 import {
+  addTopicParticipant,
   joinShellAgentTopic,
   getRoomParticipantStatus,
   joinRoomParticipant,
@@ -266,6 +272,183 @@ function workspaceDisplayName(workspaceRoot) {
   return humanizeName(baseName);
 }
 
+function uniqueStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
+}
+
+function readWorkspaceText(workspaceRoot, relativePath) {
+  const absolutePath = join(workspaceRoot, relativePath);
+  if (!existsSync(absolutePath)) {
+    return null;
+  }
+  try {
+    return readFileSync(absolutePath, "utf8").slice(0, 8000).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function knownIdentityFromText(content) {
+  if (!content) {
+    return null;
+  }
+
+  const explicitMatches = [
+    { identity: "odd_manager", pattern: /(?:workspace|project slug):\s*`odd_manager`/ },
+    { identity: "odd_sdlc", pattern: /(?:workspace|project slug):\s*`odd_sdlc`/ },
+    { identity: "odd_world_model", pattern: /(?:workspace|project slug):\s*`odd_world_model`/ },
+  ];
+  for (const entry of explicitMatches) {
+    if (entry.pattern.test(content)) {
+      return entry.identity;
+    }
+  }
+
+  const rankedPatterns = [
+    {
+      identity: "odd_world_model",
+      patterns: [
+        "# odd_world_model installed builder surface",
+        "`odd_world_model` is a world-model construction product",
+        "`odd_world_model` source project",
+        "world model method",
+      ],
+    },
+    {
+      identity: "odd_manager",
+      patterns: [
+        "`odd_manager` exists to provide a serious operator-facing control surface",
+        "`odd_manager` shall",
+        "# odd_manager",
+      ],
+    },
+    {
+      identity: "odd_sdlc",
+      patterns: [
+        "# odd_sdlc workspace governance surface",
+        "`odd_sdlc` as governance over the target project",
+        "odd_sdlc-governed",
+      ],
+    },
+  ];
+
+  for (const entry of rankedPatterns) {
+    if (entry.patterns.some((pattern) => content.includes(pattern))) {
+      return entry.identity;
+    }
+  }
+
+  return null;
+}
+
+function knownIdentityFromName(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  for (const identity of ["odd_world_model", "odd_sdlc", "odd_manager"]) {
+    if (normalized === identity || normalized.includes(identity)) {
+      return identity;
+    }
+  }
+  return null;
+}
+
+function detectPrimaryIdentity(workspaceRoot) {
+  const explicitInstallSignals = [
+    [".genesis/odd_world_model/release/install_manifest.json", "odd_world_model"],
+    [".genesis/odd_sdlc/release/install_manifest.json", "odd_sdlc"],
+    [".genesis/odd_manager/release/install_manifest.json", "odd_manager"],
+  ];
+  for (const [relativePath, identity] of explicitInstallSignals) {
+    if (hasWorkspaceMarker(workspaceRoot, relativePath)) {
+      return identity;
+    }
+  }
+
+  for (const relativePath of [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "specification/PRODUCT.md",
+    "specification/INTENT.md",
+  ]) {
+    const identity = knownIdentityFromText(readWorkspaceText(workspaceRoot, relativePath));
+    if (identity) {
+      return identity;
+    }
+  }
+
+  const namedIdentity = knownIdentityFromName(workspaceRoot.split("/").filter(Boolean).at(-1) ?? workspaceRoot);
+  if (namedIdentity) {
+    return namedIdentity;
+  }
+
+  if (
+    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
+    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
+  ) {
+    return "odd_sdlc";
+  }
+
+  return "unknown";
+}
+
+function detectGovernanceIdentities(workspaceRoot) {
+  return uniqueStrings([
+    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
+    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
+      ? "odd_sdlc"
+      : null,
+    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_world_model/release/genesis.yml")
+      ? "odd_world_model"
+      : null,
+  ]);
+}
+
+function workspaceShellTitle(primaryIdentity, activeDomainPack) {
+  const selectedIdentity = activeDomainPack ?? primaryIdentity;
+  if (selectedIdentity === "odd_sdlc") {
+    return "Odd SDLC";
+  }
+  if (selectedIdentity === "odd_world_model") {
+    return "Odd World Model";
+  }
+  if (selectedIdentity === "odd_manager") {
+    return "Odd Manager";
+  }
+  return "Odd Manager";
+}
+
+function profileWorkspace(workspaceRoot) {
+  const primaryIdentity = detectPrimaryIdentity(workspaceRoot);
+  const governanceIdentities = detectGovernanceIdentities(workspaceRoot);
+  const activeDomainPack =
+    primaryIdentity === "odd_sdlc" || primaryIdentity === "odd_world_model"
+      ? primaryIdentity
+      : null;
+  const markers = uniqueStrings([
+    ...classifyOddWorkspace(workspaceRoot),
+    primaryIdentity !== "unknown" ? `identity:${primaryIdentity}` : null,
+    ...governanceIdentities.map((identity) => `governance:${identity}`),
+  ]);
+  const confidence =
+    primaryIdentity === "unknown"
+      ? "low"
+      : governanceIdentities.includes(primaryIdentity) || primaryIdentity === "odd_manager"
+        ? "high"
+        : "medium";
+
+  return {
+    primary_identity: primaryIdentity,
+    governance_identities: governanceIdentities,
+    active_domain_pack: activeDomainPack,
+    shell_title: workspaceShellTitle(primaryIdentity, activeDomainPack),
+    confidence,
+    markers,
+  };
+}
+
 function isWorkspaceRoot(absolutePath) {
   return (
     existsSync(join(absolutePath, ".genesis")) ||
@@ -360,7 +543,7 @@ function classifyOddWorkspace(workspaceRoot) {
     markers.push("bootstrap:agent-surfaces");
   }
 
-  return markers;
+  return uniqueStrings(markers);
 }
 
 function scanForWorkspaces(rootPath, { oddOnly = false } = {}) {
@@ -413,12 +596,14 @@ function scanForWorkspaces(rootPath, { oddOnly = false } = {}) {
 
     if (isWorkspaceRoot(current.path)) {
       const markers = classifyOddWorkspace(current.path);
+      const profile = profileWorkspace(current.path);
       if (!oddOnly || markers.length > 0) {
         results.push({
           name: workspaceDisplayName(current.path),
           path: current.path,
           updatedAt: statSync(current.path).mtime.toISOString(),
           markers,
+          profile,
         });
       }
       if (current.depth >= maxDepth) {
@@ -499,6 +684,7 @@ function browseDirectory(targetPath) {
   const entries = directories.slice(0, maxEntries).map((entry) => {
     const absolutePath = join(directory, entry.name);
     const markers = isWorkspaceRoot(absolutePath) ? classifyOddWorkspace(absolutePath) : [];
+    const profile = isWorkspaceRoot(absolutePath) ? profileWorkspace(absolutePath) : null;
     const hasWorkspace = markers.length > 0;
 
     return {
@@ -506,6 +692,7 @@ function browseDirectory(targetPath) {
       absolutePath,
       hasWorkspace,
       markers,
+      profile,
     };
   });
 
@@ -515,6 +702,15 @@ function browseDirectory(targetPath) {
     entries,
     truncated: directories.length > maxEntries,
   };
+}
+
+// Per-projectRoot AssetSurface cache (shared across requests; surfaces
+// memoize their own reads internally and invalidate on action).
+const assetSurfaceCache = new Map();
+function getOrCreateAssetSurface(kind, root, factory) {
+  const key = `${kind}::${root}`;
+  if (!assetSurfaceCache.has(key)) assetSurfaceCache.set(key, factory());
+  return assetSurfaceCache.get(key);
 }
 
 function writeJson(response, statusCode, payload) {
@@ -653,7 +849,10 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/world") {
       const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-      writeJson(response, 200, await runHelper(["world", "--workspace", workspaceRoot]));
+      writeJson(response, 200, {
+        ...(await runHelper(["world", "--workspace", workspaceRoot])),
+        workspace_profile: profileWorkspace(workspaceRoot),
+      });
       return;
     }
 
@@ -948,10 +1147,40 @@ const server = createServer(async (request, response) => {
       writeJson(
         response,
         200,
-        launchRoomParticipantBootstrap(workspaceRoot, {
+        await launchRoomParticipantBootstrap(workspaceRoot, {
           topicId: body.topicId,
           sessionId: body.sessionId,
           provider: body.provider,
+        }),
+      );
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/oddchat/topic/add-participant") {
+      const body = JSON.parse((await readBody(request)) || "{}");
+      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      writeJson(
+        response,
+        200,
+        await addTopicParticipant(workspaceRoot, {
+          topicId: body.topicId,
+          provider: body.provider,
+          role: body.role,
+          label: body.label,
+        }),
+      );
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/oddchat/topic/room-recipients") {
+      const body = JSON.parse((await readBody(request)) || "{}");
+      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      writeJson(
+        response,
+        200,
+        setGChatTopicRoomRecipients(workspaceRoot, {
+          topicId: body.topicId,
+          sessionIds: body.sessionIds,
         }),
       );
       return;
@@ -1228,6 +1457,91 @@ const server = createServer(async (request, response) => {
           text: body.text || null,
         }),
       });
+      return;
+    }
+
+    // T-016 closure: AssetSurface read/write endpoints absorbed from the
+    // retired sidecar-demo.mjs scaffold. Per project rather than per-request
+    // so the surfaces cache properly. SidecarPanel consumes /api/* relative.
+    const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || workspaceRoot || defaultWorkspaceRoot;
+    const ticketSurface = getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot));
+    const commentSurface = getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot));
+    const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));
+    const projectSurface = getOrCreateAssetSurface(
+      "projects",
+      process.env.PROJECT_REGISTRY_ROOT || "/Users/jim/src/apps",
+      () => createProjectSurface(process.env.PROJECT_REGISTRY_ROOT || "/Users/jim/src/apps"),
+    );
+    const VIEWER_AGENT = url.searchParams.get("agent") || process.env.OMAN_AGENT_PROVIDER || "operator";
+
+    if (request.method === "GET" && url.pathname === "/api/context") {
+      writeJson(response, 200, {
+        project: { id: "odd_manager", root: surfaceProjectRoot, odd_type: "odd_sdlc" },
+        workspace: { id: "react_vite", profile: "odd_sdlc" },
+        session: null,
+      });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/projects") {
+      writeJson(response, 200, projectSurface.list());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/tickets") {
+      writeJson(response, 200, ticketSurface.list());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/comments") {
+      writeJson(response, 200, commentSurface.list());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/sessions") {
+      writeJson(response, 200, { records: sessionSurface.list(), diagnostic: sessionSurface.diagnostic() });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/comments/unread") {
+      writeJson(response, 200, { agent: VIEWER_AGENT, unread_ids: commentSurface.getUnreadIds(VIEWER_AGENT) });
+      return;
+    }
+    let m;
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/tickets\/([^/]+)\/transition$/))) {
+      const id = decodeURIComponent(m[1]);
+      const result = ticketSurface.transitionStatus(id, url.searchParams.get("to"));
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/tickets\/([^/]+)\/link-dependency$/))) {
+      const id = decodeURIComponent(m[1]);
+      const result = ticketSurface.linkDependency(id, url.searchParams.get("dep"));
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/comments") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const result = commentSurface.createPost(parsed);
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/comments\/(.+)\/reply$/))) {
+      const parentId = decodeURIComponent(m[1]);
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const result = commentSurface.createReply(parentId, parsed);
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/comments\/(.+)\/mark-read$/))) {
+      const id = decodeURIComponent(m[1]);
+      const result = commentSurface.markRead(VIEWER_AGENT, id);
+      writeJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+    if ((m = request.method === "POST" && url.pathname.match(/^\/api\/comments\/(.+)\/mark-unread$/))) {
+      const id = decodeURIComponent(m[1]);
+      const result = commentSurface.markUnread(VIEWER_AGENT, id);
+      writeJson(response, result.ok ? 200 : 400, result);
       return;
     }
 

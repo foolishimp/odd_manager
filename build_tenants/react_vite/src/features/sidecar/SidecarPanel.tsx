@@ -28,7 +28,10 @@ import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
 
-const SIDECAR_BACKEND = (typeof window !== 'undefined' && (window as { __SIDECAR_BACKEND__?: string }).__SIDECAR_BACKEND__) || 'http://localhost:4174';
+// Endpoints served by the main odd_manager server (src/server/index.mjs).
+// T-016 absorbed the scaffold's routes; relative '' lets Vite proxy /api/* to
+// the dev server backend automatically.
+const SIDECAR_BACKEND = (typeof window !== 'undefined' && (window as { __SIDECAR_BACKEND__?: string }).__SIDECAR_BACKEND__) || '';
 
 interface ContextRecord {
   project: { id: string; root: string; odd_type: string };

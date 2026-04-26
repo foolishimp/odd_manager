@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MarkdownDocument } from "../components/MarkdownDocument";
 import { BuilderPanel } from "../features/builder/BuilderPanel";
 import { GraphWorkspace } from "../features/graphs/GraphWorkspace";
@@ -7,11 +7,14 @@ import { InspectorPanel } from "../features/inspector/InspectorPanel";
 import { OddBoardWidget } from "../features/oddboard/OddBoardWidget";
 import { useOddConsoleState } from "../features/oddboard/useOddConsoleState";
 import { OddTermWorkspaceWidget } from "../features/oddterm/OddTermWorkspaceWidget";
-import { ProcessWorkspace } from "../features/process/ProcessWorkspace";
+import { ProcessKanbanWorkspace, ProcessWorkspace } from "../features/process/ProcessWorkspace";
 import { RequirementsWorkspace } from "../features/requirements/RequirementsWorkspace";
+import { SidecarPanel } from "../features/sidecar/SidecarPanel";
 import { RuntimePanel } from "../features/runtime/RuntimePanel";
+import { WorldModelPanel } from "../features/world-model/WorldModelPanel";
 import { loadSurface } from "../lib/api";
 import type {
+  AssetView,
   CommandName,
   GraphNodeView,
   ManagerWorld,
@@ -64,67 +67,188 @@ type SelectionOperatorContext = {
   blocked: OperatorContextRow[];
 };
 
-const EVIDENCE_SURFACES = [
+type DocumentSurfaceCard = {
+  path: string;
+  eyebrow: string;
+  title: string;
+  summary: string;
+  tone: Tone;
+};
+
+const PROVENANCE_SURFACES: DocumentSurfaceCard[] = [
   {
-    path: "specification/domain/DOMAIN_MODEL.md",
-    eyebrow: "Domain",
-    title: "Published Domain Model",
-    summary: "The manager's canonical projection vocabulary for graphs, assets, and workorders.",
+    path: ".ai-workspace/context/project_bootstrap.md",
+    eyebrow: "Bootstrap",
+    title: "Project Bootstrap",
+    summary: "Deterministic workspace orientation built from imported authority and normalization.",
     tone: "converged",
   },
   {
-    path: "build_tenants/common/design/ODD_MANAGER_DASHBOARD.md",
-    eyebrow: "Design",
-    title: "Dashboard Design Law",
-    summary: "Shared visual and interaction law the UI carrier must preserve.",
+    path: ".ai-workspace/runtime/odd_sdlc-workspace-normalization.json",
+    eyebrow: "Normalization",
+    title: "Workspace Normalization Report",
+    summary: "Deterministic normalization actions, selected tenant root, and active runtime contract.",
+    tone: "attention",
+  },
+  {
+    path: "specification/requirements/00-imported-sources.md",
+    eyebrow: "Imported Authority",
+    title: "Imported Requirement Sources",
+    summary: "The imported authority root odd_sdlc uses before mutable product-owned surfaces.",
     tone: "active",
   },
   {
-    path: "specification/requirements/01-control-plane-boundary.md",
-    eyebrow: "Boundary",
-    title: "Control-Plane Boundary",
-    summary: "ABG runtime truth stays distinct from odd_method query overlays.",
-    tone: "pending",
-  },
-  {
-    path: "specification/requirements/03-read-model-and-projection.md",
-    eyebrow: "Projection",
-    title: "Read Model and Projection",
-    summary: "The rules for manager-owned composition over runtime and query sources.",
-    tone: "gated",
-  },
-] as const;
-
-const PROVENANCE_SURFACES = [
-  {
-    path: "README.md",
-    eyebrow: "Project",
-    title: "Project Overview",
-    summary: "Repo posture and canonical starting points.",
+    path: "specification/INTENT.md",
+    eyebrow: "Intent",
+    title: "Intent Surface",
+    summary: "The constitutional purpose boundary for the selected governed project.",
     tone: "converged",
   },
   {
     path: "specification/PRODUCT.md",
     eyebrow: "Product",
     title: "Product Definition",
-    summary: "Forward-looking product definition for the manager line.",
+    summary: "The project-owned product definition that odd_sdlc is governing in this workspace.",
     tone: "pending",
   },
   {
     path: "specification/GOALS.md",
     eyebrow: "Goals",
     title: "Current Goals",
-    summary: "The active bounded wave of work for the project.",
+    summary: "The active bounded wave of work carried by the selected workspace.",
     tone: "active",
   },
   {
-    path: "specification/requirements/09-verification-and-traceability.md",
-    eyebrow: "Traceability",
-    title: "Verification and Traceability",
-    summary: "Evidence expectations and published proof boundaries.",
+    path: ".ai-workspace/runtime/odd_sdlc-requirement-closure.json",
+    eyebrow: "Closure",
+    title: "Requirement Closure Register",
+    summary: "Live requirement carry-forward and current code/test closure posture.",
     tone: "attention",
   },
-] as const;
+];
+
+const EVIDENCE_ASSET_SURFACE_CONFIG: Array<
+  Omit<DocumentSurfaceCard, "path"> & {
+    assetTypes: string[];
+    preferredSuffixes?: string[];
+    fallbackPath?: string;
+  }
+> = [
+  {
+    assetTypes: ["requirement_surface"],
+    preferredSuffixes: ["specification/requirements/10-generated-bootstrap.md"],
+    fallbackPath: "specification/requirements/10-generated-bootstrap.md",
+    eyebrow: "Requirements",
+    title: "Generated Bootstrap Requirements",
+    summary: "The generated live requirement inventory for the selected odd_sdlc workspace.",
+    tone: "active",
+  },
+  {
+    assetTypes: ["ambiguity_register_surface"],
+    fallbackPath: ".ai-workspace/runtime/odd_sdlc-ambiguity-register.json",
+    eyebrow: "Ambiguity",
+    title: "Ambiguity Register",
+    summary: "Major ambiguity, capability gaps, and governing resolution boundaries.",
+    tone: "blocked",
+  },
+  {
+    assetTypes: ["requirement_closure_register_surface"],
+    fallbackPath: ".ai-workspace/runtime/odd_sdlc-requirement-closure.json",
+    eyebrow: "Closure",
+    title: "Requirement Closure Register",
+    summary: "Requirement-level implementation, testcase authority, and execution-evidence carry state.",
+    tone: "attention",
+  },
+  {
+    assetTypes: ["testcase_authority_surface"],
+    preferredSuffixes: ["specification/scenarios/30-generated-testcase-authority.md"],
+    fallbackPath: "specification/scenarios/30-generated-testcase-authority.md",
+    eyebrow: "Qualification",
+    title: "Testcase Authority",
+    summary: "The admitted testcase authority that joins UAT, scenarios, and realized spec tests.",
+    tone: "converged",
+  },
+  {
+    assetTypes: ["test_run_archive_surface"],
+    preferredSuffixes: ["/test_env/50-generated-run-archive.md"],
+    eyebrow: "Execution",
+    title: "Test Run Archive",
+    summary: "Archived realized test execution evidence for the selected workspace.",
+    tone: "converged",
+  },
+  {
+    assetTypes: ["release_surface"],
+    preferredSuffixes: ["/release/60-generated-release-surface.md"],
+    eyebrow: "Release",
+    title: "Release Surface",
+    summary: "The current release readiness verdict and fulfillment ledger for the selected workspace.",
+    tone: "converged",
+  },
+];
+
+function deriveEvidenceSurfaces(world: ManagerWorld | null): DocumentSurfaceCard[] {
+  if (!world) {
+    return EVIDENCE_ASSET_SURFACE_CONFIG.flatMap(({ fallbackPath, ...surface }) =>
+      fallbackPath ? [{ ...surface, path: fallbackPath }] : [],
+    );
+  }
+
+  return dedupeSurfaceCards(
+    EVIDENCE_ASSET_SURFACE_CONFIG.flatMap(
+      ({ assetTypes, preferredSuffixes, fallbackPath, ...surface }) => {
+        const path =
+          selectWorkspaceAssetPath(world.domain.assets, assetTypes, preferredSuffixes) ?? fallbackPath;
+        return path ? [{ ...surface, path }] : [];
+      },
+    ),
+  );
+}
+
+function deriveProvenanceSurfaces(): DocumentSurfaceCard[] {
+  return PROVENANCE_SURFACES;
+}
+
+function selectWorkspaceAssetPath(
+  assets: AssetView[],
+  assetTypes: string[],
+  preferredSuffixes: string[] = [],
+): string | null {
+  const candidates = assets
+    .filter((asset) => assetTypes.includes(asset.declared_type))
+    .map(relativePathFromAsset)
+    .filter((path): path is string => Boolean(path));
+
+  for (const suffix of preferredSuffixes) {
+    const match = candidates.find((path) => path.endsWith(suffix));
+    if (match) {
+      return match;
+    }
+  }
+
+  return candidates[0] ?? null;
+}
+
+function relativePathFromAsset(asset: AssetView): string | null {
+  const uri = asset.uri.trim();
+  if (uri.startsWith("file://")) {
+    return uri.slice("file://".length).replace(/^\/+/, "");
+  }
+  if (uri.startsWith("workspace://")) {
+    return uri.slice("workspace://".length).replace(/^\/+/, "");
+  }
+  return null;
+}
+
+function dedupeSurfaceCards(items: DocumentSurfaceCard[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!item.path || seen.has(item.path)) {
+      return false;
+    }
+    seen.add(item.path);
+    return true;
+  });
+}
 
 export function WorkspaceRoute({
   workspaceRoot,
@@ -150,25 +274,27 @@ export function WorkspaceRoute({
     error: collaborationError,
     refreshConsole,
   } = useOddConsoleState(workspaceRoot);
-  const [evidencePath, setEvidencePath] = useState<string>(EVIDENCE_SURFACES[0].path);
-  const [provenancePath, setProvenancePath] = useState<string>(PROVENANCE_SURFACES[0].path);
+  const evidenceSurfaces = useMemo(() => deriveEvidenceSurfaces(world), [world]);
+  const provenanceSurfaces = useMemo(() => deriveProvenanceSurfaces(), []);
+  const [evidencePath, setEvidencePath] = useState<string>(evidenceSurfaces[0]?.path ?? "");
+  const [provenancePath, setProvenancePath] = useState<string>(provenanceSurfaces[0]?.path ?? "");
 
   useEffect(() => {
     if (selectedPage === "evidence") {
       setEvidencePath((current) =>
-        EVIDENCE_SURFACES.some((surface) => surface.path === current)
+        evidenceSurfaces.some((surface) => surface.path === current)
           ? current
-          : EVIDENCE_SURFACES[0].path,
+          : evidenceSurfaces[0]?.path ?? "",
       );
     }
     if (selectedPage === "provenance") {
       setProvenancePath((current) =>
-        PROVENANCE_SURFACES.some((surface) => surface.path === current)
+        provenanceSurfaces.some((surface) => surface.path === current)
           ? current
-          : PROVENANCE_SURFACES[0].path,
+          : provenanceSurfaces[0]?.path ?? "",
       );
     }
-  }, [selectedPage]);
+  }, [selectedPage, evidenceSurfaces, provenanceSurfaces]);
 
   if (loadingWorld && !world) {
     return (
@@ -176,7 +302,7 @@ export function WorkspaceRoute({
         <section className="panel panel--context">
           <div className="empty-state">
             <strong>Loading manager world.</strong>
-            <p>Projecting ABG runtime truth and odd_method domain overlays.</p>
+            <p>Projecting ABG runtime truth and the selected workspace domain overlays.</p>
           </div>
         </section>
       </main>
@@ -253,6 +379,44 @@ export function WorkspaceRoute({
             onIterate={onIterate}
             onStartAuto={onStartAuto}
           />
+        </div>
+      ) : null}
+
+      {selectedPage === "kanban" ? (
+        <div className="workspace-stack">
+          <ProcessKanbanWorkspace
+            world={world}
+            selection={selection}
+            selectedNodeId={selectedNodeId}
+            navigatorMode={navigatorMode}
+            onChangeNavigatorMode={onChangeNavigatorMode}
+            onSelectNode={onSelectNode}
+            onSelectSelection={onSelectSelection}
+            runningCommand={runningCommand}
+            onRefresh={onRefresh}
+            onIterate={onIterate}
+            onStartAuto={onStartAuto}
+          />
+        </div>
+      ) : null}
+
+      {selectedPage === "world_model" ? (
+        <div className="workspace-stack">
+          {operatorContext ? (
+            <SelectionOperatorPanel
+              context={operatorContext}
+              onSelectSelection={onSelectSelection}
+            />
+          ) : null}
+          <div className="workspace-view">
+            <WorldModelPanel world={world} onSelectSelection={onSelectSelection} />
+            <InspectorPanel
+              world={world}
+              selection={selection}
+              selectedGraphId={selectedGraphId}
+              onSelectSelection={onSelectSelection}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -412,10 +576,10 @@ export function WorkspaceRoute({
           <DocumentSurfacePanel
             workspaceRoot={workspaceRoot}
             eyebrow="Evidence Browser"
-            heading="Design law and requirement surfaces"
-            summary="The manager publishes its own domain and control-plane law inside the repo."
-            surfaces={EVIDENCE_SURFACES}
-            selectedPath={evidencePath}
+            heading="Qualification and release evidence"
+            summary="Inspect the selected workspace's generated requirement, ambiguity, qualification, execution, and release surfaces."
+            surfaces={evidenceSurfaces}
+            selectedPath={evidencePath || evidenceSurfaces[0]?.path || ""}
             onSelectPath={setEvidencePath}
           />
           <InspectorPanel
@@ -427,16 +591,21 @@ export function WorkspaceRoute({
         </div>
       ) : null}
 
+      {selectedPage === "sidecar" ? (
+        <div className="workspace-view" style={{ padding: 0, height: "calc(100vh - 200px)" }}>
+          <SidecarPanel />
+        </div>
+      ) : null}
       {selectedPage === "provenance" ? (
         <div className="workspace-view">
           <div className="odd-grid odd-grid--two">
             <DocumentSurfacePanel
               workspaceRoot={workspaceRoot}
               eyebrow="Published Surfaces"
-              heading="Project documents and traceability law"
-              summary="Use repo-native surfaces for the forward-looking product and traceability record."
-              surfaces={PROVENANCE_SURFACES}
-              selectedPath={provenancePath}
+              heading="Workspace bootstrap and constitutional surfaces"
+              summary="Read the selected workspace from imported authority through mutable product-owned surfaces and closure state."
+              surfaces={provenanceSurfaces}
+              selectedPath={provenancePath || provenanceSurfaces[0]?.path || ""}
               onSelectPath={setProvenancePath}
             />
             <RuntimeCollectionPanel
@@ -819,7 +988,7 @@ function resolveSelectionOperatorContext(
     return {
       eyebrow: "Selected Collection",
       title: collection.name,
-      summary: "Published query-library asset collection projected from odd_method.",
+      summary: "Published query-library asset collection projected from the selected domain contract.",
       tone: linkedAmbiguities.length ? governanceTone(linkedAmbiguities[0]) : "converged",
       nextAction:
         linkedAmbiguities[0]?.next_lawful_action ??
@@ -1074,7 +1243,7 @@ function resolveSelectionOperatorContext(
         {
           eyebrow: "Program Kind",
           value: program.kind,
-          description: "Published program classification from odd_method.",
+          description: "Published program classification from the selected domain contract.",
           tone: "attention",
         },
       ],

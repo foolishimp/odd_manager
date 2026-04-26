@@ -1,4 +1,4 @@
-import type { AmbiguityEntryView, PageId, Selection, Tone } from "./types";
+import type { AmbiguityEntryView, PageId, Selection, Tone, WorkspaceProfile } from "./types";
 
 export type VocabularyPack = {
   id: string;
@@ -15,6 +15,8 @@ const AGILE_SOFTWARE_VOCABULARY_PACK: VocabularyPack = {
   pageLabels: {
     requirements: "Requirements View",
     process: "Process View",
+    kanban: "Kanban View",
+    world_model: "World Model",
     home: "Overview",
     graphs: "Project Map",
     runtime: "Delivery Activity",
@@ -22,6 +24,7 @@ const AGILE_SOFTWARE_VOCABULARY_PACK: VocabularyPack = {
     evidence: "Policy & Evidence",
     builder: "Model Catalog",
     provenance: "History",
+    sidecar: "Sidecar",
   },
   selectionKindLabels: {
     requirement: "Requirement",
@@ -74,6 +77,22 @@ const AGILE_SOFTWARE_VOCABULARY_PACK: VocabularyPack = {
 
 export const ACTIVE_VOCABULARY_PACK = AGILE_SOFTWARE_VOCABULARY_PACK;
 
+const CORE_PAGES: PageId[] = [
+  "home",
+  "graphs",
+  "runtime",
+  "continuations",
+  "evidence",
+  "builder",
+  "provenance",
+  "sidecar",
+];
+
+const DOMAIN_PACK_PAGES: Record<string, PageId[]> = {
+  odd_sdlc: ["requirements", "process", "kanban"],
+  odd_world_model: ["world_model"],
+};
+
 export type PresentedAmbiguity = {
   classificationLabel: string;
   headline: string;
@@ -84,6 +103,57 @@ export type PresentedAmbiguity = {
 
 export function labelPage(pageId: PageId) {
   return ACTIVE_VOCABULARY_PACK.pageLabels[pageId];
+}
+
+export function labelWorkspaceIdentity(identity: string | null | undefined) {
+  const normalized = String(identity ?? "").trim();
+  if (!normalized || normalized === "unknown") {
+    return "Odd Manager";
+  }
+  if (normalized === "odd_sdlc") {
+    return "Odd SDLC";
+  }
+  if (normalized === "odd_world_model") {
+    return "Odd World Model";
+  }
+  if (normalized === "odd_manager") {
+    return "Odd Manager";
+  }
+  return humanizeCanonicalIdentifier(normalized);
+}
+
+export function domainPagesForWorkspaceProfile(
+  profile: WorkspaceProfile | null | undefined,
+): PageId[] {
+  const pack = profile?.active_domain_pack ?? null;
+  return pack ? [...(DOMAIN_PACK_PAGES[pack] ?? [])] : [];
+}
+
+export function pagesForWorkspaceProfile(profile: WorkspaceProfile | null | undefined): PageId[] {
+  return [...domainPagesForWorkspaceProfile(profile), ...CORE_PAGES];
+}
+
+export function defaultPageForWorkspaceProfile(
+  profile: WorkspaceProfile | null | undefined,
+): PageId {
+  return domainPagesForWorkspaceProfile(profile)[0] ?? "home";
+}
+
+export function subtitleForWorkspaceProfile(profile: WorkspaceProfile | null | undefined) {
+  if (!profile) {
+    return "Odd Manager hosts core GTL/ABG pages and domain-contributed pages for the selected workspace.";
+  }
+
+  const primaryLabel = labelWorkspaceIdentity(profile.primary_identity);
+  const governanceLabels = profile.governance_identities
+    .map((identity) => labelWorkspaceIdentity(identity))
+    .filter((value, index, values) => values.indexOf(value) === index);
+
+  if (!governanceLabels.length || governanceLabels[0] === primaryLabel) {
+    return `${primaryLabel} is the active workspace identity. Odd Manager remains the host over core GTL/ABG pages and the active domain pack.`;
+  }
+
+  return `${primaryLabel} is the active workspace identity. Governance remains separate through ${governanceLabels.join(", ")}. Odd Manager hosts the shell and core GTL/ABG pages.`;
 }
 
 export function labelSelectionKind(kind: Selection["kind"]) {
