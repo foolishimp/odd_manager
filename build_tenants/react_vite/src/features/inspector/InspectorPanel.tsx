@@ -72,7 +72,7 @@ export function InspectorPanel({
     case "surface":
       return (
         <SurfaceInspector
-          projectRoot={world.project_root}
+          workspaceRoot={world.workspace_root}
           relativePath={selection.id}
           onSelectSelection={onSelectSelection}
         />
@@ -352,11 +352,11 @@ function RequirementInspector({
 }
 
 function SurfaceInspector({
-  projectRoot,
+  workspaceRoot,
   relativePath,
   onSelectSelection,
 }: {
-  projectRoot: string;
+  workspaceRoot: string;
   relativePath: string;
   onSelectSelection: (selection: Selection) => void;
 }) {
@@ -368,7 +368,7 @@ function SurfaceInspector({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void loadSurface(projectRoot, relativePath)
+    void loadSurface(workspaceRoot, relativePath)
       .then((result) => {
         if (!cancelled) {
           setSurface(result);
@@ -387,7 +387,7 @@ function SurfaceInspector({
     return () => {
       cancelled = true;
     };
-  }, [relativePath, projectRoot]);
+  }, [relativePath, workspaceRoot]);
 
   const title = relativePath.split("/").pop() || relativePath;
 

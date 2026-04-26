@@ -92,7 +92,7 @@ export type RoomParticipant = {
 
 export type GTermSessionSummary = {
   id: string;
-  projectRoot: string;
+  workspaceRoot: string;
   label: string;
   archived?: boolean;
   status: "live" | "closed" | "error";
@@ -111,7 +111,7 @@ export type GTermSessionSummary = {
 };
 
 export type GTermPoolState = {
-  projectRoot: string;
+  workspaceRoot: string;
   activeSessionId: string | null;
   sessions: GTermSessionSummary[];
 };
@@ -156,7 +156,7 @@ export type GChatTopic = {
 };
 
 export type AgentConsoleState = {
-  projectRoot: string;
+  workspaceRoot: string;
   oddboard: {
     topics: GBoardTopic[];
     records: GBoardRecord[];
@@ -189,19 +189,19 @@ export async function scanForOddWorkspaces(root: string): Promise<WorkspaceScanR
   return expectJson<WorkspaceScanResult[]>(await fetch(`/api/workspace-scan?${query.toString()}`));
 }
 
-export async function loadAgentConsoleState(projectRoot: string): Promise<AgentConsoleState> {
-  const query = new URLSearchParams({ projectRoot });
+export async function loadAgentConsoleState(workspaceRoot: string): Promise<AgentConsoleState> {
+  const query = new URLSearchParams({ workspaceRoot });
   return expectJson<AgentConsoleState>(await fetch(`/api/odd-console?${query.toString()}`));
 }
 
 export function subscribeAgentConsoleEvents(
-  projectRoot: string,
+  workspaceRoot: string,
   handlers: {
     onUpdate: () => void;
     onError?: (error: Event | string) => void;
   },
 ) {
-  const query = new URLSearchParams({ projectRoot });
+  const query = new URLSearchParams({ workspaceRoot });
   const source = new EventSource(`/api/odd-console/stream?${query.toString()}`);
 
   const updateHandler = () => {
@@ -223,7 +223,7 @@ export function subscribeAgentConsoleEvents(
 }
 
 export async function postGChatMessage(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     roomId: string;
     body: string;
@@ -239,7 +239,7 @@ export async function postGChatMessage(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         roomId: options.roomId,
         body: options.body,
         selectedTrainId: options.selectedTrainId ?? null,
@@ -251,7 +251,7 @@ export async function postGChatMessage(
 }
 
 export async function createGBoardTopic(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     title?: string | null;
     sourceRecordId?: string | null;
@@ -267,7 +267,7 @@ export async function createGBoardTopic(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         title: options.title ?? null,
         sourceRecordId: options.sourceRecordId ?? null,
         selectedTrainId: options.selectedTrainId ?? null,
@@ -279,7 +279,7 @@ export async function createGBoardTopic(
 }
 
 export async function attachGChatTopicRecord(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     topicId: string;
     recordId: string;
@@ -292,7 +292,7 @@ export async function attachGChatTopicRecord(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         topicId: options.topicId,
         recordId: options.recordId,
       }),
@@ -301,7 +301,7 @@ export async function attachGChatTopicRecord(
 }
 
 export async function attachGChatTopicSession(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     topicId: string;
     sessionId: string;
@@ -314,7 +314,7 @@ export async function attachGChatTopicSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         topicId: options.topicId,
         sessionId: options.sessionId,
       }),
@@ -323,7 +323,7 @@ export async function attachGChatTopicSession(
 }
 
 export async function createGTermSession(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     selectedTrainId?: TrainId | null;
     stationId?: string | null;
@@ -338,7 +338,7 @@ export async function createGTermSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         selectedTrainId: options.selectedTrainId ?? null,
         stationId: options.stationId ?? null,
         edgeId: options.edgeId ?? null,
@@ -349,7 +349,7 @@ export async function createGTermSession(
 }
 
 export async function promoteGTermSession(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     sessionId: string;
     lineCount?: number;
@@ -365,7 +365,7 @@ export async function promoteGTermSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId: options.sessionId,
         lineCount: options.lineCount ?? 120,
         selectedTrainId: options.selectedTrainId ?? null,
@@ -377,7 +377,7 @@ export async function promoteGTermSession(
 }
 
 export async function renameGTermSession(
-  projectRoot: string,
+  workspaceRoot: string,
   sessionId: string,
   label: string,
 ): Promise<{ ok: boolean; session: GTermSessionSummary }> {
@@ -388,7 +388,7 @@ export async function renameGTermSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId,
         label,
       }),
@@ -397,7 +397,7 @@ export async function renameGTermSession(
 }
 
 export async function closeGTermSession(
-  projectRoot: string,
+  workspaceRoot: string,
   sessionId: string,
 ): Promise<{ ok: boolean; session: GTermSessionSummary }> {
   return expectJson(
@@ -407,7 +407,7 @@ export async function closeGTermSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId,
       }),
     }),
@@ -415,8 +415,8 @@ export async function closeGTermSession(
 }
 
 export async function closeAllGTermSessions(
-  projectRoot: string,
-): Promise<{ ok: boolean; projectRoot: string; closedSessions: GTermSessionSummary[] }> {
+  workspaceRoot: string,
+): Promise<{ ok: boolean; workspaceRoot: string; closedSessions: GTermSessionSummary[] }> {
   return expectJson(
     await fetch("/api/oddterm/session/close-all", {
       method: "POST",
@@ -424,14 +424,14 @@ export async function closeAllGTermSessions(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
       }),
     }),
   );
 }
 
 export async function selectGTermSession(
-  projectRoot: string,
+  workspaceRoot: string,
   sessionId: string,
 ): Promise<{ ok: boolean; activeSessionId: string | null }> {
   return expectJson(
@@ -441,7 +441,7 @@ export async function selectGTermSession(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId,
       }),
     }),
@@ -449,7 +449,7 @@ export async function selectGTermSession(
 }
 
 export async function launchTopicAgent(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     topicId: string;
     sessionId: string;
@@ -472,7 +472,7 @@ export async function launchTopicAgent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         topicId: options.topicId,
         sessionId: options.sessionId,
         provider: options.provider,
@@ -482,7 +482,7 @@ export async function launchTopicAgent(
 }
 
 export async function addTopicParticipant(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     topicId: string;
     role: "worker" | "reviewer";
@@ -514,7 +514,7 @@ export async function addTopicParticipant(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         topicId: options.topicId,
         role: options.role,
         provider: options.provider,
@@ -525,7 +525,7 @@ export async function addTopicParticipant(
 }
 
 export async function setTopicRoomRecipients(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     topicId: string;
     sessionIds: string[];
@@ -538,7 +538,7 @@ export async function setTopicRoomRecipients(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         topicId: options.topicId,
         sessionIds: options.sessionIds,
       }),
@@ -547,7 +547,7 @@ export async function setTopicRoomRecipients(
 }
 
 export async function launchShellAgent(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     sessionId: string;
     provider: "codex" | "claude";
@@ -565,7 +565,7 @@ export async function launchShellAgent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId: options.sessionId,
         provider: options.provider,
       }),
@@ -574,7 +574,7 @@ export async function launchShellAgent(
 }
 
 export async function joinShellAgentTopic(
-  projectRoot: string,
+  workspaceRoot: string,
   options: {
     sessionId: string;
     topicId: string;
@@ -597,7 +597,7 @@ export async function joinShellAgentTopic(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         sessionId: options.sessionId,
         topicId: options.topicId,
         provider: options.provider,

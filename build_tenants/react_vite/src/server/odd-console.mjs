@@ -17,12 +17,12 @@ import {
   loadLiveRoomMessages,
 } from "./oddchat-room-service.mjs";
 
-export function loadAgentConsoleState(projectRoot) {
-  const gterm = loadGTermPoolState(projectRoot);
-  const liveMessages = loadLiveRoomMessages(projectRoot);
-  const gboardRecords = loadGBoardRecords(projectRoot);
-  const gboardTopics = loadGBoardTopics(projectRoot);
-  const participants = listOddChatParticipants(projectRoot, {
+export function loadAgentConsoleState(workspaceRoot) {
+  const gterm = loadGTermPoolState(workspaceRoot);
+  const liveMessages = loadLiveRoomMessages(workspaceRoot);
+  const gboardRecords = loadGBoardRecords(workspaceRoot);
+  const gboardTopics = loadGBoardTopics(workspaceRoot);
+  const participants = listOddChatParticipants(workspaceRoot, {
     connectedOnly: true,
   });
   const recordById = new Map(gboardRecords.map((record) => [record.id, record]));
@@ -73,7 +73,7 @@ export function loadAgentConsoleState(projectRoot) {
   const gchatMessages = [...liveMessages].sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
 
   return {
-    projectRoot,
+    workspaceRoot,
     oddboard: {
       topics: gboardTopics,
       records: gboardRecords,
@@ -90,7 +90,7 @@ export function loadAgentConsoleState(projectRoot) {
 }
 
 export function createGChatMessage(
-  projectRoot,
+  workspaceRoot,
   {
     roomId = "workspace",
     body,
@@ -99,12 +99,12 @@ export function createGChatMessage(
     edgeId = null,
   } = {},
 ) {
-  const resolved = resolvePostedRoom(projectRoot, {
+  const resolved = resolvePostedRoom(workspaceRoot, {
     roomId,
     body,
   });
 
-  const message = appendLiveRoomMessage(projectRoot, {
+  const message = appendLiveRoomMessage(workspaceRoot, {
     roomId: resolved.roomId,
     senderId: "operator",
     senderLabel: "Operator",
@@ -128,17 +128,17 @@ export function createGChatMessage(
 }
 
 export function createGBoardComment(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  return persistGBoardComment(projectRoot, options);
+  return persistGBoardComment(workspaceRoot, options);
 }
 
 export function createGChatTopic(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  const topic = persistGBoardTopic(projectRoot, options);
+  const topic = persistGBoardTopic(workspaceRoot, options);
   return {
     ok: true,
     topic,
@@ -146,10 +146,10 @@ export function createGChatTopic(
 }
 
 export function attachGChatTopicRecord(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  const topic = attachRecordToGBoardTopic(projectRoot, options);
+  const topic = attachRecordToGBoardTopic(workspaceRoot, options);
   return {
     ok: true,
     topic,
@@ -157,10 +157,10 @@ export function attachGChatTopicRecord(
 }
 
 export function attachGChatTopicSession(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  const topic = attachSessionToGBoardTopic(projectRoot, options);
+  const topic = attachSessionToGBoardTopic(workspaceRoot, options);
   return {
     ok: true,
     topic,
@@ -168,10 +168,10 @@ export function attachGChatTopicSession(
 }
 
 export function setGChatTopicRoomRecipients(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  const topic = setGBoardTopicRoomRecipients(projectRoot, options);
+  const topic = setGBoardTopicRoomRecipients(workspaceRoot, options);
   return {
     ok: true,
     topic,
@@ -179,8 +179,8 @@ export function setGChatTopicRoomRecipients(
 }
 
 export function createTerminalPromotionComment(
-  projectRoot,
+  workspaceRoot,
   options = {},
 ) {
-  return createGTermPromotionComment(projectRoot, options);
+  return createGTermPromotionComment(workspaceRoot, options);
 }

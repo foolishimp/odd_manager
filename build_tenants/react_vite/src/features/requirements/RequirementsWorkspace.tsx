@@ -335,7 +335,7 @@ export function RequirementsWorkspace({
             />
           ) : (
             <AuthorityWorkbench
-              projectRoot={world.project_root}
+              workspaceRoot={world.workspace_root}
               tab={activeTab}
               totalRequirements={requirements.length}
               onOpenBacklog={() => {
@@ -628,12 +628,12 @@ function BacklogNavigatorWidget({
 }
 
 function AuthorityWorkbench({
-  projectRoot,
+  workspaceRoot,
   tab,
   totalRequirements,
   onOpenBacklog,
 }: {
-  projectRoot: string;
+  workspaceRoot: string;
   tab: NavigatorTab;
   totalRequirements: number;
   onOpenBacklog: () => void;
@@ -652,7 +652,7 @@ function AuthorityWorkbench({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void loadSurface(projectRoot, tab.path)
+    void loadSurface(workspaceRoot, tab.path)
       .then((result) => {
         if (!cancelled) {
           setSurface(result);
@@ -671,7 +671,7 @@ function AuthorityWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [tab.path, projectRoot]);
+  }, [tab.path, workspaceRoot]);
 
   return (
     <div className="workspace-stack">

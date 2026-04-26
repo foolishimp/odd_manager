@@ -6,7 +6,7 @@ const TERMINAL_WORKSPACE_COLLAPSED_STORAGE_KEY = "oman-oddterm-workspace-collaps
 const TERMINAL_WORKSPACE_PINNED_STORAGE_KEY = "oman-oddterm-workspace-pinned";
 
 type OddTermWorkspaceWidgetProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -17,7 +17,7 @@ type OddTermWorkspaceWidgetProps = {
 };
 
 export function OddTermWorkspaceWidget({
-  projectRoot,
+  workspaceRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -193,7 +193,7 @@ export function OddTermWorkspaceWidget({
         </div>
       ) : (
         <OddTermPanel
-          projectRoot={projectRoot}
+          workspaceRoot={workspaceRoot}
           selectedTrainId={selectedTrainId}
           selectedStationId={selectedStationId}
           selectedEdgeId={selectedEdgeId}

@@ -23,10 +23,10 @@ async function parseJson<T>(response: Response): Promise<T> {
 }
 
 export async function loadWorld(
-  projectRoot: string,
+  workspaceRoot: string,
   signal?: AbortSignal,
 ): Promise<ManagerWorld> {
-  const params = new URLSearchParams({ projectRoot });
+  const params = new URLSearchParams({ workspaceRoot });
   return parseJson<ManagerWorld>(
     await fetch(`/api/world?${params.toString()}`, {
       signal,
@@ -35,18 +35,18 @@ export async function loadWorld(
 }
 
 export async function loadSurface(
-  projectRoot: string,
+  workspaceRoot: string,
   relativePath: string,
 ): Promise<SurfaceData> {
   const params = new URLSearchParams({
-    projectRoot,
+    workspaceRoot,
     relativePath,
   });
   return parseJson<SurfaceData>(await fetch(`/api/surface?${params.toString()}`));
 }
 
 export async function runCommand(
-  projectRoot: string,
+  workspaceRoot: string,
   command: CommandName,
   options?: { auto?: boolean },
 ): Promise<CommandResult> {
@@ -57,7 +57,7 @@ export async function runCommand(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         command,
         auto: options?.auto ?? false,
       }),
@@ -65,13 +65,13 @@ export async function runCommand(
   );
 }
 
-export async function loadSessionServiceState(projectRoot: string): Promise<SessionServiceState> {
-  const params = new URLSearchParams({ projectRoot });
+export async function loadSessionServiceState(workspaceRoot: string): Promise<SessionServiceState> {
+  const params = new URLSearchParams({ workspaceRoot });
   return parseJson<SessionServiceState>(await fetch(`/api/session-service?${params.toString()}`));
 }
 
 export async function approveSessionServiceRun(
-  projectRoot: string,
+  workspaceRoot: string,
   runId: string,
   edge?: string | null,
 ): Promise<Record<string, unknown>> {
@@ -82,7 +82,7 @@ export async function approveSessionServiceRun(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         runId,
         edge: edge ?? null,
       }),
@@ -91,7 +91,7 @@ export async function approveSessionServiceRun(
 }
 
 export async function rejectSessionServiceRun(
-  projectRoot: string,
+  workspaceRoot: string,
   runId: string,
   reason: string,
   edge?: string | null,
@@ -103,7 +103,7 @@ export async function rejectSessionServiceRun(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        projectRoot,
+        workspaceRoot,
         runId,
         edge: edge ?? null,
         reason,

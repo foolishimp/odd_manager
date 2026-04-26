@@ -675,7 +675,7 @@ function ProcessBuilderView({
       ? records.find((record) => record.key === displayContext.key) ?? null
       : fallbackRecord;
   const activeStage = PROCESS_STAGE_DEFINITIONS.find((stage) => stage.id === effectiveStageId);
-  const workspaceName = workspaceDisplayName(world.project_root);
+  const workspaceName = workspaceDisplayName(world.workspace_root);
   const domainLabel = labelWorkspacePack(world.workspace_profile.active_domain_pack);
 
   return (
@@ -1677,8 +1677,8 @@ function processStageForRecord(record: ProcessRecord): ProcessStageId {
   return "bootstrap";
 }
 
-function workspaceDisplayName(projectRoot: string) {
-  return projectRoot.split("/").filter(Boolean).at(-1) ?? projectRoot;
+function workspaceDisplayName(workspaceRoot: string) {
+  return workspaceRoot.split("/").filter(Boolean).at(-1) ?? workspaceRoot;
 }
 
 function labelWorkspacePack(pack: ManagerWorld["workspace_profile"]["active_domain_pack"]) {

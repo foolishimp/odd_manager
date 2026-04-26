@@ -6,7 +6,7 @@ type RefreshOptions = {
   background?: boolean;
 };
 
-export function useSessionServiceState(projectRoot: string) {
+export function useSessionServiceState(workspaceRoot: string) {
   const [serviceState, setServiceState] = useState<SessionServiceState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export function useSessionServiceState(projectRoot: string) {
       }
       setError(null);
       try {
-        const nextState = await loadSessionServiceState(projectRoot);
+        const nextState = await loadSessionServiceState(workspaceRoot);
         setServiceState(nextState);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
@@ -29,7 +29,7 @@ export function useSessionServiceState(projectRoot: string) {
         }
       }
     },
-    [projectRoot],
+    [workspaceRoot],
   );
 
   useEffect(() => {

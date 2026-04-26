@@ -9,7 +9,7 @@ type RefreshOptions = {
   background?: boolean;
 };
 
-export function useOddConsoleState(projectRoot: string) {
+export function useOddConsoleState(workspaceRoot: string) {
   const [consoleState, setConsoleState] = useState<AgentConsoleState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export function useOddConsoleState(projectRoot: string) {
         }
         setError(null);
         try {
-          const nextState = await loadAgentConsoleState(projectRoot);
+          const nextState = await loadAgentConsoleState(workspaceRoot);
           setConsoleState(nextState);
         } catch (caught) {
           setError(caught instanceof Error ? caught.message : String(caught));
@@ -52,7 +52,7 @@ export function useOddConsoleState(projectRoot: string) {
 
       return task;
     },
-    [projectRoot],
+    [workspaceRoot],
   );
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export function useOddConsoleState(projectRoot: string) {
   }, [refreshConsole]);
 
   useEffect(() => {
-    return subscribeAgentConsoleEvents(projectRoot, {
+    return subscribeAgentConsoleEvents(workspaceRoot, {
       onUpdate: () => {
         void refreshConsole({ background: true });
       },
@@ -68,7 +68,7 @@ export function useOddConsoleState(projectRoot: string) {
         setError("Live oddboard relay disconnected.");
       },
     });
-  }, [projectRoot, refreshConsole]);
+  }, [workspaceRoot, refreshConsole]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

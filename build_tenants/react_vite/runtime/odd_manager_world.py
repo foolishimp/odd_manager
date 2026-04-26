@@ -23,7 +23,7 @@ _SUPPORTED_QUERY_CONTRACTS: dict[tuple[str, str], dict[str, Any]] = {
     ): {
         "expected_top_level_keys": (
             "query_contract",
-            "project_root",
+            "workspace_root",
             "analysis_manifest",
             "semantic_facets",
             "asset_types",
@@ -51,7 +51,7 @@ _SUPPORTED_QUERY_CONTRACTS: dict[tuple[str, str], dict[str, Any]] = {
     ): {
         "expected_top_level_keys": (
             "query_contract",
-            "project_root",
+            "workspace_root",
             "semantic_facets",
             "asset_types",
             "asset_families",
@@ -83,9 +83,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _configure_imports(project_root: Path) -> None:
+def _configure_imports(workspace_root: Path) -> None:
     odd_manager_root = Path(__file__).resolve().parents[3]
-    installed_odd_sdlc_code = project_root / _INSTALLED_ODD_SDLC_CODE_RELATIVE
+    installed_odd_sdlc_code = workspace_root / _INSTALLED_ODD_SDLC_CODE_RELATIVE
     odd_sdlc_source_code = (
         odd_manager_root.parent
         / "odd_sdlc"
@@ -114,7 +114,7 @@ def _configure_imports(project_root: Path) -> None:
         odd_sdlc_source_code,
         legacy_odd_method_code,
         abiogenesis_code,
-        project_root / ".genesis",
+        workspace_root / ".genesis",
         odd_manager_root / ".genesis",
     ]
     for path in reversed(desired):
@@ -257,9 +257,9 @@ def _requirement_priority_rank(priority: str | None) -> int:
     return 0
 
 
-def _load_requirement_closure_index(project_root: Path) -> dict[str, dict[str, Any]]:
+def _load_requirement_closure_index(workspace_root: Path) -> dict[str, dict[str, Any]]:
     closure_path = (
-        project_root
+        workspace_root
         / ".ai-workspace"
         / "runtime"
         / "odd_sdlc-requirement-closure.json"
@@ -294,7 +294,7 @@ def _dedupe_strings(items: list[str]) -> list[str]:
     return ordered
 
 
-def _is_workspace_relative_path(project_root: Path, candidate: str) -> bool:
+def _is_workspace_relative_path(workspace_root: Path, candidate: str) -> bool:
     normalized = candidate.strip()
     if not normalized or "://" in normalized or normalized.startswith("/"):
         return False
@@ -313,10 +313,10 @@ def _is_workspace_relative_path(project_root: Path, candidate: str) -> bool:
         or normalized.startswith("build_tenants/")
     ):
         return False
-    return (project_root / normalized).exists()
+    return (workspace_root / normalized).exists()
 
 
-def _extract_workspace_refs(text: str, project_root: Path) -> list[str]:
+def _extract_workspace_refs(text: str, workspace_root: Path) -> list[str]:
     candidates: list[str] = []
     for match in _BACKTICK_REF_RE.finditer(text):
         candidates.append(match.group(1).strip())
@@ -326,7 +326,7 @@ def _extract_workspace_refs(text: str, project_root: Path) -> list[str]:
         [
             candidate[2:] if candidate.startswith("./") else candidate
             for candidate in candidates
-            if _is_workspace_relative_path(project_root, candidate)
+            if _is_workspace_relative_path(workspace_root, candidate)
         ]
     )
 
@@ -415,8 +415,8 @@ def _parse_markdown_table_cells(line: str) -> list[str] | None:
     return cells if cells else None
 
 
-def _project_tickets(project_root: Path) -> list[dict[str, Any]]:
-    tickets_root = project_root / ".ai-workspace" / "tickets"
+def _project_tickets(workspace_root: Path) -> list[dict[str, Any]]:
+    tickets_root = workspace_root / ".ai-workspace" / "tickets"
     if not tickets_root.exists():
         return []
 
@@ -453,17 +453,17 @@ def _project_tickets(project_root: Path) -> list[dict[str, Any]]:
                     "created_at": metadata.get("created_at"),
                     "updated_at": metadata.get("updated_at"),
                     "dependencies": _split_record_refs(metadata.get("dependencies")),
-                    "links": _extract_workspace_refs(full_text, project_root),
+                    "links": _extract_workspace_refs(full_text, workspace_root),
                     "linked_requirement_ids": _extract_requirement_ids(full_text),
-                    "linked_surfaces": _extract_workspace_refs(full_text, project_root),
-                    "source_path": str(source_path.relative_to(project_root)),
+                    "linked_surfaces": _extract_workspace_refs(full_text, workspace_root),
+                    "source_path": str(source_path.relative_to(workspace_root)),
                 }
             )
     return projected
 
 
-def _project_comments(project_root: Path) -> list[dict[str, Any]]:
-    comments_root = project_root / ".ai-workspace" / "comments"
+def _project_comments(workspace_root: Path) -> list[dict[str, Any]]:
+    comments_root = workspace_root / ".ai-workspace" / "comments"
     if not comments_root.exists():
         return []
 
@@ -485,7 +485,7 @@ def _project_comments(project_root: Path) -> list[dict[str, Any]]:
         full_text = "\n".join(lines)
         projected.append(
             {
-                "id": str(source_path.relative_to(project_root)),
+                "id": str(source_path.relative_to(workspace_root)),
                 "title": title,
                 "summary": summary or title,
                 "author": metadata.get("Author") or source_path.parent.name,
@@ -494,8 +494,8 @@ def _project_comments(project_root: Path) -> list[dict[str, Any]]:
                 "source": metadata.get("source"),
                 "addresses": _split_record_refs(metadata.get("Addresses")),
                 "linked_requirement_ids": _extract_requirement_ids(full_text),
-                "linked_surfaces": _extract_workspace_refs(full_text, project_root),
-                "source_path": str(source_path.relative_to(project_root)),
+                "linked_surfaces": _extract_workspace_refs(full_text, workspace_root),
+                "source_path": str(source_path.relative_to(workspace_root)),
             }
         )
     return projected
@@ -503,7 +503,7 @@ def _project_comments(project_root: Path) -> list[dict[str, Any]]:
 
 def _parse_requirement_block(
     *,
-    project_root: Path,
+    workspace_root: Path,
     source_path: Path,
     family_title: str,
     family_metadata: dict[str, str],
@@ -584,13 +584,13 @@ def _parse_requirement_block(
         if coverage
         else [],
         "acceptance_criteria": acceptance_criteria,
-        "source_path": str(source_path.relative_to(project_root)),
+        "source_path": str(source_path.relative_to(workspace_root)),
     }
 
 
 def _parse_requirement_table_row(
     *,
-    project_root: Path,
+    workspace_root: Path,
     source_path: Path,
     family_title: str,
     section_traces: list[str],
@@ -643,16 +643,16 @@ def _parse_requirement_table_row(
         if coverage
         else [],
         "acceptance_criteria": [],
-        "source_path": str(source_path.relative_to(project_root)),
+        "source_path": str(source_path.relative_to(workspace_root)),
     }
 
 
-def _project_requirements(project_root: Path) -> list[dict[str, Any]]:
-    requirements_root = project_root / "specification" / "requirements"
+def _project_requirements(workspace_root: Path) -> list[dict[str, Any]]:
+    requirements_root = workspace_root / "specification" / "requirements"
     if not requirements_root.exists():
         return []
 
-    closure_index = _load_requirement_closure_index(project_root)
+    closure_index = _load_requirement_closure_index(workspace_root)
     projected: list[dict[str, Any]] = []
 
     for source_path in sorted(requirements_root.glob("*.md")):
@@ -678,7 +678,7 @@ def _project_requirements(project_root: Path) -> list[dict[str, Any]]:
                 return
             projected.append(
                 _parse_requirement_block(
-                    project_root=project_root,
+                    workspace_root=workspace_root,
                     source_path=source_path,
                     family_title=family_title,
                     family_metadata=family_metadata,
@@ -738,7 +738,7 @@ def _project_requirements(project_root: Path) -> list[dict[str, Any]]:
                 fourth_header = current_table_columns[3] if len(current_table_columns) > 3 else ""
                 projected.append(
                     _parse_requirement_table_row(
-                        project_root=project_root,
+                        workspace_root=workspace_root,
                         source_path=source_path,
                         family_title=section_title,
                         section_traces=section_traces,
@@ -796,11 +796,11 @@ def _prefer_requirement_entry(candidate: dict[str, Any], current: dict[str, Any]
     return score(candidate) > score(current)
 
 
-def _load_app(project_root: Path):
-    _configure_imports(project_root)
+def _load_app(workspace_root: Path):
+    _configure_imports(workspace_root)
     from odd_sdlc.app import bootstrap, initialize
 
-    return initialize(bootstrap(project_root=project_root))
+    return initialize(bootstrap(workspace_root=workspace_root))
 
 
 def _configure_read_only_domain_fallbacks() -> None:
@@ -850,17 +850,17 @@ def _configure_read_only_domain_fallbacks() -> None:
     original_checkpoint_for_path = odd_workspace_assets.checkpoint_for_path
     cached_assets_by_workspace: dict[str, tuple[Any, ...]] = {}
 
-    def safe_ambiguity_loader(project_root: Path) -> dict[str, Any]:
+    def safe_ambiguity_loader(workspace_root: Path) -> dict[str, Any]:
         try:
-            return original_ambiguity_loader(project_root)
+            return original_ambiguity_loader(workspace_root)
         except PermissionError:
             return odd_ambiguity.build_ambiguity_register(
-                Path(project_root),
+                Path(workspace_root),
                 stage="workspace_scan",
             )
 
-    def safe_requirement_closure_loader(project_root: Path) -> dict[str, Any]:
-        root = Path(project_root)
+    def safe_requirement_closure_loader(workspace_root: Path) -> dict[str, Any]:
+        root = Path(workspace_root)
         if callable(original_requirement_closure_loader):
             try:
                 return original_requirement_closure_loader(root)
@@ -879,7 +879,7 @@ def _configure_read_only_domain_fallbacks() -> None:
             return requirement_closure_builder(root, stage="workspace_scan")
         return {
             "register_kind": "odd_sdlc.requirement_closure_register",
-            "project_root": str(root),
+            "workspace_root": str(root),
             "published": False,
             "summary": {"published": False},
             "requirements": [],
@@ -908,12 +908,12 @@ def _configure_read_only_domain_fallbacks() -> None:
                 bytes=None,
             )
 
-    def cached_bootstrap_assets(project_root: Path):
-        cache_key = str(Path(project_root).resolve())
+    def cached_bootstrap_assets(workspace_root: Path):
+        cache_key = str(Path(workspace_root).resolve())
         cached = cached_assets_by_workspace.get(cache_key)
         if cached is not None:
             return cached
-        assets = original_bootstrap_assets(Path(project_root))
+        assets = original_bootstrap_assets(Path(workspace_root))
         cached_assets_by_workspace[cache_key] = assets
         return assets
 
@@ -1057,11 +1057,11 @@ def _project_domain_contract(query_contract: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _empty_ambiguity_register(project_root: Path) -> dict[str, Any]:
+def _empty_ambiguity_register(workspace_root: Path) -> dict[str, Any]:
     return {
         "register_kind": "odd_sdlc.ambiguity_register",
         "schema_version": "v2",
-        "project_root": str(project_root),
+        "workspace_root": str(workspace_root),
         "stage": "unavailable",
         "project_profile": {},
         "summary": {
@@ -1406,10 +1406,10 @@ def _ambiguity_summary_counts(ambiguity_register: dict[str, Any]) -> dict[str, i
 
 
 def _normalize_ambiguity_register(
-    project_root: Path,
+    workspace_root: Path,
     ambiguity_register: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    register = ambiguity_register if isinstance(ambiguity_register, dict) else _empty_ambiguity_register(project_root)
+    register = ambiguity_register if isinstance(ambiguity_register, dict) else _empty_ambiguity_register(workspace_root)
     normalized_entries = [
         {**entry, **_ambiguity_operator_fields(entry)}
         for entry in register.get("ambiguities", [])
@@ -1435,7 +1435,7 @@ def _normalize_ambiguity_register(
 
 
 def _domain_projection(
-    project_root: Path,
+    workspace_root: Path,
     domain_payload: dict[str, Any],
     *,
     functions: list[dict[str, Any]],
@@ -1445,7 +1445,7 @@ def _domain_projection(
     query_contract = _normalize_query_contract(domain_payload.get("query_contract"))
     gap_payload = _domain_gap_payload(domain_payload)
     return {
-        "project_root": str(domain_payload.get("project_root") or project_root),
+        "workspace_root": str(domain_payload.get("workspace_root") or workspace_root),
         "query_contract": query_contract,
         "domain_contract": _project_domain_contract(query_contract),
         "semantic_facets": list(domain_payload.get("semantic_facets") or []),
@@ -1469,11 +1469,11 @@ def _domain_projection(
             if isinstance(domain_payload.get("gap_dossier"), dict)
             else {}
         ),
-        "requirements": _project_requirements(project_root),
-        "tickets": _project_tickets(project_root),
-        "comments": _project_comments(project_root),
+        "requirements": _project_requirements(workspace_root),
+        "tickets": _project_tickets(workspace_root),
+        "comments": _project_comments(workspace_root),
         "ambiguity_register": _normalize_ambiguity_register(
-            project_root,
+            workspace_root,
             domain_payload.get("ambiguity_register"),
         ),
         "collections": list(domain_payload.get("collections") or []),
@@ -1489,10 +1489,10 @@ def _domain_projection(
     }
 
 
-def _degraded_world(project_root: Path, error: Exception) -> dict[str, Any]:
+def _degraded_world(workspace_root: Path, error: Exception) -> dict[str, Any]:
     summary = _format_error_summary(error)
     return {
-        "project_root": str(project_root),
+        "workspace_root": str(workspace_root),
         "generated_at": _now_iso(),
         "boundary": {
             "runtime_source": "abg_event_model (unavailable)",
@@ -1523,7 +1523,7 @@ def _degraded_world(project_root: Path, error: Exception) -> dict[str, Any]:
             "graphs": [],
         },
         "domain": {
-            "project_root": str(project_root),
+            "workspace_root": str(workspace_root),
             "query_contract": _empty_query_contract(),
             "domain_contract": _project_domain_contract(_empty_query_contract()),
             "semantic_facets": [],
@@ -1538,7 +1538,7 @@ def _degraded_world(project_root: Path, error: Exception) -> dict[str, Any]:
             "requirements": [],
             "tickets": [],
             "comments": [],
-            "ambiguity_register": _empty_ambiguity_register(project_root),
+            "ambiguity_register": _empty_ambiguity_register(workspace_root),
             "collections": [],
             "bindings": [],
             "functions": [],
@@ -2741,8 +2741,8 @@ def _project_graph_set(
     }
 
 
-def _compose_world(project_root: Path) -> dict[str, Any]:
-    app = _load_app(project_root)
+def _compose_world(workspace_root: Path) -> dict[str, Any]:
+    app = _load_app(workspace_root)
     raw_domain_payload = _query_domain_payload(app)
     events = app.stream.all_events()
     runtime_payload = _project_runtime(events)
@@ -2762,7 +2762,7 @@ def _compose_world(project_root: Path) -> dict[str, Any]:
     )
     graph_function_registry = _project_graph_functions(graph_functions, workorders)
     domain_payload = _domain_projection(
-        project_root,
+        workspace_root,
         raw_domain_payload,
         functions=functions,
         graph_functions=graph_function_registry,
@@ -2822,7 +2822,7 @@ def _compose_world(project_root: Path) -> dict[str, Any]:
         headline = "Descriptive domain gaps remain open across the current graph set."
 
     return {
-        "project_root": str(project_root),
+        "workspace_root": str(workspace_root),
         "generated_at": _now_iso(),
         "boundary": {
             "runtime_source": "abg_event_model",
@@ -2849,8 +2849,8 @@ def _compose_world(project_root: Path) -> dict[str, Any]:
     }
 
 
-def _read_surface(project_root: Path, relative_path: str) -> dict[str, Any]:
-    root = project_root.resolve()
+def _read_surface(workspace_root: Path, relative_path: str) -> dict[str, Any]:
+    root = workspace_root.resolve()
     target = (root / relative_path).resolve()
     target.relative_to(root)
     if not target.exists():
@@ -2905,18 +2905,18 @@ def main(argv: list[str] | None = None) -> int:
     command_parser.add_argument("--auto", action="store_true")
 
     args = parser.parse_args(argv)
-    project_root = Path(args.workspace).resolve()
+    workspace_root = Path(args.workspace).resolve()
 
     if args.command == "world":
         try:
-            result = _compose_world(project_root)
+            result = _compose_world(workspace_root)
         except Exception as error:  # pragma: no cover - degraded fallback
             print(traceback.format_exc(), file=sys.stderr, end="")
-            result = _degraded_world(project_root, error)
+            result = _degraded_world(workspace_root, error)
     elif args.command == "surface":
-        result = _read_surface(project_root, args.relative_path)
+        result = _read_surface(workspace_root, args.relative_path)
     else:
-        app = _load_app(project_root)
+        app = _load_app(workspace_root)
         from odd_sdlc.app import gaps, iterate, start
 
         if args.name == "gaps":

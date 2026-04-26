@@ -18,7 +18,7 @@ import {
 type AppShellProps = PropsWithChildren<{
   theme: ThemeMode;
   onToggleTheme: () => void;
-  projectRoot: string;
+  workspaceRoot: string;
   workspaceDraft: string;
   onWorkspaceDraftChange: (value: string) => void;
   onApplyWorkspace: (nextWorkspaceRoot?: string) => void;
@@ -37,7 +37,7 @@ type AppShellProps = PropsWithChildren<{
 export function AppShell({
   theme,
   onToggleTheme,
-  projectRoot,
+  workspaceRoot,
   workspaceDraft,
   onWorkspaceDraftChange,
   onApplyWorkspace,
@@ -96,7 +96,7 @@ export function AppShell({
             title="Open workspace selector"
           >
             <span className="shell__control-label">Managed Workspace</span>
-            <strong>{projectRoot}</strong>
+            <strong>{workspaceRoot}</strong>
             <small>Click to change workspace</small>
           </button>
 
@@ -170,7 +170,7 @@ export function AppShell({
         {workspacePickerOpen ? (
           <div className="shell__workspace-picker" role="dialog" aria-label="Workspace selector">
             <ProjectSelector
-              currentWorkspaceRoot={projectRoot}
+              currentWorkspaceRoot={workspaceRoot}
               workspaceDraft={workspaceDraft}
               onWorkspaceDraftChange={onWorkspaceDraftChange}
               onApplyWorkspace={(nextWorkspaceRoot) => {

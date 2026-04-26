@@ -54,7 +54,7 @@ const PARTICIPANT_PROVIDER_OPTIONS: Array<{
 ];
 
 type OddBoardWidgetProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -136,7 +136,7 @@ function nextSelectionId<T extends { id: string }>(items: T[], currentId: string
 }
 
 export function OddBoardWidget({
-  projectRoot,
+  workspaceRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -373,7 +373,7 @@ export function OddBoardWidget({
     setSending(true);
     setActionError(null);
     try {
-      await postGChatMessage(projectRoot, {
+      await postGChatMessage(workspaceRoot, {
         roomId: activeRoomId,
         body,
         selectedTrainId: activeTopic?.selectedTrainId ?? selectedTrainId,
@@ -394,7 +394,7 @@ export function OddBoardWidget({
     setRoomAction("topic");
     setActionError(null);
     try {
-      const created = await createGBoardTopic(projectRoot, {
+      const created = await createGBoardTopic(workspaceRoot, {
         title: newTopicTitle.trim() || null,
         selectedTrainId,
         stationId: selectedStationId,
@@ -421,7 +421,7 @@ export function OddBoardWidget({
     setRoomAction("attach-record");
     setActionError(null);
     try {
-      await attachGChatTopicRecord(projectRoot, {
+      await attachGChatTopicRecord(workspaceRoot, {
         topicId: activeTopic.id,
         recordId,
       });
@@ -445,7 +445,7 @@ export function OddBoardWidget({
     setRoomAction("add-participant");
     setActionError(null);
     try {
-      await addTopicParticipant(projectRoot, {
+      await addTopicParticipant(workspaceRoot, {
         topicId: activeTopic.id,
         role: participantRole,
         provider: participantProvider,
@@ -469,7 +469,7 @@ export function OddBoardWidget({
     setRoomAction("room-recipients");
     setActionError(null);
     try {
-      await setTopicRoomRecipients(projectRoot, {
+      await setTopicRoomRecipients(workspaceRoot, {
         topicId: activeTopic.id,
         sessionIds: nextSessionIds,
       });

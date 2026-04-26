@@ -44,7 +44,7 @@ function initialWorkspace() {
 }
 
 export function App() {
-  const [projectRoot, setWorkspaceRoot] = useState(initialWorkspace);
+  const [workspaceRoot, setWorkspaceRoot] = useState(initialWorkspace);
   const [workspaceDraft, setWorkspaceDraft] = useState(initialWorkspace);
   const [world, setWorld] = useState<ManagerWorld | null>(null);
   const [selectedPage, setSelectedPage] = useState<PageId>("requirements");
@@ -60,7 +60,7 @@ export function App() {
   const refreshAbortRef = useRef<AbortController | null>(null);
 
   async function refreshWorld(
-    nextWorkspaceRoot = projectRoot,
+    nextWorkspaceRoot = workspaceRoot,
     options?: { resetPage?: boolean },
   ) {
     const requestId = refreshSequenceRef.current + 1;
@@ -111,8 +111,8 @@ export function App() {
     setRunningCommand(command);
     setError(null);
     try {
-      await runCommand(projectRoot, command, { auto });
-      await refreshWorld(projectRoot);
+      await runCommand(workspaceRoot, command, { auto });
+      await refreshWorld(workspaceRoot);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -138,7 +138,7 @@ export function App() {
   }
 
   useEffect(() => {
-    void refreshWorld(projectRoot, { resetPage: true });
+    void refreshWorld(workspaceRoot, { resetPage: true });
     return () => {
       refreshAbortRef.current?.abort();
     };
@@ -151,8 +151,8 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, projectRoot);
-  }, [projectRoot]);
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceRoot);
+  }, [workspaceRoot]);
 
   const workspaceProfile = world?.workspace_profile ?? null;
   const visiblePages = pagesForWorkspaceProfile(workspaceProfile);
@@ -163,7 +163,7 @@ export function App() {
     <AppShell
       theme={theme}
       onToggleTheme={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
-      projectRoot={projectRoot}
+      workspaceRoot={workspaceRoot}
       workspaceDraft={workspaceDraft}
       onWorkspaceDraftChange={setWorkspaceDraft}
       onApplyWorkspace={(nextWorkspaceRoot) => {
@@ -171,7 +171,7 @@ export function App() {
         if (!targetWorkspace) {
           return;
         }
-        const previousWorkspace = projectRoot;
+        const previousWorkspace = workspaceRoot;
         setWorkspaceRoot(targetWorkspace);
         setWorkspaceDraft(targetWorkspace);
         setWorld(null);
@@ -198,7 +198,7 @@ export function App() {
       error={error}
     >
       <WorkspaceRoute
-        projectRoot={projectRoot}
+        workspaceRoot={workspaceRoot}
         world={world}
         loadingWorld={loadingWorld}
         selectedPage={selectedPage}
@@ -215,7 +215,7 @@ export function App() {
         selection={selection}
         onSelectSelection={applySelection}
         runningCommand={runningCommand}
-        onRefresh={() => void refreshWorld(projectRoot)}
+        onRefresh={() => void refreshWorld(workspaceRoot)}
         onIterate={() => void triggerCommand("iterate")}
         onStartAuto={() => void triggerCommand("start", true)}
       />

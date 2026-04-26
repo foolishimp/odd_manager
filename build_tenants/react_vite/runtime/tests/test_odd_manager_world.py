@@ -23,10 +23,10 @@ world = _load_world_module()
 class RequirementProjectionTests(unittest.TestCase):
     def test_projects_block_style_requirement_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            project_root = Path(temp_dir)
-            requirements_root = project_root / "specification" / "requirements"
+            workspace_root = Path(temp_dir)
+            requirements_root = workspace_root / "specification" / "requirements"
             requirements_root.mkdir(parents=True)
-            runtime_root = project_root / ".ai-workspace" / "runtime"
+            runtime_root = workspace_root / ".ai-workspace" / "runtime"
             runtime_root.mkdir(parents=True)
 
             (requirements_root / "00-starter.md").write_text(
@@ -68,7 +68,7 @@ class RequirementProjectionTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            projected = world._project_requirements(project_root)
+            projected = world._project_requirements(workspace_root)
 
             self.assertEqual(len(projected), 1)
             requirement = projected[0]
@@ -91,10 +91,10 @@ class RequirementProjectionTests(unittest.TestCase):
 
     def test_projects_table_style_requirement_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            project_root = Path(temp_dir)
-            requirements_root = project_root / "specification" / "requirements"
+            workspace_root = Path(temp_dir)
+            requirements_root = workspace_root / "specification" / "requirements"
             requirements_root.mkdir(parents=True)
-            runtime_root = project_root / ".ai-workspace" / "runtime"
+            runtime_root = workspace_root / ".ai-workspace" / "runtime"
             runtime_root.mkdir(parents=True)
 
             (requirements_root / "10-generated-bootstrap.md").write_text(
@@ -123,7 +123,7 @@ class RequirementProjectionTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            projected = world._project_requirements(project_root)
+            projected = world._project_requirements(workspace_root)
 
             self.assertEqual(len(projected), 3)
             indexed = {entry["requirement_id"]: entry for entry in projected}
@@ -152,7 +152,7 @@ class DomainContractProjectionTests(unittest.TestCase):
                 "version": "v10",
                 "top_level_keys": [
                     "query_contract",
-                    "project_root",
+                    "workspace_root",
                     "analysis_manifest",
                     "semantic_facets",
                     "asset_types",
@@ -194,7 +194,7 @@ class DomainContractProjectionTests(unittest.TestCase):
                 "version": "v16",
                 "top_level_keys": [
                     "query_contract",
-                    "project_root",
+                    "workspace_root",
                     "semantic_facets",
                     "asset_types",
                     "asset_families",
@@ -228,7 +228,7 @@ class DomainContractProjectionTests(unittest.TestCase):
             {
                 "name": "odd_sdlc.query-domain",
                 "version": "v99",
-                "top_level_keys": ["query_contract", "project_root"],
+                "top_level_keys": ["query_contract", "workspace_root"],
             }
         )
 

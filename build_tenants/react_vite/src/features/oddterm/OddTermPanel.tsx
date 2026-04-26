@@ -14,7 +14,7 @@ import {
 import type { GChatTopic, GTermPoolState, TrainId } from "../../lib/collaboration";
 
 type GTermPanelProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   selectedTrainId: TrainId;
   selectedStationId: string | null;
   selectedEdgeId: string | null;
@@ -31,7 +31,7 @@ type TerminalFontPreset = "small" | "medium" | "large";
 type TerminalEvent =
   | {
       type: "ready";
-      projectRoot: string;
+      workspaceRoot: string;
       shell: string;
       pid: number;
       backend?: string;
@@ -80,10 +80,10 @@ function inferJoinProvider(session: GTermPoolState["sessions"][number]): JoinPro
   return provider === "codex" || provider === "claude" ? provider : null;
 }
 
-function socketUrl(projectRoot: string, sessionId: string) {
+function socketUrl(workspaceRoot: string, sessionId: string) {
   const url = new URL("/api/oddterm", window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("projectRoot", projectRoot);
+  url.searchParams.set("workspaceRoot", workspaceRoot);
   url.searchParams.set("sessionId", sessionId);
   return url.toString();
 }
@@ -113,7 +113,7 @@ function terminalTheme() {
 }
 
 export function OddTermPanel({
-  projectRoot,
+  workspaceRoot,
   selectedTrainId,
   selectedStationId,
   selectedEdgeId,
@@ -306,12 +306,12 @@ export function OddTermPanel({
     }
     setCreatingSession(true);
     try {
-      const created = await createGTermSession(projectRoot, {
+      const created = await createGTermSession(workspaceRoot, {
         selectedTrainId,
         stationId: selectedStationId,
         edgeId: selectedEdgeId,
       });
-      await selectGTermSession(projectRoot, created.session.id);
+      await selectGTermSession(workspaceRoot, created.session.id);
       await onRefreshConsole();
       if (layoutMode === "single" || !primarySessionId) {
         setPrimarySessionId(created.session.id);
@@ -346,7 +346,7 @@ export function OddTermPanel({
       [sessionId]: provider,
     }));
     try {
-      await launchShellAgent(projectRoot, {
+      await launchShellAgent(workspaceRoot, {
         sessionId,
         provider,
       });
@@ -370,7 +370,7 @@ export function OddTermPanel({
     setJoiningTopicKey(joinKey);
     setAgentActionError(null);
     try {
-      await joinShellAgentTopic(projectRoot, {
+      await joinShellAgentTopic(workspaceRoot, {
         sessionId,
         topicId,
         provider,
@@ -404,7 +404,7 @@ export function OddTermPanel({
                 onClick={() => {
                   setPrimarySessionId(session.id);
                   setActiveSessionId(session.id);
-                  void selectGTermSession(projectRoot, session.id);
+                  void selectGTermSession(workspaceRoot, session.id);
                 }}
             >
               <strong>{session.label}</strong>
@@ -490,7 +490,7 @@ export function OddTermPanel({
           visibleSessions.map((session, index) => (
             <TerminalSessionPane
               key={session.id}
-              projectRoot={projectRoot}
+              workspaceRoot={workspaceRoot}
               session={session}
               selectedTrainId={selectedTrainId}
               selectedStationId={selectedStationId}
@@ -544,7 +544,7 @@ export function OddTermPanel({
 }
 
 type TerminalSessionPaneProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   session: GTermPoolState["sessions"][number];
   selectedTrainId: TrainId;
   selectedStationId: string | null;
@@ -573,7 +573,7 @@ type TerminalSessionPaneProps = {
 };
 
 function TerminalSessionPane({
-  projectRoot,
+  workspaceRoot,
   session,
   selectedTrainId,
   selectedStationId,
@@ -676,7 +676,7 @@ function TerminalSessionPane({
     fitAddonRef.current = fitAddon;
     updateStatus(session.status === "closed" ? "closed" : "connecting", terminal);
 
-    const socket = new WebSocket(socketUrl(projectRoot, session.id));
+    const socket = new WebSocket(socketUrl(workspaceRoot, session.id));
     socketRef.current = socket;
 
     function send(payload: Record<string, unknown>) {
@@ -770,7 +770,7 @@ function TerminalSessionPane({
       terminal.dispose();
       terminalRef.current = null;
     };
-  }, [projectRoot, session.id, instanceKey, autoFocus]);
+  }, [workspaceRoot, session.id, instanceKey, autoFocus]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -826,13 +826,13 @@ function TerminalSessionPane({
             event.stopPropagation();
             if (status === "closed") {
               void (async () => {
-                const created = await createGTermSession(projectRoot, {
+                const created = await createGTermSession(workspaceRoot, {
                   selectedTrainId: session.attachedTrainId ?? selectedTrainId,
                   stationId: session.attachedStationId ?? selectedStationId,
                   edgeId: session.attachedEdgeId ?? selectedEdgeId,
                   label: session.label,
                 });
-                await selectGTermSession(projectRoot, created.session.id);
+                await selectGTermSession(workspaceRoot, created.session.id);
                 await onRefreshConsole();
                 if (layoutMode === "single" || primarySessionId === session.id) {
                   onSetPrimarySessionId(created.session.id);
@@ -860,7 +860,7 @@ function TerminalSessionPane({
             }
             setRenaming(true);
             try {
-              await renameGTermSession(projectRoot, session.id, nextLabel.trim());
+              await renameGTermSession(workspaceRoot, session.id, nextLabel.trim());
               await onRefreshConsole();
             } finally {
               setRenaming(false);
@@ -878,7 +878,7 @@ function TerminalSessionPane({
             setPromoting(true);
             setPromotionState("idle");
             try {
-              await promoteGTermSession(projectRoot, {
+              await promoteGTermSession(workspaceRoot, {
                 sessionId: session.id,
                 selectedTrainId,
                 stationId: selectedStationId,
@@ -917,7 +917,7 @@ function TerminalSessionPane({
             }
             setClosing(true);
             try {
-              await closeGTermSession(projectRoot, session.id);
+              await closeGTermSession(workspaceRoot, session.id);
               await onRefreshConsole();
             } finally {
               setClosing(false);

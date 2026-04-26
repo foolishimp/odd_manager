@@ -25,24 +25,24 @@ const CODEX_WORKER_STARTUP_TIMEOUT_MS = 12000;
 const CODEX_WORKER_POLL_INTERVAL_MS = 150;
 const MANAGER_RUNTIME_ROOT = fileURLToPath(new URL("../../runtime/", import.meta.url));
 
-function participantsDirectory(projectRoot) {
-  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_participants");
+function participantsDirectory(workspaceRoot) {
+  return resolve(workspaceRoot, ".ai-workspace/runtime/oddchat_participants");
 }
 
-function participantsPath(projectRoot) {
-  return join(participantsDirectory(projectRoot), "participants.json");
+function participantsPath(workspaceRoot) {
+  return join(participantsDirectory(workspaceRoot), "participants.json");
 }
 
-function oddChatWorkersDirectory(projectRoot) {
-  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_workers");
+function oddChatWorkersDirectory(workspaceRoot) {
+  return resolve(workspaceRoot, ".ai-workspace/runtime/oddchat_workers");
 }
 
-function oddChatWorkersStatePath(projectRoot) {
-  return join(oddChatWorkersDirectory(projectRoot), "workers.json");
+function oddChatWorkersStatePath(workspaceRoot) {
+  return join(oddChatWorkersDirectory(workspaceRoot), "workers.json");
 }
 
-function oddChatBootstrapDirectory(projectRoot) {
-  return resolve(projectRoot, ".ai-workspace/runtime/oddchat_bootstrap");
+function oddChatBootstrapDirectory(workspaceRoot) {
+  return resolve(workspaceRoot, ".ai-workspace/runtime/oddchat_bootstrap");
 }
 
 function readJsonFile(filePath, fallback) {
@@ -107,9 +107,9 @@ function normalizeParticipantRole(value) {
   return normalized;
 }
 
-function nextTopicParticipantLabel(projectRoot, role) {
+function nextTopicParticipantLabel(workspaceRoot, role) {
   const normalizedRole = normalizeParticipantRole(role);
-  const labels = loadGTermPoolState(projectRoot).sessions
+  const labels = loadGTermPoolState(workspaceRoot).sessions
     .map((session) => String(session.label ?? "").trim().toLowerCase())
     .filter(Boolean);
   const pattern = new RegExp(`^${normalizedRole}(\\d+)$`);
@@ -133,13 +133,13 @@ function addedParticipantAnnouncement(role, sessionLabel, provider) {
   };
 }
 
-function ensureStore(projectRoot) {
-  mkdirSync(participantsDirectory(projectRoot), { recursive: true });
+function ensureStore(workspaceRoot) {
+  mkdirSync(participantsDirectory(workspaceRoot), { recursive: true });
 }
 
-function loadState(projectRoot) {
-  ensureStore(projectRoot);
-  const payload = readJsonFile(participantsPath(projectRoot), {
+function loadState(workspaceRoot) {
+  ensureStore(workspaceRoot);
+  const payload = readJsonFile(participantsPath(workspaceRoot), {
     participants: [],
   });
   const participants = Array.isArray(payload?.participants)
@@ -148,9 +148,9 @@ function loadState(projectRoot) {
   return { participants };
 }
 
-function loadWorkerState(projectRoot) {
-  mkdirSync(oddChatWorkersDirectory(projectRoot), { recursive: true });
-  const payload = readJsonFile(oddChatWorkersStatePath(projectRoot), {
+function loadWorkerState(workspaceRoot) {
+  mkdirSync(oddChatWorkersDirectory(workspaceRoot), { recursive: true });
+  const payload = readJsonFile(oddChatWorkersStatePath(workspaceRoot), {
     workers: [],
   });
   const workers = Array.isArray(payload?.workers)
@@ -159,10 +159,10 @@ function loadWorkerState(projectRoot) {
   return { workers };
 }
 
-function writeWorkerState(projectRoot, state) {
-  mkdirSync(oddChatWorkersDirectory(projectRoot), { recursive: true });
+function writeWorkerState(workspaceRoot, state) {
+  mkdirSync(oddChatWorkersDirectory(workspaceRoot), { recursive: true });
   writeFileSync(
-    oddChatWorkersStatePath(projectRoot),
+    oddChatWorkersStatePath(workspaceRoot),
     `${JSON.stringify(
       {
         workers: state.workers,
@@ -174,10 +174,10 @@ function writeWorkerState(projectRoot, state) {
   );
 }
 
-function writeState(projectRoot, state) {
-  ensureStore(projectRoot);
+function writeState(workspaceRoot, state) {
+  ensureStore(workspaceRoot);
   writeFileSync(
-    participantsPath(projectRoot),
+    participantsPath(workspaceRoot),
     `${JSON.stringify(
       {
         participants: state.participants,
@@ -189,16 +189,16 @@ function writeState(projectRoot, state) {
   );
 }
 
-function sessionById(projectRoot, sessionId) {
+function sessionById(workspaceRoot, sessionId) {
   return (
-    loadGTermPoolState(projectRoot).sessions.find((session) => session.id === sessionId) ?? null
+    loadGTermPoolState(workspaceRoot).sessions.find((session) => session.id === sessionId) ?? null
   );
 }
 
-function resolveRoomContext(projectRoot, { roomId = null, topicId = null } = {}) {
+function resolveRoomContext(workspaceRoot, { roomId = null, topicId = null } = {}) {
   const resolvedTopicId = trimmedText(topicId);
   if (resolvedTopicId) {
-    const topic = loadGBoardTopicById(projectRoot, resolvedTopicId);
+    const topic = loadGBoardTopicById(workspaceRoot, resolvedTopicId);
     if (!topic) {
       throw new Error("topic not found");
     }
@@ -217,7 +217,7 @@ function resolveRoomContext(projectRoot, { roomId = null, topicId = null } = {})
     throw new Error("room id or topic id is required");
   }
 
-  const topic = loadGBoardTopicByRoomId(projectRoot, resolvedRoomId);
+  const topic = loadGBoardTopicByRoomId(workspaceRoot, resolvedRoomId);
   return {
     roomId: resolvedRoomId,
     topicId: topic?.id ?? null,
@@ -228,8 +228,8 @@ function resolveRoomContext(projectRoot, { roomId = null, topicId = null } = {})
   };
 }
 
-function participantSnapshot(projectRoot, participant) {
-  const session = sessionById(projectRoot, participant.sessionId);
+function participantSnapshot(workspaceRoot, participant) {
+  const session = sessionById(workspaceRoot, participant.sessionId);
   const derivedStatus =
     participant.status === "connected" && (!session || session.status !== "live")
       ? "stale"
@@ -242,10 +242,10 @@ function participantSnapshot(projectRoot, participant) {
   };
 }
 
-function listParticipants(projectRoot, options = {}) {
-  const state = loadState(projectRoot);
+function listParticipants(workspaceRoot, options = {}) {
+  const state = loadState(workspaceRoot);
   return state.participants
-    .map((participant) => participantSnapshot(projectRoot, participant))
+    .map((participant) => participantSnapshot(workspaceRoot, participant))
     .filter((participant) => {
       if (options.sessionId && participant.sessionId !== options.sessionId) {
         return false;
@@ -279,8 +279,8 @@ function messageVisibleToSession(message, sessionId) {
   return recipientSessionIds.includes(normalizedSessionId);
 }
 
-function resolveParticipant(projectRoot, options = {}) {
-  const state = loadState(projectRoot);
+function resolveParticipant(workspaceRoot, options = {}) {
+  const state = loadState(workspaceRoot);
   const participantId = trimmedText(options.participantId);
   if (participantId) {
     const participant = state.participants.find((entry) => entry.id === participantId) ?? null;
@@ -305,11 +305,11 @@ function resolveParticipant(projectRoot, options = {}) {
   return { state, participant };
 }
 
-function readMessagesSince(projectRoot, roomId, cursor, options = {}) {
+function readMessagesSince(workspaceRoot, roomId, cursor, options = {}) {
   const limit = clampNumber(options.limit, DEFAULT_READ_LIMIT, 1, MAX_READ_LIMIT);
   const excludeSenderId = trimmedText(options.excludeSenderId);
   const sessionId = trimmedText(options.sessionId);
-  const messages = loadRoomMessages(projectRoot, roomId);
+  const messages = loadRoomMessages(workspaceRoot, roomId);
   const cursorId = trimmedText(cursor);
   const cursorIndex = cursorId ? messages.findIndex((message) => message.id === cursorId) : -1;
   let scannedMessages =
@@ -348,7 +348,7 @@ function updateParticipant(state, participantId, updater) {
   return next;
 }
 
-function writeParticipantCursor(projectRoot, state, participantId, nextCursor) {
+function writeParticipantCursor(workspaceRoot, state, participantId, nextCursor) {
   const timestamp = nowIso();
   updateParticipant(state, participantId, (participant) => ({
     ...participant,
@@ -356,7 +356,7 @@ function writeParticipantCursor(projectRoot, state, participantId, nextCursor) {
     lastReadAt: nextCursor ? timestamp : participant.lastReadAt ?? null,
     updatedAt: timestamp,
   }));
-  writeState(projectRoot, state);
+  writeState(workspaceRoot, state);
 }
 
 function isPidAlive(pid) {
@@ -372,23 +372,23 @@ function isPidAlive(pid) {
   }
 }
 
-function pruneWorkerState(projectRoot, state = loadWorkerState(projectRoot)) {
+function pruneWorkerState(workspaceRoot, state = loadWorkerState(workspaceRoot)) {
   const nextWorkers = state.workers.filter((entry) => isPidAlive(entry.pid));
   if (nextWorkers.length !== state.workers.length) {
     state.workers = nextWorkers;
-    writeWorkerState(projectRoot, state);
+    writeWorkerState(workspaceRoot, state);
   }
   return state;
 }
 
-function codexWorkerLogPath(projectRoot, sessionId) {
+function codexWorkerLogPath(workspaceRoot, sessionId) {
   return join(
-    oddChatWorkersDirectory(projectRoot),
+    oddChatWorkersDirectory(workspaceRoot),
     `codex-${String(sessionId ?? "").trim() || "session"}.log`,
   );
 }
 
-function codexWorkerScriptPath(projectRoot) {
+function codexWorkerScriptPath(workspaceRoot) {
   const scriptPath = resolve(MANAGER_RUNTIME_ROOT, "odd_manager_codex_room_worker.mjs");
   if (!existsSync(scriptPath)) {
     throw new Error("odd_manager codex room worker was not found");
@@ -396,12 +396,12 @@ function codexWorkerScriptPath(projectRoot) {
   return scriptPath;
 }
 
-function stopManagedCodexWorker(projectRoot, sessionId) {
+function stopManagedCodexWorker(workspaceRoot, sessionId) {
   const resolvedSessionId = trimmedText(sessionId);
   if (!resolvedSessionId) {
     return;
   }
-  const state = pruneWorkerState(projectRoot);
+  const state = pruneWorkerState(workspaceRoot);
   let changed = false;
   state.workers = state.workers.filter((entry) => {
     if (entry.provider !== "codex" || entry.sessionId !== resolvedSessionId) {
@@ -418,11 +418,11 @@ function stopManagedCodexWorker(projectRoot, sessionId) {
     return false;
   });
   if (changed) {
-    writeWorkerState(projectRoot, state);
+    writeWorkerState(workspaceRoot, state);
   }
 }
 
-async function waitForManagedParticipantJoin(projectRoot, options = {}) {
+async function waitForManagedParticipantJoin(workspaceRoot, options = {}) {
   const sessionId = trimmedText(options.sessionId);
   const topicId = trimmedText(options.topicId);
   const provider = normalizeProvider(options.provider);
@@ -436,7 +436,7 @@ async function waitForManagedParticipantJoin(projectRoot, options = {}) {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const participant = listParticipants(projectRoot, {
+    const participant = listParticipants(workspaceRoot, {
       sessionId,
       topicId,
       connectedOnly: true,
@@ -453,14 +453,14 @@ async function waitForManagedParticipantJoin(projectRoot, options = {}) {
   throw new Error("timed out waiting for the managed codex room worker to join the topic");
 }
 
-async function launchManagedCodexTopicJoin(projectRoot, join) {
-  stopManagedCodexWorker(projectRoot, join.sessionId);
-  const scriptPath = codexWorkerScriptPath(projectRoot);
-  const logPath = codexWorkerLogPath(projectRoot, join.sessionId);
+async function launchManagedCodexTopicJoin(workspaceRoot, join) {
+  stopManagedCodexWorker(workspaceRoot, join.sessionId);
+  const scriptPath = codexWorkerScriptPath(workspaceRoot);
+  const logPath = codexWorkerLogPath(workspaceRoot, join.sessionId);
   const outputFd = openSync(logPath, "a");
 
   appendGTermSessionEntry(
-    projectRoot,
+    workspaceRoot,
     join.sessionId,
     `[oddchat] Starting managed Codex worker for ${join.topicLabel}. The room agent runs detached on the server; this shell remains available as a backing session.\n`,
     {
@@ -471,10 +471,10 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
 
   try {
     const child = spawn("node", [scriptPath], {
-      cwd: projectRoot,
+      cwd: workspaceRoot,
       env: {
         ...process.env,
-        OMAN_WORKSPACE_ROOT: projectRoot,
+        OMAN_WORKSPACE_ROOT: workspaceRoot,
         OMAN_SESSION_ID: join.sessionId,
         OMAN_SESSION_LABEL: join.sessionLabel,
         OMAN_TOPIC_ID: join.topicId,
@@ -491,7 +491,7 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
 
     child.unref();
 
-    const state = pruneWorkerState(projectRoot);
+    const state = pruneWorkerState(workspaceRoot);
     state.workers.push({
       provider: "codex",
       sessionId: join.sessionId,
@@ -502,16 +502,16 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
       startedAt: nowIso(),
       logPath,
     });
-    writeWorkerState(projectRoot, state);
+    writeWorkerState(workspaceRoot, state);
 
-    await waitForManagedParticipantJoin(projectRoot, {
+    await waitForManagedParticipantJoin(workspaceRoot, {
       sessionId: join.sessionId,
       topicId: join.topicId,
       provider: "codex",
       pid: child.pid,
     });
 
-    emitAgentConsoleEvent(projectRoot, {
+    emitAgentConsoleEvent(workspaceRoot, {
       kind: "room-participant-managed-worker",
       roomId: join.roomId,
       sessionId: join.sessionId,
@@ -520,7 +520,7 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
     });
 
     appendGTermSessionEntry(
-      projectRoot,
+      workspaceRoot,
       join.sessionId,
       `[oddchat] Managed Codex worker connected to ${join.topicLabel}. Replies will appear in the OddChat room; the shell prompt here is idle by design.\n`,
       {
@@ -537,9 +537,9 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
       workerLogPath: logPath,
     };
   } catch (error) {
-    stopManagedCodexWorker(projectRoot, join.sessionId);
+    stopManagedCodexWorker(workspaceRoot, join.sessionId);
     appendGTermSessionEntry(
-      projectRoot,
+      workspaceRoot,
       join.sessionId,
       `[oddchat] Managed Codex worker failed to join ${join.topicLabel}: ${error instanceof Error ? error.message : String(error)}\n`,
       {
@@ -553,26 +553,26 @@ async function launchManagedCodexTopicJoin(projectRoot, join) {
   }
 }
 
-export function joinRoomParticipant(projectRoot, options = {}) {
+export function joinRoomParticipant(workspaceRoot, options = {}) {
   const sessionId = trimmedText(options.sessionId);
   if (!sessionId) {
     throw new Error("session id is required");
   }
 
-  const session = sessionById(projectRoot, sessionId);
+  const session = sessionById(workspaceRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
 
   const provider = normalizeProvider(options.provider);
-  const room = resolveRoomContext(projectRoot, options);
+  const room = resolveRoomContext(workspaceRoot, options);
   const participantId = participantIdFor(sessionId, provider);
   const participantLabel =
     trimmedText(options.participantLabel) ?? participantLabelFor(provider, session.label);
-  const state = loadState(projectRoot);
+  const state = loadState(workspaceRoot);
   const timestamp = nowIso();
   const historyLimit = clampNumber(options.historyLimit, DEFAULT_HISTORY_LIMIT, 0, MAX_READ_LIMIT);
-  const history = historyLimit > 0 ? loadRoomMessages(projectRoot, room.roomId, historyLimit) : [];
+  const history = historyLimit > 0 ? loadRoomMessages(workspaceRoot, room.roomId, historyLimit) : [];
   const visibleHistory = history.filter((message) => messageVisibleToSession(message, session.id));
   const lastReadMessageId = history.at(-1)?.id ?? null;
   const existingIndex = state.participants.findIndex((entry) => entry.id === participantId);
@@ -607,8 +607,8 @@ export function joinRoomParticipant(projectRoot, options = {}) {
     state.participants.push(nextParticipant);
   }
 
-  writeState(projectRoot, state);
-  emitAgentConsoleEvent(projectRoot, {
+  writeState(workspaceRoot, state);
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-participant-joined",
     roomId: room.roomId,
     participantId,
@@ -617,15 +617,15 @@ export function joinRoomParticipant(projectRoot, options = {}) {
 
   return {
     ok: true,
-    participant: participantSnapshot(projectRoot, nextParticipant),
+    participant: participantSnapshot(workspaceRoot, nextParticipant),
     room,
     messages: visibleHistory,
     nextCursor: lastReadMessageId,
   };
 }
 
-export function leaveRoomParticipant(projectRoot, options = {}) {
-  const { state, participant } = resolveParticipant(projectRoot, options);
+export function leaveRoomParticipant(workspaceRoot, options = {}) {
+  const { state, participant } = resolveParticipant(workspaceRoot, options);
   const timestamp = nowIso();
   const updated = updateParticipant(state, participant.id, (current) => ({
     ...current,
@@ -633,8 +633,8 @@ export function leaveRoomParticipant(projectRoot, options = {}) {
     updatedAt: timestamp,
     leftAt: timestamp,
   }));
-  writeState(projectRoot, state);
-  emitAgentConsoleEvent(projectRoot, {
+  writeState(workspaceRoot, state);
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-participant-left",
     roomId: updated.roomId,
     participantId: updated.id,
@@ -642,14 +642,14 @@ export function leaveRoomParticipant(projectRoot, options = {}) {
   });
   return {
     ok: true,
-    participant: participantSnapshot(projectRoot, updated),
+    participant: participantSnapshot(workspaceRoot, updated),
   };
 }
 
-export function getRoomParticipantStatus(projectRoot, options = {}) {
-  const { participant } = resolveParticipant(projectRoot, options);
-  const snapshot = participantSnapshot(projectRoot, participant);
-  const unread = readMessagesSince(projectRoot, snapshot.roomId, snapshot.lastReadMessageId, {
+export function getRoomParticipantStatus(workspaceRoot, options = {}) {
+  const { participant } = resolveParticipant(workspaceRoot, options);
+  const snapshot = participantSnapshot(workspaceRoot, participant);
+  const unread = readMessagesSince(workspaceRoot, snapshot.roomId, snapshot.lastReadMessageId, {
     limit: MAX_READ_LIMIT,
     excludeSenderId: snapshot.id,
     sessionId: snapshot.sessionId,
@@ -659,33 +659,33 @@ export function getRoomParticipantStatus(projectRoot, options = {}) {
     participant: snapshot,
     unreadCount: unread.messages.length,
     nextCursor: unread.nextCursor,
-    participants: listParticipants(projectRoot, {
+    participants: listParticipants(workspaceRoot, {
       roomId: snapshot.roomId,
       connectedOnly: true,
     }),
   };
 }
 
-export function readRoomParticipant(projectRoot, options = {}) {
-  const { state, participant } = resolveParticipant(projectRoot, options);
+export function readRoomParticipant(workspaceRoot, options = {}) {
+  const { state, participant } = resolveParticipant(workspaceRoot, options);
   if (participant.status !== "connected") {
     throw new Error("room participant is not connected");
   }
 
   const cursor = trimmedText(options.cursor) ?? participant.lastReadMessageId ?? null;
-  const result = readMessagesSince(projectRoot, participant.roomId, cursor, {
+  const result = readMessagesSince(workspaceRoot, participant.roomId, cursor, {
     limit: options.limit,
     excludeSenderId: options.excludeSelf === false ? null : participant.id,
     sessionId: participant.sessionId,
   });
 
   if (!trimmedText(options.cursor) && result.nextCursor && result.nextCursor !== participant.lastReadMessageId) {
-    writeParticipantCursor(projectRoot, state, participant.id, result.nextCursor);
+    writeParticipantCursor(workspaceRoot, state, participant.id, result.nextCursor);
   }
 
   return {
     ok: true,
-    participant: participantSnapshot(projectRoot, state.participants.find((entry) => entry.id === participant.id) ?? participant),
+    participant: participantSnapshot(workspaceRoot, state.participants.find((entry) => entry.id === participant.id) ?? participant),
     roomId: participant.roomId,
     cursor,
     cursorFound: result.cursorFound,
@@ -694,7 +694,7 @@ export function readRoomParticipant(projectRoot, options = {}) {
   };
 }
 
-export async function waitRoomParticipant(projectRoot, options = {}) {
+export async function waitRoomParticipant(workspaceRoot, options = {}) {
   const timeoutMs = clampNumber(
     options.timeoutMs,
     DEFAULT_WAIT_TIMEOUT_MS,
@@ -702,7 +702,7 @@ export async function waitRoomParticipant(projectRoot, options = {}) {
     MAX_WAIT_TIMEOUT_MS,
   );
 
-  const readCurrent = () => readRoomParticipant(projectRoot, options);
+  const readCurrent = () => readRoomParticipant(workspaceRoot, options);
   const immediate = readCurrent();
   if (immediate.messages.length > 0) {
     return immediate;
@@ -725,7 +725,7 @@ export async function waitRoomParticipant(projectRoot, options = {}) {
       finish(readCurrent());
     }, timeoutMs);
 
-    const unsubscribe = subscribeAgentConsoleEvents(projectRoot, (event) => {
+    const unsubscribe = subscribeAgentConsoleEvents(workspaceRoot, (event) => {
       if (event?.roomId && immediate.roomId && event.roomId !== immediate.roomId) {
         return;
       }
@@ -737,8 +737,8 @@ export async function waitRoomParticipant(projectRoot, options = {}) {
   });
 }
 
-export function postRoomParticipantMessage(projectRoot, options = {}) {
-  const { state, participant } = resolveParticipant(projectRoot, options);
+export function postRoomParticipantMessage(workspaceRoot, options = {}) {
+  const { state, participant } = resolveParticipant(workspaceRoot, options);
   if (participant.status !== "connected") {
     throw new Error("room participant is not connected");
   }
@@ -748,7 +748,7 @@ export function postRoomParticipantMessage(projectRoot, options = {}) {
     throw new Error("message body is required");
   }
 
-  const message = appendLiveRoomMessage(projectRoot, {
+  const message = appendLiveRoomMessage(workspaceRoot, {
     roomId: participant.roomId,
     senderId: participant.id,
     senderLabel: participant.participantLabel,
@@ -765,11 +765,11 @@ export function postRoomParticipantMessage(projectRoot, options = {}) {
     lastPostedAt: timestamp,
     updatedAt: timestamp,
   }));
-  writeState(projectRoot, state);
+  writeState(workspaceRoot, state);
 
   return {
     ok: true,
-    participant: participantSnapshot(projectRoot, updated),
+    participant: participantSnapshot(workspaceRoot, updated),
     message,
   };
 }
@@ -780,7 +780,7 @@ function shQuote(value) {
 }
 
 function writeCodexBootstrapScript(
-  projectRoot,
+  workspaceRoot,
   {
     scriptPath,
     env,
@@ -789,9 +789,9 @@ function writeCodexBootstrapScript(
     scriptLabel = "session",
   } = {},
 ) {
-  mkdirSync(oddChatBootstrapDirectory(projectRoot), { recursive: true });
+  mkdirSync(oddChatBootstrapDirectory(workspaceRoot), { recursive: true });
   const filePath = join(
-    oddChatBootstrapDirectory(projectRoot),
+    oddChatBootstrapDirectory(workspaceRoot),
     `codex-room-${String(scriptLabel ?? "session")
       .trim()
       .toLowerCase()
@@ -810,7 +810,7 @@ function writeCodexBootstrapScript(
   const lines = [
     "#!/bin/zsh",
     "set -euo pipefail",
-    `cd ${shQuote(projectRoot)}`,
+    `cd ${shQuote(workspaceRoot)}`,
     "exec codex \\",
     ...configArgs.map((entry, index) => {
       const isLastConfigArg = index === configArgs.length - 1;
@@ -826,7 +826,7 @@ function writeCodexBootstrapScript(
 }
 
 function writeClaudeBootstrapScript(
-  projectRoot,
+  workspaceRoot,
   {
     scriptPath,
     env,
@@ -834,14 +834,14 @@ function writeClaudeBootstrapScript(
     scriptLabel = "session",
   } = {},
 ) {
-  mkdirSync(oddChatBootstrapDirectory(projectRoot), { recursive: true });
+  mkdirSync(oddChatBootstrapDirectory(workspaceRoot), { recursive: true });
   const slug =
     String(scriptLabel ?? "session")
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, "-") || "session";
-  const configPath = join(oddChatBootstrapDirectory(projectRoot), `claude-room-${slug}.config.json`);
-  const filePath = join(oddChatBootstrapDirectory(projectRoot), `claude-room-${slug}.sh`);
+  const configPath = join(oddChatBootstrapDirectory(workspaceRoot), `claude-room-${slug}.config.json`);
+  const filePath = join(oddChatBootstrapDirectory(workspaceRoot), `claude-room-${slug}.sh`);
   const config = JSON.stringify(
     {
       mcpServers: {
@@ -861,7 +861,7 @@ function writeClaudeBootstrapScript(
     "--strict-mcp-config",
     "--no-chrome",
     "--add-dir",
-    projectRoot,
+    workspaceRoot,
     "--mcp-config",
     configPath,
     ...(trimmedText(prompt) ? ["--", prompt] : []),
@@ -869,7 +869,7 @@ function writeClaudeBootstrapScript(
   const lines = [
     "#!/bin/zsh",
     "set -euo pipefail",
-    `cd ${shQuote(projectRoot)}`,
+    `cd ${shQuote(workspaceRoot)}`,
     "exec claude \\",
     ...args.map((arg, index) => `  ${shQuote(arg)}${index === args.length - 1 ? "" : " \\"}`),
     "",
@@ -903,7 +903,7 @@ function topicJoinSubmitSuffix(provider) {
   return "\r";
 }
 
-function roomMcpScriptPath(projectRoot) {
+function roomMcpScriptPath(workspaceRoot) {
   const scriptPath = resolve(MANAGER_RUNTIME_ROOT, "odd_manager_irc_mcp.mjs");
   if (!existsSync(scriptPath)) {
     throw new Error("odd_manager room MCP adapter was not found");
@@ -911,9 +911,9 @@ function roomMcpScriptPath(projectRoot) {
   return scriptPath;
 }
 
-function roomMcpEnv(projectRoot, session, provider, options = {}) {
+function roomMcpEnv(workspaceRoot, session, provider, options = {}) {
   const env = {
-    OMAN_WORKSPACE_ROOT: projectRoot,
+    OMAN_WORKSPACE_ROOT: workspaceRoot,
     OMAN_SESSION_ID: session.id,
     OMAN_SESSION_LABEL: session.label,
     OMAN_AGENT_PROVIDER: provider,
@@ -955,12 +955,12 @@ function codexRoomToolApprovalArgs({ includeIrc = false } = {}) {
 
 function codexBootstrapCommand(
   scriptPath,
-  projectRoot,
+  workspaceRoot,
   env,
   prompt = null,
   { includeIrcApprovals = false, scriptLabel = "session" } = {},
 ) {
-  const bootstrapScriptPath = writeCodexBootstrapScript(projectRoot, {
+  const bootstrapScriptPath = writeCodexBootstrapScript(workspaceRoot, {
     scriptPath,
     env,
     prompt,
@@ -970,8 +970,8 @@ function codexBootstrapCommand(
   return `/bin/zsh ${shQuote(bootstrapScriptPath)}`;
 }
 
-function claudeBootstrapCommand(scriptPath, projectRoot, env, prompt = null) {
-  const bootstrapScriptPath = writeClaudeBootstrapScript(projectRoot, {
+function claudeBootstrapCommand(scriptPath, workspaceRoot, env, prompt = null) {
+  const bootstrapScriptPath = writeClaudeBootstrapScript(workspaceRoot, {
     scriptPath,
     env,
     prompt,
@@ -980,7 +980,7 @@ function claudeBootstrapCommand(scriptPath, projectRoot, env, prompt = null) {
   return `/bin/zsh ${shQuote(bootstrapScriptPath)}`;
 }
 
-function buildShellAgentLaunch(projectRoot, options = {}) {
+function buildShellAgentLaunch(workspaceRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -991,20 +991,20 @@ function buildShellAgentLaunch(projectRoot, options = {}) {
     throw new Error("session id is required");
   }
 
-  const session = sessionById(projectRoot, sessionId);
+  const session = sessionById(workspaceRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
 
-  const scriptPath = roomMcpScriptPath(projectRoot);
-  const env = roomMcpEnv(projectRoot, session, provider);
+  const scriptPath = roomMcpScriptPath(workspaceRoot);
+  const env = roomMcpEnv(workspaceRoot, session, provider);
 
   const command =
     provider === "codex"
-      ? codexBootstrapCommand(scriptPath, projectRoot, env, null, {
+      ? codexBootstrapCommand(scriptPath, workspaceRoot, env, null, {
           scriptLabel: session.label ?? session.id,
         })
-      : claudeBootstrapCommand(scriptPath, projectRoot, env);
+      : claudeBootstrapCommand(scriptPath, workspaceRoot, env);
 
   return {
     ok: true,
@@ -1015,10 +1015,10 @@ function buildShellAgentLaunch(projectRoot, options = {}) {
   };
 }
 
-export function launchShellAgent(projectRoot, options = {}) {
-  const launch = buildShellAgentLaunch(projectRoot, options);
-  sendGTermSessionInput(projectRoot, launch.sessionId, `${launch.command}\n`);
-  emitAgentConsoleEvent(projectRoot, {
+export function launchShellAgent(workspaceRoot, options = {}) {
+  const launch = buildShellAgentLaunch(workspaceRoot, options);
+  sendGTermSessionInput(workspaceRoot, launch.sessionId, `${launch.command}\n`);
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-participant-provider-launch",
     sessionId: launch.sessionId,
     provider: launch.provider,
@@ -1031,7 +1031,7 @@ export function launchShellAgent(projectRoot, options = {}) {
   };
 }
 
-function buildShellTopicJoin(projectRoot, options = {}) {
+function buildShellTopicJoin(workspaceRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -1046,11 +1046,11 @@ function buildShellTopicJoin(projectRoot, options = {}) {
     throw new Error("topic id is required");
   }
 
-  const session = sessionById(projectRoot, sessionId);
+  const session = sessionById(workspaceRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
-  const topic = loadGBoardTopicById(projectRoot, topicId);
+  const topic = loadGBoardTopicById(workspaceRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
@@ -1067,13 +1067,13 @@ function buildShellTopicJoin(projectRoot, options = {}) {
   };
 }
 
-export async function joinShellAgentTopic(projectRoot, options = {}) {
-  const join = buildShellTopicJoin(projectRoot, options);
+export async function joinShellAgentTopic(workspaceRoot, options = {}) {
+  const join = buildShellTopicJoin(workspaceRoot, options);
   if (join.provider === "codex") {
-    return launchManagedCodexTopicJoin(projectRoot, join);
+    return launchManagedCodexTopicJoin(workspaceRoot, join);
   }
-  sendGTermSessionInput(projectRoot, join.sessionId, `${join.prompt}${topicJoinSubmitSuffix(join.provider)}`);
-  emitAgentConsoleEvent(projectRoot, {
+  sendGTermSessionInput(workspaceRoot, join.sessionId, `${join.prompt}${topicJoinSubmitSuffix(join.provider)}`);
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-participant-topic-join",
     roomId: join.roomId,
     sessionId: join.sessionId,
@@ -1092,7 +1092,7 @@ export async function joinShellAgentTopic(projectRoot, options = {}) {
   };
 }
 
-function buildRoomParticipantBootstrap(projectRoot, options = {}) {
+function buildRoomParticipantBootstrap(workspaceRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -1107,24 +1107,24 @@ function buildRoomParticipantBootstrap(projectRoot, options = {}) {
     throw new Error("topic id is required");
   }
 
-  const session = sessionById(projectRoot, sessionId);
+  const session = sessionById(workspaceRoot, sessionId);
   if (!session) {
     throw new Error("terminal session not found");
   }
-  const topic = loadGBoardTopicById(projectRoot, topicId);
+  const topic = loadGBoardTopicById(workspaceRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
 
-  const scriptPath = roomMcpScriptPath(projectRoot);
-  const env = roomMcpEnv(projectRoot, session, provider, { topicId: topic.id });
+  const scriptPath = roomMcpScriptPath(workspaceRoot);
+  const env = roomMcpEnv(workspaceRoot, session, provider, { topicId: topic.id });
   const prompt = bootstrapPrompt(topic.label);
   const command =
     provider === "codex"
-      ? codexBootstrapCommand(scriptPath, projectRoot, env, prompt, {
+      ? codexBootstrapCommand(scriptPath, workspaceRoot, env, prompt, {
           scriptLabel: `${topic.id}-${session.label ?? session.id}`,
         })
-      : claudeBootstrapCommand(scriptPath, projectRoot, env, prompt);
+      : claudeBootstrapCommand(scriptPath, workspaceRoot, env, prompt);
 
   return {
     ok: true,
@@ -1138,10 +1138,10 @@ function buildRoomParticipantBootstrap(projectRoot, options = {}) {
   };
 }
 
-export async function launchRoomParticipantBootstrap(projectRoot, options = {}) {
-  const bootstrap = buildRoomParticipantBootstrap(projectRoot, options);
-  sendGTermSessionInput(projectRoot, bootstrap.sessionId, `${bootstrap.command}\n`);
-  emitAgentConsoleEvent(projectRoot, {
+export async function launchRoomParticipantBootstrap(workspaceRoot, options = {}) {
+  const bootstrap = buildRoomParticipantBootstrap(workspaceRoot, options);
+  sendGTermSessionInput(workspaceRoot, bootstrap.sessionId, `${bootstrap.command}\n`);
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-participant-bootstrap",
     roomId: bootstrap.roomId,
     sessionId: bootstrap.sessionId,
@@ -1160,7 +1160,7 @@ export async function launchRoomParticipantBootstrap(projectRoot, options = {}) 
   };
 }
 
-export async function addTopicParticipant(projectRoot, options = {}) {
+export async function addTopicParticipant(workspaceRoot, options = {}) {
   const provider = normalizeProvider(options.provider);
   if (!["codex", "claude"].includes(provider)) {
     throw new Error("provider must be codex or claude");
@@ -1172,20 +1172,20 @@ export async function addTopicParticipant(projectRoot, options = {}) {
     throw new Error("topic id is required");
   }
 
-  const topic = loadGBoardTopicById(projectRoot, topicId);
+  const topic = loadGBoardTopicById(workspaceRoot, topicId);
   if (!topic) {
     throw new Error("topic not found");
   }
 
-  const label = trimmedText(options.label) ?? nextTopicParticipantLabel(projectRoot, role);
-  const session = createGTermSession(projectRoot, {
+  const label = trimmedText(options.label) ?? nextTopicParticipantLabel(workspaceRoot, role);
+  const session = createGTermSession(workspaceRoot, {
     selectedTrainId: topic.selectedTrainId ?? null,
     stationId: topic.stationId ?? null,
     edgeId: topic.edgeId ?? null,
     label,
   });
   const announcement = addedParticipantAnnouncement(role, session.label, provider);
-  attachSessionToGBoardTopic(projectRoot, {
+  attachSessionToGBoardTopic(workspaceRoot, {
     topicId: topic.id,
     sessionId: session.id,
     announcementTitle: announcement.title,
@@ -1194,13 +1194,13 @@ export async function addTopicParticipant(projectRoot, options = {}) {
     announcementSenderLabel: "OddChat",
   });
 
-  const bootstrap = await launchRoomParticipantBootstrap(projectRoot, {
+  const bootstrap = await launchRoomParticipantBootstrap(workspaceRoot, {
     sessionId: session.id,
     topicId: topic.id,
     provider,
   });
 
-  emitAgentConsoleEvent(projectRoot, {
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "topic-participant-added",
     topicId: topic.id,
     roomId: topic.roomId,
@@ -1221,6 +1221,6 @@ export async function addTopicParticipant(projectRoot, options = {}) {
   };
 }
 
-export function listOddChatParticipants(projectRoot, options = {}) {
-  return listParticipants(projectRoot, options);
+export function listOddChatParticipants(workspaceRoot, options = {}) {
+  return listParticipants(workspaceRoot, options);
 }

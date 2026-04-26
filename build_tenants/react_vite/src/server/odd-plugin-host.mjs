@@ -45,12 +45,12 @@ function sessionAliases(session) {
   return Array.from(aliases).filter(Boolean);
 }
 
-function attachedTopicSessions(projectRoot, topic) {
+function attachedTopicSessions(workspaceRoot, topic) {
   if (!topic) {
     return [];
   }
 
-  const pool = loadGTermPoolState(projectRoot);
+  const pool = loadGTermPoolState(workspaceRoot);
   const sessionsById = new Map(pool.sessions.map((session) => [session.id, session]));
   return topic.attachedSessionIds
     .map((sessionId) => sessionsById.get(sessionId))
@@ -80,10 +80,10 @@ function stripDirectMention(body, session) {
   return compact || String(body ?? "").trim();
 }
 
-function resolveTopicContext(projectRoot, roomId) {
+function resolveTopicContext(workspaceRoot, roomId) {
   const directRoom = parseTopicSessionRoomId(roomId);
   if (directRoom) {
-    const topic = loadGBoardTopicById(projectRoot, directRoom.topicId);
+    const topic = loadGBoardTopicById(workspaceRoot, directRoom.topicId);
     if (!topic) {
       return {
         topic: null,
@@ -91,7 +91,7 @@ function resolveTopicContext(projectRoot, roomId) {
       };
     }
 
-    const attachedSessions = attachedTopicSessions(projectRoot, topic);
+    const attachedSessions = attachedTopicSessions(workspaceRoot, topic);
     return {
       topic,
       targetSession:
@@ -100,7 +100,7 @@ function resolveTopicContext(projectRoot, roomId) {
   }
 
   return {
-    topic: loadGBoardTopicByRoomId(projectRoot, roomId),
+    topic: loadGBoardTopicByRoomId(workspaceRoot, roomId),
     targetSession: null,
   };
 }
@@ -110,9 +110,9 @@ function submittedRoomInput(body) {
   return trimmed ? `${trimmed}\r` : "";
 }
 
-function hasRoomParticipant(projectRoot, sessionId, roomId) {
+function hasRoomParticipant(workspaceRoot, sessionId, roomId) {
   return (
-    listOddChatParticipants(projectRoot, {
+    listOddChatParticipants(workspaceRoot, {
       sessionId,
       roomId,
       connectedOnly: true,
@@ -121,13 +121,13 @@ function hasRoomParticipant(projectRoot, sessionId, roomId) {
 }
 
 export function resolvePostedRoom(
-  projectRoot,
+  workspaceRoot,
   {
     roomId = "workspace",
     body,
   } = {},
 ) {
-  const resolved = resolveTopicContext(projectRoot, roomId);
+  const resolved = resolveTopicContext(workspaceRoot, roomId);
   const trimmedBody = String(body ?? "").trim();
 
   if (!resolved.topic) {
@@ -150,7 +150,7 @@ export function resolvePostedRoom(
     };
   }
 
-  const attachedSessions = attachedTopicSessions(projectRoot, resolved.topic);
+  const attachedSessions = attachedTopicSessions(workspaceRoot, resolved.topic);
   const mentionedSessions = mentionedWorkerHandles(trimmedBody)
     .map((handle) => findAttachedSessionByHandle(attachedSessions, handle))
     .filter(Boolean);
@@ -186,7 +186,7 @@ export function resolvePostedRoom(
 }
 
 export async function dispatchAgentReplies(
-  projectRoot,
+  workspaceRoot,
   {
     roomId = "workspace",
     body,
@@ -195,22 +195,22 @@ export async function dispatchAgentReplies(
     edgeId = null,
   } = {},
 ) {
-  const resolved = resolvePostedRoom(projectRoot, {
+  const resolved = resolvePostedRoom(workspaceRoot, {
     roomId,
     body,
   });
-  const topicContext = resolveTopicContext(projectRoot, resolved.roomId);
+  const topicContext = resolveTopicContext(workspaceRoot, resolved.roomId);
   const topic = topicContext.topic;
   if (!topic) {
     return [];
   }
 
-  const attachedSessions = attachedTopicSessions(projectRoot, topic);
+  const attachedSessions = attachedTopicSessions(workspaceRoot, topic);
   const targetSessions = resolved.privateChannel
     ? attachedSessions.filter((session) => session.id === resolved.targetSessionId)
     : attachedSessions.filter((session) => resolved.targetSessionIds.includes(session.id));
   const legacyTargetSessions = targetSessions.filter(
-    (session) => !hasRoomParticipant(projectRoot, session.id, resolved.roomId),
+    (session) => !hasRoomParticipant(workspaceRoot, session.id, resolved.roomId),
   );
 
   const input = submittedRoomInput(resolved.body);
@@ -219,7 +219,7 @@ export async function dispatchAgentReplies(
   }
 
   const deliveries = targetSessions
-    .filter((session) => hasRoomParticipant(projectRoot, session.id, resolved.roomId))
+    .filter((session) => hasRoomParticipant(workspaceRoot, session.id, resolved.roomId))
     .map((session) => ({
       sessionId: session.id,
       roomId: resolved.roomId,
@@ -231,7 +231,7 @@ export async function dispatchAgentReplies(
     ...deliveries,
     ...legacyTargetSessions.map((session) => {
     try {
-      sendGTermSessionRoomInput(projectRoot, session.id, {
+      sendGTermSessionRoomInput(workspaceRoot, session.id, {
         data: input,
         roomId: resolved.roomId,
         selectedTrainId: selectedTrainId ?? topic.selectedTrainId ?? null,

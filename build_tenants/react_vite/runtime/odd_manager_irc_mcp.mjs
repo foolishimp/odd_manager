@@ -2,7 +2,7 @@ const defaultApiPort = Number(process.env.OMAN_API_PORT ?? 4173);
 const gatewayBaseUrl = normalizeBaseUrl(
   process.env.OMAN_MCP_GATEWAY_URL ?? `http://127.0.0.1:${defaultApiPort}`,
 );
-const projectRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? process.cwd());
+const workspaceRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? process.cwd());
 const configuredSessionLabel = trimmedText(process.env.OMAN_SESSION_LABEL);
 const configuredRoomId = trimmedText(process.env.OMAN_ROOM_ID);
 const configuredTopicId = trimmedText(process.env.OMAN_TOPIC_ID);
@@ -334,7 +334,7 @@ async function ensureSessionId() {
     throw new Error("Set OMAN_SESSION_ID or OMAN_SESSION_LABEL before using the IRC MCP adapter.");
   }
   const payload = await gatewayPost("/api/oddterm/session/ensure", {
-    projectRoot,
+    workspaceRoot,
     label: configuredSessionLabel,
   });
   resolvedSessionId = payload?.session?.id ?? null;
@@ -346,7 +346,7 @@ async function ensureSessionId() {
 
 async function sessionRef() {
   return {
-    projectRoot,
+    workspaceRoot,
     sessionId: await ensureSessionId(),
   };
 }

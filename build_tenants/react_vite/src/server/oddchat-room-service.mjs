@@ -93,9 +93,9 @@ function projectRoomMessage(entry) {
   };
 }
 
-function ensureRoomHistory(projectRoot, roomId) {
+function ensureRoomHistory(workspaceRoot, roomId) {
   const historyId = roomConversationHistoryId(roomId);
-  ensureConversationHistory(projectRoot, {
+  ensureConversationHistory(workspaceRoot, {
     historyId,
     ownerKind: "oddchat_room",
     ownerRef: roomId,
@@ -107,7 +107,7 @@ function ensureRoomHistory(projectRoot, roomId) {
 }
 
 export function appendLiveRoomMessage(
-  projectRoot,
+  workspaceRoot,
   {
     roomId = "workspace",
     senderId = "operator",
@@ -138,8 +138,8 @@ export function appendLiveRoomMessage(
       )
     : null;
 
-  const historyId = ensureRoomHistory(projectRoot, roomId);
-  const entry = appendConversationEntry(projectRoot, historyId, {
+  const historyId = ensureRoomHistory(workspaceRoot, roomId);
+  const entry = appendConversationEntry(workspaceRoot, historyId, {
     entryKind: messageEntryKind(kind),
     actorRef: {
       id: senderId,
@@ -169,7 +169,7 @@ export function appendLiveRoomMessage(
 
   const message = projectRoomMessage(entry);
 
-  emitAgentConsoleEvent(projectRoot, {
+  emitAgentConsoleEvent(workspaceRoot, {
     kind: "room-message",
     roomId,
     messageId: message.id,
@@ -178,22 +178,22 @@ export function appendLiveRoomMessage(
   return message;
 }
 
-export function loadRoomMessages(projectRoot, roomId, limit = null) {
+export function loadRoomMessages(workspaceRoot, roomId, limit = null) {
   const historyId = roomConversationHistoryId(roomId);
-  const { entries } = loadConversationHistory(projectRoot, historyId, {
+  const { entries } = loadConversationHistory(workspaceRoot, historyId, {
     limit: limit ?? undefined,
   });
   return entries.map(projectRoomMessage);
 }
 
-export function loadLiveRoomMessages(projectRoot) {
-  const histories = listConversationHistories(projectRoot, {
+export function loadLiveRoomMessages(workspaceRoot) {
+  const histories = listConversationHistories(workspaceRoot, {
     ownerKind: "oddchat_room",
   });
 
   const messages = [];
   for (const history of histories) {
-    const { entries } = loadConversationHistory(projectRoot, history.conversationHistoryId);
+    const { entries } = loadConversationHistory(workspaceRoot, history.conversationHistoryId);
     for (const entry of entries) {
       messages.push(projectRoomMessage(entry));
     }

@@ -18,13 +18,13 @@ import type {
 import { useSessionServiceState } from "./useSessionServiceState";
 
 type RuntimePanelProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   world: ManagerWorld;
   onSelectSelection: (selection: Selection) => void;
 };
 
-export function RuntimePanel({ projectRoot, world, onSelectSelection }: RuntimePanelProps) {
-  const { serviceState, loading, error, refreshService } = useSessionServiceState(projectRoot);
+export function RuntimePanel({ workspaceRoot, world, onSelectSelection }: RuntimePanelProps) {
+  const { serviceState, loading, error, refreshService } = useSessionServiceState(workspaceRoot);
   const [serviceAction, setServiceAction] = useState<string | null>(null);
   const [serviceActionError, setServiceActionError] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ export function RuntimePanel({ projectRoot, world, onSelectSelection }: RuntimeP
     setServiceAction(`approve:${run.run_id}`);
     setServiceActionError(null);
     try {
-      await approveSessionServiceRun(projectRoot, run.run_id, run.edge);
+      await approveSessionServiceRun(workspaceRoot, run.run_id, run.edge);
       await refreshService({ background: true });
     } catch (caught) {
       setServiceActionError(caught instanceof Error ? caught.message : String(caught));
@@ -61,7 +61,7 @@ export function RuntimePanel({ projectRoot, world, onSelectSelection }: RuntimeP
     setServiceAction(`reject:${run.run_id}`);
     setServiceActionError(null);
     try {
-      await rejectSessionServiceRun(projectRoot, run.run_id, trimmedReason, run.edge);
+      await rejectSessionServiceRun(workspaceRoot, run.run_id, trimmedReason, run.edge);
       await refreshService({ background: true });
     } catch (caught) {
       setServiceActionError(caught instanceof Error ? caught.message : String(caught));

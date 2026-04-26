@@ -9,7 +9,7 @@ import {
   waitRoomParticipant,
 } from "../src/server/oddchat-participant-service.mjs";
 
-const projectRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? "").trim();
+const workspaceRoot = String(process.env.OMAN_WORKSPACE_ROOT ?? "").trim();
 const sessionId = String(process.env.OMAN_SESSION_ID ?? "").trim();
 const sessionLabel = String(process.env.OMAN_SESSION_LABEL ?? "").trim();
 const topicId = String(process.env.OMAN_TOPIC_ID ?? "").trim();
@@ -17,7 +17,7 @@ const topicLabel = String(process.env.OMAN_TOPIC_LABEL ?? "").trim() || topicId;
 const provider = "codex";
 const participantLabel = `Codex${sessionLabel ? ` · ${sessionLabel}` : ""}`;
 
-if (!projectRoot || !sessionId || !topicId) {
+if (!workspaceRoot || !sessionId || !topicId) {
   console.error("odd_manager codex room worker requires OMAN_WORKSPACE_ROOT, OMAN_SESSION_ID, and OMAN_TOPIC_ID");
   process.exit(1);
 }
@@ -29,7 +29,7 @@ function sleep(ms) {
 }
 
 function sessionMetaPath() {
-  return join(projectRoot, ".ai-workspace/runtime/oddterm", sessionId, "meta.json");
+  return join(workspaceRoot, ".ai-workspace/runtime/oddterm", sessionId, "meta.json");
 }
 
 function isPidAlive(pid) {
@@ -101,7 +101,7 @@ async function runCodexExec(prompt) {
   const args = [
     "exec",
     "-C",
-    projectRoot,
+    workspaceRoot,
     "--skip-git-repo-check",
     "--color",
     "never",
@@ -112,7 +112,7 @@ async function runCodexExec(prompt) {
 
   const exitCode = await new Promise((resolve, reject) => {
     const child = spawn("codex", args, {
-      cwd: projectRoot,
+      cwd: workspaceRoot,
       env: process.env,
       stdio: ["ignore", "inherit", "inherit"],
     });
@@ -137,7 +137,7 @@ async function cleanup() {
   }
   shuttingDown = true;
   try {
-    leaveRoomParticipant(projectRoot, {
+    leaveRoomParticipant(workspaceRoot, {
       sessionId,
       provider,
     });
@@ -159,7 +159,7 @@ async function main() {
     await sleep(250);
   }
 
-  joinRoomParticipant(projectRoot, {
+  joinRoomParticipant(workspaceRoot, {
     sessionId,
     topicId,
     provider,
@@ -167,7 +167,7 @@ async function main() {
     historyLimit: 1,
   });
 
-  postRoomParticipantMessage(projectRoot, {
+  postRoomParticipantMessage(workspaceRoot, {
     sessionId,
     provider,
     text: `Hello from ${participantLabel}. I’m connected on ${topicLabel} and will reply here as messages arrive.`,
@@ -178,7 +178,7 @@ async function main() {
       break;
     }
 
-    const waited = await waitRoomParticipant(projectRoot, {
+    const waited = await waitRoomParticipant(workspaceRoot, {
       sessionId,
       provider,
       excludeSelf: true,
@@ -196,7 +196,7 @@ async function main() {
       continue;
     }
 
-    postRoomParticipantMessage(projectRoot, {
+    postRoomParticipantMessage(workspaceRoot, {
       sessionId,
       provider,
       text: reply,

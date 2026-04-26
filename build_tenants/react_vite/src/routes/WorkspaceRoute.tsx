@@ -26,7 +26,7 @@ import type {
 } from "../lib/types";
 
 type WorkspaceRouteProps = {
-  projectRoot: string;
+  workspaceRoot: string;
   world: ManagerWorld | null;
   loadingWorld: boolean;
   selectedPage: PageId;
@@ -251,7 +251,7 @@ function dedupeSurfaceCards(items: DocumentSurfaceCard[]) {
 }
 
 export function WorkspaceRoute({
-  projectRoot,
+  workspaceRoot,
   world,
   loadingWorld,
   selectedPage,
@@ -273,7 +273,7 @@ export function WorkspaceRoute({
     loading: collaborationLoading,
     error: collaborationError,
     refreshConsole,
-  } = useOddConsoleState(projectRoot);
+  } = useOddConsoleState(workspaceRoot);
   const evidenceSurfaces = useMemo(() => deriveEvidenceSurfaces(world), [world]);
   const provenanceSurfaces = useMemo(() => deriveProvenanceSurfaces(), []);
   const [evidencePath, setEvidencePath] = useState<string>(evidenceSurfaces[0]?.path ?? "");
@@ -332,7 +332,7 @@ export function WorkspaceRoute({
   return (
     <main className="route-wrap">
       <OddBoardWidget
-        projectRoot={projectRoot}
+        workspaceRoot={workspaceRoot}
         selectedTrainId={selectedScope}
         selectedStationId={selectedGraphScope}
         selectedEdgeId={selectedObjectScope}
@@ -343,7 +343,7 @@ export function WorkspaceRoute({
       />
 
       <OddTermWorkspaceWidget
-        projectRoot={projectRoot}
+        workspaceRoot={workspaceRoot}
         selectedTrainId={selectedScope}
         selectedStationId={selectedGraphScope}
         selectedEdgeId={selectedObjectScope}
@@ -486,7 +486,7 @@ export function WorkspaceRoute({
           ) : null}
           <div className="workspace-view">
             <RuntimePanel
-              projectRoot={projectRoot}
+              workspaceRoot={workspaceRoot}
               world={world}
               onSelectSelection={onSelectSelection}
             />
@@ -574,7 +574,7 @@ export function WorkspaceRoute({
       {selectedPage === "evidence" ? (
         <div className="workspace-view">
           <DocumentSurfacePanel
-            projectRoot={projectRoot}
+            workspaceRoot={workspaceRoot}
             eyebrow="Evidence Browser"
             heading="Qualification and release evidence"
             summary="Inspect the selected workspace's generated requirement, ambiguity, qualification, execution, and release surfaces."
@@ -600,7 +600,7 @@ export function WorkspaceRoute({
         <div className="workspace-view">
           <div className="odd-grid odd-grid--two">
             <DocumentSurfacePanel
-              projectRoot={projectRoot}
+              workspaceRoot={workspaceRoot}
               eyebrow="Published Surfaces"
               heading="Workspace bootstrap and constitutional surfaces"
               summary="Read the selected workspace from imported authority through mutable product-owned surfaces and closure state."
@@ -1433,7 +1433,7 @@ function catalogToneForSelection(realizationStatus: string | null | undefined): 
 }
 
 function DocumentSurfacePanel({
-  projectRoot,
+  workspaceRoot,
   eyebrow,
   heading,
   summary,
@@ -1441,7 +1441,7 @@ function DocumentSurfacePanel({
   selectedPath,
   onSelectPath,
 }: {
-  projectRoot: string;
+  workspaceRoot: string;
   eyebrow: string;
   heading: string;
   summary: string;
@@ -1463,7 +1463,7 @@ function DocumentSurfacePanel({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void loadSurface(projectRoot, selectedPath)
+    void loadSurface(workspaceRoot, selectedPath)
       .then((result) => {
         if (!cancelled) {
           setSurface(result);
@@ -1483,7 +1483,7 @@ function DocumentSurfacePanel({
     return () => {
       cancelled = true;
     };
-  }, [projectRoot, selectedPath]);
+  }, [workspaceRoot, selectedPath]);
 
   return (
     <section className="panel panel--context surface-browser__panel">
