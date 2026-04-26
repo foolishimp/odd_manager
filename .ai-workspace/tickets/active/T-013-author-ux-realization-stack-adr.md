@@ -3,7 +3,7 @@ id: T-013
 title: Author UX realization stack ADR
 type: feature
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Record the tenant-local UX realization stack choice (typed reducer plus Cmd interpreter plus shared typed contract) as a build-tenant ADR so every UX-touching ticket downstream can name its State/Msg/Update/Cmd shape under a known stack.
 change_class: design_reframe
