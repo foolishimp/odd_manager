@@ -3,7 +3,7 @@ id: T-007
 title: Realize TicketAssetSurface over .ai-workspace/tickets
 type: feature
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Implement one typed surface over the .ai-workspace/tickets/{active,backlog,completed} topology that exposes tickets as records (not files), with status-transition and link actions, change feed, and selection that pushes the active ticket into Context.
 change_class: realization_refactor
