@@ -58,6 +58,26 @@ function jsonResponse(res, status, body) {
   res.end(JSON.stringify(body, null, 2));
 }
 
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+// MVP "viewer agent" for per-agent unread state. T-010 will surface a real
+// agent selector in the Context bar; for now operator is the default reader.
+const VIEWER_AGENT = process.env.SIDECAR_VIEWER_AGENT ?? 'operator';
+
 function htmlResponse(res, body) {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   res.end(body);
@@ -165,21 +185,26 @@ const SIDECAR_HTML = `<!doctype html>
     sessions: { records: [], diagnostic: null },
     selection: { kind: null, id: null }, // { kind: 'project'|'ticket'|'comment'|'session', id }
     lastAction: null, // { ok, message?, error? } — most recent write-action result
+    viewerAgent: 'operator',
+    unreadIds: [],
+    replyDraft: null, // { parentId, body } when composing
   };
 
   async function load() {
-    const [ctx, projects, tickets, comments, sessions] = await Promise.all([
+    const [ctx, projects, tickets, comments, sessions, unread] = await Promise.all([
       fetch('/api/context').then(r => r.json()),
       fetch('/api/projects').then(r => r.json()),
       fetch('/api/tickets').then(r => r.json()),
       fetch('/api/comments').then(r => r.json()),
       fetch('/api/sessions').then(r => r.json()),
+      fetch(\`/api/comments/unread?agent=\${encodeURIComponent(state.viewerAgent)}\`).then(r => r.json()),
     ]);
     state.context = ctx;
     state.projects = projects;
     state.tickets = tickets;
     state.comments = comments;
     state.sessions = sessions;
+    state.unreadIds = unread.unread_ids ?? [];
     render();
   }
 
@@ -262,13 +287,15 @@ const SIDECAR_HTML = `<!doctype html>
 
   function renderComments() {
     const el = document.getElementById('list-comments');
-    document.getElementById('count-comments').textContent = state.comments.length;
+    const unreadCount = state.unreadIds.length;
+    document.getElementById('count-comments').innerHTML = \`\${state.comments.length}\${unreadCount ? \` <span style="color:#ff6affc7"> · \${unreadCount} unread for \${state.viewerAgent}</span>\` : ''}\`;
     if (!state.comments.length) { el.innerHTML = '<div class="empty">no comments</div>'; return; }
     el.innerHTML = state.comments.map(c => {
       const catClass = c.category ? 'cat-' + c.category.toLowerCase() : '';
+      const isUnread = state.unreadIds.includes(c.id);
       return \`
       <div class="row \${state.selection.kind==='comment' && state.selection.id===c.id ? 'selected' : ''}" data-kind="comment" data-id="\${c.id}">
-        <div class="id muted">\${c.author}</div>
+        <div class="id muted">\${c.author}\${isUnread ? ' <span style="color:#ff6affc7">●</span>' : ''}</div>
         <div class="title">\${escape(c.title || c.subject || c.filename)}</div>
         <div class="meta">
           \${c.category ? \`<span class="pill \${catClass}">\${c.category}</span>\` : ''}
@@ -390,10 +417,33 @@ const SIDECAR_HTML = `<!doctype html>
   function renderCommentInspector(el) {
     const c = state.comments.find(x => x.id === state.selection.id);
     if (!c) { el.innerHTML = '<div class="empty-state">comment not found</div>'; return; }
+    const isUnread = state.unreadIds.includes(c.id);
+    const replying = state.replyDraft && state.replyDraft.parentId === c.id;
+    const actionResultBlock = state.lastAction
+      ? \`<div class="action-result \${state.lastAction.ok ? 'ok' : 'error'}">\${escape(state.lastAction.ok ? \`✓ \${state.lastAction.message}\` : \`✗ \${state.lastAction.error}\`)}</div>\`
+      : '';
+    const replyBlock = replying ? \`
+      <div style="margin-top:12px;padding:12px;background:#0f1620;border:1px solid #2a323d;border-radius:4px">
+        <div class="label" style="font-size:10px;color:#8a96a8;text-transform:uppercase;margin-bottom:6px">Reply as <code>\${state.viewerAgent}</code></div>
+        <textarea id="reply-textarea" style="width:100%;min-height:80px;background:#0a0d12;color:#d8e1ec;border:1px solid #2a323d;border-radius:3px;padding:6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;box-sizing:border-box">\${escape(state.replyDraft.body || '')}</textarea>
+        <div class="actions" style="margin-top:6px">
+          <button class="primary" data-action="reply-submit" data-id="\${c.id}">Submit reply</button>
+          <button data-action="reply-cancel">Cancel</button>
+        </div>
+      </div>
+    \` : '';
     el.innerHTML = \`
       <div class="id">\${c.id}</div>
       <h2>\${escape(c.title || c.subject || c.filename)}</h2>
       <span class="pill cat-\${(c.category||'').toLowerCase()}">\${c.category || '—'}</span>
+      \${isUnread ? '<span class="pill" style="background:#3d1f3d;color:#ff6affc7">unread for ' + escape(state.viewerAgent) + '</span>' : ''}
+      <div class="actions">
+        <span class="label">Actions</span>
+        <button data-action="comment-toggle-read" data-id="\${c.id}">\${isUnread ? 'Mark read' : 'Mark unread'}</button>
+        <button data-action="comment-reply-open" data-id="\${c.id}" \${replying ? 'disabled' : ''}>Reply</button>
+      </div>
+      \${actionResultBlock}
+      \${replyBlock}
       <div class="meta-grid">
         <div class="label">Author</div><div class="value">\${c.author}</div>
         <div class="label">Date</div><div class="value">\${escape(c.date || c.timestamp || '—')}</div>
@@ -403,6 +453,68 @@ const SIDECAR_HTML = `<!doctype html>
       </div>
       \${c.body ? \`<div class="section-title">Body (excerpt)</div><div class="body-text">\${escape(c.body.slice(0, 1500))}\${c.body.length > 1500 ? '\\n\\n…(truncated)' : ''}</div>\` : ''}
     \`;
+    el.querySelectorAll('button[data-action="comment-toggle-read"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const path = isUnread ? 'mark-read' : 'mark-unread';
+        try {
+          const r = await fetch(\`/api/comments/\${encodeURIComponent(id)}/\${path}?agent=\${encodeURIComponent(state.viewerAgent)}\`, { method: 'POST' });
+          const result = await r.json();
+          state.lastAction = result.ok
+            ? { ok: true, message: \`\${id} → \${isUnread ? 'read' : 'unread'} for \${state.viewerAgent}\` }
+            : { ok: false, error: result.error };
+          await load();
+        } catch (err) {
+          state.lastAction = { ok: false, error: String(err) };
+          render();
+        }
+      });
+    });
+    el.querySelectorAll('button[data-action="comment-reply-open"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.replyDraft = { parentId: btn.dataset.id, body: '' };
+        render();
+      });
+    });
+    el.querySelectorAll('button[data-action="reply-cancel"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.replyDraft = null;
+        render();
+      });
+    });
+    el.querySelectorAll('button[data-action="reply-submit"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ta = document.getElementById('reply-textarea');
+        const body = ta ? ta.value : '';
+        if (!body.trim()) {
+          state.lastAction = { ok: false, error: 'reply body required' };
+          render();
+          return;
+        }
+        try {
+          const r = await fetch(\`/api/comments/\${encodeURIComponent(btn.dataset.id)}/reply\`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ author: state.viewerAgent, body }),
+          });
+          const result = await r.json();
+          state.lastAction = result.ok
+            ? { ok: true, message: \`reply created: \${result.id}\` }
+            : { ok: false, error: result.error };
+          state.replyDraft = null;
+          await load();
+        } catch (err) {
+          state.lastAction = { ok: false, error: String(err) };
+          render();
+        }
+      });
+    });
+    // Keep textarea draft in sync if user is typing.
+    const ta = document.getElementById('reply-textarea');
+    if (ta) {
+      ta.addEventListener('input', () => { if (state.replyDraft) state.replyDraft.body = ta.value; });
+      ta.focus();
+    }
   }
 
   function renderSessionInspector(el) {
@@ -433,7 +545,7 @@ const SIDECAR_HTML = `<!doctype html>
 </body>
 </html>`;
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'GET' && url.pathname === '/') {
     return htmlResponse(res, SIDECAR_HTML);
@@ -469,6 +581,39 @@ const server = createServer((req, res) => {
     const id = decodeURIComponent(linkDepMatch[1]);
     const dep = url.searchParams.get('dep');
     const result = ticketSurface.linkDependency(id, dep);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
+  }
+  // T-019 comment write actions and unread state
+  if (req.method === 'GET' && url.pathname === '/api/comments/unread') {
+    const agent = url.searchParams.get('agent') ?? VIEWER_AGENT;
+    return jsonResponse(res, 200, { agent, unread_ids: commentSurface.getUnreadIds(agent) });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/comments') {
+    let body;
+    try { body = await readJsonBody(req); } catch (err) { return jsonResponse(res, 400, { ok: false, error: `invalid json body: ${err.message}` }); }
+    const result = commentSurface.createPost(body);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
+  }
+  const replyMatch = req.method === 'POST' && url.pathname.match(/^\/api\/comments\/(.+)\/reply$/);
+  if (replyMatch) {
+    const parentId = decodeURIComponent(replyMatch[1]);
+    let body;
+    try { body = await readJsonBody(req); } catch (err) { return jsonResponse(res, 400, { ok: false, error: `invalid json body: ${err.message}` }); }
+    const result = commentSurface.createReply(parentId, body);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
+  }
+  const markReadMatch = req.method === 'POST' && url.pathname.match(/^\/api\/comments\/(.+)\/mark-read$/);
+  if (markReadMatch) {
+    const id = decodeURIComponent(markReadMatch[1]);
+    const agent = url.searchParams.get('agent') ?? VIEWER_AGENT;
+    const result = commentSurface.markRead(agent, id);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
+  }
+  const markUnreadMatch = req.method === 'POST' && url.pathname.match(/^\/api\/comments\/(.+)\/mark-unread$/);
+  if (markUnreadMatch) {
+    const id = decodeURIComponent(markUnreadMatch[1]);
+    const agent = url.searchParams.get('agent') ?? VIEWER_AGENT;
+    const result = commentSurface.markUnread(agent, id);
     return jsonResponse(res, result.ok ? 200 : 400, result);
   }
   res.writeHead(404, { 'content-type': 'text/plain' });

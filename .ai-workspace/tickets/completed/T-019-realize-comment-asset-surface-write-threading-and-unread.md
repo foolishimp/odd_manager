@@ -3,7 +3,7 @@ id: T-019
 title: Realize CommentAssetSurface write actions, threading, and unread state
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Add the write half of CommentAssetSurface — POSTING_GUIDE-conforming post/reply actions, mark-read semantics, and durable per-agent unread state — plus a change feed, completing the §2.3 / §2.5 obligations spun out of T-008.
 change_class: realization_refactor
