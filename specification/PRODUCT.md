@@ -1,4 +1,4 @@
-# odd_manager Product
+# Product
 
 **Status**: Active
 **Derived From**: `specification/INTENT.md`, `.genesis/docs/standards/SPEC_METHOD.md`, `.genesis/docs/standards/GRAPH_METHOD.md`
@@ -6,7 +6,8 @@
 
 ## Product Position
 
-`odd_manager` is an operator-facing control-plane product for OODD systems.
+`odd_manager` is an operator-facing control-plane product for outcome-driven
+systems built on GTL and ABG.
 
 It provides one lawful control surface over:
 
@@ -39,6 +40,15 @@ That stable contract is:
 - domain-package query-library overlays for domain understanding that ABG does
   not own
 
+The first supported concrete pack is the observed `odd_sdlc` query-domain line
+currently carried as `odd_sdlc.query-domain v16`.
+
+That first pack is expected to project generated requirement, scenario,
+design, test, release, operational-cycle, execution-contract, start-target,
+asset-ownership, capability, and gap-dossier surfaces like those emitted by
+the observed `data_mapper.test38` workspace. Those remain domain overlays over
+the manager's shared core ontology rather than new GTL/ABG runtime primitives.
+
 It is not:
 
 - the GTL/ABG runtime itself
@@ -69,6 +79,33 @@ current constitutional or design truth.
 One operator-facing surface that composes runtime truth, domain overlays,
 policy, evidence, and coordination without introducing a second runtime or a
 shadow semantic center.
+
+### Project
+
+A filesystem and version-control entity (typically a Git repository) on disk
+that the manager scopes over. Each Project carries an `odd_type` tag declaring
+which Workspace lenses are admissible over it. The Project owns the workspace's
+data, code, specifications, and `.ai-workspace/` runtime topology. One Project
+may carry one or more Workspace lenses.
+
+### Workspace
+
+A governance identity and custom UX suite — concretely an `odd_*` package such
+as `odd_sdlc`, `odd_world_model`, or a future `odd_*` domain. The Workspace
+defines the methodology, the installed query contract, the enabled UX widgets,
+and the policy overlays applied while operating over a Project. The Workspace
+is the lens; the Project is the thing viewed through it.
+
+### Context
+
+The runtime binding `Context = Project × Workspace`. Context is the operational
+unit the manager and any agent execute under. It scopes the filesystem root
+(from Project), the installed query contract (from Workspace, e.g.
+`odd_sdlc.query_contract` v16), the enabled UX widgets, and the MCP resources
+exposed to the agent. An agent execution binds to a Context — not to a
+Workspace or a Project alone. Embedding semantics default to local-by-default:
+a Context selection within an embedded widget scopes only that pane; explicit
+pinning promotes the local selection to the global active Context.
 
 ### Core System Page
 
@@ -298,18 +335,21 @@ The intended end-state product shape is:
 3. publish the manager ontology around graph sets, typed assets, asset graphs,
    bindings, workorders, jobs, roles, runs, calls, continuations, evidence,
    provenance, and closure
-4. split the UI into manager-owned core system pages plus domain-contributed
+4. start from one common workspace loader that resolves the selected
+   workspace's primary identity before choosing domain landing pages, domain
+   entry lenses, labels, and shell framing
+5. split the UI into manager-owned core system pages plus domain-contributed
    pages and actions selected through compatible domain UI packs
-5. publish the operator visual language and graph-workspace styling as
+6. publish the operator visual language and graph-workspace styling as
    `odd_manager`-owned design law
-6. keep shared design law under `build_tenants/common/design/`
-7. implement the operator UI in a tenant-local carrier after the design package
+7. keep shared design law under `build_tenants/common/design/`
+8. implement the operator UI in a tenant-local carrier after the design package
    hardens
-8. support serious runtime supervision, failure recovery, policy inspection,
+9. support serious runtime supervision, failure recovery, policy inspection,
    evidence review, and closure explanation
-9. treat all dashboard summaries as projections over declaration truth and ABG
+10. treat all dashboard summaries as projections over declaration truth and ABG
    event truth rather than as shadow runtime state
-10. remain forward-only before first release rather than carrying stale
+11. remain forward-only before first release rather than carrying stale
    pre-release compatibility debt
 
 ## Current Product Definition
@@ -332,6 +372,12 @@ The current product definition of `odd_manager` is:
   observer contracts while the live upstream surface is still repricing
 - a product whose manager-owned core system pages remain cross-domain while
   domain pages and actions are selected through a compatible domain UI pack
+- a product whose common loader resolves primary project identity separately
+  from governance-package identity before selecting the initial landing page
+  and domain page family
+- a product whose shell title and initial domain framing present the selected
+  workspace as `Odd SDLC`, `Odd World Model`, or later `odd_*` domain lines
+  according to primary identity rather than according to manager branding alone
 - a product allowed to ship with placeholder domain-detail surfaces only where
   the current active domain package has not yet published richer semantic detail
 - a product that composes ABG-native runtime projections with domain query
@@ -349,3 +395,7 @@ The current active implementation target is:
 
 - `build_tenants/react_vite/`
 - current first supported domain contract: `odd_sdlc.query-domain`
+- immediate next control-plane repricing: treat `odd_sdlc` requirement-first and
+  process-first pages as one domain pack, and treat `odd_world_model` landing
+  and future world-model pages as a separate domain pack selected by primary
+  workspace identity
