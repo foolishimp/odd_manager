@@ -1464,7 +1464,7 @@ const server = createServer(async (request, response) => {
     // T-016 closure: AssetSurface read/write endpoints absorbed from the
     // retired sidecar-demo.mjs scaffold. Per project rather than per-request
     // so the surfaces cache properly. SidecarPanel consumes /api/* relative.
-    const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || workspaceRoot || defaultWorkspaceRoot;
+    const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
     const ticketSurface = getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot));
     const commentSurface = getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot));
     const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));
