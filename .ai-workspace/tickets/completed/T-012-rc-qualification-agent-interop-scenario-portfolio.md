@@ -3,7 +3,7 @@ id: T-012
 title: RC qualification — end-to-end agent-interop scenario portfolio
 type: qualification
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Prove the .ai-workspace topology + agent-interop slice through real Claude Code and Codex co-occurrence rather than per-widget unit tests, and publish a postmortem-style RC report identifying intentional gaps and remaining work.
 change_class: product_reprice
