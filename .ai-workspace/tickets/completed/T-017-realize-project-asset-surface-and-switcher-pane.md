@@ -3,7 +3,7 @@ id: T-017
 title: Realize ProjectAssetSurface read path and scaffold switcher pane
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Implement the ProjectAssetSurface read half — a typed projection over the registry of known Projects on disk — and a scaffold pane that lets the operator pick a Project, emitting a ContextDelta the rest of the sidecar consumes.
 change_class: realization_refactor
