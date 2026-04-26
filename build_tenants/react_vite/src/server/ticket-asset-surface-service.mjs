@@ -51,16 +51,16 @@ const ARRAY_FIELDS = new Set([
   'links',
 ]);
 
-function tickByLane(workspaceRoot, lane) {
-  return resolve(workspaceRoot, '.ai-workspace/tickets', lane);
+function tickByLane(projectRoot, lane) {
+  return resolve(projectRoot, '.ai-workspace/tickets', lane);
 }
 
 function isTicketFile(name) {
   return /^[TB]-\d+.*\.md$/i.test(name);
 }
 
-function readTicketFiles(workspaceRoot, lane) {
-  const dir = tickByLane(workspaceRoot, lane);
+function readTicketFiles(projectRoot, lane) {
+  const dir = tickByLane(projectRoot, lane);
   if (!existsSync(dir)) return [];
   const entries = [];
   for (const name of readdirSync(dir)) {
@@ -161,7 +161,7 @@ function applyKeyMap(frontmatter) {
   return mapped;
 }
 
-function parseTicketFile(filePath, lane, workspaceRoot) {
+function parseTicketFile(filePath, lane, projectRoot) {
   const raw = readFileSync(filePath, 'utf-8');
   let parsed = parseFrontmatter(raw);
   if (!parsed.frontmatter) {
@@ -172,17 +172,17 @@ function parseTicketFile(filePath, lane, workspaceRoot) {
   const mapped = applyKeyMap(parsed.frontmatter);
   return {
     ...mapped,
-    sourcePath: relative(workspaceRoot, filePath),
+    sourcePath: relative(projectRoot, filePath),
     lane,
     body: parsed.body?.trim() || undefined,
   };
 }
 
-export function loadAllTickets(workspaceRoot) {
+export function loadAllTickets(projectRoot) {
   const records = [];
   for (const lane of LANES) {
-    for (const { path } of readTicketFiles(workspaceRoot, lane)) {
-      const record = parseTicketFile(path, lane, workspaceRoot);
+    for (const { path } of readTicketFiles(projectRoot, lane)) {
+      const record = parseTicketFile(path, lane, projectRoot);
       if (record) records.push(record);
     }
   }
@@ -247,19 +247,19 @@ function atomicWriteFile(targetPath, content) {
   renameSync(tmpPath, targetPath);
 }
 
-function ticketFileAbsolutePath(workspaceRoot, sourcePath) {
-  return resolve(workspaceRoot, sourcePath);
+function ticketFileAbsolutePath(projectRoot, sourcePath) {
+  return resolve(projectRoot, sourcePath);
 }
 
-function destinationLanePath(workspaceRoot, currentSourcePath, toLane) {
+function destinationLanePath(projectRoot, currentSourcePath, toLane) {
   const filename = basename(currentSourcePath);
-  return resolve(workspaceRoot, '.ai-workspace/tickets', toLane, filename);
+  return resolve(projectRoot, '.ai-workspace/tickets', toLane, filename);
 }
 
 // Find a ticket record by id from a fresh full read. Used by write actions
 // rather than the cached surface to avoid stale-cache write decisions.
-function findFresh(workspaceRoot, id) {
-  return loadAllTickets(workspaceRoot).find((r) => r.id === id);
+function findFresh(projectRoot, id) {
+  return loadAllTickets(projectRoot).find((r) => r.id === id);
 }
 
 function actionResult(ok, payload) {
@@ -268,17 +268,17 @@ function actionResult(ok, payload) {
 
 // Action: transition-status. Moves the ticket between lanes and updates the
 // status field in frontmatter. New lane is one of LANES.
-export function transitionStatus(workspaceRoot, id, toLane) {
+export function transitionStatus(projectRoot, id, toLane) {
   if (!LANES.includes(toLane)) {
     return actionResult(false, { error: `invalid lane: ${toLane}` });
   }
-  const record = findFresh(workspaceRoot, id);
+  const record = findFresh(projectRoot, id);
   if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
   if (record.lane === toLane) {
     return actionResult(false, { error: `ticket ${id} is already in lane ${toLane}` });
   }
-  const fromPath = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
-  const toPath = destinationLanePath(workspaceRoot, record.sourcePath, toLane);
+  const fromPath = ticketFileAbsolutePath(projectRoot, record.sourcePath);
+  const toPath = destinationLanePath(projectRoot, record.sourcePath, toLane);
   let raw;
   try {
     raw = readFileSync(fromPath, 'utf-8');
@@ -297,14 +297,14 @@ export function transitionStatus(workspaceRoot, id, toLane) {
   } catch (err) {
     return actionResult(false, { error: `write/move failed: ${err.message}` });
   }
-  return actionResult(true, { id, fromLane: record.lane, toLane, sourcePath: relative(workspaceRoot, toPath) });
+  return actionResult(true, { id, fromLane: record.lane, toLane, sourcePath: relative(projectRoot, toPath) });
 }
 
 // Action: update-frontmatter-field. Generic single-scalar update.
-export function updateFrontmatterField(workspaceRoot, id, snakeKey, newValue) {
-  const record = findFresh(workspaceRoot, id);
+export function updateFrontmatterField(projectRoot, id, snakeKey, newValue) {
+  const record = findFresh(projectRoot, id);
   if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
-  const path = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
+  const path = ticketFileAbsolutePath(projectRoot, record.sourcePath);
   let raw;
   try {
     raw = readFileSync(path, 'utf-8');
@@ -326,14 +326,14 @@ export function updateFrontmatterField(workspaceRoot, id, snakeKey, newValue) {
 }
 
 // Action: link-dependency. Append a dependency entry to the dependencies list.
-export function linkDependency(workspaceRoot, id, dependencyEntry) {
-  const record = findFresh(workspaceRoot, id);
+export function linkDependency(projectRoot, id, dependencyEntry) {
+  const record = findFresh(projectRoot, id);
   if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
   const existing = asArray(record.dependencies).map(String);
   if (existing.includes(dependencyEntry)) {
     return actionResult(false, { error: `dependency already present: ${dependencyEntry}` });
   }
-  const path = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
+  const path = ticketFileAbsolutePath(projectRoot, record.sourcePath);
   const raw = readFileSync(path, 'utf-8');
   // Replace the dependencies block. Match: dependencies:\n(  - ...\n)*
   const blockRe = /^(dependencies:\s*)((?:\n  - .*)*)$/m;
@@ -356,8 +356,8 @@ export function linkDependency(workspaceRoot, id, dependencyEntry) {
 }
 
 // Action: assign-to-build-tenant.
-export function assignBuildTenant(workspaceRoot, id, tenant) {
-  return updateFrontmatterField(workspaceRoot, id, 'build_tenant', tenant);
+export function assignBuildTenant(projectRoot, id, tenant) {
+  return updateFrontmatterField(projectRoot, id, 'build_tenant', tenant);
 }
 
 // =============================================================================
@@ -395,7 +395,7 @@ function diffSnapshots(prev, next) {
   return events;
 }
 
-export function createTicketSurface(workspaceRoot, options = {}) {
+export function createTicketSurface(projectRoot, options = {}) {
   const pollIntervalMs = options.pollIntervalMs ?? 1000;
   let cache = null;
   let snapshot = null;
@@ -404,14 +404,14 @@ export function createTicketSurface(workspaceRoot, options = {}) {
 
   function ensure() {
     if (cache === null) {
-      cache = loadAllTickets(workspaceRoot);
+      cache = loadAllTickets(projectRoot);
       snapshot = snapshotById(cache);
     }
     return cache;
   }
 
   function pollOnce() {
-    const fresh = loadAllTickets(workspaceRoot);
+    const fresh = loadAllTickets(projectRoot);
     const next = snapshotById(fresh);
     const prev = snapshot ?? new Map();
     const events = diffSnapshots(prev, next);
@@ -458,22 +458,22 @@ export function createTicketSurface(workspaceRoot, options = {}) {
 
     // Write actions — every action produces a typed result and invalidates the cache.
     transitionStatus(id, toLane) {
-      const result = transitionStatus(workspaceRoot, id, toLane);
+      const result = transitionStatus(projectRoot, id, toLane);
       if (result.ok) this.invalidate();
       return result;
     },
     updateFrontmatterField(id, snakeKey, newValue) {
-      const result = updateFrontmatterField(workspaceRoot, id, snakeKey, newValue);
+      const result = updateFrontmatterField(projectRoot, id, snakeKey, newValue);
       if (result.ok) this.invalidate();
       return result;
     },
     linkDependency(id, dependencyEntry) {
-      const result = linkDependency(workspaceRoot, id, dependencyEntry);
+      const result = linkDependency(projectRoot, id, dependencyEntry);
       if (result.ok) this.invalidate();
       return result;
     },
     assignBuildTenant(id, tenant) {
-      const result = assignBuildTenant(workspaceRoot, id, tenant);
+      const result = assignBuildTenant(projectRoot, id, tenant);
       if (result.ok) this.invalidate();
       return result;
     },
