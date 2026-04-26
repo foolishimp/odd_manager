@@ -3,7 +3,7 @@ id: T-010
 title: Realize Project Agent Widget as Context producer in pure sidecar tab
 type: feature
 ticket_category: build_wave
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Build the Project Agent Widget as a standalone Context producer in a pure sidecar tab so it can be embedded into any workspace UX with one prop/event contract, with terminal spawn from the widget passing Context to SessionAssetSurface.
 change_class: realization_refactor
