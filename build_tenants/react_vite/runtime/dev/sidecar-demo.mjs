@@ -114,6 +114,15 @@ const SIDECAR_HTML = `<!doctype html>
   .empty-state { padding: 32px 16px; text-align: center; color: #8a96a8; font-size: 11px; }
   ul.criteria { padding-left: 18px; margin: 4px 0; }
   ul.criteria li { font-size: 11px; line-height: 1.4; color: #b6c3d3; margin-bottom: 3px; }
+  .actions { display: flex; gap: 6px; margin: 12px 0; align-items: center; flex-wrap: wrap; }
+  .actions .label { font-size: 10px; color: #8a96a8; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
+  .actions button { background: #1f2a3d; color: #d8e1ec; border: 1px solid #2a3a52; padding: 4px 10px; font-size: 11px; border-radius: 3px; cursor: pointer; font-family: inherit; }
+  .actions button:hover:not(:disabled) { background: #2a3a52; }
+  .actions button:disabled { opacity: 0.4; cursor: default; }
+  .actions button.primary { border-color: #6aa8ff; color: #6aa8ff; }
+  .action-result { margin-top: 8px; font-size: 11px; padding: 6px 10px; border-radius: 3px; }
+  .action-result.ok { background: #1f3d2d; color: #6affa3; }
+  .action-result.error { background: #3d1f1f; color: #ff6a6a; }
 </style>
 </head>
 <body>
@@ -155,6 +164,7 @@ const SIDECAR_HTML = `<!doctype html>
     comments: [],
     sessions: { records: [], diagnostic: null },
     selection: { kind: null, id: null }, // { kind: 'project'|'ticket'|'comment'|'session', id }
+    lastAction: null, // { ok, message?, error? } — most recent write-action result
   };
 
   async function load() {
@@ -328,12 +338,26 @@ const SIDECAR_HTML = `<!doctype html>
     const expansion = (t.governanceScopeExpansion || []).map(m => Object.entries(m)[0]).map(([k,v]) => \`<span class="pill">\${k}: \${v}</span>\`).join('');
     const criteria = (t.evaluationCriteria || []).map(c => \`<li>\${escape(c)}</li>\`).join('');
     const deps = (Array.isArray(t.dependencies) ? t.dependencies : []).map(d => \`<span class="pill">\${escape(String(d))}</span>\`).join('');
+    const lanes = ['active', 'backlog', 'completed'];
+    const laneButtons = lanes.map(lane => \`
+      <button data-action="transition" data-id="\${t.id}" data-to="\${lane}" \${t.lane === lane ? 'disabled' : ''}>
+        → \${lane}
+      </button>
+    \`).join('');
+    const actionResultBlock = state.lastAction
+      ? \`<div class="action-result \${state.lastAction.ok ? 'ok' : 'error'}">\${escape(state.lastAction.ok ? \`✓ \${state.lastAction.message}\` : \`✗ \${state.lastAction.error}\`)}</div>\`
+      : '';
     el.innerHTML = \`
       <div class="id">\${t.id}</div>
       <h2>\${escape(t.title || '')}</h2>
       <span class="pill lane-\${t.lane}">\${t.lane}</span>
       \${isStdoUx ? '<span class="pill stdo-ux">STDO-UX</span>' : ''}
       <span class="pill">\${escape(t.changeClass || '')}</span>
+      <div class="actions">
+        <span class="label">Transition</span>
+        \${laneButtons}
+      </div>
+      \${actionResultBlock}
       <div class="meta-grid">
         <div class="label">Goal</div><div class="value">\${escape(t.goal || '—')}</div>
         <div class="label">Build tenant</div><div class="value">\${escape(t.buildTenant || '—')}</div>
@@ -344,6 +368,23 @@ const SIDECAR_HTML = `<!doctype html>
       \${t.closureLaw ? \`<div class="section-title">Closure law</div><div class="body-text">\${escape(t.closureLaw)}</div>\` : ''}
       \${criteria ? \`<div class="section-title">Evaluation criteria</div><ul class="criteria">\${criteria}</ul>\` : ''}
     \`;
+    el.querySelectorAll('button[data-action="transition"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const to = btn.dataset.to;
+        try {
+          const r = await fetch(\`/api/tickets/\${encodeURIComponent(id)}/transition?to=\${encodeURIComponent(to)}\`, { method: 'POST' });
+          const result = await r.json();
+          state.lastAction = result.ok
+            ? { ok: true, message: \`\${id}: \${result.fromLane} → \${result.toLane}\` }
+            : { ok: false, error: result.error };
+          await load();
+        } catch (err) {
+          state.lastAction = { ok: false, error: String(err) };
+          render();
+        }
+      });
+    });
   }
 
   function renderCommentInspector(el) {
@@ -414,6 +455,21 @@ const server = createServer((req, res) => {
       records: sessionSurface.list(),
       diagnostic: sessionSurface.diagnostic(),
     });
+  }
+  // T-018 write actions
+  const transitionMatch = req.method === 'POST' && url.pathname.match(/^\/api\/tickets\/([^/]+)\/transition$/);
+  if (transitionMatch) {
+    const id = decodeURIComponent(transitionMatch[1]);
+    const toLane = url.searchParams.get('to');
+    const result = ticketSurface.transitionStatus(id, toLane);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
+  }
+  const linkDepMatch = req.method === 'POST' && url.pathname.match(/^\/api\/tickets\/([^/]+)\/link-dependency$/);
+  if (linkDepMatch) {
+    const id = decodeURIComponent(linkDepMatch[1]);
+    const dep = url.searchParams.get('dep');
+    const result = ticketSurface.linkDependency(id, dep);
+    return jsonResponse(res, result.ok ? 200 : 400, result);
   }
   res.writeHead(404, { 'content-type': 'text/plain' });
   res.end('not found');

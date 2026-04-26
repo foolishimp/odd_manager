@@ -3,7 +3,7 @@ id: T-018
 title: Realize TicketAssetSurface write actions and change feed
 type: feature
 ticket_category: build_wave
-status: backlog
+status: completed
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Add the write half of TicketAssetSurface — status transitions, dependency-link operations, frontmatter-field updates — plus a filesystem-watcher change feed that emits typed events on ticket mutation, completing the §2.3 / §2.5 obligations spun out of T-007.
 change_class: realization_refactor

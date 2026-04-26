@@ -10,8 +10,9 @@
 // MCP projection (resource publication) — T-011.
 // UX consumption — T-014 (and T-007 evaluation criteria once a widget consumes this).
 
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from 'node:fs';
+import { join, relative, resolve, dirname, basename } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const LANES = ['active', 'backlog', 'completed'];
 
@@ -208,14 +209,238 @@ function matchesFilter(record, filter) {
   return true;
 }
 
-export function createTicketSurface(workspaceRoot) {
-  // Cached read — minimal viable. Cache invalidation on file change is the
-  // change-feed work (T-007 evaluation criterion #3); deferred to follow-up.
+// =============================================================================
+// T-018 — write actions and change feed
+// =============================================================================
+
+// Reverse of FRONTMATTER_KEY_MAP for serializing camelCase back to snake_case.
+const FRONTMATTER_REVERSE_MAP = Object.fromEntries(
+  Object.entries(FRONTMATTER_KEY_MAP).map(([snake, camel]) => [camel, snake]),
+);
+
+// Rewrite a single scalar field inside the YAML frontmatter block of a raw
+// ticket file. Preserves everything else (body, comments, ordering of other
+// fields). Field name is the snake_case key as it appears in the file.
+function rewriteScalarFieldInRaw(raw, snakeKey, newValue) {
+  const fmMatch = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!fmMatch) {
+    throw new Error(`rewriteScalarFieldInRaw: no YAML frontmatter found`);
+  }
+  const head = fmMatch[1];
+  const block = fmMatch[2];
+  const tail = fmMatch[3];
+  const lineRe = new RegExp(`^(${snakeKey}:\\s*).*$`, 'm');
+  const newBlock = lineRe.test(block)
+    ? block.replace(lineRe, `$1${newValue}`)
+    : `${block}\n${snakeKey}: ${newValue}`;
+  return raw.slice(0, fmMatch.index) + head + newBlock + tail + raw.slice(fmMatch.index + fmMatch[0].length);
+}
+
+// Atomically write content to targetPath via a temp file in the same directory
+// then rename. Same-filesystem rename is atomic on POSIX.
+function atomicWriteFile(targetPath, content) {
+  const dir = dirname(targetPath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const tmpName = `.${basename(targetPath)}.${randomBytes(6).toString('hex')}.tmp`;
+  const tmpPath = join(dir, tmpName);
+  writeFileSync(tmpPath, content, 'utf-8');
+  renameSync(tmpPath, targetPath);
+}
+
+function ticketFileAbsolutePath(workspaceRoot, sourcePath) {
+  return resolve(workspaceRoot, sourcePath);
+}
+
+function destinationLanePath(workspaceRoot, currentSourcePath, toLane) {
+  const filename = basename(currentSourcePath);
+  return resolve(workspaceRoot, '.ai-workspace/tickets', toLane, filename);
+}
+
+// Find a ticket record by id from a fresh full read. Used by write actions
+// rather than the cached surface to avoid stale-cache write decisions.
+function findFresh(workspaceRoot, id) {
+  return loadAllTickets(workspaceRoot).find((r) => r.id === id);
+}
+
+function actionResult(ok, payload) {
+  return { ok, ...payload };
+}
+
+// Action: transition-status. Moves the ticket between lanes and updates the
+// status field in frontmatter. New lane is one of LANES.
+export function transitionStatus(workspaceRoot, id, toLane) {
+  if (!LANES.includes(toLane)) {
+    return actionResult(false, { error: `invalid lane: ${toLane}` });
+  }
+  const record = findFresh(workspaceRoot, id);
+  if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
+  if (record.lane === toLane) {
+    return actionResult(false, { error: `ticket ${id} is already in lane ${toLane}` });
+  }
+  const fromPath = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
+  const toPath = destinationLanePath(workspaceRoot, record.sourcePath, toLane);
+  let raw;
+  try {
+    raw = readFileSync(fromPath, 'utf-8');
+  } catch (err) {
+    return actionResult(false, { error: `read failed: ${err.message}` });
+  }
+  let updated;
+  try {
+    updated = rewriteScalarFieldInRaw(raw, 'status', toLane);
+  } catch (err) {
+    return actionResult(false, { error: err.message });
+  }
+  try {
+    atomicWriteFile(toPath, updated);
+    if (fromPath !== toPath) unlinkSync(fromPath);
+  } catch (err) {
+    return actionResult(false, { error: `write/move failed: ${err.message}` });
+  }
+  return actionResult(true, { id, fromLane: record.lane, toLane, sourcePath: relative(workspaceRoot, toPath) });
+}
+
+// Action: update-frontmatter-field. Generic single-scalar update.
+export function updateFrontmatterField(workspaceRoot, id, snakeKey, newValue) {
+  const record = findFresh(workspaceRoot, id);
+  if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
+  const path = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
+  let raw;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch (err) {
+    return actionResult(false, { error: `read failed: ${err.message}` });
+  }
+  let updated;
+  try {
+    updated = rewriteScalarFieldInRaw(raw, snakeKey, String(newValue));
+  } catch (err) {
+    return actionResult(false, { error: err.message });
+  }
+  try {
+    atomicWriteFile(path, updated);
+  } catch (err) {
+    return actionResult(false, { error: `write failed: ${err.message}` });
+  }
+  return actionResult(true, { id, field: snakeKey, value: newValue });
+}
+
+// Action: link-dependency. Append a dependency entry to the dependencies list.
+export function linkDependency(workspaceRoot, id, dependencyEntry) {
+  const record = findFresh(workspaceRoot, id);
+  if (!record) return actionResult(false, { error: `ticket not found: ${id}` });
+  const existing = asArray(record.dependencies).map(String);
+  if (existing.includes(dependencyEntry)) {
+    return actionResult(false, { error: `dependency already present: ${dependencyEntry}` });
+  }
+  const path = ticketFileAbsolutePath(workspaceRoot, record.sourcePath);
+  const raw = readFileSync(path, 'utf-8');
+  // Replace the dependencies block. Match: dependencies:\n(  - ...\n)*
+  const blockRe = /^(dependencies:\s*)((?:\n  - .*)*)$/m;
+  const inlineRe = /^(dependencies:\s*)\[\s*\]\s*$/m;
+  const newEntryLine = `\n  - ${dependencyEntry}`;
+  let updated;
+  if (blockRe.test(raw)) {
+    updated = raw.replace(blockRe, `$1$2${newEntryLine}`);
+  } else if (inlineRe.test(raw)) {
+    updated = raw.replace(inlineRe, `dependencies:${newEntryLine}`);
+  } else {
+    return actionResult(false, { error: 'dependencies field not found' });
+  }
+  try {
+    atomicWriteFile(path, updated);
+  } catch (err) {
+    return actionResult(false, { error: `write failed: ${err.message}` });
+  }
+  return actionResult(true, { id, added: dependencyEntry });
+}
+
+// Action: assign-to-build-tenant.
+export function assignBuildTenant(workspaceRoot, id, tenant) {
+  return updateFrontmatterField(workspaceRoot, id, 'build_tenant', tenant);
+}
+
+// =============================================================================
+// Change feed
+// =============================================================================
+
+// Polling-based change feed. Diffs snapshots every pollIntervalMs and emits
+// typed events to subscribers. Polling is chosen over fs.watch for cross-
+// platform reliability and absence of recursive-watch quirks; the cost of a
+// 1s poll over ~20 tiny markdown files is negligible.
+function snapshotById(records) {
+  const map = new Map();
+  for (const r of records) {
+    // Use a coarse fingerprint: sourcePath + lane + status. Sufficient for
+    // detecting status transitions, lane moves, and rough field updates.
+    map.set(r.id, `${r.sourcePath}|${r.lane}|${r.status}|${r.updatedAt ?? ''}`);
+  }
+  return map;
+}
+
+function diffSnapshots(prev, next) {
+  const events = [];
+  for (const [id, sig] of next.entries()) {
+    if (!prev.has(id)) {
+      events.push({ kind: 'created', id });
+    } else if (prev.get(id) !== sig) {
+      events.push({ kind: 'updated', id });
+    }
+  }
+  for (const id of prev.keys()) {
+    if (!next.has(id)) {
+      events.push({ kind: 'deleted', id });
+    }
+  }
+  return events;
+}
+
+export function createTicketSurface(workspaceRoot, options = {}) {
+  const pollIntervalMs = options.pollIntervalMs ?? 1000;
   let cache = null;
+  let snapshot = null;
+  let listeners = new Set();
+  let pollTimer = null;
+
   function ensure() {
-    if (cache === null) cache = loadAllTickets(workspaceRoot);
+    if (cache === null) {
+      cache = loadAllTickets(workspaceRoot);
+      snapshot = snapshotById(cache);
+    }
     return cache;
   }
+
+  function pollOnce() {
+    const fresh = loadAllTickets(workspaceRoot);
+    const next = snapshotById(fresh);
+    const prev = snapshot ?? new Map();
+    const events = diffSnapshots(prev, next);
+    if (events.length) {
+      cache = fresh;
+      snapshot = next;
+      for (const listener of listeners) {
+        try {
+          listener(events);
+        } catch {
+          // listener errors must not affect other subscribers
+        }
+      }
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollOnce, pollIntervalMs);
+    if (typeof pollTimer.unref === 'function') pollTimer.unref();
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
   return {
     list(filter) {
       return ensure().filter((r) => matchesFilter(r, filter));
@@ -228,6 +453,41 @@ export function createTicketSurface(workspaceRoot) {
     },
     invalidate() {
       cache = null;
+      snapshot = null;
     },
+
+    // Write actions — every action produces a typed result and invalidates the cache.
+    transitionStatus(id, toLane) {
+      const result = transitionStatus(workspaceRoot, id, toLane);
+      if (result.ok) this.invalidate();
+      return result;
+    },
+    updateFrontmatterField(id, snakeKey, newValue) {
+      const result = updateFrontmatterField(workspaceRoot, id, snakeKey, newValue);
+      if (result.ok) this.invalidate();
+      return result;
+    },
+    linkDependency(id, dependencyEntry) {
+      const result = linkDependency(workspaceRoot, id, dependencyEntry);
+      if (result.ok) this.invalidate();
+      return result;
+    },
+    assignBuildTenant(id, tenant) {
+      const result = assignBuildTenant(workspaceRoot, id, tenant);
+      if (result.ok) this.invalidate();
+      return result;
+    },
+
+    // Change feed.
+    subscribe(listener) {
+      listeners.add(listener);
+      ensure();
+      startPolling();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) stopPolling();
+      };
+    },
+    pollOnce,
   };
 }
