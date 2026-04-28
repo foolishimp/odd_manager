@@ -107,31 +107,29 @@ RC drops; gaps captured under "Backlog Cuts" below.
 
 ### S-X1 — Cross-agent visibility on Comments (Claude Code + Codex)
 **Manual procedure** (requires both agents configured to mount `runtime/odd_manager_data_mcp.mjs`):
-1. Claude Code session calls `tools/call comments_create_post { author: 'claude', category: 'STRATEGY', subject: 'cross-agent test', body: '...' }`.
+1. Claude Code session starts the MCP with `OMAN_AGENT_PROVIDER=claude` and calls `tools/call comments_create_post { category: 'STRATEGY', subject: 'cross-agent test', body: '...' }`.
 2. Codex session calls `resources/read comments://`; verify the new post appears with `author: 'claude'`.
-3. Codex calls `comments_create_reply { parent_id: <claude's id>, author: 'codex', body: 'reply' }`.
+3. Codex starts the MCP with `OMAN_AGENT_PROVIDER=codex` and calls `comments_create_reply { parent_id: <claude's id>, body: 'reply' }`.
 4. Claude Code calls `resources/read comments://`; verify the reply appears with `author: 'codex'` and `addresses` referencing claude's source path.
 **Status**: ⏳ Documented; not yet executed. Live cross-agent run is the load-bearing missing scenario for full RC.
 
 ### S-X2 — Cross-agent identity attribution on writes
 **Manual procedure**:
-1. Claude Code session creates a post with `author: 'claude'`.
-2. Codex session creates a reply with `author: 'codex'`.
+1. Claude Code session creates a post while its MCP process has `OMAN_AGENT_PROVIDER=claude`.
+2. Codex session creates a reply while its MCP process has `OMAN_AGENT_PROVIDER=codex`.
 3. Inspect the on-disk filenames + frontmatter — author derives from the `<agent>/` directory in the path; frontmatter `**Author**:` matches.
-**Status**: ⏳ Documented; partial automated coverage via `test_comment_asset_surface_write.mjs::createReply derives Addresses from parent comment`.
+**Status**: ✓ Automated identity-spoof regression coverage via `test_data_mcp.mjs::comments_create_post and comments_create_reply derive author from MCP environment`.
 
 ### S-R1 — Per-agent unread state survives restart
 **Tests**: `test_comment_asset_surface_write.mjs::unread state persists across reads (server-restart-equivalent)`
 **Status**: ✓ Green for in-process restart-equivalent. Full server-process-restart scenario (kill node + restart) is mechanically the same but not in the automated suite.
 
 ### S-U1 — UX_METHOD §8 Msg-replay
-**Manual procedure** (SidecarPanel + scaffold):
-1. Open `http://localhost:4174/` (scaffold) or mount `SidecarPanel` in the React app.
-2. Record the dispatched Msg sequence from a user session: e.g.
-   `select(project, odd_manager) → select(ticket, T-007) → select(comment, …)`.
-3. Reset State to `INITIAL_STATE`.
-4. Replay the Msg sequence through the reducer; assert the final State matches the recorded final State.
-**Status**: ⏳ Documented. The reducer is pure (no `Date.now()` / `Math.random()` / external reads), so replay is theoretically deterministic. Full automated replay test is circle-back work pending DOM-testing setup.
+**Tests**: `test_sidecar_msg_replay.mjs`
+**Status**: ✓ Green. Replays project selection, ticket transition request/result,
+comment reply draft/submit/result/cancel, and session spawn/kill request/result
+over the pure `sidecar-state.ts` module, asserting final State and emitted Cmd
+descriptions without DOM, network, refs, timers, or component closures.
 
 ## Backlog Cuts (gaps tracked, not closed)
 
@@ -140,13 +138,12 @@ or explicit deferral note:
 
 | Gap | Tracked at | Reason |
 |---|---|---|
-| Real interactive terminal in sidecar (xterm.js + pty) | **T-020** | Requires `xterm` + `node-pty` + `ws` npm installs and a WebSocket bridge; not steel-thread for the read-write+MCP slice |
-| Pty server-restart survival via tmux/zellij | **T-021** | Depends on T-020 backplane choice |
+| Native pty parity and resize semantics | **B-010** | ADR 0002 reprices current truth to screen/pipe session-console substrates; real `node-pty` remains future work |
+| Screen-backed server-restart survival in restricted environments | **B-005** | API reports unavailable backplane when GNU screen cannot launch; survival proof runs only where screen is runnable |
 | Existing widgets refactored to consume new AssetSurfaces | **T-014** | Touches user's in-flight modified widget files |
 | `workspaceRoot` → `projectRoot` tenant-wide rename | **T-015** | Touches user's in-flight modified server/types files |
 | SidecarPanel mounted in AppShell + scaffold retired | **T-016 closure** | Requires user's 1-line `AppShell.tsx` edit |
 | Live cross-agent run S-X1 / S-X2 | this portfolio | Requires running Claude Code + Codex against the data MCP simultaneously; documented procedure but not yet executed |
-| Automated Msg-replay harness S-U1 | this portfolio | Requires DOM testing setup; manual procedure documented |
 
 ## RC Readiness Verdict
 

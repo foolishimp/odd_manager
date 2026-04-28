@@ -1,4 +1,4 @@
-export type ThemeMode = "light" | "dark";
+export type ThemeMode = "light" | "dark-grey" | "dark";
 export type NavigatorMode = "compressed" | "expanded";
 export type WorkspaceIdentity = string;
 export type PageId =

@@ -1,18 +1,13 @@
 // Verification + demo script for the TicketAssetSurface service.
 //
-// Run from repo root:
-//   node build_tenants/react_vite/runtime/tests/test_ticket_asset_surface.mjs
-//
-// Asserts the surface reads ticket files across all three lanes from this
-// workspace and parses both the rich STDO frontmatter shape (T-005..T-015)
-// and the legacy sparse shape (T-001..T-003, B-004). Prints a summary
-// and a sample record so an operator can see typed projection coming
-// out of the surface — first concrete proof of T-007 evidence route.
+// The assertions use a fixture-owned ticket tree. Live workspace lane
+// distribution is mutable work truth, not a stable qualification fixture.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 
 import {
   createTicketSurface,
@@ -20,100 +15,201 @@ import {
 } from '../../src/server/ticket-asset-surface-service.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// runtime/tests → runtime → react_vite → abiogenesis → build_tenants → odd_manager
-const projectRoot = resolve(here, '..', '..', '..', '..');
+const fixtureRoot = resolve(here, '_fixture_ticket_read');
+const ticketsRoot = resolve(fixtureRoot, '.ai-workspace/tickets');
 
-test('loadAllTickets reads tickets across all lanes', () => {
-  const all = loadAllTickets(projectRoot);
-  assert.ok(all.length >= 15, `expected ≥15 tickets, got ${all.length}`);
-  const lanes = new Set(all.map((r) => r.lane));
-  assert.ok(lanes.has('active'), 'expected at least one active ticket');
-  assert.ok(lanes.has('backlog'), 'expected at least one backlog ticket');
-  assert.ok(lanes.has('completed'), 'expected at least one completed ticket');
-});
+function writeRichTicket(lane, id, {
+  title = `Ticket ${id}`,
+  governance = 'STDO Method',
+  expansion = ['S: SPEC_METHOD.md', 'T: TICKET_METHOD.md', 'D: DESIGN_MODULE_METHOD.md', 'O: ODD_METHOD.md'],
+  buildTenant = 'react_vite',
+  dependencies = [],
+} = {}) {
+  const dir = join(ticketsRoot, lane);
+  mkdirSync(dir, { recursive: true });
+  const content = [
+    '---',
+    `id: ${id}`,
+    `title: ${title}`,
+    'type: feature',
+    'ticket_category: build_wave',
+    `status: ${lane}`,
+    'goal: test-goal',
+    'change_intent: test',
+    'change_class: realization_refactor',
+    're_entry_point: realization',
+    'priority: high',
+    'triaged_at: 2026-04-26',
+    'created_at: 2026-04-26',
+    'updated_at: 2026-04-26',
+    `build_tenant: ${buildTenant}`,
+    `governance_scope: ${governance}`,
+    'governance_scope_expansion:',
+    ...expansion.map((entry) => `  - ${entry}`),
+    'dependencies:',
+    ...dependencies.map((entry) => `  - ${entry}`),
+    'evaluation_criteria:',
+    '  - criterion one',
+    '  - criterion two',
+    '  - criterion three',
+    '  - criterion four',
+    '---',
+    '',
+    '## STDO Reading',
+    '',
+    'fixture body',
+    '',
+  ].join('\n');
+  writeFileSync(join(dir, `${id}-fixture.md`), content);
+}
 
-test('rich-shape STDO ticket parses with mapped key set', () => {
-  const surface = createTicketSurface(projectRoot);
-  const t = surface.get('T-007');
-  assert.ok(t, 'T-007 should be present');
-  assert.equal(t.title, 'Realize TicketAssetSurface over .ai-workspace/tickets');
-  assert.equal(t.type, 'feature');
-  assert.equal(t.changeClass, 'realization_refactor');
-  assert.equal(t.reEntryPoint, 'realization');
-  assert.equal(t.buildTenant, 'react_vite');
-  assert.equal(t.governanceScope, 'STDO Method');
-  assert.ok(Array.isArray(t.dependencies), 'dependencies should parse as array');
-  assert.ok(Array.isArray(t.evaluationCriteria), 'evaluationCriteria should be array');
-  assert.ok(t.evaluationCriteria.length >= 4, 'T-007 has at least 4 evaluation criteria after Wave A scope narrow');
-  assert.ok(Array.isArray(t.governanceScopeExpansion), 'expansion is an array of inline maps');
-  assert.deepEqual(t.governanceScopeExpansion[0], { S: 'SPEC_METHOD.md' });
-});
+function writeSparseTicket(lane, id) {
+  const dir = join(ticketsRoot, lane);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${id}-sparse.md`), [
+    `# ${id} Sparse Fixture`,
+    '',
+    `- id: ${id}`,
+    '- type: feature',
+    `- status: ${lane}`,
+    '',
+  ].join('\n'));
+}
 
-test('STDO-UX ticket carries the U expansion entry', () => {
-  const surface = createTicketSurface(projectRoot);
-  const t = surface.get('T-006');
-  assert.ok(t, 'T-006 should be present');
-  assert.equal(t.governanceScope, 'STDO-UX Method');
-  const letters = t.governanceScopeExpansion.map((m) => Object.keys(m)[0]);
-  assert.deepEqual(letters, ['S', 'T', 'D', 'O', 'U']);
-});
+function setupFixture() {
+  if (existsSync(fixtureRoot)) rmSync(fixtureRoot, { recursive: true, force: true });
+  writeSparseTicket('active', 'T-001');
+  writeRichTicket('active', 'T-006', {
+    title: 'STDO-UX fixture',
+    governance: 'STDO-UX Method',
+    expansion: [
+      'S: SPEC_METHOD.md',
+      'T: TICKET_METHOD.md',
+      'D: DESIGN_MODULE_METHOD.md',
+      'O: ODD_METHOD.md',
+      'U: UX_METHOD.md',
+    ],
+  });
+  writeRichTicket('backlog', 'T-007', { title: 'Realize TicketAssetSurface over .ai-workspace/tickets' });
+  writeRichTicket('backlog', 'T-008', { dependencies: ['T-007 completed'] });
+  writeRichTicket('completed', 'T-009', { buildTenant: 'project_package' });
+}
 
-test('legacy sparse-shape ticket still parses', () => {
-  const surface = createTicketSurface(projectRoot);
-  const t = surface.get('T-001');
-  assert.ok(t, 'T-001 (sparse) should be present');
-  assert.equal(t.type, 'feature');
-});
+function teardownFixture() {
+  if (existsSync(fixtureRoot)) rmSync(fixtureRoot, { recursive: true, force: true });
+}
 
-test('filter by lane returns lane-scoped records only', () => {
-  const surface = createTicketSurface(projectRoot);
-  const completed = surface.list({ lane: 'completed' });
-  assert.ok(completed.length >= 3, 'expected ≥3 completed tickets after the wave starts');
-  for (const r of completed) {
-    assert.equal(r.lane, 'completed');
+test('loadAllTickets reads tickets across all lanes from a fixture tree', () => {
+  setupFixture();
+  try {
+    const all = loadAllTickets(fixtureRoot);
+    assert.equal(all.length, 5);
+    const lanes = new Set(all.map((r) => r.lane));
+    assert.deepEqual([...lanes].sort(), ['active', 'backlog', 'completed']);
+  } finally {
+    teardownFixture();
   }
 });
 
-test('filter by buildTenant scopes to react_vite work', () => {
-  const surface = createTicketSurface(projectRoot);
-  const reactVite = surface.list({ buildTenant: 'react_vite' });
-  assert.ok(reactVite.length >= 6, 'wave tickets are tenant-tagged');
+test('rich-shape STDO ticket parses with mapped key set', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const t = surface.get('T-007');
+    assert.ok(t, 'T-007 should be present');
+    assert.equal(t.title, 'Realize TicketAssetSurface over .ai-workspace/tickets');
+    assert.equal(t.type, 'feature');
+    assert.equal(t.changeClass, 'realization_refactor');
+    assert.equal(t.reEntryPoint, 'realization');
+    assert.equal(t.buildTenant, 'react_vite');
+    assert.equal(t.governanceScope, 'STDO Method');
+    assert.ok(Array.isArray(t.dependencies), 'dependencies should parse as array');
+    assert.ok(Array.isArray(t.evaluationCriteria), 'evaluationCriteria should be array');
+    assert.equal(t.evaluationCriteria.length, 4);
+    assert.ok(Array.isArray(t.governanceScopeExpansion), 'expansion is an array of inline maps');
+    assert.deepEqual(t.governanceScopeExpansion[0], { S: 'SPEC_METHOD.md' });
+  } finally {
+    teardownFixture();
+  }
+});
+
+test('STDO-UX ticket carries the U expansion entry', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const t = surface.get('T-006');
+    assert.ok(t, 'T-006 should be present');
+    assert.equal(t.governanceScope, 'STDO-UX Method');
+    const letters = t.governanceScopeExpansion.map((m) => Object.keys(m)[0]);
+    assert.deepEqual(letters, ['S', 'T', 'D', 'O', 'U']);
+  } finally {
+    teardownFixture();
+  }
+});
+
+test('legacy sparse-shape ticket still parses', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const t = surface.get('T-001');
+    assert.ok(t, 'T-001 sparse fixture should be present');
+    assert.equal(t.type, 'feature');
+  } finally {
+    teardownFixture();
+  }
+});
+
+test('filter by lane returns lane-scoped records only', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const completed = surface.list({ lane: 'completed' });
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0].lane, 'completed');
+  } finally {
+    teardownFixture();
+  }
+});
+
+test('filter by buildTenant scopes records', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const reactVite = surface.list({ buildTenant: 'react_vite' });
+    assert.equal(reactVite.length, 3);
+  } finally {
+    teardownFixture();
+  }
 });
 
 test('filter by hasDependency finds downstream tickets', () => {
-  const surface = createTicketSurface(projectRoot);
-  const dependsOnT007 = surface.list({ hasDependency: 'T-007' });
-  assert.ok(dependsOnT007.length >= 2, 'T-008 and T-014 depend on T-007');
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const dependsOnT007 = surface.list({ hasDependency: 'T-007' });
+    assert.deepEqual(dependsOnT007.map((record) => record.id), ['T-008']);
+  } finally {
+    teardownFixture();
+  }
 });
 
-// Demonstration block — runs after all tests so an operator gets a
-// human-readable summary even when the suite passes silently.
-test('demo: print surface summary', () => {
-  const surface = createTicketSurface(projectRoot);
-  const all = surface.list();
-  const byLane = all.reduce((acc, r) => {
-    acc[r.lane] = (acc[r.lane] ?? 0) + 1;
-    return acc;
-  }, {});
-  /* eslint-disable no-console */
-  console.log('\n=== TicketAssetSurface live read ===');
-  console.log(`projectRoot: ${projectRoot}`);
-  console.log(`total: ${all.length}  by-lane:`, byLane);
-  console.log('STDO-UX tickets:',
-    surface.list().filter((r) => r.governanceScope === 'STDO-UX Method').map((r) => r.id));
-  const sample = surface.get('T-007');
-  console.log('\nsample T-007 (excerpt):');
-  console.log({
-    id: sample.id,
-    lane: sample.lane,
-    status: sample.status,
-    title: sample.title,
-    changeClass: sample.changeClass,
-    buildTenant: sample.buildTenant,
-    governanceScope: sample.governanceScope,
-    dependencies: sample.dependencies,
-    evaluationCriteriaCount: sample.evaluationCriteria?.length,
-    governanceScopeExpansion: sample.governanceScopeExpansion,
-  });
-  /* eslint-enable no-console */
+test('demo: print fixture surface summary', () => {
+  setupFixture();
+  try {
+    const surface = createTicketSurface(fixtureRoot);
+    const all = surface.list();
+    const byLane = all.reduce((acc, r) => {
+      acc[r.lane] = (acc[r.lane] ?? 0) + 1;
+      return acc;
+    }, {});
+    /* eslint-disable no-console */
+    console.log('\n=== TicketAssetSurface fixture read ===');
+    console.log(`projectRoot: ${fixtureRoot}`);
+    console.log(`total: ${all.length}  by-lane:`, byLane);
+    console.log('STDO-UX tickets:',
+      surface.list().filter((r) => r.governanceScope === 'STDO-UX Method').map((r) => r.id));
+    /* eslint-enable no-console */
+  } finally {
+    teardownFixture();
+  }
 });

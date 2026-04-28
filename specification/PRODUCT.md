@@ -88,6 +88,28 @@ which Workspace lenses are admissible over it. The Project owns the workspace's
 data, code, specifications, and `.ai-workspace/` runtime topology. One Project
 may carry one or more Workspace lenses.
 
+### Manager Workspace
+
+The `odd_manager` operator workspace that owns manager-local state, including
+the maintained Project registry. This is distinct from the managed Project and
+distinct from the `odd_*` Workspace lens applied to that Project.
+
+### Project Registry
+
+A manager-workspace-owned maintained list of Projects known to the operator.
+Browse, scan, and manual path entry discover candidates; explicit registry
+actions add or remove Projects. The registry is the Projects collection seen by
+manager UX and agent surfaces.
+
+### File Path Memory
+
+A manager-local operator utility that records recently selected project file
+paths with their Project root, relative path, source selector, and selection
+time. It exists to make CLI and agent handoff practical: selecting or copying a
+file path makes the absolute path paste-ready and keeps a bounded recent-file
+surface for re-copying or opening the file again. File Path Memory is operator
+workspace state, not source-project truth.
+
 ### Workspace
 
 A governance identity and custom UX suite — concretely an `odd_*` package such

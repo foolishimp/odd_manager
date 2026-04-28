@@ -1,0 +1,20 @@
+{
+  "id": "7ae60232-1926-46fc-be93-221fc220b9f7",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "projection-test",
+  "archived": true,
+  "status": "closed",
+  "shell": null,
+  "pid": null,
+  "backend": null,
+  "createdAt": "2026-04-08T15:12:02.388Z",
+  "lastOutputAt": null,
+  "attachedTrainId": null,
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_7ae60232-1926-46fc-be93-221fc220b9f7",
+  "historyBytes": 0,
+  "liveClientCount": 0,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

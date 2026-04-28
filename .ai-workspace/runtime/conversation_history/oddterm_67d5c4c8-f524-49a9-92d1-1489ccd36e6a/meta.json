@@ -1,0 +1,22 @@
+{
+  "conversationHistoryId": "oddterm_67d5c4c8-f524-49a9-92d1-1489ccd36e6a",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddterm_session",
+  "ownerRef": "67d5c4c8-f524-49a9-92d1-1489ccd36e6a",
+  "metadata": {
+    "sessionId": "67d5c4c8-f524-49a9-92d1-1489ccd36e6a",
+    "label": "shell-1",
+    "selectedTrainId": "graphs",
+    "stationId": "Bootstrap Asset Graph",
+    "edgeId": "code_surface",
+    "shell": "/bin/zsh -f -i",
+    "pid": 90421,
+    "backend": "python-pty-service",
+    "state": "archived",
+    "lastOutputAt": "2026-04-09T14:55:21.169Z",
+    "archived": true,
+    "exitCode": 0
+  },
+  "createdAt": "2026-04-09T14:52:56.177Z",
+  "updatedAt": "2026-04-11T03:07:17.453Z"
+}

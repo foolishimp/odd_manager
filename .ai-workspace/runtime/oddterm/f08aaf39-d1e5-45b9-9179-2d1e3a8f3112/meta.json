@@ -1,0 +1,20 @@
+{
+  "id": "f08aaf39-d1e5-45b9-9179-2d1e3a8f3112",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "shell-2",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 86364,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-07T01:36:45.345Z",
+  "lastOutputAt": "2026-04-07T02:06:50.970Z",
+  "attachedTrainId": "graphs",
+  "attachedStationId": "Bootstrap Asset Graph",
+  "attachedEdgeId": "code_surface",
+  "conversationHistoryId": "oddterm_f08aaf39-d1e5-45b9-9179-2d1e3a8f3112",
+  "historyBytes": 9458,
+  "liveClientCount": 1,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

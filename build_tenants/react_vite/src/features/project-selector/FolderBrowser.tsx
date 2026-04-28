@@ -8,6 +8,7 @@ type FolderBrowserProps = {
   path?: string;
   disabled?: boolean;
   onPathChange?: (absolutePath: string) => void;
+  selectLabel?: string;
 };
 
 type BrowseState = {
@@ -17,11 +18,17 @@ type BrowseState = {
   truncated: boolean;
 };
 
+function folderWorkspaceLabel(entry: FsEntry) {
+  const identity = entry.profile?.primary_identity;
+  return identity && identity !== "unknown" ? labelWorkspaceIdentity(identity) : "managed";
+}
+
 export function FolderBrowser({
   onSelectWorkspace,
   path,
   disabled = false,
   onPathChange,
+  selectLabel = "Open",
 }: FolderBrowserProps) {
   const [state, setState] = useState<BrowseState>({
     currentPath: "",
@@ -137,7 +144,7 @@ export function FolderBrowser({
                       ...entry.markers,
                     ].join(" · ")}
                   >
-                    {entry.profile ? labelWorkspaceIdentity(entry.profile.primary_identity) : "managed"}
+                    {folderWorkspaceLabel(entry)}
                   </span>
                 ) : null}
               </button>
@@ -149,7 +156,7 @@ export function FolderBrowser({
                   onClick={() => onSelectWorkspace(entry.absolutePath)}
                   disabled={disabled}
                 >
-                  Open
+                  {selectLabel}
                 </button>
               ) : null}
             </li>

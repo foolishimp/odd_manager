@@ -1,4 +1,4 @@
-import { useState, type PropsWithChildren } from "react";
+import { useEffect, useRef, useState, type PropsWithChildren } from "react";
 import type {
   CommandName,
   Overview,
@@ -54,6 +54,8 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const workspacePickerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const workspacePickerRef = useRef<HTMLDivElement | null>(null);
   const statusLabel = overview ? overview.status : loadingWorld ? "pending" : "attention";
   const statusValue = overview ? overview.total_delta.toFixed(2) : loadingWorld ? "Loading" : "Ready";
   const statusDetail = overview?.headline ?? "Awaiting workspace projection";
@@ -62,9 +64,28 @@ export function AppShell({
   const governanceLabels = workspaceProfile?.governance_identities
     .map((identity) => labelWorkspaceIdentity(identity))
     .filter((value, index, values) => values.indexOf(value) === index);
+  const isSidecarPage = selectedPage === "sidecar";
+  const themeToggleLabel = theme === "light"
+    ? "Switch to dark grey mode"
+    : theme === "dark-grey"
+      ? "Switch to dark blue mode"
+      : "Switch to light mode";
+
+  useEffect(() => {
+    if (!workspacePickerOpen) return undefined;
+    function closeOnOutsidePointer(event: globalThis.PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (workspacePickerRef.current?.contains(target)) return;
+      if (workspacePickerButtonRef.current?.contains(target)) return;
+      setWorkspacePickerOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [workspacePickerOpen]);
 
   return (
-    <div className="shell">
+    <div className={`shell${isSidecarPage ? " shell--sidecar" : ""}`}>
       <header className="shell__header">
         <div className="shell__title">
           <div>
@@ -88,6 +109,7 @@ export function AppShell({
 
         <div className="shell__control-strip">
           <button
+            ref={workspacePickerButtonRef}
             type="button"
             className="shell__control-card shell__control-card--button"
             onClick={() => setWorkspacePickerOpen((current) => !current)}
@@ -95,7 +117,7 @@ export function AppShell({
             aria-label="Open workspace selector"
             title="Open workspace selector"
           >
-            <span className="shell__control-label">Managed Workspace</span>
+            <span className="shell__control-label">Managed Project</span>
             <strong>{workspaceRoot}</strong>
             <small>Click to change workspace</small>
           </button>
@@ -111,18 +133,10 @@ export function AppShell({
           <div className="shell__control-actions">
             <button
               type="button"
-              className="secondary"
-              onClick={() => onApplyWorkspace()}
-              disabled={loadingWorld || !!runningCommand || workspaceDraft.trim() === ""}
-            >
-              Apply
-            </button>
-            <button
-              type="button"
               className="secondary shell__icon-button"
               onClick={onToggleTheme}
-              title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              title={themeToggleLabel}
+              aria-label={themeToggleLabel}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" className="shell__icon-svg">
                 <path
@@ -168,7 +182,7 @@ export function AppShell({
         </nav>
 
         {workspacePickerOpen ? (
-          <div className="shell__workspace-picker" role="dialog" aria-label="Workspace selector">
+          <div ref={workspacePickerRef} className="shell__workspace-picker" role="dialog" aria-label="Workspace selector">
             <ProjectSelector
               currentWorkspaceRoot={workspaceRoot}
               workspaceDraft={workspaceDraft}
@@ -178,7 +192,7 @@ export function AppShell({
                 setWorkspacePickerOpen(false);
               }}
               onClose={() => setWorkspacePickerOpen(false)}
-              disabled={loadingWorld || !!runningCommand}
+              disabled={!!runningCommand}
             />
           </div>
         ) : null}

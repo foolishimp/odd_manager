@@ -16,6 +16,7 @@ import {
   killScreenSession,
   listScreenSessions,
   rehydrateFromScreen,
+  isScreenAvailable,
 } from '../../src/server/session-pty-screen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,9 @@ function teardown(...ids) {
   if (existsSync(fixtureRoot)) rmSync(fixtureRoot, { recursive: true, force: true });
 }
 
-test('spawnScreenSession launches detached screen session', async () => {
+const screenSkip = isScreenAvailable() ? false : 'screen executable not available in this environment';
+
+test('spawnScreenSession launches detached screen session', { skip: screenSkip }, async () => {
   setup();
   let id;
   try {
@@ -51,12 +54,13 @@ test('spawnScreenSession launches detached screen session', async () => {
     const record = JSON.parse(readFileSync(join(fixtureRoot, '.ai-workspace/runtime/sessions', `${id}.json`), 'utf-8'));
     assert.equal(record.status, 'running');
     assert.equal(record.backplane, 'screen');
+    assert.match(record.transcript_ref, new RegExp(`${id}/screenlog\\.0$`));
   } finally {
     teardown(id);
   }
 });
 
-test('rehydrateFromScreen reconciles persisted records with live screen sessions', async () => {
+test('rehydrateFromScreen reconciles persisted records with live screen sessions', { skip: screenSkip }, async () => {
   setup();
   let id;
   try {
@@ -76,7 +80,7 @@ test('rehydrateFromScreen reconciles persisted records with live screen sessions
   }
 });
 
-test('rehydrateFromScreen marks dead records stopped', async () => {
+test('rehydrateFromScreen marks dead records stopped', { skip: screenSkip }, async () => {
   setup();
   let id;
   try {
@@ -109,7 +113,7 @@ test('rehydrateFromScreen marks dead records stopped', async () => {
 // vanilla-import-friendly.
 import { writeFileSync as require_node_fs_sync_writeFileSync } from 'node:fs';
 
-test('demo: spawn → rehydrate → kill', async () => {
+test('demo: spawn → rehydrate → kill', { skip: screenSkip }, async () => {
   setup();
   let id;
   try {

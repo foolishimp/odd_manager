@@ -35,9 +35,10 @@ export interface SessionCollectionFilter {
 }
 
 export interface SessionSurfaceDiagnostic {
-  backplane: 'registry' | 'none';
+  backplane: 'registry' | 'none' | 'oddterm';
   registry_root?: string;
   notes?: string[];
+  runtime?: Record<string, unknown>;
 }
 
 export interface SessionCollectionQuery {

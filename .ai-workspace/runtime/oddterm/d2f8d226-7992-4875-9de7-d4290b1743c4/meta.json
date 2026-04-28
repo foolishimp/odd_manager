@@ -1,0 +1,20 @@
+{
+  "id": "d2f8d226-7992-4875-9de7-d4290b1743c4",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "codex-verify-shell",
+  "archived": true,
+  "status": "closed",
+  "shell": null,
+  "pid": null,
+  "backend": null,
+  "createdAt": "2026-04-11T03:03:35.635Z",
+  "lastOutputAt": null,
+  "attachedTrainId": "graphs",
+  "attachedStationId": "Bootstrap Asset Graph",
+  "attachedEdgeId": "ambiguity_register_surface",
+  "conversationHistoryId": "oddterm_d2f8d226-7992-4875-9de7-d4290b1743c4",
+  "historyBytes": 0,
+  "liveClientCount": 0,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

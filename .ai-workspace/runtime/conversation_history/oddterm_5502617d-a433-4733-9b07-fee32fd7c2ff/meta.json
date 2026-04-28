@@ -1,0 +1,18 @@
+{
+  "conversationHistoryId": "oddterm_5502617d-a433-4733-9b07-fee32fd7c2ff",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddterm_session",
+  "ownerRef": "5502617d-a433-4733-9b07-fee32fd7c2ff",
+  "metadata": {
+    "sessionId": "5502617d-a433-4733-9b07-fee32fd7c2ff",
+    "label": "claude-bootstrap-test",
+    "selectedTrainId": null,
+    "stationId": null,
+    "edgeId": null,
+    "state": "archived",
+    "archived": true,
+    "exitCode": 0
+  },
+  "createdAt": "2026-04-09T00:46:09.290Z",
+  "updatedAt": "2026-04-09T00:46:09.294Z"
+}

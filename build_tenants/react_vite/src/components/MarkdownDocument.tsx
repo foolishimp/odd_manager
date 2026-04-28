@@ -63,7 +63,7 @@ function MermaidDiagram({ source }: { source: string }) {
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "loose",
-          theme: document.documentElement.dataset.theme === "dark" ? "dark" : "neutral",
+          theme: document.documentElement.dataset.theme?.startsWith("dark") ? "dark" : "neutral",
         });
         const { svg, bindFunctions } = await mermaid.render(renderId, source);
         if (cancelled || !hostRef.current) {

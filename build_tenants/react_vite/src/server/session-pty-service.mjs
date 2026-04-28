@@ -1,9 +1,8 @@
 // Session pty service — spawn/attach/kill backplane for the SessionAssetSurface
 // write half. Closes T-020.
 //
-// Uses child_process.spawn (no node-pty dep) + ws WebSocketServer.
-// Pty rows/cols default to 80x24; resize negotiated over WebSocket
-// control messages.
+// Uses a survivable GNU screen backplane when available and a pipe-backed
+// child_process fallback when explicitly requested or when screen is absent.
 //
 // Per-session record is persisted to .ai-workspace/runtime/sessions/<id>.json
 // so the read-side SessionAssetSurface picks the new session up via its
@@ -11,17 +10,24 @@
 // and survives the underlying process; xterm.js attach replays the
 // transcript on connect.
 //
-// Out of scope (T-021): server-restart survival via tmux/zellij. Current
-// implementation: child processes die when the Node server dies, by
-// design of child_process.spawn.
+// The pipe fallback is not a pty and does not survive Node server restart.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, unlinkSync, statSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
+import {
+  isScreenAvailable,
+  killScreenSession,
+  listScreenSessions,
+  rehydrateFromScreen,
+  sendToScreenSession,
+  spawnScreenSession,
+} from './session-pty-screen.mjs';
 
 const DEFAULT_SHELL = process.env.SHELL || '/bin/bash';
+const DEFAULT_BACKPLANE = process.env.OMAN_SESSION_BACKPLANE || 'auto';
 
 function sessionsRegistry(projectRoot) {
   return resolve(projectRoot, '.ai-workspace/runtime/sessions');
@@ -44,7 +50,8 @@ function newSessionId() {
   return `sess-${randomBytes(4).toString('hex')}`;
 }
 
-// In-memory live-process map. Rebuilt empty on server restart (T-021 work).
+// In-memory live-process map for transient pipe sessions. Rebuilt empty on
+// server restart; survivable screen sessions are rehydrated from screen truth.
 const liveProcesses = new Map();
 
 function persistSessionRecord(projectRoot, record) {
@@ -62,7 +69,45 @@ function actionResult(ok, payload) {
   return { ok, ...payload };
 }
 
-export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, args, contextAtSpawn, env: extraEnv } = {}) {
+function liveKey(projectRoot, id) {
+  return `${resolve(projectRoot)}::${id}`;
+}
+
+function resolveBackplanePreference(requested) {
+  const value = String(requested || DEFAULT_BACKPLANE || 'auto').trim().toLowerCase();
+  if (['screen', 'survivable'].includes(value)) return 'screen';
+  if (['pipe', 'process', 'child_process', 'transient'].includes(value)) return 'pipe';
+  return 'auto';
+}
+
+export function sessionBackplaneDiagnostic() {
+  const screenAvailable = isScreenAvailable();
+  return {
+    preferred: DEFAULT_BACKPLANE,
+    screen_available: screenAvailable,
+    default_backplane: screenAvailable ? 'screen' : 'pipe',
+    notes: screenAvailable
+      ? ['screen backplane available; sessions can survive odd_manager API restart']
+      : ['screen backplane unavailable; pipe fallback sessions do not survive odd_manager API restart'],
+  };
+}
+
+export function rehydrateSessions(projectRoot) {
+  if (!isScreenAvailable()) {
+    return { revived: [], marked_stopped: [], skipped: 'screen backplane unavailable' };
+  }
+  return rehydrateFromScreen(projectRoot);
+}
+
+export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, args, contextAtSpawn, env: extraEnv, backplane } = {}) {
+  const preference = resolveBackplanePreference(backplane);
+  if (preference === 'screen' || (preference === 'auto' && isScreenAvailable())) {
+    const screenResult = spawnScreenSession(projectRoot, { agentType, cwd, command, args, contextAtSpawn, env: extraEnv });
+    if (screenResult.ok || preference === 'screen') {
+      return screenResult;
+    }
+  }
+
   ensureRegistry(projectRoot);
   const id = newSessionId();
   const sessionCwd = cwd || projectRoot;
@@ -103,6 +148,7 @@ export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, a
     pid: child.pid,
     command: cmd,
     args: cmdArgs,
+    backplane: 'pipe',
   };
   persistSessionRecord(projectRoot, record);
 
@@ -130,18 +176,20 @@ export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, a
         try { ws.send(JSON.stringify({ type: 'exit', code, signal })); ws.close(); } catch { /* ignored */ }
       }
     }
-    liveProcesses.delete(id);
+    liveProcesses.delete(liveKey(projectRoot, id));
   });
 
-  liveProcesses.set(id, { record, child, sockets });
+  liveProcesses.set(liveKey(projectRoot, id), { projectRoot, record, child, sockets });
   return actionResult(true, record);
 }
 
 export function killSession(projectRoot, id) {
-  const live = liveProcesses.get(id);
+  const live = liveProcesses.get(liveKey(projectRoot, id));
   if (!live) {
-    // Process not in this server's live map. Mark record stopped if it exists.
     const record = loadSessionRecord(projectRoot, id);
+    if (record?.backplane === 'screen') {
+      return killScreenSession(projectRoot, id);
+    }
     if (record && record.status === 'running') {
       record.status = 'stopped';
       record.exited_at = new Date().toISOString();
@@ -159,8 +207,14 @@ export function killSession(projectRoot, id) {
 }
 
 export function writeToSession(projectRoot, id, data) {
-  const live = liveProcesses.get(id);
-  if (!live) return actionResult(false, { error: `session not live: ${id}` });
+  const live = liveProcesses.get(liveKey(projectRoot, id));
+  if (!live) {
+    const record = loadSessionRecord(projectRoot, id);
+    if (record?.backplane === 'screen') {
+      return sendToScreenSession(id, data);
+    }
+    return actionResult(false, { error: `session not live: ${id}` });
+  }
   try {
     live.child.stdin.write(data);
   } catch (err) {
@@ -169,23 +223,89 @@ export function writeToSession(projectRoot, id, data) {
   return actionResult(true, { id, bytes: Buffer.byteLength(data) });
 }
 
-export function listLiveSessionIds() {
-  return Array.from(liveProcesses.keys());
+export function listLiveSessionIds(projectRoot = null) {
+  const pipeIds = Array.from(liveProcesses.values())
+    .filter((entry) => !projectRoot || resolve(entry.projectRoot) === resolve(projectRoot))
+    .map((entry) => entry.record.id);
+  const screenIds = isScreenAvailable()
+    ? listScreenSessions()
+      .map((entry) => entry.id)
+      .filter((id) => !projectRoot || loadSessionRecord(projectRoot, id)?.backplane === 'screen')
+    : [];
+  return Array.from(new Set([...pipeIds, ...screenIds]));
 }
 
 // Replay transcript for a freshly-attached client.
 export function readTranscript(projectRoot, id) {
-  const tPath = transcriptPath(projectRoot, id);
+  const record = loadSessionRecord(projectRoot, id);
+  const tPath = record?.transcript_ref ? resolve(projectRoot, record.transcript_ref) : transcriptPath(projectRoot, id);
   if (!existsSync(tPath)) return '';
   try { return readFileSync(tPath, 'utf-8'); } catch { return ''; }
+}
+
+function transcriptAbsolutePath(projectRoot, id) {
+  const record = loadSessionRecord(projectRoot, id);
+  return record?.transcript_ref ? resolve(projectRoot, record.transcript_ref) : transcriptPath(projectRoot, id);
 }
 
 // Attach a WebSocket to a live session. Replays transcript first then
 // streams new output. Inbound messages are typed as { type: 'input',
 // data: string } | { type: 'resize', cols, rows } | { type: 'kill' }.
+function attachScreenWebSocket(projectRoot, id, ws) {
+  const record = loadSessionRecord(projectRoot, id);
+  const liveScreenIds = new Set(isScreenAvailable() ? listScreenSessions().map((entry) => entry.id) : []);
+  if (!record || record.backplane !== 'screen' || !liveScreenIds.has(id)) {
+    try { ws.send(JSON.stringify({ type: 'error', error: `session not live: ${id}` })); ws.close(); } catch { /* ignored */ }
+    return;
+  }
+
+  const tPath = transcriptAbsolutePath(projectRoot, id);
+  let offset = 0;
+  try {
+    const replay = readTranscript(projectRoot, id);
+    offset = Buffer.byteLength(replay);
+    ws.send(JSON.stringify({ type: 'replay', data: replay }));
+  } catch { /* ignored */ }
+
+  const poll = setInterval(() => {
+    if (ws.readyState !== ws.OPEN) return;
+    let currentSize;
+    try {
+      currentSize = statSync(tPath).size;
+    } catch {
+      return;
+    }
+    if (currentSize <= offset) return;
+    try {
+      const content = readFileSync(tPath);
+      const chunk = content.slice(offset, currentSize).toString('utf-8');
+      offset = currentSize;
+      if (chunk) ws.send(JSON.stringify({ type: 'output', data: chunk }));
+    } catch { /* ignored */ }
+  }, 100);
+  if (typeof poll.unref === 'function') poll.unref();
+
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw.toString('utf-8')); } catch { return; }
+    if (msg.type === 'input' && typeof msg.data === 'string') {
+      sendToScreenSession(id, msg.data);
+    } else if (msg.type === 'kill') {
+      killScreenSession(projectRoot, id);
+    }
+    // Screen resize is intentionally not claimed as native pty resize.
+  });
+  ws.on('close', () => clearInterval(poll));
+}
+
 export function attachWebSocket(projectRoot, id, ws) {
-  const live = liveProcesses.get(id);
+  const live = liveProcesses.get(liveKey(projectRoot, id));
   if (!live) {
+    const record = loadSessionRecord(projectRoot, id);
+    if (record?.backplane === 'screen') {
+      attachScreenWebSocket(projectRoot, id, ws);
+      return;
+    }
     try { ws.send(JSON.stringify({ type: 'error', error: `session not live: ${id}` })); ws.close(); } catch { /* ignored */ }
     return;
   }

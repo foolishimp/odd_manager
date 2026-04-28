@@ -19,7 +19,14 @@ import { createTicketSurface } from "./ticket-asset-surface-service.mjs";
 import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
-import { spawnSession, killSession, listLiveSessionIds, mountSessionWebSocket } from "./session-pty-service.mjs";
+import {
+  spawnSession,
+  killSession,
+  listLiveSessionIds,
+  mountSessionWebSocket,
+  rehydrateSessions,
+  sessionBackplaneDiagnostic,
+} from "./session-pty-service.mjs";
 import { dispatchAgentReplies } from "./odd-plugin-host.mjs";
 import {
   addTopicParticipant,
@@ -277,6 +284,56 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
 }
 
+function oddTermSessionRecord(session, workspaceRoot) {
+  const status = session.status === "live" ? "running" : session.status ?? "unknown";
+  return {
+    id: session.id,
+    agent_type: "shell",
+    cwd: workspaceRoot,
+    status,
+    started_at: session.createdAt,
+    transcript_ref: session.conversationHistoryId
+      ? `.ai-workspace/runtime/conversation_history/${session.conversationHistoryId}.jsonl`
+      : null,
+    context_at_spawn: {
+      project: workspaceDisplayName(workspaceRoot),
+      workspace: "react_vite",
+      odd_type: profileWorkspace(workspaceRoot).active_domain_pack ?? profileWorkspace(workspaceRoot).primary_identity ?? "unknown",
+    },
+    source_path: session.conversationHistoryId
+      ? `.ai-workspace/runtime/conversation_history/${session.conversationHistoryId}.jsonl`
+      : null,
+    raw: {
+      source: "oddterm",
+      label: session.label,
+      backend: session.backend,
+      pid: session.pid,
+      shell: session.shell,
+      liveClientCount: session.liveClientCount,
+      historyBytes: session.historyBytes,
+      attachedTrainId: session.attachedTrainId,
+      attachedStationId: session.attachedStationId,
+      attachedEdgeId: session.attachedEdgeId,
+    },
+  };
+}
+
+function loadOddTermSessionRecords(workspaceRoot) {
+  const state = loadAgentConsoleState(workspaceRoot).oddterm;
+  return {
+    records: state.sessions.map((session) => oddTermSessionRecord(session, workspaceRoot)),
+    diagnostic: {
+      backplane: "oddterm",
+      registry_root: ".ai-workspace/runtime/oddterm",
+      notes: ["sessions are served by the Local Shell Workspace oddterm backplane"],
+      runtime: {
+        default_backplane: "oddterm",
+        notes: ["oddterm is the product session substrate for sidecar-visible shells"],
+      },
+    },
+  };
+}
+
 function readWorkspaceText(workspaceRoot, relativePath) {
   const absolutePath = join(workspaceRoot, relativePath);
   if (!existsSync(absolutePath)) {
@@ -452,6 +509,7 @@ function profileWorkspace(workspaceRoot) {
 
 function isWorkspaceRoot(absolutePath) {
   return (
+    existsSync(join(absolutePath, ".ai-workspace")) ||
     existsSync(join(absolutePath, ".genesis")) ||
     existsSync(join(absolutePath, ".genesis", "genesis.yml"))
   );
@@ -520,6 +578,10 @@ function classifyOddWorkspace(workspaceRoot) {
   const docSignal = readOddProductSignal(workspaceRoot);
   if (docSignal) {
     markers.push(`doc:${docSignal}`);
+  }
+
+  if (hasWorkspaceMarker(workspaceRoot, ".ai-workspace")) {
+    markers.push("runtime:.ai-workspace");
   }
 
   if (hasWorkspaceMarker(workspaceRoot, ".odd_sdlc")) {
@@ -674,15 +736,22 @@ function scanForWorkspaces(rootPath, { oddOnly = false } = {}) {
   return results.sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
 }
 
-function browseDirectory(targetPath) {
+function browseDirectory(targetPath, options = {}) {
   const directory = targetPath || homedir();
   const maxEntries = 500;
   const rawEntries = readdirSync(directory, { withFileTypes: true });
-  const directories = rawEntries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
-    .sort((left, right) => left.name.localeCompare(right.name));
+  const visibleEntries = rawEntries
+    .filter((entry) => {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") return false;
+      if (entry.isDirectory()) return true;
+      return options.includeFiles === true && entry.isFile();
+    })
+    .sort((left, right) => {
+      if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
+      return left.name.localeCompare(right.name);
+    });
 
-  const entries = directories.slice(0, maxEntries).map((entry) => {
+  const entries = visibleEntries.slice(0, maxEntries).map((entry) => {
     const absolutePath = join(directory, entry.name);
     const markers = isWorkspaceRoot(absolutePath) ? classifyOddWorkspace(absolutePath) : [];
     const profile = isWorkspaceRoot(absolutePath) ? profileWorkspace(absolutePath) : null;
@@ -691,6 +760,7 @@ function browseDirectory(targetPath) {
     return {
       name: entry.name,
       absolutePath,
+      kind: entry.isDirectory() ? "directory" : "file",
       hasWorkspace,
       markers,
       profile,
@@ -701,17 +771,27 @@ function browseDirectory(targetPath) {
     path: directory,
     parent: directory === "/" ? null : dirname(directory),
     entries,
-    truncated: directories.length > maxEntries,
+    truncated: visibleEntries.length > maxEntries,
   };
 }
 
 // Per-workspaceRoot AssetSurface cache (shared across requests; surfaces
 // memoize their own reads internally and invalidate on action).
 const assetSurfaceCache = new Map();
+const rehydratedSessionRoots = new Set();
 function getOrCreateAssetSurface(kind, root, factory) {
   const key = `${kind}::${root}`;
   if (!assetSurfaceCache.has(key)) assetSurfaceCache.set(key, factory());
   return assetSurfaceCache.get(key);
+}
+
+function ensureSessionsRehydrated(root) {
+  const normalizedRoot = resolve(root);
+  if (rehydratedSessionRoots.has(normalizedRoot)) {
+    return null;
+  }
+  rehydratedSessionRoots.add(normalizedRoot);
+  return rehydrateSessions(normalizedRoot);
 }
 
 function writeJson(response, statusCode, payload) {
@@ -804,7 +884,9 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/fs/browse") {
-      writeJson(response, 200, browseDirectory(url.searchParams.get("path") || undefined));
+      writeJson(response, 200, browseDirectory(url.searchParams.get("path") || undefined, {
+        includeFiles: url.searchParams.get("includeFiles") === "1",
+      }));
       return;
     }
 
@@ -1465,26 +1547,98 @@ const server = createServer(async (request, response) => {
     // retired sidecar-demo.mjs scaffold. Per project rather than per-request
     // so the surfaces cache properly. SidecarPanel consumes /api/* relative.
     const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+    ensureSessionsRehydrated(surfaceProjectRoot);
     const ticketSurface = getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot));
     const commentSurface = getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot));
     const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));
     const projectSurface = getOrCreateAssetSurface(
       "projects",
-      process.env.PROJECT_REGISTRY_ROOT || "/Users/jim/src/apps",
-      () => createProjectSurface(process.env.PROJECT_REGISTRY_ROOT || "/Users/jim/src/apps"),
+      defaultWorkspaceRoot,
+      () => createProjectSurface(defaultWorkspaceRoot, {
+        discoveryRoot: process.env.PROJECT_REGISTRY_ROOT || appsRoot,
+      }),
     );
     const VIEWER_AGENT = url.searchParams.get("agent") || process.env.OMAN_AGENT_PROVIDER || "operator";
 
     if (request.method === "GET" && url.pathname === "/api/context") {
+      const profile = profileWorkspace(surfaceProjectRoot);
+      const projectId = surfaceProjectRoot.split("/").filter(Boolean).at(-1) ?? "workspace";
+      const oddType = profile.active_domain_pack ?? profile.primary_identity ?? "unknown";
       writeJson(response, 200, {
-        project: { id: "odd_manager", root: surfaceProjectRoot, odd_type: "odd_sdlc" },
-        workspace: { id: "react_vite", profile: "odd_sdlc" },
+        project: { id: projectId, root: surfaceProjectRoot, odd_type: oddType },
+        workspace: { id: "react_vite", profile: profile.active_domain_pack ?? profile.primary_identity ?? "unknown" },
         session: null,
       });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/projects") {
       writeJson(response, 200, projectSurface.list());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/projects/registry") {
+      writeJson(response, 200, {
+        projects: projectSurface.list(),
+        diagnostic: projectSurface.diagnostic(),
+      });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/projects/discover") {
+      writeJson(response, 200, projectSurface.discover());
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/projects/register") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const root = parsed.root || parsed.projectRoot;
+      if (!root || typeof root !== "string") {
+        writeJson(response, 400, { ok: false, error: "register requires root" });
+        return;
+      }
+      try {
+        const project = projectSurface.register(root, {
+          label: parsed.label,
+          tags: parsed.tags,
+          setActive: Boolean(parsed.setActive),
+        });
+        writeJson(response, 200, { ok: true, project, projects: projectSurface.list(), diagnostic: projectSurface.diagnostic() });
+      } catch (caught) {
+        writeJson(response, 400, { ok: false, error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/projects/unregister") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const identity = parsed.id || parsed.root || parsed.projectRoot;
+      if (!identity || typeof identity !== "string") {
+        writeJson(response, 400, { ok: false, error: "unregister requires id or root" });
+        return;
+      }
+      try {
+        const result = projectSurface.unregister(identity);
+        writeJson(response, 200, { ok: true, ...result, diagnostic: projectSurface.diagnostic() });
+      } catch (caught) {
+        writeJson(response, 400, { ok: false, error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/projects/active") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const identity = parsed.id || parsed.root || parsed.projectRoot;
+      if (!identity || typeof identity !== "string") {
+        writeJson(response, 400, { ok: false, error: "set active requires id or root" });
+        return;
+      }
+      try {
+        const project = projectSurface.setActive(identity);
+        writeJson(response, 200, { ok: true, project, projects: projectSurface.list(), diagnostic: projectSurface.diagnostic() });
+      } catch (caught) {
+        writeJson(response, 400, { ok: false, error: caught instanceof Error ? caught.message : String(caught) });
+      }
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/tickets") {
@@ -1496,13 +1650,51 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/sessions") {
-      writeJson(response, 200, { records: sessionSurface.list(), diagnostic: sessionSurface.diagnostic() });
+      writeJson(response, 200, {
+        records: sessionSurface.list(),
+        diagnostic: { ...sessionSurface.diagnostic(), runtime: sessionBackplaneDiagnostic() },
+      });
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/comments/unread") {
       writeJson(response, 200, { agent: VIEWER_AGENT, unread_ids: commentSurface.getUnreadIds(VIEWER_AGENT) });
       return;
     }
+
+    if (request.method === "GET" && url.pathname === "/api/sidecar/sessions") {
+      writeJson(response, 200, loadOddTermSessionRecords(surfaceProjectRoot));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/sidecar/sessions/spawn") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const session = createGTermSession(surfaceProjectRoot, {
+        selectedTrainId: parsed.selectedTrainId || "sidecar",
+        stationId: parsed.stationId || null,
+        edgeId: parsed.edgeId || null,
+        label: parsed.label || "sidecar shell",
+      });
+      selectGTermSession(surfaceProjectRoot, session.id);
+      const record = oddTermSessionRecord(session, surfaceProjectRoot);
+      writeJson(response, 200, { ok: true, ...record });
+      return;
+    }
+
+    const sidecarKillMatch = request.method === "POST" && url.pathname.match(/^\/api\/sidecar\/sessions\/([^/]+)\/kill$/);
+    if (sidecarKillMatch) {
+      const id = decodeURIComponent(sidecarKillMatch[1]);
+      try {
+        const session = closeGTermSession(surfaceProjectRoot, id);
+        const record = oddTermSessionRecord(session, surfaceProjectRoot);
+        writeJson(response, 200, { ok: true, id, ...record });
+      } catch (caught) {
+        writeJson(response, 400, { ok: false, error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+
     let m;
     if ((m = request.method === "POST" && url.pathname.match(/^\/api\/tickets\/([^/]+)\/transition$/))) {
       const id = decodeURIComponent(m[1]);
@@ -1564,7 +1756,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/sessions/live") {
-      writeJson(response, 200, { live_ids: listLiveSessionIds() });
+      writeJson(response, 200, { live_ids: listLiveSessionIds(surfaceProjectRoot) });
       return;
     }
 
@@ -1577,6 +1769,7 @@ const server = createServer(async (request, response) => {
 });
 
 attachGTermServer(server, { defaultWorkspaceRoot });
+ensureSessionsRehydrated(defaultWorkspaceRoot);
 mountSessionWebSocket(server);
 
 server.listen(port, "127.0.0.1", () => {

@@ -12,6 +12,10 @@ export default defineConfig({
         target: apiTarget,
         ws: true,
       },
+      "/ws": {
+        target: apiTarget,
+        ws: true,
+      },
     },
   },
 });

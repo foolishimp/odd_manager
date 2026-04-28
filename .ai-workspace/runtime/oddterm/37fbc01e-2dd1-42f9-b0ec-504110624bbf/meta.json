@@ -1,0 +1,20 @@
+{
+  "id": "37fbc01e-2dd1-42f9-b0ec-504110624bbf",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "codex-handshake-probe",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 86018,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-09T07:59:09.518Z",
+  "lastOutputAt": "2026-04-09T08:23:40.151Z",
+  "attachedTrainId": null,
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_37fbc01e-2dd1-42f9-b0ec-504110624bbf",
+  "historyBytes": 1195,
+  "liveClientCount": 1,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

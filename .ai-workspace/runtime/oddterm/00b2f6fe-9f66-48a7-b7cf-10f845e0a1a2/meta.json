@@ -1,0 +1,20 @@
+{
+  "id": "00b2f6fe-9f66-48a7-b7cf-10f845e0a1a2",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "mailbox-test",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 82008,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-08T15:11:21.311Z",
+  "lastOutputAt": "2026-04-08T15:11:21.414Z",
+  "attachedTrainId": null,
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_00b2f6fe-9f66-48a7-b7cf-10f845e0a1a2",
+  "historyBytes": 863,
+  "liveClientCount": 0,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

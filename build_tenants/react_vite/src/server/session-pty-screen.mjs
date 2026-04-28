@@ -39,6 +39,14 @@ function sessionsRegistry(projectRoot) {
   return resolve(projectRoot, '.ai-workspace/runtime/sessions');
 }
 
+function sessionDirectory(projectRoot, id) {
+  return join(sessionsRegistry(projectRoot), id);
+}
+
+export function screenTranscriptPath(projectRoot, id) {
+  return join(sessionDirectory(projectRoot, id), 'screenlog.0');
+}
+
 function ensureRegistry(projectRoot) {
   const dir = sessionsRegistry(projectRoot);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -85,11 +93,36 @@ export function listScreenSessions() {
   return ids;
 }
 
+let screenAvailableCache = null;
+
+export function isScreenAvailable() {
+  if (screenAvailableCache !== null) {
+    return screenAvailableCache;
+  }
+  const out = spawnSync('screen', ['-ls'], { encoding: 'utf-8' });
+  if (out.error?.code === 'ENOENT') {
+    screenAvailableCache = false;
+    return screenAvailableCache;
+  }
+  const probeId = `oddm-probe-${process.pid}-${randomBytes(2).toString('hex')}`;
+  spawnSync('screen', ['-dmS', probeId, '/bin/sh', '-c', 'sleep 2'], { encoding: 'utf-8' });
+  spawnSync('/bin/sh', ['-c', 'sleep 0.2'], { encoding: 'utf-8' });
+  const live = listScreenSessions().some((entry) => entry.id === probeId);
+  if (live) {
+    spawnSync('screen', ['-S', probeId, '-X', 'quit'], { encoding: 'utf-8' });
+  }
+  screenAvailableCache = live;
+  return screenAvailableCache;
+}
+
 export function spawnScreenSession(projectRoot, { agentType = 'shell', cwd, command, args, contextAtSpawn, env: extraEnv } = {}) {
+  if (!isScreenAvailable()) {
+    return actionResult(false, { error: 'screen backplane unavailable: screen executable not found' });
+  }
   const id = newSessionId();
   const sessionCwd = cwd || projectRoot;
   const cmd = command || (process.env.SHELL || '/bin/bash');
-  const cmdArgs = args || [];
+  const cmdArgs = args || (cmd === (process.env.SHELL || '/bin/bash') ? ['-l'] : []);
   const env = {
     ...process.env,
     ...extraEnv,
@@ -99,9 +132,26 @@ export function spawnScreenSession(projectRoot, { agentType = 'shell', cwd, comm
     ODDM_ODD_TYPE: contextAtSpawn?.odd_type ?? '',
     TERM: 'xterm-256color',
   };
-  // screen -dmS <id> <command> [args]
-  const screenArgs = ['-dmS', id, cmd, ...cmdArgs];
-  const out = spawnSync('screen', screenArgs, { cwd: sessionCwd, env, encoding: 'utf-8' });
+  ensureRegistry(projectRoot);
+  const sessionDir = sessionDirectory(projectRoot, id);
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(screenTranscriptPath(projectRoot, id), '');
+
+  // screen -L writes screenlog.0 in its own cwd. Start screen from a
+  // per-session directory, then exec the requested command from sessionCwd.
+  const screenArgs = [
+    '-L',
+    '-dmS',
+    id,
+    '/bin/sh',
+    '-lc',
+    'cd "$1" || exit 1; shift; exec "$@"',
+    'odd-manager-screen',
+    sessionCwd,
+    cmd,
+    ...cmdArgs,
+  ];
+  const out = spawnSync('screen', screenArgs, { cwd: sessionDir, env, encoding: 'utf-8' });
   if (out.status !== 0) {
     return actionResult(false, { error: `screen spawn failed: ${out.stderr || out.stdout || `exit ${out.status}`}` });
   }
@@ -111,7 +161,7 @@ export function spawnScreenSession(projectRoot, { agentType = 'shell', cwd, comm
     cwd: sessionCwd,
     status: 'running',
     started_at: new Date().toISOString(),
-    transcript_ref: null,
+    transcript_ref: screenTranscriptPath(projectRoot, id).replace(`${projectRoot}/`, ''),
     context_at_spawn: contextAtSpawn ?? null,
     backplane: 'screen',
     command: cmd,
@@ -122,6 +172,9 @@ export function spawnScreenSession(projectRoot, { agentType = 'shell', cwd, comm
 }
 
 export function killScreenSession(projectRoot, id) {
+  if (!isScreenAvailable()) {
+    return actionResult(false, { error: 'screen backplane unavailable: screen executable not found' });
+  }
   const out = spawnSync('screen', ['-S', id, '-X', 'quit'], { encoding: 'utf-8' });
   // screen exits 0 on quit, 1 if session doesn't exist
   const record = loadRecord(projectRoot, id);
@@ -136,6 +189,9 @@ export function killScreenSession(projectRoot, id) {
 // Send a string to a screen session as if typed at the terminal. screen
 // uses 'stuff' for this; '\r' becomes Enter.
 export function sendToScreenSession(id, data) {
+  if (!isScreenAvailable()) {
+    return actionResult(false, { error: 'screen backplane unavailable: screen executable not found' });
+  }
   const out = spawnSync('screen', ['-S', id, '-X', 'stuff', data], { encoding: 'utf-8' });
   return out.status === 0
     ? actionResult(true, { id, bytes: Buffer.byteLength(data) })

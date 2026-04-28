@@ -1,0 +1,17 @@
+{
+  "id": "topic_20260411T031218_08eb2ad3",
+  "roomId": "topic:topic_20260411T031218_08eb2ad3",
+  "label": "oddchat-regression-1775841138244",
+  "originKind": "selection",
+  "assetKind": "edge",
+  "assetId": "ambiguity_register_surface",
+  "assetLabel": "ambiguity_register_surface",
+  "assetPath": null,
+  "createdAt": "2026-04-10T17:12:18.290Z",
+  "updatedAt": "2026-04-10T17:12:18.290Z",
+  "selectedTrainId": "graphs",
+  "stationId": "Bootstrap Asset Graph",
+  "edgeId": "ambiguity_register_surface",
+  "attachedRecordIds": [],
+  "attachedSessionIds": []
+}

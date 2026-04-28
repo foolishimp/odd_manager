@@ -1,0 +1,17 @@
+{
+  "id": "topic_20260410T004251_699d9c81",
+  "roomId": "topic:topic_20260410T004251_699d9c81",
+  "label": "UI verify 1775745771730",
+  "originKind": "selection",
+  "assetKind": "edge",
+  "assetId": "code_surface",
+  "assetLabel": "code_surface",
+  "assetPath": null,
+  "createdAt": "2026-04-09T14:42:51.732Z",
+  "updatedAt": "2026-04-09T14:42:51.732Z",
+  "selectedTrainId": "graphs",
+  "stationId": "Bootstrap Asset Graph",
+  "edgeId": "code_surface",
+  "attachedRecordIds": [],
+  "attachedSessionIds": []
+}

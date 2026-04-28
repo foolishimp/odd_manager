@@ -25,8 +25,8 @@
 //   tickets_link_dependency           — { id, dependency_entry }
 //   tickets_assign_build_tenant       — { id, tenant }
 //   tickets_update_field              — { id, snake_key, value }
-//   comments_create_post              — { author, category, subject, body, addresses?, status? }
-//   comments_create_reply             — { parent_id, author, body, category?, subject? }
+//   comments_create_post              — { category, subject, body, addresses?, status? }
+//   comments_create_reply             — { parent_id, body, category?, subject? }
 //   comments_mark_read                — { agent, comment_id }
 //   comments_mark_unread              — { agent, comment_id }
 //   query_unread_for_agent            — { agent }
@@ -43,16 +43,19 @@ import { createTicketSurface } from '../src/server/ticket-asset-surface-service.
 import { createCommentSurface } from '../src/server/comment-asset-surface-service.mjs';
 import { createSessionSurface } from '../src/server/session-asset-surface-service.mjs';
 import { createProjectSurface } from '../src/server/project-asset-surface-service.mjs';
+import { rehydrateSessions } from '../src/server/session-pty-service.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(process.env.OMAN_WORKSPACE_ROOT || resolve(here, '..', '..', '..'));
+const managerWorkspaceRoot = resolve(here, '..', '..', '..');
 const REGISTRY_ROOT = process.env.PROJECT_REGISTRY_ROOT ?? '/Users/jim/src/apps';
 const VIEWER_AGENT = process.env.OMAN_AGENT_PROVIDER ?? process.env.OMAN_SESSION_LABEL ?? 'operator';
 
 const ticketSurface = createTicketSurface(projectRoot);
 const commentSurface = createCommentSurface(projectRoot);
+rehydrateSessions(projectRoot);
 const sessionSurface = createSessionSurface(projectRoot);
-const projectSurface = createProjectSurface(REGISTRY_ROOT);
+const projectSurface = createProjectSurface(managerWorkspaceRoot, { discoveryRoot: REGISTRY_ROOT });
 
 // =============================================================================
 // Tool registry
@@ -118,38 +121,50 @@ const TOOLS = [
   },
   {
     name: 'comments_create_post',
-    description: 'Create a new comment under .ai-workspace/comments/<author>/ following POSTING_GUIDE filename and frontmatter rules.',
+    description: 'Create a new comment under .ai-workspace/comments/<server-derived-author>/ following POSTING_GUIDE filename and frontmatter rules.',
     inputSchema: {
       type: 'object',
       properties: {
-        author: { type: 'string' },
         category: { type: 'string', enum: ['REVIEW', 'STRATEGY', 'GAP', 'SCHEMA', 'HANDOFF', 'MATRIX'] },
         subject: { type: 'string' },
         body: { type: 'string' },
         addresses: { type: 'string' },
         status: { type: 'string' },
       },
-      required: ['author', 'category', 'subject'],
+      required: ['category', 'subject'],
       additionalProperties: false,
     },
-    handler: (args) => commentSurface.createPost(args),
+    handler: ({ category, subject, body, addresses, status }) => commentSurface.createPost({
+      author: VIEWER_AGENT,
+      category,
+      subject,
+      body,
+      addresses,
+      status,
+    }),
   },
   {
     name: 'comments_create_reply',
-    description: 'Create a reply to a comment. Addresses field is auto-derived from the parent\'s source path.',
+    description: 'Create a reply to a comment using the server-derived author. Addresses field is auto-derived from the parent\'s source path.',
     inputSchema: {
       type: 'object',
       properties: {
         parent_id: { type: 'string' },
-        author: { type: 'string' },
         body: { type: 'string' },
         category: { type: 'string' },
         subject: { type: 'string' },
+        status: { type: 'string' },
       },
-      required: ['parent_id', 'author', 'body'],
+      required: ['parent_id', 'body'],
       additionalProperties: false,
     },
-    handler: ({ parent_id, ...rest }) => commentSurface.createReply(parent_id, rest),
+    handler: ({ parent_id, body, category, subject, status }) => commentSurface.createReply(parent_id, {
+      author: VIEWER_AGENT,
+      body,
+      category,
+      subject,
+      status,
+    }),
   },
   {
     name: 'comments_mark_read',
@@ -202,7 +217,7 @@ const RESOURCES = [
   { uri: 'tickets://', mimeType: 'application/json', name: 'All tickets', description: 'TicketRecord[] across all lanes' },
   { uri: 'comments://', mimeType: 'application/json', name: 'All comments', description: 'CommentRecord[] across all agent directories' },
   { uri: 'sessions://', mimeType: 'application/json', name: 'All sessions', description: '{ records: SessionRecord[], diagnostic }' },
-  { uri: 'projects://', mimeType: 'application/json', name: 'All projects', description: 'ProjectRecord[] discovered under PROJECT_REGISTRY_ROOT' },
+  { uri: 'projects://', mimeType: 'application/json', name: 'All projects', description: 'ProjectRecord[] maintained in the manager workspace registry' },
   { uri: 'active_context://current', mimeType: 'application/json', name: 'Active context', description: 'Current Context (Project x Workspace) for this MCP session' },
 ];
 
@@ -310,7 +325,7 @@ export async function handleRequest(message) {
   }
 }
 
-export const __testing__ = { TOOLS, RESOURCES, readResource, ACTIVE_CONTEXT };
+export const __testing__ = { TOOLS, RESOURCES, readResource, ACTIVE_CONTEXT, VIEWER_AGENT };
 
 // =============================================================================
 // Stdio transport (Content-Length framed). Skipped in test mode.
@@ -325,61 +340,180 @@ function writeFramed(message) {
 
 let stdinBuffer = Buffer.alloc(0);
 
+const CONTENT_LENGTH_PREFIX = 'Content-Length:';
+
+function startsWithFramedPrefix(buffer) {
+  if (buffer.length === 0) return false;
+  const prefix = buffer.slice(0, Math.min(buffer.length, CONTENT_LENGTH_PREFIX.length)).toString('utf-8');
+  return CONTENT_LENGTH_PREFIX.toLowerCase().startsWith(prefix.toLowerCase());
+}
+
+function realignAfterMalformedFrame(buffer) {
+  const lower = buffer.toString('utf-8').toLowerCase();
+  const nextFrame = lower.indexOf(CONTENT_LENGTH_PREFIX.toLowerCase());
+  if (nextFrame >= 0) {
+    return buffer.slice(nextFrame);
+  }
+  const nextLine = buffer.indexOf('\n');
+  if (nextLine >= 0) {
+    return buffer.slice(nextLine + 1);
+  }
+  return Buffer.alloc(0);
+}
+
+function consumeFramedFromBuffer(buffer) {
+  if (!startsWithFramedPrefix(buffer)) {
+    return { status: 'absent', buffer };
+  }
+  const headerEnd = buffer.indexOf('\r\n\r\n');
+  if (headerEnd === -1) {
+    return { status: 'incomplete', buffer };
+  }
+  const header = buffer.slice(0, headerEnd).toString('utf-8');
+  const lengthMatch = header.match(/^Content-Length:\s*(\d+)\s*$/im);
+  if (!lengthMatch) {
+    return {
+      status: 'malformed',
+      error: 'malformed Content-Length frame header',
+      buffer: realignAfterMalformedFrame(buffer.slice(headerEnd + 4)),
+    };
+  }
+  const contentLength = Number(lengthMatch[1]);
+  const totalLength = headerEnd + 4 + contentLength;
+  if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+    return {
+      status: 'malformed',
+      error: 'invalid Content-Length value',
+      buffer: buffer.slice(headerEnd + 4),
+    };
+  }
+  if (buffer.length < totalLength) {
+    return { status: 'incomplete', buffer };
+  }
+  const body = buffer.slice(headerEnd + 4, totalLength).toString('utf-8');
+  try {
+    return {
+      status: 'message',
+      message: JSON.parse(body),
+      framed: true,
+      buffer: buffer.slice(totalLength),
+    };
+  } catch {
+    return {
+      status: 'malformed',
+      error: 'invalid framed JSON body',
+      buffer: buffer.slice(totalLength),
+    };
+  }
+}
+
 function tryConsumeFramed() {
-  while (true) {
-    const headerEnd = stdinBuffer.indexOf('\r\n\r\n');
-    if (headerEnd === -1) return null;
-    const header = stdinBuffer.slice(0, headerEnd).toString('utf-8');
-    const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-    if (!lengthMatch) {
-      stdinBuffer = stdinBuffer.slice(headerEnd + 4);
-      continue;
-    }
-    const contentLength = Number(lengthMatch[1]);
-    const totalLength = headerEnd + 4 + contentLength;
-    if (stdinBuffer.length < totalLength) return null;
-    const body = stdinBuffer.slice(headerEnd + 4, totalLength).toString('utf-8');
-    stdinBuffer = stdinBuffer.slice(totalLength);
-    try {
-      return JSON.parse(body);
-    } catch {
-      return null;
-    }
+  const result = consumeFramedFromBuffer(stdinBuffer);
+  stdinBuffer = result.buffer;
+  return result;
+}
+
+function consumeLineDelimitedFromBuffer(buffer) {
+  const newlineIndex = buffer.indexOf('\n');
+  if (newlineIndex === -1) return { status: 'incomplete', buffer };
+  const line = buffer.slice(0, newlineIndex).toString('utf-8').trim();
+  const nextBuffer = buffer.slice(newlineIndex + 1);
+  if (!line) return { status: 'empty', buffer: nextBuffer };
+  try {
+    return { status: 'message', message: JSON.parse(line), framed: false, buffer: nextBuffer };
+  } catch {
+    return { status: 'malformed', error: 'invalid line-delimited JSON', buffer: nextBuffer };
   }
 }
 
 function tryConsumeLineDelimited() {
-  const newlineIndex = stdinBuffer.indexOf('\n');
-  if (newlineIndex === -1) return null;
-  const line = stdinBuffer.slice(0, newlineIndex).toString('utf-8').trim();
-  stdinBuffer = stdinBuffer.slice(newlineIndex + 1);
-  if (!line) return null;
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
+  const result = consumeLineDelimitedFromBuffer(stdinBuffer);
+  stdinBuffer = result.buffer;
+  return result;
+}
+
+export function createStdioMessageParser() {
+  let buffer = Buffer.alloc(0);
+  return {
+    push(chunk) {
+      buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf-8')]);
+    },
+    next() {
+      const framed = consumeFramedFromBuffer(buffer);
+      if (framed.status === 'message' || framed.status === 'malformed') {
+        buffer = framed.buffer;
+        return framed;
+      }
+      if (framed.status === 'incomplete') {
+        return framed;
+      }
+      const line = consumeLineDelimitedFromBuffer(buffer);
+      buffer = line.buffer;
+      return line;
+    },
+    get bufferedLength() {
+      return buffer.length;
+    },
+  };
+}
+
+function maybeLogTransportError(result) {
+  if (result.status !== 'malformed') return;
+  const text = JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: result.error } });
+  const buf = Buffer.from(text, 'utf-8');
+  process.stdout.write(`Content-Length: ${buf.length}\r\n\r\n`);
+  process.stdout.write(buf);
+}
+
+async function dispatchTransportMessage(result) {
+  if (result.status !== 'message') return false;
+  const reply = await handleRequest(result.message);
+  if (reply) {
+    if (result.framed) writeFramed(reply);
+    else process.stdout.write(JSON.stringify(reply) + '\n');
+  }
+  return true;
+}
+
+function isTerminalParserStatus(result) {
+  return result.status === 'incomplete' || result.status === 'absent';
+}
+
+function shouldContinueAfterParserStatus(result) {
+  return result.status === 'empty' || result.status === 'malformed';
+}
+
+function consumeNextStdioMessage() {
+  const framed = tryConsumeFramed();
+  if (framed.status === 'message' || framed.status === 'incomplete' || framed.status === 'malformed') {
+    return framed;
+  }
+  return tryConsumeLineDelimited();
+}
+
+async function drainStdioBuffer() {
+  while (true) {
+    const next = consumeNextStdioMessage();
+    if (next.status === 'malformed') {
+      maybeLogTransportError(next);
+      if (shouldContinueAfterParserStatus(next)) continue;
+    }
+    if (await dispatchTransportMessage(next)) {
+      continue;
+    }
+    if (shouldContinueAfterParserStatus(next)) {
+      continue;
+    }
+    if (isTerminalParserStatus(next)) {
+      break;
+    }
   }
 }
 
 async function startStdio() {
   process.stdin.on('data', async (chunk) => {
     stdinBuffer = Buffer.concat([stdinBuffer, chunk]);
-    while (true) {
-      // Try framed first; fall back to line-delimited for clients that don't frame.
-      const framed = tryConsumeFramed();
-      if (framed !== null) {
-        const reply = await handleRequest(framed);
-        if (reply) writeFramed(reply);
-        continue;
-      }
-      const line = tryConsumeLineDelimited();
-      if (line !== null) {
-        const reply = await handleRequest(line);
-        if (reply) process.stdout.write(JSON.stringify(reply) + '\n');
-        continue;
-      }
-      break;
-    }
+    await drainStdioBuffer();
   });
   process.stdin.on('end', () => process.exit(0));
 }

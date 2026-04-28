@@ -111,12 +111,12 @@ Each typed collection's storage root and MCP resource are bound here. Per `ODD_M
 | **Comments** | `.ai-workspace/comments/<agent>/*.md` | `comments://` | T-008 |
 | **Threads** | derived from Comments via filename + frontmatter `Addresses` field; not a primary storage root | `threads://` | T-008 (derivation lives with Comments) |
 | **Sessions** | runtime backplane (tmux/zellij or native equivalent), transcript anchored under `.ai-workspace/runtime/sessions/<session-id>/` | `sessions://` | T-009 |
-| **Projects** | `~/.config/odd_manager/projects.json` (the registry of known Projects, separate from any individual Project's contents) | `projects://` | new T-NNN once required (out of current wave scope) |
+| **Projects** | `.ai-workspace/runtime/odd_manager/projects.json` under the manager workspace (the maintained registry of known Projects, separate from any managed Project's contents) | `projects://` | B-046 |
 | **ActiveContext** | runtime singleton, persisted under `.ai-workspace/runtime/active_context.json` | `active_context://current` | emitted by T-010 widget; consumed everywhere |
 
 Notes:
 
-- The Projects registry is necessarily *outside* any one Project's `.ai-workspace/` because it is the registry of all known Projects. It lives in user-config space.
+- The Projects registry is owned by the manager workspace, not by any managed Project. Browse, scan, and manual path entry discover candidates; only explicit `register` / `unregister` actions mutate the registry.
 - ActiveContext is a singleton, not a collection; its `AssetSurface` instance has `selectionShape: single` over a one-record collection.
 - Threads are a derived collection over Comments; they share the Comments storage root and reuse the Comments change feed with a derivation transformation.
 

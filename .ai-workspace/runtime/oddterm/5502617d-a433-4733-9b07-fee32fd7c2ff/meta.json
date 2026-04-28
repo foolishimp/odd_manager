@@ -1,0 +1,20 @@
+{
+  "id": "5502617d-a433-4733-9b07-fee32fd7c2ff",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "claude-bootstrap-test",
+  "archived": true,
+  "status": "closed",
+  "shell": null,
+  "pid": null,
+  "backend": null,
+  "createdAt": "2026-04-09T00:46:09.289Z",
+  "lastOutputAt": null,
+  "attachedTrainId": null,
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_5502617d-a433-4733-9b07-fee32fd7c2ff",
+  "historyBytes": 0,
+  "liveClientCount": 0,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

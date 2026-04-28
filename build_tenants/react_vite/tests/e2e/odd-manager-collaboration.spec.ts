@@ -20,9 +20,7 @@ async function oddtermSurface(page: Page) {
   await ensureExpanded(page, "Expand terminal workspace", "Collapse terminal workspace");
   const widget = page.locator("#terminal-workspace-widget");
   await expect(widget).toBeVisible();
-  await expect(
-    widget.getByRole("button", { name: /New Local Shell|\+ New Local Shell|Create First Local Shell/ }),
-  ).toBeVisible();
+  await expect(widget.getByRole("button", { name: "+ New Local Shell", exact: true })).toBeVisible();
   return widget;
 }
 
@@ -46,18 +44,21 @@ test("creates a live local shell and round-trips terminal input", async ({ page 
   await waitForWorldProjection(page);
 
   const oddterm = await oddtermSurface(page);
-  const createButton = oddterm.getByRole("button", { name: /New Local Shell|Create First Local Shell/ });
+  const createButton = oddterm.getByRole("button", { name: "+ New Local Shell", exact: true });
   await createButton.click();
 
   const connectedPane = terminalPaneWithStatus(oddterm, "connected").last();
   await expect(connectedPane).toBeVisible();
 
-  const input = connectedPane.getByRole("textbox", { name: "Terminal input" });
-  await input.click({ force: true });
-  await input.pressSequentially("echo oddterm-e2e");
-  await input.press("Enter");
+  const terminalHost = connectedPane.locator(".agent-console__terminal-host");
+  const terminalInput = connectedPane.getByRole("textbox", { name: "Terminal input" });
+  const marker = `oddterm-e2e-${Date.now()}`;
+  await terminalHost.click();
+  await expect(terminalInput).toBeFocused();
+  await terminalInput.pressSequentially(`echo ${marker}`);
+  await terminalInput.press("Enter");
 
-  await expect(connectedPane.locator(".xterm-rows")).toContainText("oddterm-e2e");
+  await expect(connectedPane.locator(".xterm-rows")).toContainText(marker);
   const sessionLabel = await connectedPane.locator(".agent-console__terminal-bar strong").innerText();
 
   page.once("dialog", (dialog) => dialog.accept());

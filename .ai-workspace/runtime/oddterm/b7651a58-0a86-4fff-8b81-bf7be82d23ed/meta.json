@@ -1,0 +1,20 @@
+{
+  "id": "b7651a58-0a86-4fff-8b81-bf7be82d23ed",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "claude-agent",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": null,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-09T01:12:25.630Z",
+  "lastOutputAt": "2026-04-09T01:12:25.669Z",
+  "attachedTrainId": null,
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_b7651a58-0a86-4fff-8b81-bf7be82d23ed",
+  "historyBytes": 817,
+  "liveClientCount": 0,
+  "exitCode": 0,
+  "signal": null
+}

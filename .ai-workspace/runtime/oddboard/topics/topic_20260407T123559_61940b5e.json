@@ -1,0 +1,27 @@
+{
+  "id": "topic_20260407T123559_61940b5e",
+  "roomId": "topic:topic_20260407T123559_61940b5e",
+  "label": "Topic over bootstrap_release_self_test_job",
+  "originKind": "selection",
+  "assetKind": "edge",
+  "assetId": "bootstrap_release_self_test_job",
+  "assetLabel": "bootstrap_release_self_test_job",
+  "assetPath": null,
+  "createdAt": "2026-04-07T02:35:59.993Z",
+  "updatedAt": "2026-04-08T15:12:02.392Z",
+  "selectedTrainId": "graphs",
+  "stationId": "Bootstrap Asset Graph",
+  "edgeId": "bootstrap_release_self_test_job",
+  "attachedRecordIds": [],
+  "attachedSessionIds": [
+    "4d9313e2-8fb0-4a24-bdfa-44818a550777",
+    "dc9b2009-04d6-4504-a9dc-74e944a3874b",
+    "4137933f-11fe-4450-b40d-c174c7787da0",
+    "327cc946-d9da-4956-8a8e-fd6ab8287160",
+    "31e58bbc-58bc-4dc4-83f7-64b304e92020",
+    "2cacdeeb-0f47-415b-af34-7a8f6f8a5a10",
+    "ce5feb1c-13d3-4772-afa2-8263b3db9ec7",
+    "00b2f6fe-9f66-48a7-b7cf-10f845e0a1a2",
+    "7ae60232-1926-46fc-be93-221fc220b9f7"
+  ]
+}

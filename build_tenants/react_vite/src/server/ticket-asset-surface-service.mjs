@@ -10,7 +10,7 @@
 // MCP projection (resource publication) — T-011.
 // UX consumption — T-014 (and T-007 evaluation criteria once a widget consumes this).
 
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join, relative, resolve, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -49,6 +49,15 @@ const ARRAY_FIELDS = new Set([
   'proof_surface',
   'non_closure_conditions',
   'links',
+]);
+
+const MUTABLE_SCALAR_FIELDS = new Set([
+  'priority',
+  'build_tenant',
+  'source_ticket',
+  'ticket_category',
+  'goal',
+  'updated_at',
 ]);
 
 function tickByLane(projectRoot, lane) {
@@ -222,6 +231,16 @@ const FRONTMATTER_REVERSE_MAP = Object.fromEntries(
 // ticket file. Preserves everything else (body, comments, ordering of other
 // fields). Field name is the snake_case key as it appears in the file.
 function rewriteScalarFieldInRaw(raw, snakeKey, newValue) {
+  if (!MUTABLE_SCALAR_FIELDS.has(snakeKey)) {
+    throw new Error(`field is not mutable through update_field: ${snakeKey}`);
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(snakeKey)) {
+    throw new Error(`invalid frontmatter key: ${snakeKey}`);
+  }
+  const scalarValue = String(newValue);
+  if (/[\r\n\x00-\x08\x0b\x0c\x0e-\x1f]/.test(scalarValue)) {
+    throw new Error(`invalid scalar value for ${snakeKey}: control characters and newlines are not allowed`);
+  }
   const fmMatch = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!fmMatch) {
     throw new Error(`rewriteScalarFieldInRaw: no YAML frontmatter found`);
@@ -229,10 +248,26 @@ function rewriteScalarFieldInRaw(raw, snakeKey, newValue) {
   const head = fmMatch[1];
   const block = fmMatch[2];
   const tail = fmMatch[3];
-  const lineRe = new RegExp(`^(${snakeKey}:\\s*).*$`, 'm');
+  const escapedKey = snakeKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lineRe = new RegExp(`^(${escapedKey}:\\s*).*$`, 'm');
   const newBlock = lineRe.test(block)
-    ? block.replace(lineRe, `$1${newValue}`)
-    : `${block}\n${snakeKey}: ${newValue}`;
+    ? block.replace(lineRe, `$1${scalarValue}`)
+    : `${block}\n${snakeKey}: ${scalarValue}`;
+  return raw.slice(0, fmMatch.index) + head + newBlock + tail + raw.slice(fmMatch.index + fmMatch[0].length);
+}
+
+function rewriteStatusFieldInRaw(raw, toLane) {
+  const fmMatch = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!fmMatch) {
+    throw new Error(`rewriteStatusFieldInRaw: no YAML frontmatter found`);
+  }
+  const head = fmMatch[1];
+  const block = fmMatch[2];
+  const tail = fmMatch[3];
+  const lineRe = /^(status:\s*).*$/m;
+  const newBlock = lineRe.test(block)
+    ? block.replace(lineRe, `$1${toLane}`)
+    : `${block}\nstatus: ${toLane}`;
   return raw.slice(0, fmMatch.index) + head + newBlock + tail + raw.slice(fmMatch.index + fmMatch[0].length);
 }
 
@@ -287,15 +322,19 @@ export function transitionStatus(projectRoot, id, toLane) {
   }
   let updated;
   try {
-    updated = rewriteScalarFieldInRaw(raw, 'status', toLane);
+    updated = rewriteStatusFieldInRaw(raw, toLane);
   } catch (err) {
     return actionResult(false, { error: err.message });
   }
   try {
+    if (existsSync(toPath)) {
+      return actionResult(false, { error: `destination ticket already exists: ${relative(projectRoot, toPath)}` });
+    }
+    mkdirSync(dirname(toPath), { recursive: true });
+    renameSync(fromPath, toPath);
     atomicWriteFile(toPath, updated);
-    if (fromPath !== toPath) unlinkSync(fromPath);
   } catch (err) {
-    return actionResult(false, { error: `write/move failed: ${err.message}` });
+    return actionResult(false, { error: `move/update failed: ${err.message}` });
   }
   return actionResult(true, { id, fromLane: record.lane, toLane, sourcePath: relative(projectRoot, toPath) });
 }

@@ -1,0 +1,22 @@
+{
+  "conversationHistoryId": "oddterm_ce5feb1c-13d3-4772-afa2-8263b3db9ec7",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddterm_session",
+  "ownerRef": "ce5feb1c-13d3-4772-afa2-8263b3db9ec7",
+  "metadata": {
+    "sessionId": "ce5feb1c-13d3-4772-afa2-8263b3db9ec7",
+    "label": "mcp-test",
+    "selectedTrainId": null,
+    "stationId": null,
+    "edgeId": null,
+    "shell": "/bin/zsh -f -i",
+    "pid": 83870,
+    "backend": "python-pty-service",
+    "state": "archived",
+    "lastOutputAt": "2026-04-08T12:55:06.178Z",
+    "archived": true,
+    "exitCode": 0
+  },
+  "createdAt": "2026-04-08T11:06:44.534Z",
+  "updatedAt": "2026-04-08T13:00:32.204Z"
+}

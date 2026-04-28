@@ -668,9 +668,37 @@ function TerminalSessionPane({
     });
     const fitAddon = new FitAddon();
     const terminalHost = hostRef.current;
+    let disposed = false;
+    let pendingFitFrame: number | null = null;
+    let disposeTimer: number | null = null;
+
+    function safeFitAndResize() {
+      if (disposed || terminalRef.current !== terminal || !terminalHost.isConnected) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+        sendResize();
+      } catch {
+        // xterm can briefly lack renderer dimensions while React dev mode
+        // probes mount/unmount lifecycles. The next ResizeObserver tick or
+        // socket-open pass will retry from a live host.
+      }
+    }
+
+    function scheduleFitAndResize() {
+      if (pendingFitFrame !== null) {
+        window.cancelAnimationFrame(pendingFitFrame);
+      }
+      pendingFitFrame = window.requestAnimationFrame(() => {
+        pendingFitFrame = null;
+        safeFitAndResize();
+      });
+    }
+
     terminal.loadAddon(fitAddon);
+    terminalHost.replaceChildren();
     terminal.open(terminalHost);
-    fitAddon.fit();
     terminal.options.disableStdin = session.status === "closed";
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -694,9 +722,10 @@ function TerminalSessionPane({
       });
     }
 
+    scheduleFitAndResize();
+
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-      sendResize();
+      scheduleFitAndResize();
     });
     resizeObserver.observe(terminalHost);
 
@@ -705,8 +734,12 @@ function TerminalSessionPane({
     });
 
     socket.addEventListener("open", () => {
+      if (disposed) {
+        socket.close();
+        return;
+      }
       updateStatus("connected", terminal);
-      sendResize();
+      scheduleFitAndResize();
       if (autoFocus) {
         window.requestAnimationFrame(() => {
           focusTerminal();
@@ -715,6 +748,9 @@ function TerminalSessionPane({
     });
 
     socket.addEventListener("message", (event) => {
+      if (disposed) {
+        return;
+      }
       let payload: TerminalEvent;
       try {
         payload = JSON.parse(String(event.data)) as TerminalEvent;
@@ -753,22 +789,49 @@ function TerminalSessionPane({
     });
 
     socket.addEventListener("close", () => {
+      if (disposed) {
+        return;
+      }
       updateStatus(statusRef.current === "error" ? "error" : "closed", terminal);
     });
 
     socket.addEventListener("error", () => {
+      if (disposed) {
+        return;
+      }
       updateStatus("error", terminal);
     });
 
     return () => {
+      disposed = true;
+      if (pendingFitFrame !== null) {
+        window.cancelAnimationFrame(pendingFitFrame);
+        pendingFitFrame = null;
+      }
+      if (disposeTimer !== null) {
+        window.clearTimeout(disposeTimer);
+        disposeTimer = null;
+      }
       resizeObserver.disconnect();
       inputDisposable.dispose();
-      socket.close();
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
       socketRef.current = null;
       fitAddonRef.current = null;
-      fitAddon.dispose();
-      terminal.dispose();
       terminalRef.current = null;
+      disposeTimer = window.setTimeout(() => {
+        try {
+          fitAddon.dispose();
+        } catch {
+          // best effort cleanup
+        }
+        try {
+          terminal.dispose();
+        } catch {
+          // best effort cleanup
+        }
+      }, 100);
     };
   }, [workspaceRoot, session.id, instanceKey, autoFocus]);
 

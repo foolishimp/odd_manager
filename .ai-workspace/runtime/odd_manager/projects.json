@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "active_project_root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35",
+  "projects": [
+    {
+      "id": "data_mapper.test35-7ff9621b",
+      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35",
+      "label": "data_mapper.test35",
+      "tags": [],
+      "registered_at": "2026-04-28T02:01:13.795Z",
+      "updated_at": "2026-04-28T16:12:30.305Z"
+    },
+    {
+      "id": "data_mapper.test51.ts-35632357",
+      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test51.ts",
+      "label": "data_mapper.test51.ts",
+      "tags": [],
+      "registered_at": "2026-04-28T02:14:59.531Z",
+      "updated_at": "2026-04-28T02:39:25.720Z"
+    },
+    {
+      "id": "odd_world_model-6f55d0a5",
+      "root": "/Users/jim/src/apps/odd_world_model",
+      "label": "odd_world_model",
+      "tags": [],
+      "registered_at": "2026-04-28T02:40:35.990Z",
+      "updated_at": "2026-04-28T02:40:35.990Z"
+    },
+    {
+      "id": "odd_manager-f4214187",
+      "root": "/Users/jim/src/apps/odd_manager",
+      "label": "odd_manager",
+      "tags": [],
+      "registered_at": "2026-04-28T04:22:53.986Z",
+      "updated_at": "2026-04-28T16:11:30.311Z"
+    },
+    {
+      "id": "odd_sdlc-2b906493",
+      "root": "/Users/jim/src/apps/odd_sdlc",
+      "label": "odd_sdlc",
+      "tags": [],
+      "registered_at": "2026-04-28T11:22:41.287Z",
+      "updated_at": "2026-04-28T11:22:41.287Z"
+    },
+    {
+      "id": "data_mapper.test55.ts-a8768f2e",
+      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test55.ts",
+      "label": "data_mapper.test55.ts",
+      "tags": [],
+      "registered_at": "2026-04-28T15:08:13.588Z",
+      "updated_at": "2026-04-28T15:08:13.588Z"
+    },
+    {
+      "id": "ai_sdlc_method-84a39d03",
+      "root": "/Users/jim/src/apps/ai_sdlc_method",
+      "label": "ai_sdlc_method",
+      "tags": [],
+      "registered_at": "2026-04-28T15:08:58.873Z",
+      "updated_at": "2026-04-28T15:08:58.873Z"
+    }
+  ]
+}

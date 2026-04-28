@@ -268,12 +268,6 @@ export function WorkspaceRoute({
   onIterate,
   onStartAuto,
 }: WorkspaceRouteProps) {
-  const {
-    consoleState,
-    loading: collaborationLoading,
-    error: collaborationError,
-    refreshConsole,
-  } = useOddConsoleState(workspaceRoot);
   const evidenceSurfaces = useMemo(() => deriveEvidenceSurfaces(world), [world]);
   const provenanceSurfaces = useMemo(() => deriveProvenanceSurfaces(), []);
   const [evidencePath, setEvidencePath] = useState<string>(evidenceSurfaces[0]?.path ?? "");
@@ -315,7 +309,7 @@ export function WorkspaceRoute({
         <section className="panel panel--governance">
           <div className="empty-state">
             <strong>No world is available.</strong>
-            <p>Apply a workspace and refresh the manager projection.</p>
+            <p>Open a managed workspace to refresh the manager projection.</p>
           </div>
         </section>
       </main>
@@ -328,30 +322,18 @@ export function WorkspaceRoute({
   const selectedGraphScope = selectedGraph?.label ?? null;
   const selectedObjectScope = selection?.id ?? selectedNodeId ?? null;
   const operatorContext = resolveSelectionOperatorContext(world, selection);
+  const showAmbientWorkspaceWidgets = selectedPage !== "sidecar";
 
   return (
     <main className="route-wrap">
-      <OddBoardWidget
-        workspaceRoot={workspaceRoot}
-        selectedTrainId={selectedScope}
-        selectedStationId={selectedGraphScope}
-        selectedEdgeId={selectedObjectScope}
-        consoleState={consoleState}
-        loading={collaborationLoading}
-        error={collaborationError}
-        onRefreshConsole={refreshConsole}
-      />
-
-      <OddTermWorkspaceWidget
-        workspaceRoot={workspaceRoot}
-        selectedTrainId={selectedScope}
-        selectedStationId={selectedGraphScope}
-        selectedEdgeId={selectedObjectScope}
-        consoleState={consoleState}
-        loading={collaborationLoading}
-        error={collaborationError}
-        onRefreshConsole={refreshConsole}
-      />
+      {showAmbientWorkspaceWidgets ? (
+        <AmbientWorkspaceWidgets
+          workspaceRoot={workspaceRoot}
+          selectedTrainId={selectedScope}
+          selectedStationId={selectedGraphScope}
+          selectedEdgeId={selectedObjectScope}
+        />
+      ) : null}
 
       {selectedPage === "requirements" ? (
         <div className="workspace-stack">
@@ -592,8 +574,8 @@ export function WorkspaceRoute({
       ) : null}
 
       {selectedPage === "sidecar" ? (
-        <div className="workspace-view" style={{ padding: 0, height: "calc(100vh - 200px)" }}>
-          <SidecarPanel />
+        <div className="workspace-view workspace-view--sidecar">
+          <SidecarPanel projectRoot={workspaceRoot} />
         </div>
       ) : null}
       {selectedPage === "provenance" ? (
@@ -632,6 +614,51 @@ export function WorkspaceRoute({
         </div>
       ) : null}
     </main>
+  );
+}
+
+function AmbientWorkspaceWidgets({
+  workspaceRoot,
+  selectedTrainId,
+  selectedStationId,
+  selectedEdgeId,
+}: {
+  workspaceRoot: string;
+  selectedTrainId: string;
+  selectedStationId: string | null;
+  selectedEdgeId: string | null;
+}) {
+  const {
+    consoleState,
+    loading: collaborationLoading,
+    error: collaborationError,
+    refreshConsole,
+  } = useOddConsoleState(workspaceRoot);
+
+  return (
+    <>
+      <OddBoardWidget
+        workspaceRoot={workspaceRoot}
+        selectedTrainId={selectedTrainId}
+        selectedStationId={selectedStationId}
+        selectedEdgeId={selectedEdgeId}
+        consoleState={consoleState}
+        loading={collaborationLoading}
+        error={collaborationError}
+        onRefreshConsole={refreshConsole}
+      />
+
+      <OddTermWorkspaceWidget
+        workspaceRoot={workspaceRoot}
+        selectedTrainId={selectedTrainId}
+        selectedStationId={selectedStationId}
+        selectedEdgeId={selectedEdgeId}
+        consoleState={consoleState}
+        loading={collaborationLoading}
+        error={collaborationError}
+        onRefreshConsole={refreshConsole}
+      />
+    </>
   );
 }
 

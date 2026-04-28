@@ -1,0 +1,20 @@
+{
+  "id": "b404e200-b783-447d-b475-cb00536a3023",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "Topic over bootstrap_release_sel",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 40585,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-08T15:43:44.692Z",
+  "lastOutputAt": "2026-04-08T15:43:44.748Z",
+  "attachedTrainId": "graphs",
+  "attachedStationId": "Bootstrap Asset Graph",
+  "attachedEdgeId": "bootstrap_release_self_test_job",
+  "conversationHistoryId": "oddterm_b404e200-b783-447d-b475-cb00536a3023",
+  "historyBytes": 857,
+  "liveClientCount": 0,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

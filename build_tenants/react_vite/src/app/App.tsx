@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import { AppShell } from "../layout/AppShell";
 import { loadWorld, runCommand } from "../lib/api";
-import { closeAllGTermSessions } from "../lib/collaboration";
+import { closeAllGTermSessions, loadProjectRegistry } from "../lib/collaboration";
 import {
   defaultPageForWorkspaceProfile,
   pagesForWorkspaceProfile,
@@ -29,7 +29,17 @@ function initialTheme(): ThemeMode {
     return "light";
   }
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === "dark" ? "dark" : "light";
+  return stored === "dark" || stored === "dark-grey" ? stored : "light";
+}
+
+function nextTheme(current: ThemeMode): ThemeMode {
+  if (current === "light") {
+    return "dark-grey";
+  }
+  if (current === "dark-grey") {
+    return "dark";
+  }
+  return "light";
 }
 
 function initialWorkspace() {
@@ -138,15 +148,31 @@ export function App() {
   }
 
   useEffect(() => {
-    void refreshWorld(workspaceRoot, { resetPage: true });
+    let cancelled = false;
+    void loadProjectRegistry()
+      .then((registry) => {
+        if (cancelled) return;
+        const activeProject = registry.projects.find((project) => project.is_active);
+        if (activeProject?.root && activeProject.root !== workspaceRoot) {
+          setWorkspaceRoot(activeProject.root);
+          setWorkspaceDraft(activeProject.root);
+          void refreshWorld(activeProject.root, { resetPage: true });
+          return;
+        }
+        void refreshWorld(workspaceRoot, { resetPage: true });
+      })
+      .catch(() => {
+        if (!cancelled) void refreshWorld(workspaceRoot, { resetPage: true });
+      });
     return () => {
+      cancelled = true;
       refreshAbortRef.current?.abort();
     };
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
+    document.documentElement.style.colorScheme = theme === "light" ? "light" : "dark";
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
@@ -162,7 +188,7 @@ export function App() {
   return (
     <AppShell
       theme={theme}
-      onToggleTheme={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+      onToggleTheme={() => setTheme((current) => nextTheme(current))}
       workspaceRoot={workspaceRoot}
       workspaceDraft={workspaceDraft}
       onWorkspaceDraftChange={setWorkspaceDraft}
@@ -179,7 +205,7 @@ export function App() {
         setSelectedNodeId(null);
         setSelection(null);
         setError(null);
-        void refreshWorld(targetWorkspace, { resetPage: true });
+        void refreshWorld(targetWorkspace);
         if (previousWorkspace !== targetWorkspace) {
           void closeAllGTermSessions(previousWorkspace).catch((caught) => {
             setError(caught instanceof Error ? caught.message : String(caught));

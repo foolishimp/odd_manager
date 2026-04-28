@@ -1,0 +1,22 @@
+{
+  "conversationHistoryId": "oddterm_fa6a5106-bb44-4d7a-878b-5c2a7e41e3be",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddterm_session",
+  "ownerRef": "fa6a5106-bb44-4d7a-878b-5c2a7e41e3be",
+  "metadata": {
+    "sessionId": "fa6a5106-bb44-4d7a-878b-5c2a7e41e3be",
+    "label": "shell-2",
+    "selectedTrainId": "process",
+    "stationId": "Process Flow Map",
+    "edgeId": "solution_design",
+    "shell": "/bin/zsh -f -i",
+    "pid": 92602,
+    "backend": "python-pty-service",
+    "state": "archived",
+    "lastOutputAt": "2026-04-14T01:53:31.869Z",
+    "archived": true,
+    "exitCode": 0
+  },
+  "createdAt": "2026-04-14T01:53:10.259Z",
+  "updatedAt": "2026-04-14T01:54:52.031Z"
+}

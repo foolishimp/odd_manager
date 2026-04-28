@@ -1,20 +1,34 @@
-// ProjectAssetSurface service — server-side read implementation for the
-// projects:// surface defined in build_tenants/common/design/ASSET_SURFACE_AND_TOPOLOGY.md (§3).
+// ProjectAssetSurface service.
 //
-// Closes T-017 read path:
-//   - scans a registry root (default /Users/jim/src/apps/) one directory level
-//     for candidate Projects
-//   - a candidate is any subdirectory that contains an .ai-workspace/ dir
-//   - detects odd_type from .genesis/<package>/ presence
-//   - lists installed packages and build_tenants
-//   - returns typed ProjectRecord projections matching src/contracts/project.ts
-//
-// Registry root configurable via PROJECT_REGISTRY_ROOT env var.
+// Projects are maintained manager-workspace state, not a scan result. Discovery
+// can propose candidates, but the Projects collection is the registry stored at
+// `.ai-workspace/runtime/odd_manager/projects.json` under the odd_manager
+// workspace.
 
-import { readdirSync, statSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const DEFAULT_REGISTRY_ROOT = '/Users/jim/src/apps';
+const DEFAULT_MANAGER_WORKSPACE_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../',
+);
+const DEFAULT_DISCOVERY_ROOT = '/Users/jim/src/apps';
+const PROJECT_REGISTRY_RELATIVE_PATH = '.ai-workspace/runtime/odd_manager/projects.json';
+const PROJECT_REGISTRY_VERSION = 1;
+
+function nowIso() {
+  return new Date().toISOString();
+}
 
 function isDirectory(path) {
   try {
@@ -27,10 +41,16 @@ function isDirectory(path) {
 function listDirNames(path) {
   if (!existsSync(path)) return [];
   try {
-    return readdirSync(path).filter((n) => isDirectory(join(path, n)));
+    return readdirSync(path).filter((name) => isDirectory(join(path, name)));
   } catch {
     return [];
   }
+}
+
+function projectIdFromRoot(root) {
+  const base = basename(root) || 'project';
+  const hash = createHash('sha1').update(resolve(root)).digest('hex').slice(0, 8);
+  return `${base}-${hash}`;
 }
 
 function detectOddType(installedPackages) {
@@ -39,41 +59,132 @@ function detectOddType(installedPackages) {
   return 'unknown';
 }
 
-function describeProjectAt(name, root) {
+function registryPath(managerWorkspaceRoot) {
+  return join(resolve(managerWorkspaceRoot || DEFAULT_MANAGER_WORKSPACE_ROOT), PROJECT_REGISTRY_RELATIVE_PATH);
+}
+
+function emptyRegistry() {
+  return {
+    version: PROJECT_REGISTRY_VERSION,
+    active_project_root: null,
+    projects: [],
+  };
+}
+
+function normalizeRegistryRecord(value) {
+  if (!value || typeof value !== 'object') return null;
+  const root = typeof value.root === 'string' && value.root.trim() ? resolve(value.root) : null;
+  if (!root) return null;
+  const observedAt = nowIso();
+  return {
+    id: typeof value.id === 'string' && value.id.trim() ? value.id.trim() : projectIdFromRoot(root),
+    root,
+    label: typeof value.label === 'string' && value.label.trim() ? value.label.trim() : basename(root),
+    tags: Array.isArray(value.tags) ? value.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [],
+    registered_at: typeof value.registered_at === 'string' && value.registered_at.trim() ? value.registered_at : observedAt,
+    updated_at: typeof value.updated_at === 'string' && value.updated_at.trim() ? value.updated_at : observedAt,
+  };
+}
+
+function normalizeRegistry(payload) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const records = Array.isArray(source.projects)
+    ? source.projects.map(normalizeRegistryRecord).filter(Boolean)
+    : [];
+  const seenRoots = new Set();
+  const projects = [];
+  for (const record of records) {
+    if (seenRoots.has(record.root)) continue;
+    seenRoots.add(record.root);
+    projects.push(record);
+  }
+  const activeRoot = typeof source.active_project_root === 'string' && source.active_project_root.trim()
+    ? resolve(source.active_project_root)
+    : null;
+  return {
+    version: PROJECT_REGISTRY_VERSION,
+    active_project_root: activeRoot,
+    projects,
+  };
+}
+
+function readRegistry(managerWorkspaceRoot) {
+  const path = registryPath(managerWorkspaceRoot);
+  if (!existsSync(path)) {
+    return emptyRegistry();
+  }
+  try {
+    return normalizeRegistry(JSON.parse(readFileSync(path, 'utf8')));
+  } catch {
+    return emptyRegistry();
+  }
+}
+
+function writeRegistry(managerWorkspaceRoot, registry) {
+  const path = registryPath(managerWorkspaceRoot);
+  mkdirSync(dirname(path), { recursive: true });
+  const normalized = normalizeRegistry(registry);
+  const tempPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(tempPath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  renameSync(tempPath, path);
+  return normalized;
+}
+
+function describeProjectAt(name, root, registryEntry = null, activeProjectRoot = null) {
   const path = resolve(root);
   const hasAiWorkspace = isDirectory(join(path, '.ai-workspace'));
-  if (!hasAiWorkspace) return null;
   const genesisPath = join(path, '.genesis');
   const hasGenesis = isDirectory(genesisPath);
   const installedPackages = hasGenesis ? listDirNames(genesisPath).filter((n) => n.startsWith('odd_')) : [];
   const buildTenants = listDirNames(join(path, 'build_tenants'))
     .filter((n) => n !== 'common' && n !== 'TENANT_REGISTRY.md');
   return {
-    id: name,
+    id: registryEntry?.id ?? projectIdFromRoot(path),
+    name: registryEntry?.label ?? name,
     root: path,
     odd_type: detectOddType(installedPackages),
-    has_ai_workspace: true,
+    has_ai_workspace: hasAiWorkspace,
     has_genesis: hasGenesis,
     installed_packages: installedPackages,
     build_tenants: buildTenants,
+    registry_source: registryEntry ? 'registry' : 'discovery',
+    registered_at: registryEntry?.registered_at ?? null,
+    updated_at: registryEntry?.updated_at ?? null,
+    tags: registryEntry?.tags ?? [],
+    is_active: activeProjectRoot ? resolve(activeProjectRoot) === path : false,
   };
 }
 
-export function loadAllProjects(registryRoot = process.env.PROJECT_REGISTRY_ROOT || DEFAULT_REGISTRY_ROOT) {
-  const root = resolve(registryRoot);
+export function discoverProjects(discoveryRoot = process.env.PROJECT_REGISTRY_ROOT || DEFAULT_DISCOVERY_ROOT) {
+  const root = resolve(discoveryRoot);
   if (!existsSync(root)) {
-    return { records: [], diagnostic: { registry_root: root, scanned_count: 0, candidate_count: 0 } };
+    return { records: [], diagnostic: { discovery_root: root, scanned_count: 0, candidate_count: 0 } };
   }
   const candidates = listDirNames(root);
   const records = [];
   for (const name of candidates) {
     if (name.startsWith('.')) continue;
-    const record = describeProjectAt(name, join(root, name));
-    if (record) records.push(record);
+    const path = join(root, name);
+    if (!isDirectory(join(path, '.ai-workspace'))) continue;
+    records.push(describeProjectAt(name, path));
   }
   return {
     records,
-    diagnostic: { registry_root: root, scanned_count: candidates.length, candidate_count: records.length },
+    diagnostic: { discovery_root: root, scanned_count: candidates.length, candidate_count: records.length },
+  };
+}
+
+export function loadAllProjects(managerWorkspaceRoot = DEFAULT_MANAGER_WORKSPACE_ROOT) {
+  const registry = readRegistry(managerWorkspaceRoot);
+  return {
+    records: registry.projects.map((record) => describeProjectAt(record.label, record.root, record, registry.active_project_root)),
+    diagnostic: {
+      registry_root: registryPath(managerWorkspaceRoot),
+      manager_workspace_root: resolve(managerWorkspaceRoot || DEFAULT_MANAGER_WORKSPACE_ROOT),
+      registry_version: registry.version,
+      active_project_root: registry.active_project_root,
+      candidate_count: registry.projects.length,
+    },
   };
 }
 
@@ -91,27 +202,119 @@ function matchesFilter(record, filter) {
   return true;
 }
 
-export function createProjectSurface(registryRoot) {
+function findRegistryRecord(registry, identity) {
+  const normalized = typeof identity === 'string' && identity.trim() ? identity.trim() : null;
+  if (!normalized) return null;
+  const resolved = normalized.startsWith('/') ? resolve(normalized) : null;
+  return registry.projects.find((record) => record.id === normalized || record.root === resolved) ?? null;
+}
+
+function registerProject(managerWorkspaceRoot, projectRoot, options = {}) {
+  const root = resolve(projectRoot || '');
+  if (!isDirectory(root)) {
+    throw new Error(`Project root is not a directory: ${projectRoot}`);
+  }
+  const registry = readRegistry(managerWorkspaceRoot);
+  const existing = registry.projects.find((record) => record.root === root);
+  const observedAt = nowIso();
+  const nextRecord = normalizeRegistryRecord({
+    ...(existing ?? {}),
+    id: existing?.id ?? projectIdFromRoot(root),
+    root,
+    label: options.label ?? existing?.label ?? basename(root),
+    tags: options.tags ?? existing?.tags ?? [],
+    registered_at: existing?.registered_at ?? observedAt,
+    updated_at: observedAt,
+  });
+  const projects = existing
+    ? registry.projects.map((record) => (record.root === root ? nextRecord : record))
+    : [...registry.projects, nextRecord];
+  const nextRegistry = writeRegistry(managerWorkspaceRoot, {
+    ...registry,
+    active_project_root: options.setActive ? root : registry.active_project_root,
+    projects,
+  });
+  return describeProjectAt(nextRecord.label, nextRecord.root, nextRecord, nextRegistry.active_project_root);
+}
+
+function unregisterProject(managerWorkspaceRoot, identity) {
+  const registry = readRegistry(managerWorkspaceRoot);
+  const existing = findRegistryRecord(registry, identity);
+  if (!existing) {
+    throw new Error(`Project is not registered: ${identity}`);
+  }
+  if (registry.active_project_root && resolve(registry.active_project_root) === existing.root) {
+    throw new Error('Cannot remove the active Project. Activate another Project first.');
+  }
+  const nextRegistry = writeRegistry(managerWorkspaceRoot, {
+    ...registry,
+    projects: registry.projects.filter((record) => record.root !== existing.root),
+  });
+  return {
+    removed: describeProjectAt(existing.label, existing.root, existing, registry.active_project_root),
+    projects: nextRegistry.projects.map((record) => describeProjectAt(record.label, record.root, record, nextRegistry.active_project_root)),
+  };
+}
+
+function setActiveProject(managerWorkspaceRoot, identityOrRoot) {
+  let registry = readRegistry(managerWorkspaceRoot);
+  let record = findRegistryRecord(registry, identityOrRoot);
+  if (!record && typeof identityOrRoot === 'string' && identityOrRoot.trim().startsWith('/')) {
+    registerProject(managerWorkspaceRoot, identityOrRoot);
+    registry = readRegistry(managerWorkspaceRoot);
+    record = findRegistryRecord(registry, identityOrRoot);
+  }
+  if (!record) {
+    throw new Error(`Project is not registered: ${identityOrRoot}`);
+  }
+  const nextRegistry = writeRegistry(managerWorkspaceRoot, {
+    ...registry,
+    active_project_root: record.root,
+  });
+  return describeProjectAt(record.label, record.root, record, nextRegistry.active_project_root);
+}
+
+export function createProjectSurface(managerWorkspaceRoot = DEFAULT_MANAGER_WORKSPACE_ROOT, options = {}) {
+  const discoveryRoot = options.discoveryRoot ?? process.env.PROJECT_REGISTRY_ROOT ?? DEFAULT_DISCOVERY_ROOT;
   let cache = null;
   function ensure() {
-    if (cache === null) cache = loadAllProjects(registryRoot);
+    if (cache === null) cache = loadAllProjects(managerWorkspaceRoot);
     return cache;
+  }
+  function invalidate() {
+    cache = null;
   }
   return {
     list(filter) {
-      return ensure().records.filter((r) => matchesFilter(r, filter));
+      return ensure().records.filter((record) => matchesFilter(record, filter));
     },
     get(id) {
-      return ensure().records.find((r) => r.id === id);
+      return ensure().records.find((record) => record.id === id || record.root === id);
     },
     count(filter) {
-      return ensure().records.filter((r) => matchesFilter(r, filter)).length;
+      return ensure().records.filter((record) => matchesFilter(record, filter)).length;
     },
     diagnostic() {
       return ensure().diagnostic;
     },
-    invalidate() {
-      cache = null;
+    discover() {
+      return discoverProjects(discoveryRoot);
     },
+    register(projectRoot, registerOptions = {}) {
+      const record = registerProject(managerWorkspaceRoot, projectRoot, registerOptions);
+      invalidate();
+      return record;
+    },
+    unregister(identity) {
+      const result = unregisterProject(managerWorkspaceRoot, identity);
+      invalidate();
+      return result;
+    },
+    setActive(identityOrRoot) {
+      const record = setActiveProject(managerWorkspaceRoot, identityOrRoot);
+      invalidate();
+      return record;
+    },
+    invalidate,
   };
 }

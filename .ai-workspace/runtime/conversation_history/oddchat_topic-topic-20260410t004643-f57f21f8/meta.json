@@ -1,0 +1,11 @@
+{
+  "conversationHistoryId": "oddchat_topic-topic-20260410t004643-f57f21f8",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddchat_room",
+  "ownerRef": "topic:topic_20260410T004643_f57f21f8",
+  "metadata": {
+    "roomId": "topic:topic_20260410T004643_f57f21f8"
+  },
+  "createdAt": "2026-04-09T14:46:43.371Z",
+  "updatedAt": "2026-04-09T14:46:43.371Z"
+}

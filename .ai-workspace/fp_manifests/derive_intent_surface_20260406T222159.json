@@ -1,0 +1,106 @@
+{
+  "manifest_id": "derive_intent_surface_20260406T222159",
+  "call_id": "call-b71073f3-fa96-45f2-aa32-861b06b9b330",
+  "edge": "derive_intent_surface",
+  "vector_id": "7229eeb5-668e-42d5-a6eb-a6eaa35b9221",
+  "job_id": "8d65a039-52fc-4d92-996f-20cda2828499",
+  "graph_function_id": "74f8fb85-811d-451e-b977-7a01b406453e",
+  "materialization_id": "b9e60807431a9000",
+  "source_asset": "input_set",
+  "target_asset": "intent_surface",
+  "source_markov": {
+    "input_set": []
+  },
+  "target_markov": [],
+  "failing_evaluators": [
+    {
+      "name": "intent_surface_semantically_converged",
+      "regime": "F_P",
+      "description": "The intent surface is semantically converged for the current workspace input set."
+    }
+  ],
+  "fd_results": {
+    "bootstrap_input_set_present": {
+      "passes": true,
+      "detail": {
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "delta": 0.5,
+  "unresolved_count": 1,
+  "delta_summary": "delta = 1 \u2014 1 evaluator(s) failing:\n  intent_surface_semantically_converged (F_P): {}",
+  "contexts": [],
+  "current_asset": {
+    "asset_type": "input_set",
+    "instance_id": "current",
+    "status": "not_started",
+    "edges_converged": [],
+    "event_count": 0
+  },
+  "prompt": "[PRECONDITIONS] \u2014 upstream asset stability (these hold):\n  input_set: (no markov conditions)\n\n[CURRENT STATE]\nEdge: derive_intent_surface\nSource asset: input_set\nTarget asset: intent_surface\nStatus: not_started\nEdges converged: []\n\n[GAP] \u2014 1 evaluator(s) failing:\n  intent_surface_semantically_converged (F_P): The intent surface is semantically converged for the current workspace input set.\n\n[ENVIRONMENT] \u2014 resolved runtime environment for this edge:\n  input_set [required] schema='odd.asset_collection.bootstrap_input_set' status=external_authority origin=external_entry\n  intent_surface [provided] schema='odd.asset.intent_doc' status=not_started origin=internal_carrier\n  product_surface [carried] schema='odd.asset.product_doc' status=not_started origin=internal_carrier\n  goal_surface [carried] schema='odd.asset.goal_surface' status=not_started origin=internal_carrier\n  requirement_surface [carried] schema='odd.asset.requirement_surface' status=not_started origin=internal_carrier\n  feature_decomp_surface [carried] schema='odd.asset.feature_decomp_surface' status=not_started origin=internal_carrier\n  uat_testcases_surface [carried] schema='odd.asset.uat_testcases_surface' status=not_started origin=internal_carrier\n  design_surface [carried] schema='odd.asset.design_surface' status=not_started origin=internal_carrier\n  scenario_surface [carried] schema='odd.asset.scenario_surface' status=not_started origin=internal_carrier\n  test_design_surface [carried] schema='odd.asset.test_design_surface' status=not_started origin=internal_carrier\n  test_stack_profile [carried] schema='odd.asset.test_stack_profile' status=not_started origin=internal_carrier\n  test_module_surface [carried] schema='odd.asset.test_module_surface' status=not_started origin=internal_carrier\n  test_run_archive_surface [carried] schema='odd.asset.test_run_archive_surface' status=not_started origin=internal_carrier\n  testcase_authority_surface [carried] schema='odd.asset.testcase_authority_surface' status=not_started origin=internal_carrier\n  release_surface [carried] schema='odd.asset.release_surface' status=not_started origin=internal_carrier\n\n[OUTPUT CONTRACT]\nProduce: intent_surface asset\nSatisfying markov conditions: ()\nEvaluators to pass: ['intent_surface_semantically_converged']\n\nWrite assessment JSON to: /Users/jim/src/apps/odd_manager/.ai-workspace/fp_results/derive_intent_surface_20260406T222159.json\nFormat: {{'edge': 'derive_intent_surface', 'actor': '<your_agent_id>', 'assessments': [{\"evaluator\": \"intent_surface_semantically_converged\", \"result\": \"pass|fail\", \"evidence\": \"...\"}]}}\nThe app reads this file and emits assessed events \u2014 do NOT call emit-event yourself.\n\n[EXECUTION RULES]\n- Update the workspace artifact(s), not just the assessment file.\n- Clear every deterministic F_D failure before treating the work as done.\n- Treat standards and output-contract contexts as mandatory acceptance checks.\n- Self-check the artifact against the target markov conditions before writing assessment JSON.",
+  "result_path": "/Users/jim/src/apps/odd_manager/.ai-workspace/fp_results/derive_intent_surface_20260406T222159.json",
+  "spec_hash": "95e36ae23b07bd9e",
+  "requirements": [
+    "REQ-F-GFUNC-001",
+    "REQ-F-GFUNC-004",
+    "REQ-F-RUNTIME-001",
+    "REQ-F-RUNTIME-002",
+    "REQ-F-RUNTIME-003",
+    "REQ-F-RUNTIME-004",
+    "REQ-F-ASSET-001",
+    "REQ-F-ASSET-002",
+    "REQ-F-ASSET-003",
+    "REQ-F-ASSET-004",
+    "REQ-F-ASSETMODEL-001",
+    "REQ-F-ASSETMODEL-002",
+    "REQ-F-ASSETMODEL-003",
+    "REQ-F-ASSETMODEL-004",
+    "REQ-F-ODDSDLC-001",
+    "REQ-F-ODDSDLC-002",
+    "REQ-F-ODDSDLC-003",
+    "REQ-F-ODDSDLC-004",
+    "REQ-F-ODDSDLC-006"
+  ],
+  "workflow_version": "unknown",
+  "run_id": "b71073f3-fa96-45f2-aa32-861b06b9b330",
+  "worker_id": "genesis",
+  "resolved_policy_bundle_ref": "genesis.policy_defaults:broad_fp_first_bundle",
+  "resolved_policy": {
+    "resolved_policy_bundle_ref": "genesis.policy_defaults:broad_fp_first_bundle",
+    "bundle_refs": [
+      "genesis.policy_defaults:broad_fp_first_bundle"
+    ],
+    "sources": {
+      "dispatch": "graph_vector.declarations",
+      "evaluation": "abg_default:bundle",
+      "escalation": "abg_default:bundle",
+      "proof": "graph_vector.declarations",
+      "closure": "graph_vector.declarations"
+    },
+    "dispatch": {
+      "ref": "genesis.dispatch_runtime:dispatch_bound_manifest_via_transport",
+      "config": {}
+    },
+    "evaluation": {
+      "ref": "genesis.policy_defaults:evaluation_declared_then_generic",
+      "config": {}
+    },
+    "escalation": {
+      "ref": "genesis.policy_defaults:escalation_fp_first",
+      "config": {}
+    },
+    "proof": {
+      "ref": "genesis.policy_defaults:proof_recheck_after_fp",
+      "config": {}
+    },
+    "closure": {
+      "ref": "genesis.policy_defaults:closure_require_resolution_or_fh",
+      "config": {}
+    }
+  },
+  "graph_call_terminal_on_result": true,
+  "role_id": "3bac7a62-bf14-4614-bfa0-88f3d26345e6"
+}

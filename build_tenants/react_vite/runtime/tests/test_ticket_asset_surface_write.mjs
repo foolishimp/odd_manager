@@ -102,6 +102,20 @@ test('transitionStatus rejects invalid lane and same-lane transitions', () => {
   }
 });
 
+test('transitionStatus refuses destination collision without moving source', () => {
+  setup();
+  try {
+    mkTicket('completed', 'T-100');
+    const result = transitionStatus(fixtureRoot, 'T-100', 'completed');
+    assert.equal(result.ok, false);
+    assert.match(result.error, /destination ticket already exists/);
+    assert.equal(fileExists('active', 'T-100'), true, 'source remains when destination collides');
+    assert.equal(fileExists('completed', 'T-100'), true, 'existing destination remains');
+  } finally {
+    teardown();
+  }
+});
+
 test('updateFrontmatterField updates a scalar field atomically', () => {
   setup();
   try {
@@ -111,6 +125,29 @@ test('updateFrontmatterField updates a scalar field atomically', () => {
     assert.match(written, /^priority: critical$/m);
     assert.match(written, /^status: backlog$/m, 'other fields unchanged');
     assert.match(written, /## STDO Reading/, 'body preserved');
+  } finally {
+    teardown();
+  }
+});
+
+test('updateFrontmatterField rejects unsupported keys and YAML scalar injection', () => {
+  setup();
+  try {
+    const unsupported = updateFrontmatterField(fixtureRoot, 'T-101', 'title', 'rewritten');
+    assert.equal(unsupported.ok, false);
+    assert.match(unsupported.error, /not mutable/);
+
+    const regexKey = updateFrontmatterField(fixtureRoot, 'T-101', 'priority.*', 'critical');
+    assert.equal(regexKey.ok, false);
+    assert.match(regexKey.error, /not mutable|invalid frontmatter key/);
+
+    const injected = updateFrontmatterField(fixtureRoot, 'T-101', 'priority', 'critical\nstatus: completed');
+    assert.equal(injected.ok, false);
+    assert.match(injected.error, /newlines are not allowed/);
+
+    const written = readFileSync(join(ticketsRoot, 'backlog', 'T-101-test-ticket.md'), 'utf-8');
+    assert.match(written, /^priority: high$/m);
+    assert.match(written, /^status: backlog$/m);
   } finally {
     teardown();
   }

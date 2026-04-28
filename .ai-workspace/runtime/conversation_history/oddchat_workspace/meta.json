@@ -1,0 +1,11 @@
+{
+  "conversationHistoryId": "oddchat_workspace",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "ownerKind": "oddchat_room",
+  "ownerRef": "workspace",
+  "metadata": {
+    "roomId": "workspace"
+  },
+  "createdAt": "2026-04-06T06:19:45.030Z",
+  "updatedAt": "2026-04-28T16:09:47.139Z"
+}

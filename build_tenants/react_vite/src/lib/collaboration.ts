@@ -1,4 +1,5 @@
 import type { WorkspaceProfile } from "./types";
+import type { ProjectRecord, ProjectRegistryResponse } from "../contracts/project";
 
 export type TrainId = string;
 
@@ -18,6 +19,7 @@ export type WorkspaceScanResult = {
 export type FsEntry = {
   name: string;
   absolutePath: string;
+  kind?: "directory" | "file";
   hasWorkspace: boolean;
   markers: string[];
   profile: WorkspaceProfile | null;
@@ -187,6 +189,47 @@ export async function scanForOddWorkspaces(root: string): Promise<WorkspaceScanR
     kind: "odd",
   });
   return expectJson<WorkspaceScanResult[]>(await fetch(`/api/workspace-scan?${query.toString()}`));
+}
+
+export async function loadProjectRegistry(): Promise<ProjectRegistryResponse> {
+  return expectJson<ProjectRegistryResponse>(await fetch("/api/projects/registry"));
+}
+
+export async function registerProject(
+  root: string,
+  options: { setActive?: boolean; label?: string | null } = {},
+): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
+  return expectJson(
+    await fetch("/api/projects/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ root, setActive: Boolean(options.setActive), label: options.label ?? undefined }),
+    }),
+  );
+}
+
+export async function unregisterProject(
+  id: string,
+): Promise<{ ok: boolean; removed: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
+  return expectJson(
+    await fetch("/api/projects/unregister", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }),
+  );
+}
+
+export async function setActiveProject(
+  idOrRoot: string,
+): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
+  return expectJson(
+    await fetch("/api/projects/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(idOrRoot.startsWith("/") ? { root: idOrRoot } : { id: idOrRoot }),
+    }),
+  );
 }
 
 export async function loadAgentConsoleState(workspaceRoot: string): Promise<AgentConsoleState> {

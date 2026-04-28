@@ -1,69 +1,126 @@
-// Verification + demo for the ProjectAssetSurface read path.
-//
-// Run from repo root:
-//   node build_tenants/react_vite/runtime/tests/test_project_asset_surface.mjs
+// Verification + demo for the workspace-owned ProjectAssetSurface registry.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-import { createProjectSurface, loadAllProjects } from '../../src/server/project-asset-surface-service.mjs';
+import { createProjectSurface, discoverProjects, loadAllProjects } from '../../src/server/project-asset-surface-service.mjs';
 
-test('loadAllProjects scans the apps registry and finds candidates', () => {
-  const { records, diagnostic } = loadAllProjects('/Users/jim/src/apps');
-  assert.ok(diagnostic.scanned_count > 0, 'scanned at least one directory');
-  assert.ok(records.length >= 1, `expected ≥1 Project candidate, got ${records.length}`);
-  const ids = new Set(records.map((r) => r.id));
-  assert.ok(ids.has('odd_manager'), 'odd_manager should be a candidate (has .ai-workspace/)');
-});
-
-test('ProjectRecord shape includes odd_type and tenant list', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps');
-  const oddManager = surface.get('odd_manager');
-  assert.ok(oddManager, 'odd_manager record present');
-  assert.equal(oddManager.has_ai_workspace, true);
-  assert.ok(typeof oddManager.has_genesis === 'boolean');
-  assert.ok(Array.isArray(oddManager.installed_packages));
-  assert.ok(Array.isArray(oddManager.build_tenants));
-  assert.ok(oddManager.build_tenants.includes('react_vite'), 'react_vite tenant detected');
-});
-
-test('odd_type detection: odd_sdlc workspace identifies as such', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps');
-  const oddSdlc = surface.get('odd_sdlc');
-  if (!oddSdlc) {
-    // odd_sdlc may not be present in this environment; allow skip.
-    return;
+function makeProject(root, name, options = {}) {
+  const projectRoot = join(root, name);
+  mkdirSync(join(projectRoot, '.ai-workspace'), { recursive: true });
+  if (options.oddSdlc) {
+    mkdirSync(join(projectRoot, '.genesis/odd_sdlc'), { recursive: true });
   }
-  // odd_sdlc is governed by odd_sdlc itself, so its .genesis/odd_sdlc/ should exist.
-  if (oddSdlc.installed_packages.includes('odd_sdlc')) {
-    assert.equal(oddSdlc.odd_type, 'odd_sdlc');
+  if (options.reactVite) {
+    mkdirSync(join(projectRoot, 'build_tenants/react_vite'), { recursive: true });
+  }
+  return projectRoot;
+}
+
+test('ProjectAssetSurface starts from a manager-workspace registry, not discovery scan', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const discoveryRoot = mkdtempSync(join(tmpdir(), 'odd-manager-discovery-'));
+  try {
+    makeProject(discoveryRoot, 'discoverable_project', { oddSdlc: true });
+    const surface = createProjectSurface(managerRoot, { discoveryRoot });
+    assert.equal(surface.list().length, 0, 'unregistered discovery candidates are not Projects');
+    const discovered = surface.discover();
+    assert.equal(discovered.records.length, 1, 'discovery remains available as candidate input');
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(discoveryRoot, { recursive: true, force: true });
   }
 });
 
-test('filter by build_tenant returns matching projects only', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps');
-  const reactVite = surface.list({ build_tenant: 'react_vite' });
-  assert.ok(reactVite.length >= 1, 'odd_manager has react_vite');
-  for (const r of reactVite) {
-    assert.ok(r.build_tenants.includes('react_vite'));
+test('register persists Project records under the manager workspace', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const projectRoot = makeProject(mkdtempSync(join(tmpdir(), 'odd-manager-project-')), 'alpha', {
+    oddSdlc: true,
+    reactVite: true,
+  });
+  try {
+    const surface = createProjectSurface(managerRoot);
+    const registered = surface.register(projectRoot, { setActive: true });
+    assert.equal(registered.root, projectRoot);
+    assert.equal(registered.odd_type, 'odd_sdlc');
+    assert.equal(registered.has_ai_workspace, true);
+    assert.equal(registered.is_active, true);
+    assert.ok(registered.build_tenants.includes('react_vite'));
+
+    const registryPath = join(managerRoot, '.ai-workspace/runtime/odd_manager/projects.json');
+    assert.equal(existsSync(registryPath), true);
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+    assert.equal(registry.active_project_root, projectRoot);
+    assert.equal(registry.projects.length, 1);
+
+    const reloaded = loadAllProjects(managerRoot);
+    assert.equal(reloaded.records.length, 1);
+    assert.equal(reloaded.records[0].root, projectRoot);
+    assert.equal(reloaded.records[0].registry_source, 'registry');
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   }
 });
 
-test('filter by has_ai_workspace = true is the default candidate condition', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps');
-  const all = surface.list();
-  for (const r of all) {
-    assert.equal(r.has_ai_workspace, true, 'every returned record has .ai-workspace/');
+test('unregister removes a non-active Project and refuses the active Project', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const projectParent = mkdtempSync(join(tmpdir(), 'odd-manager-projects-'));
+  const firstRoot = makeProject(projectParent, 'first');
+  const secondRoot = makeProject(projectParent, 'second');
+  try {
+    const surface = createProjectSurface(managerRoot);
+    const first = surface.register(firstRoot, { setActive: true });
+    const second = surface.register(secondRoot);
+    assert.throws(() => surface.unregister(first.id), /Cannot remove the active Project/);
+
+    const result = surface.unregister(second.id);
+    assert.equal(result.removed.root, secondRoot);
+    assert.equal(surface.list().length, 1);
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(projectParent, { recursive: true, force: true });
   }
 });
 
-test('demo: print discovered Projects', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps');
+test('setActive can register a root and mark it active', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const projectRoot = makeProject(mkdtempSync(join(tmpdir(), 'odd-manager-project-')), 'beta');
+  try {
+    const surface = createProjectSurface(managerRoot);
+    const active = surface.setActive(projectRoot);
+    assert.equal(active.root, projectRoot);
+    assert.equal(active.is_active, true);
+    assert.equal(surface.list()[0].is_active, true);
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('discoverProjects still scans candidate roots without registering them', () => {
+  const discoveryRoot = mkdtempSync(join(tmpdir(), 'odd-manager-discovery-'));
+  try {
+    const projectRoot = makeProject(discoveryRoot, 'candidate');
+    const discovered = discoverProjects(discoveryRoot);
+    assert.equal(discovered.records.length, 1);
+    assert.equal(discovered.records[0].root, projectRoot);
+    assert.equal(discovered.records[0].registry_source, 'discovery');
+  } finally {
+    rmSync(discoveryRoot, { recursive: true, force: true });
+  }
+});
+
+test('demo: print maintained Projects', () => {
+  const surface = createProjectSurface('/Users/jim/src/apps/odd_manager');
   /* eslint-disable no-console */
-  console.log('\n=== ProjectAssetSurface live read ===');
+  console.log('\n=== ProjectAssetSurface maintained registry read ===');
   console.log('diagnostic:', surface.diagnostic());
-  for (const r of surface.list()) {
-    console.log(`  ${r.id.padEnd(32)} odd_type=${r.odd_type.padEnd(16)} tenants=[${r.build_tenants.join(', ')}]  packages=[${r.installed_packages.join(', ')}]`);
+  for (const record of surface.list()) {
+    console.log(`  ${record.id.padEnd(32)} active=${String(record.is_active).padEnd(5)} root=${record.root}`);
   }
   /* eslint-enable no-console */
 });
