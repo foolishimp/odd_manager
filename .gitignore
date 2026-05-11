@@ -6,3 +6,5 @@ __pycache__/
 build_tenants/react_vite/node_modules/
 build_tenants/react_vite/dist/
 build_tenants/react_vite/tests/artifacts/
+
+.ai-workspace/runtime/conversation_history/
