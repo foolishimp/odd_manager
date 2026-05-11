@@ -651,3 +651,259 @@ and does not alter the file, the Project registry, or the active Workspace.
 Clipboard writes are effect-edge commands. The reducer may admit the requested
 history entry and emit a declared clipboard command, but it must not call the
 browser clipboard directly.
+
+## 32. B-073 Default Selector Folder Uniformity Rule
+
+B-073 closes a selector contract gap found after B-072. Tickets and Comments
+must not be special list widgets with a different click contract from Browse.
+They are default, non-duplicated selector entries over filesystem folders:
+
+- Tickets resolves to `./.ai-workspace/tickets`
+- Comments resolves to `./.ai-workspace/comments`
+
+The uniform selector law is:
+
+- default Tickets and Comments selectors render through the same folder-tree
+  component used by Browse and pinned folders
+- clicking a ticket or comment file opens the file as a `surface` viewer tab
+  and requests the same absolute-path clipboard write as any other file row
+- the downstream typed file renderer remains responsible for markdown, code,
+  Mermaid, PDF, and future file-type rendering behavior
+- default Tickets and Comments may appear as fixed rail entries, but their
+  backing folders must not also duplicate as removable user favorites
+- Browse exposes hidden project folders, including `.ai-workspace`, so the
+  operator can navigate to the same backing folders directly
+- ticket/comment record inspectors may remain available for already-open record
+  tabs or explicit future context actions, but selector row click behavior is
+  filesystem-backed and uniform
+
+## 33. B-065 Right-Rail Section Chrome Rule
+
+B-065 consolidates Sidecar workspace chrome into the existing narrow right rail.
+The full-width section-control row is not part of the workbench canvas.
+
+The right-rail chrome law is:
+
+- Info Browser minimize/restore is a compact right-rail command
+- Shell Workspace minimize/restore is a compact right-rail command
+- Reset Layout is a compact right-rail command
+- each command exposes an accessible name and sweep-out detail on hover/focus
+- the commands dispatch existing reducer-owned messages; they do not introduce
+  view-local collapse state
+- the canvas row starts immediately below the product header/section toggles
+  rather than below an additional full-width Sidecar chrome row
+- context facts may remain in the same rail below a compact separator, but the
+  rail must stay symbol-first and avoid long inline horizontal labels
+
+## 34. B-074 TypeScript Process Navigator Object-Viewer Rule
+
+B-074 inducts the process-first lens into the Sidecar workbench. The live
+Process Navigator is not a broad standalone page and not a Python-era process
+projection. It is a Sidecar object-viewer surface over TypeScript odd_sdlc and
+ABG event truth.
+
+The Process Navigator law is:
+
+- the right rail exposes a compact `Process Navigator` command near the
+  workspace chrome commands
+- invoking the command opens or focuses a `process` tab in the object-viewer
+  workspace; it does not route to a separate page
+- the object-viewer tab follows the same split, tab, focus, and close grammar
+  as file, ticket, comment, project, and session tabs
+- the navigator exposes exactly three process views: `Active Work`,
+  `Blocked / Waiting`, and `Ready for Handoff`
+- each process view is graph-first: the body presents named maps such as the
+  process flow map, builder governance graph, and runtime evidence flow rather
+  than a record list as the primary operator surface
+- map selection is reducer-owned Sidecar UI state; it refines the visible graph
+  carrier without adding extra saved process views
+- the data contract is TypeScript-only: `odd_sdlc.query-domain` `ts-v1` plus
+  `.ai-workspace/events/events.jsonl` events from the installed TypeScript
+  odd_sdlc tenant
+- Python SDLC projection and event shapes are unsupported input for this
+  Sidecar surface and must produce an explicit unsupported-format state rather
+  than an implicit fallback
+- non-ODD and unknown-identity Projects remain valid Sidecar Projects for
+  generic file/code browsing, pinned folders, recent path memory, and shell
+  workspace use; only the Process Navigator itself fails closed when its
+  TypeScript odd_sdlc contract is absent
+- the manager projects process state only; it does not choose traversal,
+  continuation, next edge, retry, gap closure, or ABG event writes
+- selected process view, selected process map, and selected process object are
+  reducer-owned UX state and may participate in future layout/profile
+  persistence
+
+## 35. B-066 Shared Document Viewer Carrier Rule
+
+B-066 defines the shared document viewer carrier used by Sidecar and other
+document-consuming surfaces. The existing `MarkdownDocument` component is prior
+implementation material, not the carrier boundary.
+
+The carrier is `DocumentViewer`. It is a UX projection carrier over one
+document descriptor, one document source, format-specific adapters, and
+explicit viewer state. It is reusable by:
+
+- Sidecar surface viewer tabs
+- Inspector document surfaces
+- Requirements document surfaces
+- WorkspaceRoute document surfaces
+- legacy OddBoard document surfaces while they still exist
+
+`DocumentViewer` must not store or mutate source-project truth. It renders
+admitted file or record content and emits only UX-local viewer messages unless
+a product action is explicitly supplied by the owning surface.
+
+The carrier set is:
+
+- `DocumentDescriptor` `<<prime>> <<authoritative>>`: identity, relative path
+  or source URI, display name, media type, and inferred format.
+- `DocumentSource` `<<prime>> <<downstream>>`: text content for markdown/code
+  documents or a bounded URL/blob reference for binary documents.
+- `DocumentViewerState` `<<prime>> <<authoritative>>`: active descriptor id,
+  selected adapter, viewport state, page state, load status, and render error.
+- `DocumentViewerMsg` `<<prime>> <<authoritative>>`: select document, select
+  page, zoom, pan, fit, reset, render succeeded, and render failed.
+- `DocumentViewerAdapter` `<<prime>> <<authoritative>>`: one adapter per
+  admitted document format.
+- `DocumentRenderEffect` `<<effect-edge>>`: library rendering, PDF worker
+  loading, DOM measurement, pointer capture, and blob URL lifecycle.
+
+The format adapter model is:
+
+| Format | Adapter | Source shape | Library posture |
+|---|---|---|---|
+| Markdown | markdown adapter | UTF-8 text | `react-markdown` plus `remark-gfm` |
+| Mermaid | diagram adapter inside markdown | fenced text block | `mermaid`, deterministic render ids, explicit security |
+| Code | code adapter | UTF-8 text or markdown fence | `shiki` with bounded language/theme bundles |
+| PDF | PDF adapter | same-origin file/blob URL | `react-pdf`/PDF.js with explicit Vite worker config |
+| Unknown text | plain-text adapter | UTF-8 text | no syntax or markdown interpretation |
+| Unsupported binary | unsupported adapter | metadata only | explicit unsupported-format state |
+
+Document selection, document format, active page, page count, zoom level, pan
+position, fit mode, load status, and render error are explicit UI facts. They
+are view state governed by `UX_METHOD`; they are not source-project truth and
+do not become a second file record.
+
+`DocumentViewer` may use library-owned transient handles for rendering, but
+viewer behavior that affects product UX must be replayable through
+`DocumentViewerState` and `DocumentViewerMsg`. Hidden library state is allowed
+only for host interop that does not affect closure.
+
+### B-066 Library Decisions
+
+Markdown keeps `react-markdown` and `remark-gfm`. The markdown adapter owns
+link handling, table/list rendering, and code-fence delegation. Links continue
+to open externally unless an owning surface later supplies an admitted internal
+navigation action.
+
+Mermaid keeps `mermaid`, but the document viewer must not inherit the current
+incidental `securityLevel: "loose"` configuration. The governed default is
+`securityLevel: "strict"` with `htmlLabels: false` unless a later ticket
+records a specific safe exception. Render ids are deterministic from document
+identity plus block index, not random per render, so split viewer panes avoid
+collisions without sacrificing replay. Invalid diagrams render a bounded error
+state with source fallback.
+
+Zoom and pan may consume `react-zoom-pan-pinch` after B-068 confirms fit. The
+library may interpret pointer, wheel, trackpad, and pinch gestures, but the
+viewer state carries zoom level, pan position, fit mode, min/max limits, and
+reset outcome where tests or user-visible behavior depend on them. Controls
+must be compact pane chrome and must not create a new full-width toolbar row.
+
+PDF viewing may consume `react-pdf` over PDF.js after B-069 defines the server
+route. PDF document content must be delivered as a same-origin URL or bounded
+blob reference scoped to the active managed Project root. The reducer must not
+store large base64 payloads. Page number, page count, loading state, and render
+error remain explicit UI facts. PDF.js worker configuration is local to the PDF
+adapter and must work under Vite without relying on global ambient setup.
+
+Syntax highlighting may consume `shiki` after B-070. Required language support
+is Python, TypeScript, JavaScript, JSON, YAML, Java, Scala, and Rust. Unknown
+languages fall back to plain text. The bundle strategy must avoid eager import
+of every language and every theme. Highlighted HTML must be generated by the
+approved library path and sanitized or otherwise constrained by that path.
+
+### B-066 Migration Boundary
+
+Downstream consumers migrate to `DocumentViewer` rather than extending
+`MarkdownDocument` in place:
+
+- Sidecar `SurfaceInspector` becomes the first consumer.
+- `InspectorPanel`, `RequirementsWorkspace`, and `WorkspaceRoute` migrate next
+  when their document surface paths are touched.
+- `OddBoardWidget` may keep its current renderer until retirement or explicit
+  migration, but it is no longer authority for document capability.
+
+`MarkdownDocument` may remain as a compatibility wrapper around the markdown
+adapter during migration. It must not grow Mermaid, zoom, PDF, or syntax
+highlighting behavior that bypasses the shared `DocumentViewer` contract.
+
+B-067, B-068, B-069, and B-070 are downstream tickets over this carrier:
+
+- B-067 proves Mermaid rendering and security posture inside Sidecar panes.
+- B-068 implements zoom, pan, reset, and fit over the shared viewer state.
+- B-069 adds the PDF route, PDF adapter, page state, and PDF browser proof.
+- B-070 adds code-file and code-fence highlighting through the code adapter.
+
+No downstream ticket may close by embedding a new one-off renderer only inside
+`SidecarPanel`, hiding viewer state in library internals, storing large binary
+payloads in reducer state, or leaving Mermaid/PDF/code security posture
+implicit.
+
+## 35A. B-077 Document Viewer Toolbar Density Rule
+
+B-077 refines the B-066/B-068 document viewer carrier without changing the
+viewer state contract. The document viewer toolbar is part of the shared
+`DocumentViewer` projection, not Sidecar-specific surrounding chrome.
+
+The toolbar law is:
+
+- the current surface path comes from `DocumentDescriptor.relativePath`
+- zoom, fit, and reset continue to emit the existing document viewer messages
+- sizing controls are compact pane chrome, about 70% of the prior navigator
+  control footprint
+- sizing controls stay grouped at the top-right of the document viewer
+- the toolbar is pinned above the document viewport and does not scroll away
+  with rendered markdown, Mermaid, or code content
+- zoom in and zoom out preserve the content point at the center of the current
+  viewport, so an operator inspecting a Mermaid diagram or code region keeps
+  that region under observation while changing scale
+- moving the former Sidecar path label into the toolbar consolidates one
+  displayed source path; consumers must not render a duplicate file/path title
+  above the shared viewer
+
+This is UX projection state under `UX_METHOD`. It does not create a new
+AssetSurface, file record, or product-truth-changing action.
+
+## 36. B-071 Persistent Selector Window Rule
+
+B-071 promotes the Sidecar selection flyout from a transient picker into an
+optional persistent selector window. This is UX-local workbench state, not
+Project truth and not a new asset surface.
+
+The selector-window law is:
+
+- unpinned selection flyouts remain transient: outside pointer interaction in
+  the main Sidecar area closes the flyout
+- pinned selection windows are co-equal with the canvas: pinning shifts the
+  canvas right and keeps the selector visible while the operator browses or
+  opens records
+- pin and unpin are reducer-owned `SidecarMsg` state transitions, not DOM-only
+  open flags
+- closing the selector collapses it and clears pinned mode
+- selecting files, tickets, comments, Projects, recent paths, or pinned-folder
+  entries must not close a pinned selector
+- selector row actions remain owned by their typed surface: folder pin/unpin,
+  file copy/open, recent-path copy/open, Project open/remove, ticket
+  transition, comment reply, and read/unread actions may appear only where the
+  selected surface type admits them
+- the selector does not steal focus from a live terminal unless the operator
+  explicitly focuses the selector
+- persistent selector layout may be persisted as layout/profile UX state, but
+  it must not alter the selected Project, Workspace, file, ticket, or comment
+  record by itself
+
+B-073 later made Tickets and Comments default filesystem-backed selectors.
+Where Tickets or Comments are rendered as file rows, the filesystem row actions
+are the admitted actions for that selector path; record-specific actions remain
+available through record inspectors or later explicit context-action work.

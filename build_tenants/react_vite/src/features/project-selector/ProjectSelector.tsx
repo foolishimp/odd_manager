@@ -32,6 +32,32 @@ function projectLabel(project: ProjectRecord) {
   return project.name || project.id || workspaceNameFromPath(project.root);
 }
 
+function mergeProjectList(projects: ProjectRecord[], project: ProjectRecord) {
+  const seen = new Set<string>();
+  const merged = [project, ...projects].filter((candidate) => {
+    const key = candidate.id || candidate.root;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return merged;
+}
+
+function orderedProjects(projects: ProjectRecord[], currentWorkspaceRoot: string, recentProjectId: string | null) {
+  return [...projects].sort((left, right) => {
+    const leftCurrent = left.root === currentWorkspaceRoot ? 1 : 0;
+    const rightCurrent = right.root === currentWorkspaceRoot ? 1 : 0;
+    if (leftCurrent !== rightCurrent) return rightCurrent - leftCurrent;
+    const leftRecent = recentProjectId && left.id === recentProjectId ? 1 : 0;
+    const rightRecent = recentProjectId && right.id === recentProjectId ? 1 : 0;
+    if (leftRecent !== rightRecent) return rightRecent - leftRecent;
+    const leftRegistryActive = left.is_active ? 1 : 0;
+    const rightRegistryActive = right.is_active ? 1 : 0;
+    if (leftRegistryActive !== rightRegistryActive) return rightRegistryActive - leftRegistryActive;
+    return 0;
+  });
+}
+
 function candidateProfileLabel(entry: WorkspaceScanResult) {
   const identity = entry.profile?.primary_identity;
   return identity && identity !== "unknown" ? labelWorkspaceIdentity(identity) : entry.markers.join(" · ");
@@ -56,6 +82,7 @@ export function ProjectSelector({
   const [scanResults, setScanResults] = useState<WorkspaceScanResult[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [recentProjectId, setRecentProjectId] = useState<string | null>(null);
 
   const refreshProjects = useCallback(async () => {
     setLoadingProjects(true);
@@ -89,8 +116,9 @@ export function ProjectSelector({
     setActionStatus(null);
     try {
       const result = await setActiveProject(project.id);
-      setProjects(result.projects);
+      setProjects(mergeProjectList(result.projects, result.project));
       setDiagnostic(result.diagnostic);
+      setRecentProjectId(null);
       onWorkspaceDraftChange(result.project.root);
       onApplyWorkspace(result.project.root);
       onClose();
@@ -109,8 +137,9 @@ export function ProjectSelector({
     setActionStatus(null);
     try {
       const result = await registerProject(root, { setActive: false });
-      setProjects(result.projects);
+      setProjects(mergeProjectList(result.projects, result.project));
       setDiagnostic(result.diagnostic);
+      setRecentProjectId(result.project.id);
       setActionStatus(`Added ${projectLabel(result.project)}.`);
       onWorkspaceDraftChange(result.project.root);
       setTab("projects");
@@ -126,6 +155,7 @@ export function ProjectSelector({
       const result = await unregisterProject(project.id);
       setProjects(result.projects);
       setDiagnostic(result.diagnostic);
+      setRecentProjectId((current) => current === project.id ? null : current);
       setActionStatus(`Removed ${projectLabel(project)}.`);
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : String(caught));
@@ -157,6 +187,7 @@ export function ProjectSelector({
 
   const hasScanState = scanning || !!scanError || scanResults.length > 0;
   const currentRegistered = projects.some((project) => project.root === currentWorkspaceRoot);
+  const visibleProjects = orderedProjects(projects, currentWorkspaceRoot, recentProjectId);
 
   return (
     <div className="project-selector">
@@ -214,11 +245,13 @@ export function ProjectSelector({
             {!loadingProjects && projects.length === 0 ? (
               <div className="project-selector__empty">No Projects have been added to this workspace yet.</div>
             ) : null}
-            {projects.map((project) => {
-              const isCurrent = project.root === currentWorkspaceRoot || project.is_active;
+            {visibleProjects.map((project) => {
+              const isCurrent = project.root === currentWorkspaceRoot;
+              const isRegistryActive = project.is_active && !isCurrent;
               const openLabel = isCurrent ? "Current" : "Open";
               const currentTitle = isCurrent ? "This Project is already active." : "Open this Project.";
-              const removeTitle = isCurrent
+              const removeDisabled = isCurrent || project.is_active;
+              const removeTitle = removeDisabled
                 ? "Open another Project before removing this one."
                 : "Remove this Project from the workspace registry.";
               return (
@@ -231,6 +264,7 @@ export function ProjectSelector({
                     <span className="project-selector__workspace-path">{project.root}</span>
                     <span className="project-selector__workspace-path">
                       {project.odd_type !== "unknown" ? project.odd_type : "unknown"} · {project.build_tenants.length} tenant{project.build_tenants.length === 1 ? "" : "s"}
+                      {isRegistryActive ? " · registry active" : ""}
                     </span>
                   </div>
                   <div className="project-selector__workspace-actions">
@@ -248,7 +282,7 @@ export function ProjectSelector({
                       className="ghost"
                       onClick={() => void removeProject(project)}
                       title={removeTitle}
-                      disabled={disabled || isCurrent}
+                      disabled={disabled || removeDisabled}
                     >
                       Remove
                     </button>

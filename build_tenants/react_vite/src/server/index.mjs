@@ -19,6 +19,7 @@ import { createTicketSurface } from "./ticket-asset-surface-service.mjs";
 import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
+import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
 import {
   spawnSession,
   killSession,
@@ -739,10 +740,12 @@ function scanForWorkspaces(rootPath, { oddOnly = false } = {}) {
 function browseDirectory(targetPath, options = {}) {
   const directory = targetPath || homedir();
   const maxEntries = 500;
+  const includeHidden = options.includeHidden === true;
   const rawEntries = readdirSync(directory, { withFileTypes: true });
   const visibleEntries = rawEntries
     .filter((entry) => {
-      if (entry.name.startsWith(".") || entry.name === "node_modules") return false;
+      if (entry.name === "node_modules") return false;
+      if (!includeHidden && entry.name.startsWith(".")) return false;
       if (entry.isDirectory()) return true;
       return options.includeFiles === true && entry.isFile();
     })
@@ -885,6 +888,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/fs/browse") {
       writeJson(response, 200, browseDirectory(url.searchParams.get("path") || undefined, {
+        includeHidden: url.searchParams.get("includeHidden") === "1",
         includeFiles: url.searchParams.get("includeFiles") === "1",
       }));
       return;
@@ -1663,6 +1667,29 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/sidecar/sessions") {
       writeJson(response, 200, loadOddTermSessionRecords(surfaceProjectRoot));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/sidecar/process") {
+      try {
+        writeJson(response, 200, loadSidecarProcessProjection(surfaceProjectRoot));
+      } catch (caught) {
+        writeJson(response, 200, {
+          kind: "sidecar_process_projection",
+          supported: false,
+          unsupportedReason: caught instanceof Error ? caught.message : String(caught),
+          contractName: "odd_sdlc.query-domain",
+          contractVersion: "ts-v1",
+          runtimeModel: "abg-native",
+          queryModel: "odd-domain-read-model",
+          readOnly: true,
+          workspaceRoot: surfaceProjectRoot,
+          eventLogRelativePath: ".ai-workspace/events/events.jsonl",
+          eventCount: 0,
+          eventKinds: [],
+          views: [],
+          records: []
+        });
+      }
       return;
     }
 

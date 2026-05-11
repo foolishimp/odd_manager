@@ -195,41 +195,61 @@ export async function loadProjectRegistry(): Promise<ProjectRegistryResponse> {
   return expectJson<ProjectRegistryResponse>(await fetch("/api/projects/registry"));
 }
 
+export const PROJECT_REGISTRY_CHANGED_EVENT = "odd-manager:project-registry-changed";
+
+type ProjectRegistryChangedAction = "registered" | "unregistered" | "active";
+
+function emitProjectRegistryChanged(
+  action: ProjectRegistryChangedAction,
+  detail: { project?: ProjectRecord; projects?: ProjectRecord[] } = {},
+) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(PROJECT_REGISTRY_CHANGED_EVENT, {
+    detail: { action, ...detail },
+  }));
+}
+
 export async function registerProject(
   root: string,
   options: { setActive?: boolean; label?: string | null } = {},
 ): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  return expectJson(
+  const result = await expectJson<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
     await fetch("/api/projects/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ root, setActive: Boolean(options.setActive), label: options.label ?? undefined }),
     }),
   );
+  emitProjectRegistryChanged("registered", { project: result.project, projects: result.projects });
+  return result;
 }
 
 export async function unregisterProject(
   id: string,
 ): Promise<{ ok: boolean; removed: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  return expectJson(
+  const result = await expectJson<{ ok: boolean; removed: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
     await fetch("/api/projects/unregister", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     }),
   );
+  emitProjectRegistryChanged("unregistered", { projects: result.projects });
+  return result;
 }
 
 export async function setActiveProject(
   idOrRoot: string,
 ): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  return expectJson(
+  const result = await expectJson<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
     await fetch("/api/projects/active", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(idOrRoot.startsWith("/") ? { root: idOrRoot } : { id: idOrRoot }),
     }),
   );
+  emitProjectRegistryChanged("active", { project: result.project, projects: result.projects });
+  return result;
 }
 
 export async function loadAgentConsoleState(workspaceRoot: string): Promise<AgentConsoleState> {

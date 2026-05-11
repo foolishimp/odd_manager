@@ -1,0 +1,18 @@
+{
+  "id": "topic_20260501T114704_297818c4",
+  "roomId": "topic:topic_20260501T114704_297818c4",
+  "label": "oddchat-regression-1777600024660",
+  "originKind": "selection",
+  "assetKind": "edge",
+  "assetId": "ambiguity_register_surface",
+  "assetLabel": "ambiguity_register_surface",
+  "assetPath": null,
+  "createdAt": "2026-05-01T01:47:04.686Z",
+  "updatedAt": "2026-05-01T01:47:04.686Z",
+  "selectedTrainId": "home",
+  "stationId": "Process Flow Map",
+  "edgeId": "ambiguity_register_surface",
+  "attachedRecordIds": [],
+  "attachedSessionIds": [],
+  "roomRecipientSessionIds": []
+}

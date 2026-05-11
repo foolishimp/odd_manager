@@ -9,13 +9,15 @@ change_intent: Allow PDF files in managed projects and pinned folders to open in
 change_class: design_reframe
 re_entry_point: design
 affected_boundary: build_tenants/react_vite/design/widgets/sidecar-session-workspace.md, build_tenants/react_vite/src/server/index.mjs, build_tenants/react_vite/src/components, build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx, build_tenants/react_vite/src/app/styles.css, build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts
-priority: medium
+priority: low
 triaged_at: 2026-04-29
 created_at: 2026-04-29
-updated_at: 2026-04-29
+updated_at: 2026-05-01T00:22:00+10:00
 build_tenant: react_vite
+sprint: SPRINT-2026-04-30-sidecar-document-viewer
+review_status: deferred_operator_deprioritized_pdf
 dependencies:
-  - B-066 backlog
+  - B-066 completed
   - B-068 backlog
 governance_scope: STDO-UX Method
 governance_scope_expansion:
@@ -63,3 +65,25 @@ This starts as a design reframe because the current surface API is text-first.
 The binary delivery and viewer contract must be designed before implementation.
 
 Lawful re-entry point: Design.
+
+## Sprint Boundary
+
+This ticket is coordinated by
+`.ai-workspace/sprints/SPRINT-2026-04-30-sidecar-document-viewer.md`, but its
+PDF route and binary delivery questions remain design-reframe work. The sprint
+may batch local UX evidence after the route is designed; it cannot escrow a
+file-route, Project-root containment, PDF.js worker, or binary-payload carrier
+gap.
+
+## Backlog Review 2026-05-01
+
+No PDF route, same-origin blob/URL carrier, page state, or PDF.js worker
+configuration is implemented yet. This remains a design-reframe item inside the
+document-viewer sprint and cannot close through UX escrow.
+
+## Priority Reprice 2026-05-01
+
+PDF is intentionally deprioritized behind B-067 Mermaid, B-068 zoom/pan, and
+B-070 syntax highlighting. Do not pull PDF route, binary payload, or PDF.js
+worker work into the current UX sprint unless the operator reprices it back
+into active scope.

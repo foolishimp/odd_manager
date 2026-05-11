@@ -136,3 +136,20 @@ Acceptance Criteria
 - if identity cannot be resolved confidently, the manager falls back to an
   explicit compatibility or unknown-identity state rather than silently
   choosing the wrong domain landing page
+
+### REQ-OM-NAV-011 - Non-ODD Projects remain admissible for generic workspace use
+
+The manager shall allow the operator to register and open Projects that do not
+yet carry an `odd_*` identity.
+
+Acceptance Criteria
+- the Workspace Tool can add and remove filesystem roots whose identity is
+  `unknown`, non-ODD, or pre-bootstrap
+- generic Project/file capabilities such as Browse, pinned folders, recent
+  path memory, code/document viewing, and shell workspace remain available for
+  those Projects
+- domain-specific widgets such as an `odd_sdlc` Process Navigator show an
+  explicit unsupported-contract state when the required Workspace contract is
+  absent
+- `specification_methodology` and other method/source repositories can be
+  registered for inspection without being mislabeled as `odd_sdlc`

@@ -1,0 +1,20 @@
+{
+  "id": "f552382f-2303-4c6b-ad42-6ebf8f6a495a",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "shell-23",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 71706,
+  "backend": "python-pty-service",
+  "createdAt": "2026-05-01T01:47:02.036Z",
+  "lastOutputAt": "2026-05-01T01:47:02.153Z",
+  "attachedTrainId": "home",
+  "attachedStationId": "Process Flow Map",
+  "attachedEdgeId": "ambiguity_register_surface",
+  "conversationHistoryId": "oddterm_f552382f-2303-4c6b-ad42-6ebf8f6a495a",
+  "historyBytes": 4255,
+  "liveClientCount": 1,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

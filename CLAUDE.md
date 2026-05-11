@@ -267,3 +267,97 @@ When acting under this bootstrap:
 8. if writing under `workspace://.ai-workspace/comments/`, follow `workspace://.genesis/docs/standards/POSTING_GUIDE.md` and treat the result as commentary, not law
 
 <!-- GTL_BOOTLOADER_END -->
+
+# odd_manager UX Method Surface
+
+The active UI carrier is `build_tenants/react_vite/`. Its workbench feature
+("sidecar") is governed by `UX_METHOD.md` from the shared specification
+methodology — referred to in tickets as **STDO-UX**.
+
+## Authoritative Sources
+
+- upstream UX method: `/Users/jim/src/apps/specification_methodology/specification/standards/UX_METHOD.md`
+- public source-of-truth: `https://github.com/foolishimp/specification_methodology`
+- local mirror: `workspace://.genesis/docs/standards/UX_METHOD.md` — **currently missing** in this workspace; treat the upstream path as authoritative until the install is refreshed
+- realization stack ADR: project ADR 0001 — typed reducer + Cmd interpreter + shared contracts (React + `useReducer` + declared `Cmd` algebra)
+
+## Sidecar UI Entry Points
+
+- main component: `workspace://build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx`
+- typed state declarations: `workspace://build_tenants/react_vite/src/features/sidecar/sidecar-state.ts`
+- shared contracts (imported, not re-declared in UX): `workspace://build_tenants/react_vite/src/contracts/`
+- AssetSurface services (the admitted carriers): `workspace://build_tenants/react_vite/src/server/*-asset-surface-service.mjs`
+- Msg-replay proof harness: `workspace://build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`
+- design package: `workspace://build_tenants/common/design/`
+
+## UX_METHOD Compression For Sidecar Work
+
+The sidecar adopts the Elm Architecture as its constitutional process model
+(`UX_METHOD.md` §4). When changing the sidecar:
+
+1. **Process model (§4, §4A).** Each interaction declares `State`, `Msg`,
+   `Update : (Msg,State)→(State,Cmd)` (pure), `View : State→ViewTree` (pure),
+   `Cmd`, and `Sub`. Each `Cmd` declaration names effect kind, payload type,
+   target carrier, success `Msg`, failure `Msg`, and any correlation key.
+2. **Carrier boundary (§3A).** A `Msg` that changes product truth (writes
+   assets, changes Context/selection/pinning, spawns/attaches/resumes
+   sessions, dispatches agents/jobs/graph calls, changes
+   closure/approval/lineage/provenance/evidence) must map to an admitted
+   carrier: an `AssetSurface` action, a published graph function, a workorder
+   or runtime command, an ABG event boundary, or another named typed
+   contract. No admitted carrier ⇒ work is blocked.
+3. **AssetSurface binding (§7).** UX `State` is derived from `AssetSurface`
+   projections. UX writes go through the action registry, never direct file
+   or service calls.
+4. **State law (§5).** View-local cells hold only ephemera (open/closed,
+   hover, draft input). If losing the value on unmount changes product
+   behavior or another view, it goes through the reducer.
+5. **Effect membrane (§6).** `useEffect` and equivalents interpret one
+   declared `Cmd` per effect. No conditional state-deciding logic in handlers.
+6. **Msg-replay proof (§8 / §8A).** Every product-meaningful interaction
+   family carries an executable replay proof: initial `State`, ordered `Msg`
+   log, expected final `State`, expected ordered `Cmd` sequence, success and
+   failure `Msg` values, and injected deterministic values for time, ids,
+   randomness, and external payloads.
+7. **Type sharing and runtime validation (§10).** UX-consumed types come
+   from the shared contract. External payloads (HTTP, MCP, websocket,
+   file, agent, URL, storage, clipboard) are runtime-validated before
+   entering UX state. Compile-time TypeScript alone is not sufficient at
+   these seams.
+8. **Accessibility minimum (§11).** Public product capabilities declare
+   semantic structure, keyboard parity for every pointer action, focus
+   management on dynamic changes, and WCAG AA contrast.
+9. **Scaffold law (§13A).** A scaffold or demo surface is governed by the
+   method by default if it is shell-reachable, used as proof, can mutate
+   product truth, can spawn/dispatch, or can change Context, selection,
+   closure, continuation, evidence, or provenance. Exemptions require
+   recorded scope, permitted operations, mutation policy, visible
+   scaffold/debug label, superseding surface, retirement condition + owning
+   ticket, and a non-closure condition. Scaffolds cannot become production
+   by accumulation.
+10. **Sprint escrow (§13B).** A UX sprint may defer screenshots, visual
+    review, copy/density cleanup, accessibility, replay-proof updates, and
+    design-module wording. It may not defer new product-truth carriers,
+    new `AssetSurface` contracts, or new IA / selection authority. Close is
+    a forensic walkthrough; each finding is classified
+    `accepted | local_paydown | design_reframe | requirement_reprice | product_reprice | remove`.
+11. **Failure patterns (§14).** The high-risk ones for this sidecar:
+    view-local cells holding product state (#2); effect handlers with
+    conditional state-transition logic (#3); multi-step state machines in
+    views (#4); refs read during render (#5); UX-local types shadowing
+    back-end types (#6); writes bypassing the action registry (#7); logic
+    implemented imperatively in effect handlers instead of as `Cmd` (#11);
+    behavior not Msg-replayable from empty `State` (#12); product-truth
+    `Msg` with no admitted carrier (#13); external payloads entering UX
+    state without runtime validation (#14); reachable mutating scaffolds
+    without a §13A record (#15).
+
+## Review And Posting
+
+- review questions: `UX_METHOD.md` §15
+- commentary on sidecar UX work goes under
+  `workspace://.ai-workspace/comments/<agent>/` per
+  `workspace://.genesis/docs/standards/POSTING_GUIDE.md` and is commentary,
+  not law
+- prior method-conformance reviews of the sidecar surface live alongside the
+  other claude/codex posts in `workspace://.ai-workspace/comments/`

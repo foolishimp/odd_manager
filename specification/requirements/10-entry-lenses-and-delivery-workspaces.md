@@ -39,6 +39,11 @@ Acceptance Criteria
 activity, process flow, and execution posture rather than around a selected
 requirement.
 
+For the current pre-release line, the conforming process-first surface is the
+Sidecar `Process Navigator`. It is selected from the Sidecar right rail and
+occupies an object-viewer workspace pane. It reads the `odd_sdlc` TypeScript
+tenant/ABG event-query format only.
+
 Acceptance Criteria
 - the primary explorer surface can start from process or build-activity
   objects, queues, or filters
@@ -46,6 +51,16 @@ Acceptance Criteria
   implementation, proof, work, and discussion surfaces where relevant
 - process-first framing does not require duplicating those downstream widgets
   into a second unrelated architecture
+- the Sidecar Process Navigator exposes exactly three operator views:
+  `Active Work`, `Blocked / Waiting`, and `Ready for Handoff`
+- the Sidecar Process Navigator body is graph-first, with process flow,
+  builder governance, and runtime evidence maps available under those three
+  views rather than as additional saved views
+- the Sidecar Process Navigator accepts the TypeScript query contract
+  `odd_sdlc.query-domain` `ts-v1` and rejects or ignores legacy Python SDLC
+  process projection shapes with an explicit unsupported-format state
+- the manager projects process state from ABG/odd_sdlc TypeScript truth and
+  does not choose traversal, continuation, next edge, or gap closure
 
 ### REQ-OM-LNS-004 - Shared widget architecture is reusable across entry lenses
 

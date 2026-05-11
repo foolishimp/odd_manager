@@ -68,12 +68,14 @@ export function App() {
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const refreshSequenceRef = useRef(0);
   const refreshAbortRef = useRef<AbortController | null>(null);
+  const pageSelectionVersionRef = useRef(0);
 
   async function refreshWorld(
     nextWorkspaceRoot = workspaceRoot,
     options?: { resetPage?: boolean },
   ) {
     const requestId = refreshSequenceRef.current + 1;
+    const pageSelectionVersion = pageSelectionVersionRef.current;
     refreshSequenceRef.current = requestId;
     refreshAbortRef.current?.abort();
     const controller = new AbortController();
@@ -92,7 +94,8 @@ export function App() {
         setSelectedNodeId((current) => ensureNodeSelection(nextWorld, current));
         setSelectedPage((current) => {
           const visiblePages = pagesForWorkspaceProfile(nextWorld.workspace_profile);
-          if (options?.resetPage || !visiblePages.includes(current)) {
+          const userSelectedPageAfterRequest = pageSelectionVersionRef.current !== pageSelectionVersion;
+          if ((options?.resetPage && !userSelectedPageAfterRequest) || !visiblePages.includes(current)) {
             return defaultPageForWorkspaceProfile(nextWorld.workspace_profile);
           }
           return current;
@@ -147,6 +150,30 @@ export function App() {
     setSelection(nodeToSelection(node));
   }
 
+  function handleSelectPage(page: PageId) {
+    pageSelectionVersionRef.current += 1;
+    setSelectedPage(page);
+  }
+
+  function handleApplyWorkspace(nextWorkspaceRoot?: string) {
+    const targetWorkspace = (nextWorkspaceRoot ?? workspaceDraft).trim();
+    if (!targetWorkspace || targetWorkspace === workspaceRoot) {
+      return;
+    }
+    const previousWorkspace = workspaceRoot;
+    setWorkspaceRoot(targetWorkspace);
+    setWorkspaceDraft(targetWorkspace);
+    setWorld(null);
+    setSelectedGraphId("");
+    setSelectedNodeId(null);
+    setSelection(null);
+    setError(null);
+    void refreshWorld(targetWorkspace, { resetPage: selectedPage !== "sidecar" });
+    void closeAllGTermSessions(previousWorkspace).catch((caught) => {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    });
+  }
+
   useEffect(() => {
     let cancelled = false;
     void loadProjectRegistry()
@@ -182,8 +209,8 @@ export function App() {
 
   const workspaceProfile = world?.workspace_profile ?? null;
   const visiblePages = pagesForWorkspaceProfile(workspaceProfile);
-  const shellTitle = workspaceProfile?.shell_title ?? "Odd Manager";
-  const shellSubtitle = subtitleForWorkspaceProfile(workspaceProfile);
+  const shellTitle = projectNameFromRoot(workspaceRoot);
+  const shellSubtitle = `${subtitleForWorkspaceProfile(workspaceProfile)} ${workspaceRoot}`;
 
   return (
     <AppShell
@@ -192,32 +219,13 @@ export function App() {
       workspaceRoot={workspaceRoot}
       workspaceDraft={workspaceDraft}
       onWorkspaceDraftChange={setWorkspaceDraft}
-      onApplyWorkspace={(nextWorkspaceRoot) => {
-        const targetWorkspace = (nextWorkspaceRoot ?? workspaceDraft).trim();
-        if (!targetWorkspace) {
-          return;
-        }
-        const previousWorkspace = workspaceRoot;
-        setWorkspaceRoot(targetWorkspace);
-        setWorkspaceDraft(targetWorkspace);
-        setWorld(null);
-        setSelectedGraphId("");
-        setSelectedNodeId(null);
-        setSelection(null);
-        setError(null);
-        void refreshWorld(targetWorkspace);
-        if (previousWorkspace !== targetWorkspace) {
-          void closeAllGTermSessions(previousWorkspace).catch((caught) => {
-            setError(caught instanceof Error ? caught.message : String(caught));
-          });
-        }
-      }}
+      onApplyWorkspace={handleApplyWorkspace}
       shellTitle={shellTitle}
       shellSubtitle={shellSubtitle}
       workspaceProfile={workspaceProfile}
       pages={visiblePages}
       selectedPage={selectedPage}
-      onSelectPage={setSelectedPage}
+      onSelectPage={handleSelectPage}
       overview={world?.overview ?? null}
       loadingWorld={loadingWorld}
       runningCommand={runningCommand}
@@ -244,9 +252,15 @@ export function App() {
         onRefresh={() => void refreshWorld(workspaceRoot)}
         onIterate={() => void triggerCommand("iterate")}
         onStartAuto={() => void triggerCommand("start", true)}
+        onProjectRootChange={handleApplyWorkspace}
       />
     </AppShell>
   );
+}
+
+function projectNameFromRoot(workspaceRoot: string) {
+  const trimmed = workspaceRoot.trim().replace(/\/+$/, "");
+  return trimmed.split("/").filter(Boolean).at(-1) ?? "Project";
 }
 
 function ensureGraphSelection(world: ManagerWorld, current: string) {

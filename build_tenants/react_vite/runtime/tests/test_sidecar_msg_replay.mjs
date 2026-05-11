@@ -15,6 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const stylesPath = resolve(here, '../../src/app/styles.css');
+const documentViewerPath = resolve(here, '../../src/components/DocumentViewer.tsx');
 
 async function loadStateModule() {
   const source = readFileSync(stateModulePath, 'utf-8');
@@ -92,6 +93,45 @@ test('project selection replays to new Context and emits load Cmd', async () => 
   assert.deepEqual(result.commands, [
     { type: 'load', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
   ]);
+});
+
+test('stale project load result cannot overwrite a newer requested root', async () => {
+  const module = await loadStateModule();
+  const requested = module.replaySidecarMessages(baseState(module), [
+    { type: 'load/request', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+  ]).state;
+
+  const stale = module.updateSidecarState(requested, {
+    type: 'load/done',
+    projectRoot: '/workspace/odd_manager',
+    payload: {
+      context: {
+        project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'odd_sdlc' },
+        workspace: { id: 'react_vite', profile: 'odd_sdlc' },
+        session: null,
+      },
+      tickets: [{ id: 'STALE', title: 'stale ticket', lane: 'active', status: 'active' }],
+    },
+  });
+  assert.equal(stale.context.project.root, '/workspace/odd_manager');
+  assert.equal(stale.activeLoadRoot, '/workspace/data_mapper');
+  assert.deepEqual(stale.tickets, requested.tickets);
+
+  const current = module.updateSidecarState(stale, {
+    type: 'load/done',
+    projectRoot: '/workspace/data_mapper',
+    payload: {
+      context: {
+        project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'odd_sdlc' },
+        workspace: { id: 'scala_sbt', profile: 'odd_sdlc' },
+        session: null,
+      },
+      tickets: [{ id: 'CURRENT', title: 'current ticket', lane: 'active', status: 'active' }],
+    },
+  });
+  assert.equal(current.context.project.root, '/workspace/data_mapper');
+  assert.equal(current.activeLoadRoot, null);
+  assert.equal(current.tickets[0].id, 'CURRENT');
 });
 
 test('ticket transition request and result replay exposes transition Cmd and reload intent', async () => {
@@ -197,13 +237,26 @@ test('session spawn and kill replay exposes session Cmds with current project ro
 test('workspace collapse replay changes UI state without Cmd effects', async () => {
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'ui/set-info-pinned', pinned: true },
     { type: 'ui/toggle-workspace', workspace: 'info', collapsed: true },
     { type: 'ui/toggle-workspace', workspace: 'shell', collapsed: true },
     { type: 'ui/toggle-workspace', workspace: 'info', collapsed: false },
   ]);
   assert.deepEqual(result.commands, []);
   assert.equal(result.state.ui.infoCollapsed, false);
+  assert.equal(result.state.ui.infoPinned, false);
   assert.equal(result.state.ui.shellCollapsed, true);
+});
+
+test('selection flyout pin replay opens the browser without Cmd effects', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'ui/toggle-workspace', workspace: 'info', collapsed: true },
+    { type: 'ui/set-info-pinned', pinned: true },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.ui.infoCollapsed, false);
+  assert.equal(result.state.ui.infoPinned, true);
 });
 
 test('section minimize and restore replay independently without Cmd effects', async () => {
@@ -222,7 +275,7 @@ test('terminal hide CSS reclaims the expanded bottom dock row', () => {
   const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(
     styles,
-    /\.sidecar-workbench\.is-bottom-collapsed\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto;/s,
+    /\.sidecar-workbench\.is-bottom-collapsed\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/s,
   );
   assert.doesNotMatch(
     styles,
@@ -230,10 +283,19 @@ test('terminal hide CSS reclaims the expanded bottom dock row', () => {
   );
 });
 
-test('section control strip is persistent above collapsed sections', () => {
+test('section chrome commands are consolidated into the right rail', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
-  assert.match(styles, /\.sidecar-section-controls\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/s);
-  assert.match(styles, /\.sidecar-section-toggle\.is-collapsed\s*\{/s);
+  const railSource = source.slice(
+    source.indexOf('<aside className="sidecar-context-rail"'),
+    source.indexOf('<section className="sidecar-bottom-dock"'),
+  );
+  assert.doesNotMatch(source, /sidecar-section-controls/);
+  assert.doesNotMatch(styles, /\.sidecar-section-controls\s*\{/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label=\{state\.ui\.infoCollapsed \? 'Restore info browser' : 'Minimize info browser'\}/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label=\{state\.ui\.shellCollapsed \? 'Restore shell workspace' : 'Minimize shell workspace'\}/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
+  assert.match(styles, /\.sidecar-context-rail__command\s*\{/);
 });
 
 test('workbench resize replay updates layout state without Cmd effects', async () => {
@@ -291,7 +353,7 @@ test('bottom dock resize crosses collapse and restore thresholds without Cmd eff
 test('workbench resize CSS consumes reducer-owned layout variables and exposes handles', () => {
   const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(styles, /grid-template-columns:\s*3\.35rem\s+minmax\(0,\s*1fr\)\s+3\.25rem;/s);
-  assert.match(styles, /grid-template-rows:\s*auto\s+minmax\(10rem,\s*1fr\)\s+clamp\(7\.5rem,\s*var\(--sidecar-bottom-dock-height,\s*34rem\),\s*72vh\);/s);
+  assert.match(styles, /grid-template-rows:\s*minmax\(10rem,\s*1fr\)\s+clamp\(7\.5rem,\s*var\(--sidecar-bottom-dock-height,\s*34rem\),\s*72vh\);/s);
   assert.match(styles, /width:\s*min\(var\(--sidecar-explorer-width,\s*24rem\),\s*calc\(100%\s*-\s*1\.5rem\)\);/s);
   assert.match(styles, /\.sidecar-resize-handle--vertical\s*\{/s);
   assert.match(styles, /\.sidecar-resize-handle--horizontal\s*\{/s);
@@ -304,6 +366,9 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'ui/resize-preview', target: 'explorer', valuePx: 512 },
     { type: 'ui/resize-preview', target: 'contextRail', valuePx: 128 },
     { type: 'ui/select-info-surface', surface: 'comments' },
+    { type: 'ui/set-info-pinned', pinned: true },
+    { type: 'process/select-view', view: 'blocked_waiting' },
+    { type: 'process/select-record', id: 'process-record-1' },
     { type: 'session/select', id: 'sess-1' },
   ]).state;
   const profile = module.sidecarLayoutProfileFromState(persistedState, contextKey);
@@ -314,7 +379,82 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.workbenchLayout.explorerWidthPx, 512);
   assert.equal(result.state.ui.workbenchLayout.contextRailWidthPx, 128);
   assert.equal(result.state.ui.activeInfoSurface, 'comments');
+  assert.equal(result.state.ui.infoPinned, true);
+  assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
+  assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
+});
+
+test('document viewer zoom state is scoped to surface tabs and persists in layout profiles', async () => {
+  const module = await loadStateModule();
+  const contextKey = '/workspace/odd_manager::react_vite';
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'surface', id: 'specification/PRODUCT.md' },
+    { type: 'document/zoom', tabId: 'surface:specification/PRODUCT.md', delta: 0.15 },
+    { type: 'document/zoom', tabId: 'surface:specification/PRODUCT.md', delta: 0.15 },
+    { type: 'document/fit-width', tabId: 'surface:specification/PRODUCT.md' },
+    { type: 'document/zoom', tabId: 'ticket:T-100', delta: 1 },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.deepEqual(result.state.ui.documentViewers, {
+    'surface:specification/PRODUCT.md': { zoom: 1, fit: 'width' },
+  });
+
+  const zoomed = module.replaySidecarMessages(result.state, [
+    { type: 'document/zoom', tabId: 'surface:specification/PRODUCT.md', delta: 0.15 },
+  ]);
+  assert.deepEqual(zoomed.state.ui.documentViewers['surface:specification/PRODUCT.md'], { zoom: 1.15, fit: 'none' });
+
+  const profile = module.sidecarLayoutProfileFromState(zoomed.state, contextKey);
+  assert.deepEqual(profile.ui.documentViewers['surface:specification/PRODUCT.md'], { zoom: 1.15, fit: 'none' });
+
+  const restored = module.replaySidecarMessages(baseState(module), [
+    { type: 'layout/profile-loaded', contextKey, payload: profile },
+  ]);
+  assert.deepEqual(restored.state.ui.documentViewers['surface:specification/PRODUCT.md'], { zoom: 1.15, fit: 'none' });
+
+  const closed = module.replaySidecarMessages(restored.state, [
+    { type: 'viewer/close-tab', groupId: 'main', tabId: 'surface:specification/PRODUCT.md' },
+  ]);
+  assert.deepEqual(closed.state.ui.documentViewers, {});
+});
+
+test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning', () => {
+  const source = readFileSync(documentViewerPath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
+
+  assert.match(source, /securityLevel:\s*"strict"/);
+  assert.match(source, /flowchart:\s*\{\s*htmlLabels:\s*false\s*\}/);
+  assert.match(source, /stableHash\(`\$\{descriptorId\}:\$\{blockIndex\}:\$\{source\}`\)/);
+  assert.doesNotMatch(source, /Math\.random/);
+  assert.doesNotMatch(source, /import\(["']shiki["']\)/);
+  for (const language of ['python', 'typescript', 'tsx', 'javascript', 'jsx', 'json', 'yaml', 'java', 'scala', 'rust', 'markdown']) {
+    assert.match(source, new RegExp(`${language}: \\(\\) => import\\("@shikijs/langs/${language}"\\)`));
+  }
+  assert.match(source, /"github-light":\s*\(\) => import\("@shikijs\/themes\/github-light"\)/);
+  assert.match(source, /"github-dark":\s*\(\) => import\("@shikijs\/themes\/github-dark"\)/);
+  assert.match(source, /theme:\s*appTheme === "light" \? "github-light" : "github-dark"/);
+  assert.match(source, /MutationObserver/);
+  assert.match(source, /dangerouslySetInnerHTML=\{\{\s*__html:\s*html\s*\}\}/);
+  assert.match(source, /onPointerDown=\{beginPan\}/);
+  assert.match(source, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(source, /onWheel=\{handleWheel\}/);
+  assert.match(source, /nearestScrollableParent\(viewport\)/);
+  assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*overflow:\s*auto;[^}]*cursor:\s*grab;[^}]*touch-action:\s*pan-x\s+pan-y;/s);
+  assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
+  assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*background:\s*var\(--code-bg\)\s*!important;/s);
+  assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*overflow:\s*visible;/s);
+});
+
+test('sidecar project boundary keeps pins and context promotion scoped to active Project', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  assert.match(source, /const currentProjectRoot = projectRoot \?\? state\.context\?\.project\.root \?\? null;/);
+  assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
+  assert.match(source, /if \(projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere\) return;/);
+  assert.match(source, /projectRootOverride=\{currentProjectRoot\}/);
+  assert.match(source, /const projectRoot = projectRootOverride \?\? state\.context\?\.project\.root \?\? null;/);
+  assert.match(source, /return path === root \|\| path\.startsWith\(`\$\{root\}\/`\);/);
+  assert.match(source, /const activeProjectPinnedFolderPath = activePinnedFolderPath && resolvedPinnedFolders\.includes\(activePinnedFolderPath\)/);
 });
 
 test('invalid layout profile load fails closed without replacing current layout', async () => {
@@ -401,6 +541,25 @@ test('viewer tab open, select, split, and close replay without Cmd effects', asy
   assert.equal(result.state.ui.viewerWorkspace.activeGroupId, 'main');
   assert.equal(result.state.selection.kind, 'comment');
   assert.equal(result.state.selection.id, 'codex/20260427T010101Z_REVIEW_note');
+});
+
+test('process navigator opens as an object viewer tab and keeps view selection in reducer state', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'process', id: 'navigator' },
+    { type: 'process/select-record', id: 'process-record-1' },
+    { type: 'process/select-view', view: 'ready_handoff' },
+    { type: 'process/select-record', id: 'process-record-2' },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'process');
+  assert.equal(result.state.selection.id, 'navigator');
+  assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
+  assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
+  assert.deepEqual(
+    result.state.ui.viewerWorkspace.tabs.map((tab) => [tab.id, tab.kind, tab.objectId]),
+    [['process:navigator', 'process', 'navigator']],
+  );
 });
 
 test('viewer split reset keeps main group and emits no Cmd effects', async () => {
@@ -652,6 +811,7 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
   );
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="P"[\s\S]*label="Project"/);
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="O"[\s\S]*label="Selection"/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
   assert.doesNotMatch(railSource, /ResizeHandle/);
   assert.doesNotMatch(railSource, /target="contextRail"/);
 
@@ -665,6 +825,59 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
     sidecarBlock,
     /\.sidecar-context-rail__item:hover\s+\.sidecar-context-rail__detail,\s*\.sidecar-context-rail__item:focus\s+\.sidecar-context-rail__detail,\s*\.sidecar-context-rail__item:focus-visible\s+\.sidecar-context-rail__detail\s*\{[^}]*opacity:\s*1;/s,
   );
+});
+
+test('process navigator source is right-rail selected and object-viewer hosted', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
+  const railSource = source.slice(
+    source.indexOf('<aside className="sidecar-context-rail"'),
+    source.indexOf('<section className="sidecar-bottom-dock"'),
+  );
+  const processPanelSource = source.slice(
+    source.indexOf('function ProcessNavigatorPanel'),
+    source.indexOf('function ProcessRecordDetail'),
+  );
+
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
+  assert.match(railSource, /type: 'ui\/toggle-workspace', workspace: 'info', collapsed: true/);
+  assert.match(source, /state\.ui\.infoPinned\) return;/);
+  assert.match(source, /type: 'ui\/set-info-pinned'/);
+  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-main-area\s*\{[^}]*grid-template-columns:\s*min\(var\(--sidecar-explorer-width,\s*24rem\),\s*42%\)\s+minmax\(0,\s*1fr\);/s);
+  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-flyout\s*\{[^}]*position:\s*relative;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
+  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-canvas\s*\{[^}]*grid-column:\s*2;/s);
+  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*<ProcessNavigatorPanel state=\{state\} dispatch=\{dispatch\} \/>/);
+  assert.doesNotMatch(processPanelSource, /Observed SDLC Surfaces|Recent Failures|Recent Activity|Tests \/ Qualification/);
+  assert.match(processPanelSource, /ProcessGraphMap/);
+  assert.match(processPanelSource, /aria-label="Process maps"/);
+  assert.match(processPanelSource, /type: 'process\/select-map'/);
+  assert.match(processPanelSource, /<line[\s\S]*className=\{`sidecar-process-map__edge/);
+  assert.match(processPanelSource, /const primaryRecordId = node\.recordIds\.find\(\(id\) => activeRecordSet\.has\(id\)\) \?\? null;/);
+  assert.match(processPanelSource, /panel__eyebrow">Saved Views/);
+  assert.match(processPanelSource, /panel__eyebrow">Active Query/);
+  assert.match(processPanelSource, /panel__eyebrow">Process Explorer/);
+  assert.match(styles, /\.sidecar-process-navigator\s*\{/);
+  assert.match(styles, /\.sidecar-process-layout\s*\{[^}]*grid-template-columns:\s*minmax\(18rem,\s*0\.82fr\)\s+minmax\(0,\s*1\.28fr\);/s);
+  assert.match(styles, /\.sidecar-process-map-stack\s*,\s*\.sidecar-process-navigator__views\s*\{/s);
+  assert.match(styles, /\.sidecar-process-map__viewport\s*\{/);
+  assert.match(styles, /\.sidecar-process-map__edge\s*\{[^}]*stroke-width:\s*8px;[^}]*opacity:\s*0\.24;/s);
+  assert.match(styles, /\.sidecar-process-map__edge\.is-selected\s*\{[^}]*stroke-width:\s*14px;/s);
+  assert.match(styles, /\.sidecar-process-map-node\.is-muted\s*\{[^}]*background:[^}]*var\(--panel\)[^}]*filter:\s*saturate\(0\.72\);/s);
+});
+
+test('process map edges use intrinsic canvas coordinates so line endpoints stay attached to nodes', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
+  const processPanelSource = source.slice(
+    source.indexOf('function ProcessGraphMap'),
+    source.indexOf('function processMapEdgeAnchor'),
+  );
+
+  assert.match(processPanelSource, /<svg[\s\S]*className="sidecar-process-map__edges"[\s\S]*width=\{width\}[\s\S]*height=\{height\}[\s\S]*viewBox=\{`0 0 \$\{width\} \$\{height\}`\}/);
+  assert.match(styles, /\.sidecar-process-map__edges\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0\s+auto\s+auto\s+0;[^}]*pointer-events:\s*none;/s);
+  assert.doesNotMatch(styles, /\.sidecar-process-map__edges\s*\{[^}]*width:\s*100%;/s);
+  assert.doesNotMatch(styles, /\.sidecar-process-map__edges\s*\{[^}]*height:\s*100%;/s);
+  assert.match(styles, /\.sidecar-process-map-node\s*\{[^}]*width:\s*176px;[^}]*height:\s*86px;/s);
 });
 
 test('sidecar viewer and terminal tabs share one visual grammar and theme token surface', () => {
@@ -722,7 +935,7 @@ test('sidecar density CSS keeps controls shallow and gives height to terminal ho
   const sidecarBlock = readSidecarCssBlock();
   assert.match(
     sidecarBlock,
-    /\.sidecar-section-toggle,\s*\.sidecar-section-reset\s*\{[^}]*min-height:\s*1\.82rem;[^}]*padding:\s*0\.24rem\s+0\.46rem;/s,
+    /\.sidecar-context-rail__command\s*\{[^}]*box-shadow:\s*none;[^}]*cursor:\s*pointer;[^}]*transform:\s*none;/s,
   );
   assert.match(
     sidecarBlock,

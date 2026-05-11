@@ -61,6 +61,7 @@ export function AppShell({
   const statusDetail = overview?.headline ?? "Awaiting workspace projection";
   const domainPages = domainPagesForWorkspaceProfile(workspaceProfile);
   const corePages = pages.filter((page) => !domainPages.includes(page));
+  const activeDomainLabel = labelWorkspaceIdentity(workspaceProfile?.active_domain_pack ?? workspaceProfile?.primary_identity);
   const governanceLabels = workspaceProfile?.governance_identities
     .map((identity) => labelWorkspaceIdentity(identity))
     .filter((value, index, values) => values.indexOf(value) === index);
@@ -89,7 +90,7 @@ export function AppShell({
       <header className="shell__header">
         <div className="shell__title">
           <div>
-            <span className="shell__control-label">Odd Manager Host</span>
+            <span className="shell__control-label">{activeDomainLabel}</span>
             <h1>{shellTitle}</h1>
             <p>{shellSubtitle}</p>
             {workspaceProfile ? (
@@ -117,9 +118,9 @@ export function AppShell({
             aria-label="Open workspace selector"
             title="Open workspace selector"
           >
-            <span className="shell__control-label">Managed Project</span>
+            <span className="shell__control-label">Project Root</span>
             <strong>{workspaceRoot}</strong>
-            <small>Click to change workspace</small>
+            <small>Click to change project</small>
           </button>
 
           <div className="shell__control-card shell__control-card--status">
@@ -155,7 +156,7 @@ export function AppShell({
         <nav className="manager-nav" aria-label="Manager surfaces">
           {domainPages.length ? (
             <span className="manager-nav__divider">
-              {labelWorkspaceIdentity(workspaceProfile?.active_domain_pack ?? workspaceProfile?.primary_identity)}
+              {activeDomainLabel}
             </span>
           ) : null}
           {domainPages.map((page) => (

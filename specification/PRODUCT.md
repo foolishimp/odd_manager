@@ -88,6 +88,13 @@ which Workspace lenses are admissible over it. The Project owns the workspace's
 data, code, specifications, and `.ai-workspace/` runtime topology. One Project
 may carry one or more Workspace lenses.
 
+Projects are not limited to `odd_*` workspaces. A non-ODD Project, an
+unknown-identity Project, `specification_methodology`, or a pre-bootstrap
+source tree may be registered so the operator can browse files, inspect code,
+copy paths, and prepare future bootstrap work. Domain-specific widgets must
+fail closed when their required Workspace contract is absent, but the generic
+Project/file workbench remains admissible.
+
 ### Manager Workspace
 
 The `odd_manager` operator workspace that owns manager-local state, including
@@ -107,8 +114,10 @@ A manager-local operator utility that records recently selected project file
 paths with their Project root, relative path, source selector, and selection
 time. It exists to make CLI and agent handoff practical: selecting or copying a
 file path makes the absolute path paste-ready and keeps a bounded recent-file
-surface for re-copying or opening the file again. File Path Memory is operator
-workspace state, not source-project truth.
+surface for re-copying or opening the file again. Built-in Tickets and Comments
+selectors use the same filesystem-backed selection behavior as Browse and
+pinned folders. File Path Memory is operator workspace state, not
+source-project truth.
 
 ### Workspace
 
@@ -261,6 +270,15 @@ A process-first entry lens for delivery stakeholders.
 
 It frames the same underlying project state around build activity, process
 flow, and execution posture rather than around a selected requirement.
+
+During the forward-only pre-release line, the live process surface is the
+Sidecar `Process Navigator`. It is an object-viewer workspace surface selected
+from the Sidecar right rail. It supports the `odd_sdlc` TypeScript tenant event
+and query contract only: `odd_sdlc.query-domain` `ts-v1` over ABG event truth.
+Its primary body is graph-first: process flow, builder governance, and runtime
+evidence maps are the object-viewer carriers under the three operator views.
+Python SDLC process projections are historical compatibility material and do
+not define the live Sidecar process contract.
 
 ### Information Widget
 

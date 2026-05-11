@@ -40,11 +40,20 @@ import {
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
 import 'xterm/css/xterm.css';
-import { MarkdownDocument } from '../../components/MarkdownDocument';
+import {
+  DocumentViewer,
+  documentDescriptorForPath,
+} from '../../components/DocumentViewer';
 import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
+import type {
+  SidecarProcessMap,
+  SidecarProcessProjection,
+  SidecarProcessRecord,
+} from '../../contracts/process';
+import { PROJECT_REGISTRY_CHANGED_EVENT } from '../../lib/collaboration';
 import type { SurfaceData } from '../../lib/types';
 import {
   INITIAL_SIDECAR_STATE,
@@ -75,6 +84,7 @@ import type {
   SidecarViewerSplit,
   SidecarViewerTab,
   SidecarWorkbenchLayout,
+  SidecarDocumentViewerState,
 } from './sidecar-state';
 
 // Endpoints served by the main odd_manager server (src/server/index.mjs).
@@ -89,6 +99,11 @@ type NavigatorSortMode = 'time' | 'alpha';
 
 interface NavigatorGroupState {
   collapsed: boolean;
+  sort: NavigatorSortMode;
+  reverse: boolean;
+}
+
+interface NavigatorSortState {
   sort: NavigatorSortMode;
   reverse: boolean;
 }
@@ -216,6 +231,14 @@ function unreadIdsFrom(value: unknown) {
     : [];
 }
 
+function asProcessProjection(value: unknown) {
+  const payload = asRecord(value, 'process projection');
+  if (payload.kind !== 'sidecar_process_projection') {
+    throw new Error('process projection kind is unsupported');
+  }
+  return payload as unknown as SidecarProcessProjection;
+}
+
 async function fetchJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const response = await fetch(input, init);
   const payload = await response.json().catch(() => null) as unknown;
@@ -239,18 +262,20 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
 }) {
   const { backend, viewerAgent, dispatch } = options;
   if (cmd.type === 'load') {
-    dispatch({ type: 'load/start' });
+    dispatch({ type: 'load/start', projectRoot: cmd.projectRoot });
     try {
-      const [ctx, projects, tickets, comments, sessions, unread] = await Promise.all([
+      const [ctx, projects, tickets, comments, sessions, unread, processProjection] = await Promise.all([
         fetchJson(apiUrl(backend, '/api/context', cmd.projectRoot)),
         fetchJson(`${backend}/api/projects`),
         fetchJson(apiUrl(backend, '/api/tickets', cmd.projectRoot)),
         fetchJson(apiUrl(backend, '/api/comments', cmd.projectRoot)),
         fetchJson(apiUrl(backend, '/api/sidecar/sessions', cmd.projectRoot)),
         fetchJson(apiUrl(backend, '/api/comments/unread', cmd.projectRoot, { agent: viewerAgent })),
+        fetchJson(apiUrl(backend, '/api/sidecar/process', cmd.projectRoot)),
       ]);
       dispatch({
         type: 'load/done',
+        projectRoot: cmd.projectRoot,
         payload: {
           context: asRecord(ctx, 'context') as unknown as ContextRecord,
           projects: asArray<ProjectRecord>(projects, 'projects'),
@@ -258,10 +283,12 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
           comments: asArray<CommentRecord>(comments, 'comments'),
           sessions: asSessionCollection(sessions),
           unreadIds: unreadIdsFrom(unread),
+          process: asProcessProjection(processProjection),
         },
       });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: `load failed: ${err}` });
+      const error = `load failed: ${err instanceof Error ? err.message : String(err)}`;
+      dispatch({ type: 'load/done', projectRoot: cmd.projectRoot, payload: { lastAction: { ok: false, error } } });
     }
     return;
   }
@@ -400,6 +427,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const skipNextPathHistorySave = useRef(true);
   const suppressNextLayoutSave = useRef<Set<string>>(new Set());
   const lastSavedLayoutByContext = useRef<Map<string, string>>(new Map());
+  const pendingProjectContextRoot = useRef<string | null>(null);
   const runCommand = useCallback((entry: PendingSidecarCmd) => {
     void interpretSidecarCommand(entry.cmd, { backend, viewerAgent, dispatch });
   }, [backend, viewerAgent]);
@@ -418,6 +446,17 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     }
     dispatch({ type: 'cmd/dispatched', ids: pending.map((entry) => entry.id) });
   }, [state.pendingCommands, runCommand]);
+
+  const currentProjectRoot = projectRoot ?? state.context?.project.root ?? null;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleProjectRegistryChanged = () => {
+      dispatch({ type: 'load/request', projectRoot: currentProjectRoot, reason: 'action_completed' });
+    };
+    window.addEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleProjectRegistryChanged);
+    return () => window.removeEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleProjectRegistryChanged);
+  }, [currentProjectRoot]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || loadedPathHistory.current) return;
@@ -446,8 +485,13 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
 
   // Lift Context to embedding site whenever it changes.
   useEffect(() => {
-    if (state.context && onContextChange) onContextChange(state.context);
-  }, [state.context, onContextChange]);
+    if (!state.context || !onContextChange) return;
+    const contextRoot = state.context.project.root;
+    const contextWasSelectedHere = pendingProjectContextRoot.current === contextRoot;
+    if (projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere) return;
+    if (contextWasSelectedHere) pendingProjectContextRoot.current = null;
+    onContextChange(state.context);
+  }, [projectRoot, state.context, onContextChange]);
 
   useEffect(() => {
     if (!layoutContextKey || typeof window === 'undefined') return;
@@ -483,12 +527,14 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     }
   }, [layoutContextKey, state.context, state.loading, state.ui, state.sessions.records]);
 
-  const currentProjectRoot = state.context?.project.root ?? null;
   const [pinnedFolders, setPinnedFolders] = useState<string[] | null>(null);
   const [activePinnedFolderPath, setActivePinnedFolderPath] = useState<string | null>(null);
   const resolvedPinnedFolders = currentProjectRoot
     ? sanitizePinnedFolders(pinnedFolders ?? defaultPinnedFolders(currentProjectRoot), currentProjectRoot)
     : [];
+  const activeProjectPinnedFolderPath = activePinnedFolderPath && resolvedPinnedFolders.includes(activePinnedFolderPath)
+    ? activePinnedFolderPath
+    : null;
 
   useEffect(() => {
     setActivePinnedFolderPath(null);
@@ -545,7 +591,12 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: false });
   };
 
+  const handleFileSurfaceSelect = (relativePath: string, absolutePath: string, source: SidecarPathHistorySource) => {
+    handleSurfaceSelect(relativePath, absolutePath, source);
+  };
+
   const handleProjectSelect = (project: ProjectRecord) => {
+    pendingProjectContextRoot.current = project.root;
     dispatch({ type: 'select', kind: 'project', id: project.id });
   };
 
@@ -606,6 +657,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const selectedComment = state.selection.kind === 'comment' ? state.comments.find((c) => c.id === state.selection.id) : null;
   const selectedProject = state.selection.kind === 'project' ? state.projects.find((p) => p.id === state.selection.id) : null;
   const selectedSurfacePath = state.selection.kind === 'surface' ? state.selection.id : null;
+  const selectedProcessNavigator = state.selection.kind === 'process';
   const activeInspectorSession = state.activeSessionId
     ? state.sessions.records.find((s) => s.id === state.activeSessionId) ?? null
     : null;
@@ -617,8 +669,8 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     ? 'No Sidecar shells are active for this workspace yet.'
     : `${state.sessions.records.length} shell${state.sessions.records.length === 1 ? '' : 's'}${liveSessionCount ? ` · ${liveSessionCount} live` : ''}.`;
   const activeInfoSurface = state.ui.activeInfoSurface;
-  const activePinnedFolderLabel = activePinnedFolderPath
-    ? folderDisplayPath(activePinnedFolderPath, currentProjectRoot)
+  const activePinnedFolderLabel = activeProjectPinnedFolderPath
+    ? folderDisplayPath(activeProjectPinnedFolderPath, currentProjectRoot)
     : null;
   const workbenchLayout = state.ui.workbenchLayout;
   const workbenchStyle = {
@@ -634,6 +686,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     ?? selectedComment?.filename
     ?? selectedProject?.id
     ?? selectedSurfacePath
+    ?? (selectedProcessNavigator ? 'Process Navigator' : null)
     ?? (selectedInspectorSession ? sessionLabel(selectedInspectorSession) : null)
     ?? 'No object selected';
   const selectedObjectKind = state.selection.kind ?? 'workspace';
@@ -643,35 +696,9 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   return (
     <div className="sidecar-panel sidecar-panel--workbench">
       <div
-        className={`sidecar-workbench${state.ui.infoCollapsed ? ' is-left-collapsed' : ''}${state.ui.shellCollapsed ? ' is-bottom-collapsed' : ''}`}
+        className={`sidecar-workbench${state.ui.infoCollapsed ? ' is-left-collapsed' : ''}${state.ui.infoPinned ? ' is-left-pinned' : ''}${state.ui.shellCollapsed ? ' is-bottom-collapsed' : ''}`}
         style={workbenchStyle}
       >
-        <div className="sidecar-section-controls" aria-label="Sidecar section controls">
-          <SectionToggle
-            label="Info Browser"
-            summary={infoSummary}
-            collapsed={state.ui.infoCollapsed}
-            onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'info' })}
-          />
-          <SectionToggle
-            label="Shell Workspace"
-            summary={shellSummary}
-            collapsed={state.ui.shellCollapsed}
-            onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'shell' })}
-          />
-          <button
-            type="button"
-            className="sidecar-section-reset"
-            onClick={() => dispatch({ type: 'layout/profile-reset' })}
-            aria-label="Reset sidecar layout"
-            title="Reset sidecar layout"
-          >
-            <span className="sidecar-section-toggle__icon" aria-hidden="true">R</span>
-            <span className="sidecar-section-toggle__label">Reset Layout</span>
-            <span className="sidecar-section-toggle__summary">default workbench</span>
-          </button>
-        </div>
-
         <nav className="sidecar-activity-rail" aria-label="Sidecar selection surfaces">
           <div className="sidecar-rail-stack">
             {primaryInfoProviders.map((provider) => (
@@ -680,7 +707,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                 label={provider.label}
                 shortLabel={provider.shortLabel}
                 count={infoSurfaceCount(provider.id, state)}
-                selected={!activePinnedFolderPath && activeInfoSurface === provider.id}
+                selected={!activeProjectPinnedFolderPath && activeInfoSurface === provider.id}
                 onClick={() => handleInfoSurfaceSelect(provider.id)}
               />
             ))}
@@ -690,7 +717,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                 key={`pin:${path}`}
                 label={pinnedFolderRailLabel(path, currentProjectRoot)}
                 shortLabel={pinnedFolderShortLabel(path, currentProjectRoot)}
-                selected={activePinnedFolderPath === path}
+                selected={activeProjectPinnedFolderPath === path}
                 onClick={() => handlePinnedFolderSelect(path)}
                 onUnpin={() => handlePinnedFolderUnpin(path)}
               />
@@ -703,7 +730,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                 label={browseProvider.label}
                 shortLabel={browseProvider.shortLabel}
                 count="fs"
-                selected={!activePinnedFolderPath && activeInfoSurface === browseProvider.id}
+                selected={!activeProjectPinnedFolderPath && activeInfoSurface === browseProvider.id}
                 onClick={() => handleInfoSurfaceSelect(browseProvider.id)}
               />
             ) : null}
@@ -724,6 +751,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
           className="sidecar-main-area"
           onPointerDown={(event) => {
             if (state.ui.infoCollapsed) return;
+            if (state.ui.infoPinned) return;
             if (event.target instanceof Element && event.target.closest('.sidecar-flyout')) return;
             dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
           }}
@@ -735,27 +763,38 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                   <span className="panel__eyebrow">Selection</span>
                   <h2>{activePinnedFolderLabel ?? infoSurfaceTitle(activeInfoSurface)}</h2>
                 </div>
-                <button
-                  type="button"
-                  className="navigator-mode-toggle"
-                  onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true })}
-                  aria-label="Close selection flyout"
-                  title="Close selection flyout"
-                >
-                  <span aria-hidden="true">‹</span>
-                </button>
+                <div className="sidecar-flyout__actions">
+                  <button
+                    type="button"
+                    className={`navigator-mode-toggle${state.ui.infoPinned ? ' is-active' : ''}`}
+                    onClick={() => dispatch({ type: 'ui/set-info-pinned' })}
+                    aria-pressed={state.ui.infoPinned}
+                    aria-label={state.ui.infoPinned ? 'Unpin selection flyout' : 'Pin selection flyout'}
+                    title={state.ui.infoPinned ? 'Unpin selection flyout' : 'Pin selection flyout'}
+                  >
+                    <span aria-hidden="true">P</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="navigator-mode-toggle"
+                    onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true })}
+                    aria-label="Close selection flyout"
+                    title="Close selection flyout"
+                  >
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                </div>
               </div>
               <SelectionFlyout
                 surface={activeInfoSurface}
                 state={state}
-                activePinnedFolderPath={activePinnedFolderPath}
+                activePinnedFolderPath={activeProjectPinnedFolderPath}
                 pinnedFolders={resolvedPinnedFolders}
+                projectRootOverride={currentProjectRoot}
                 onPinnedFoldersChange={handlePinnedFoldersChange}
                 onPinnedFolderUnpin={handlePinnedFolderUnpin}
                 onProjectSelect={handleProjectSelect}
-                onTicketSelect={(id) => dispatch({ type: 'select', kind: 'ticket', id })}
-                onCommentSelect={(id) => dispatch({ type: 'select', kind: 'comment', id })}
-                onSurfaceSelect={handleSurfaceSelect}
+                onSurfaceSelect={handleFileSurfaceSelect}
                 onPathHistoryCopy={handlePathCopyRequest}
                 onPathHistoryOpen={handleHistoryOpen}
               />
@@ -799,6 +838,41 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
         </div>
 
         <aside className="sidecar-context-rail" aria-label="Sidecar context rail">
+          <ContextRailCommand
+            symbol="I"
+            label={state.ui.infoCollapsed ? 'Restore info browser' : 'Minimize info browser'}
+            value={state.ui.infoCollapsed ? 'collapsed' : state.ui.infoPinned ? 'pinned' : 'open'}
+            detail={infoSummary}
+            active={!state.ui.infoCollapsed}
+            onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'info' })}
+          />
+          <ContextRailCommand
+            symbol="$"
+            label={state.ui.shellCollapsed ? 'Restore shell workspace' : 'Minimize shell workspace'}
+            value={state.ui.shellCollapsed ? 'collapsed' : 'open'}
+            detail={shellSummary}
+            active={!state.ui.shellCollapsed}
+            onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'shell' })}
+          />
+          <ContextRailCommand
+            symbol="N"
+            label="Open Process Navigator"
+            value={state.process?.supported ? 'ts-v1' : 'unsupported'}
+            detail="TypeScript odd_sdlc process projection"
+            active={state.selection.kind === 'process'}
+            onClick={() => {
+              dispatch({ type: 'viewer/open', kind: 'process', id: 'navigator' });
+              dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
+            }}
+          />
+          <ContextRailCommand
+            symbol="R"
+            label="Reset sidecar layout"
+            value="default"
+            detail="Reset layout profile"
+            onClick={() => dispatch({ type: 'layout/profile-reset' })}
+          />
+          <div className="sidecar-context-rail__divider" role="separator" aria-label="Context" />
           <ContextRailItem
             symbol="P"
             label="Project"
@@ -893,6 +967,13 @@ function builtInNavigatorFolders(projectRoot: string | null) {
     '.ai-workspace/tickets',
     '.ai-workspace/comments',
   ].map((relativePath) => absoluteProjectPath(projectRoot, relativePath));
+}
+
+function builtInNavigatorFolderForSurface(surface: SidecarInfoSurface, projectRoot: string | null) {
+  if (!projectRoot) return null;
+  if (surface === 'tickets') return absoluteProjectPath(projectRoot, '.ai-workspace/tickets');
+  if (surface === 'comments') return absoluteProjectPath(projectRoot, '.ai-workspace/comments');
+  return null;
 }
 
 function pinnedFoldersStorageKey(projectRoot: string) {
@@ -1033,8 +1114,13 @@ function dedupeSortedPins(paths: string[]) {
 }
 
 function sanitizePinnedFolders(paths: string[], projectRoot: string | null) {
+  const root = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const blocked = new Set(builtInNavigatorFolders(projectRoot).map(normalizePinnedPath));
-  return dedupeSortedPins(paths).filter((path) => !blocked.has(path));
+  return dedupeSortedPins(paths).filter((path) => {
+    if (blocked.has(path)) return false;
+    if (!root) return false;
+    return path === root || path.startsWith(`${root}/`);
+  });
 }
 
 function asNavigatorFolderLoad(value: unknown): NavigatorFolderLoad {
@@ -1069,30 +1155,6 @@ function infoSurfaceCount(surface: SidecarExplorerProviderId, state: SidecarStat
   if (surface === 'projects') return state.projects.length;
   if (surface === 'comments') return state.comments.length;
   return state.tickets.length;
-}
-
-function SectionToggle({ label, summary, collapsed, onClick }: {
-  label: string;
-  summary: string;
-  collapsed: boolean;
-  onClick: () => void;
-}) {
-  const action = collapsed ? 'Restore' : 'Minimize';
-  const ariaLabel = `${action} ${label.toLowerCase()}`;
-  return (
-    <button
-      type="button"
-      className={`sidecar-section-toggle${collapsed ? ' is-collapsed' : ' is-open'}`}
-      onClick={onClick}
-      aria-expanded={!collapsed}
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      <span className="sidecar-section-toggle__icon" aria-hidden="true">{collapsed ? '▣' : '▢'}</span>
-      <span className="sidecar-section-toggle__label">{label}</span>
-      <span className="sidecar-section-toggle__summary">{summary}</span>
-    </button>
-  );
 }
 
 function RailButton({ label, shortLabel, count, selected, onClick }: {
@@ -1339,11 +1401,10 @@ function SelectionFlyout({
   state,
   activePinnedFolderPath,
   pinnedFolders,
+  projectRootOverride,
   onPinnedFoldersChange,
   onPinnedFolderUnpin,
   onProjectSelect,
-  onTicketSelect,
-  onCommentSelect,
   onSurfaceSelect,
   onPathHistoryCopy,
   onPathHistoryOpen,
@@ -1352,20 +1413,21 @@ function SelectionFlyout({
   state: SidecarState;
   activePinnedFolderPath: string | null;
   pinnedFolders: string[];
+  projectRootOverride?: string | null;
   onPinnedFoldersChange: (paths: string[], activatePath?: string) => void;
   onPinnedFolderUnpin: (path: string) => void;
   onProjectSelect: (project: ProjectRecord) => void;
-  onTicketSelect: (id: string) => void;
-  onCommentSelect: (id: string) => void;
   onSurfaceSelect: (relativePath: string, absolutePath: string, source: SidecarPathHistorySource) => void;
   onPathHistoryCopy: (entry: SidecarPathHistoryEntry) => void;
   onPathHistoryOpen: (entry: SidecarPathHistoryEntry) => void;
 }) {
-  const projectRoot = state.context?.project.root ?? null;
+  const projectRoot = projectRootOverride ?? state.context?.project.root ?? null;
   const [groupStates, setGroupStates] = useState<Record<string, NavigatorGroupState>>({});
+  const [navigatorSort, setNavigatorSort] = useState<NavigatorSortState>({ sort: 'alpha', reverse: false });
   const [pinDraft, setPinDraft] = useState('');
   const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
+  const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
 
   const patchGroup = useCallback((key: string, patch: Partial<NavigatorGroupState>) => {
     setGroupStates((current) => updateNavigatorGroup(current, key, patch));
@@ -1382,7 +1444,7 @@ function SelectionFlyout({
       },
     }));
     try {
-      const payload = await fetchJson(`/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1`);
+      const payload = await fetchJson(`/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1&includeHidden=1`);
       const load = asNavigatorFolderLoad(payload);
       setFolderLoads((current) => ({ ...current, [path]: load }));
     } catch (err) {
@@ -1423,10 +1485,23 @@ function SelectionFlyout({
     onPinnedFolderUnpin(path);
   };
 
+  const sortToolbar = (
+    <NavigatorSortToolbar
+      sort={navigatorSort}
+      onSort={(sort) => setNavigatorSort((current) => ({ ...current, sort }))}
+      onReverse={() => setNavigatorSort((current) => ({ ...current, reverse: !current.reverse }))}
+    />
+  );
+
   useEffect(() => {
     if (surface !== 'browse' || !projectRootPath || folderLoads[projectRootPath]) return;
     void loadFolder(projectRootPath);
   }, [surface, projectRootPath, folderLoads, loadFolder]);
+
+  useEffect(() => {
+    if (!builtInFolderPath || folderLoads[builtInFolderPath]) return;
+    void loadFolder(builtInFolderPath);
+  }, [builtInFolderPath, folderLoads, loadFolder]);
 
   useEffect(() => {
     if (!activePinnedFolderPath || folderLoads[activePinnedFolderPath]) return;
@@ -1437,6 +1512,7 @@ function SelectionFlyout({
     const displayPath = folderDisplayPath(activePinnedFolderPath, projectRoot);
     return (
       <Pane title={displayPath} count={folderLoads[activePinnedFolderPath]?.entries.length ?? 0}>
+        {sortToolbar}
         <div className="sidecar-folder-tree">
           <FolderTreeNode
             path={activePinnedFolderPath}
@@ -1454,8 +1530,46 @@ function SelectionFlyout({
             pinnedFolders={pinnedFolders}
             onPinFolder={handlePinFolder}
             onUnpinFolder={handleUnpin}
+            navigatorSort={navigatorSort}
           />
         </div>
+      </Pane>
+    );
+  }
+
+  if (builtInFolderPath && projectRoot) {
+    const displayPath = folderDisplayPath(builtInFolderPath, projectRoot);
+    return (
+      <Pane title={infoSurfaceTitle(surface)} count={folderLoads[builtInFolderPath]?.entries.length ?? infoSurfaceCount(surface, state)}>
+        {sortToolbar}
+        <div className="sidecar-folder-tree">
+          <FolderTreeNode
+            path={builtInFolderPath}
+            label={displayPath}
+            depth={0}
+            projectRoot={projectRoot}
+            groupStates={groupStates}
+            folderLoads={folderLoads}
+            defaultCollapsed={false}
+            onPatchGroup={patchGroup}
+            onToggle={handleFolderToggle}
+            onLoad={loadFolder}
+            onSurfaceSelect={onSurfaceSelect}
+            pathSource="pinned_folder"
+            pinnedFolders={pinnedFolders}
+            onPinFolder={handlePinFolder}
+            onUnpinFolder={handleUnpin}
+            navigatorSort={navigatorSort}
+          />
+        </div>
+      </Pane>
+    );
+  }
+
+  if (surface === 'tickets' || surface === 'comments') {
+    return (
+      <Pane title={infoSurfaceTitle(surface)} count={0}>
+        <NavigatorEmptyState>Select a Project to browse {infoSurfaceTitle(surface).toLowerCase()}.</NavigatorEmptyState>
       </Pane>
     );
   }
@@ -1491,64 +1605,10 @@ function SelectionFlyout({
     );
   }
 
-  if (surface === 'comments') {
-    const commentsByAuthor = state.comments.reduce<Map<string, CommentRecord[]>>((groups, comment) => {
-      const author = comment.author || 'unknown';
-      groups.set(author, [...(groups.get(author) ?? []), comment]);
-      return groups;
-    }, new Map());
-    const authors = Array.from(commentsByAuthor.keys()).sort((left, right) => compareText(left, right));
-    return (
-      <Pane title="Comments" count={state.comments.length} extraCount={state.unreadIds.length}>
-        {authors.length === 0 ? <NavigatorEmptyState>No comments found.</NavigatorEmptyState> : null}
-        {authors.map((author) => {
-          const key = navigatorGroupKey('comments', author);
-          const group = navigatorGroupState(groupStates, key);
-          const items = compareBySort(
-            commentsByAuthor.get(author) ?? [],
-            group,
-            (comment) => comment.title || comment.subject || comment.filename,
-            commentTime,
-          );
-          return (
-            <NavigatorTreeGroup
-              key={key}
-              label={author}
-              count={items.length}
-              group={group}
-              onToggle={() => patchGroup(key, { collapsed: !group.collapsed })}
-              onSort={(sort) => patchGroup(key, { sort })}
-              onReverse={() => patchGroup(key, { reverse: !group.reverse })}
-            >
-              {items.map((comment) => {
-                const isUnread = state.unreadIds.includes(comment.id);
-                return (
-                  <Row
-                    key={comment.id}
-                    selected={state.selection.kind === 'comment' && state.selection.id === comment.id}
-                    onClick={() => onCommentSelect(comment.id)}
-                  >
-                    <div className="sidecar-row__id sidecar-row__id--muted">
-                      {comment.author}{isUnread && <span className="sidecar-unread-dot" aria-label="unread" />}
-                    </div>
-                    <div className="sidecar-row__title">{comment.title || comment.subject || comment.filename}</div>
-                    <div className="sidecar-row__meta">
-                      {comment.category && <Pill kind={`cat-${comment.category.toLowerCase()}`}>{comment.category}</Pill>}
-                      {comment.timestamp && <span>{comment.timestamp.slice(0, 8)}</span>}
-                    </div>
-                  </Row>
-                );
-              })}
-            </NavigatorTreeGroup>
-          );
-        })}
-      </Pane>
-    );
-  }
-
   if (surface === 'browse') {
     return (
       <Pane title="Browse" count={projectRootPath ? folderLoads[projectRootPath]?.entries.length ?? 0 : 0}>
+        {sortToolbar}
         <form className="sidecar-pin-form" onSubmit={handlePinSubmit}>
           <input
             type="text"
@@ -1581,6 +1641,7 @@ function SelectionFlyout({
               pinnedFolders={pinnedFolders}
               onPinFolder={handlePinFolder}
               onUnpinFolder={handleUnpin}
+              navigatorSort={navigatorSort}
             />
           </div>
         ) : null}
@@ -1588,43 +1649,7 @@ function SelectionFlyout({
     );
   }
 
-  return (
-    <Pane title="Tickets" count={state.tickets.length}>
-      {(['active', 'backlog', 'completed'] as const).map((lane) => {
-        const items = state.tickets.filter((ticket) => ticket.lane === lane);
-        if (!items.length) return null;
-        const key = navigatorGroupKey('tickets', lane);
-        const group = navigatorGroupState(groupStates, key);
-        const sortedItems = compareBySort(items, group, (ticket) => `${ticket.id} ${ticket.title}`, ticketTime);
-        return (
-          <NavigatorTreeGroup
-            key={key}
-            label={lane}
-            count={items.length}
-            group={group}
-            onToggle={() => patchGroup(key, { collapsed: !group.collapsed })}
-            onSort={(sort) => patchGroup(key, { sort })}
-            onReverse={() => patchGroup(key, { reverse: !group.reverse })}
-          >
-            {sortedItems.map((ticket) => {
-              const isStdoUx = (ticket.governanceScope || '').includes('UX');
-              return (
-                <Row
-                  key={ticket.id}
-                  selected={state.selection.kind === 'ticket' && state.selection.id === ticket.id}
-                  onClick={() => onTicketSelect(ticket.id)}
-                >
-                  <div className="sidecar-row__id">{ticket.id}</div>
-                  <div className="sidecar-row__title">{ticket.title}</div>
-                  {isStdoUx && <div className="sidecar-row__meta"><Pill kind="stdo-ux">STDO-UX</Pill></div>}
-                </Row>
-              );
-            })}
-          </NavigatorTreeGroup>
-        );
-      })}
-    </Pane>
-  );
+  return null;
 }
 
 function PathHistoryPane({ entries, currentProjectRoot, onCopy, onOpen }: {
@@ -1668,13 +1693,52 @@ function PathHistoryPane({ entries, currentProjectRoot, onCopy, onOpen }: {
   );
 }
 
-function NavigatorTreeGroup({ label, count, group, onToggle, onSort, onReverse, extraControls, children }: PropsWithChildrenLike<{
+function NavigatorSortToolbar({ sort, onSort, onReverse }: {
+  sort: NavigatorSortState;
+  onSort: (sort: NavigatorSortMode) => void;
+  onReverse: () => void;
+}) {
+  return (
+    <div className="sidecar-navigator-toolbar" aria-label="Browse sort controls">
+      <span className="sidecar-navigator-toolbar__label">Sort</span>
+      <div className="sidecar-navigator-toolbar__controls">
+        <button
+          type="button"
+          className={`sidecar-tree-control sidecar-tree-control--text${sort.sort === 'alpha' ? ' is-active' : ''}`}
+          onClick={() => onSort('alpha')}
+          aria-pressed={sort.sort === 'alpha'}
+          title="Sort folders alphabetically"
+        >
+          Name
+        </button>
+        <button
+          type="button"
+          className={`sidecar-tree-control sidecar-tree-control--text${sort.sort === 'time' ? ' is-active' : ''}`}
+          onClick={() => onSort('time')}
+          aria-pressed={sort.sort === 'time'}
+          title="Sort folders by time"
+        >
+          Time
+        </button>
+        <button
+          type="button"
+          className={`sidecar-tree-control sidecar-tree-control--text${sort.reverse ? ' is-active' : ''}`}
+          onClick={onReverse}
+          aria-pressed={sort.reverse}
+          title="Reverse folder sort"
+        >
+          Reverse
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NavigatorTreeGroup({ label, count, group, onToggle, extraControls, children }: PropsWithChildrenLike<{
   label: string;
   count: number;
   group: NavigatorGroupState;
   onToggle: () => void;
-  onSort: (sort: NavigatorSortMode) => void;
-  onReverse: () => void;
   extraControls?: ReactNode;
 }>) {
   return (
@@ -1690,34 +1754,7 @@ function NavigatorTreeGroup({ label, count, group, onToggle, onSort, onReverse, 
           <strong title={label}>{label}</strong>
           <span>{count}</span>
         </button>
-        <div className="sidecar-tree-group__controls" aria-label={`${label} sort controls`}>
-          <button
-            type="button"
-            className={`sidecar-tree-control${group.sort === 'time' ? ' is-active' : ''}`}
-            onClick={() => onSort('time')}
-            aria-pressed={group.sort === 'time'}
-            title={`Sort ${label} by time`}
-          >
-            T
-          </button>
-          <button
-            type="button"
-            className={`sidecar-tree-control${group.sort === 'alpha' ? ' is-active' : ''}`}
-            onClick={() => onSort('alpha')}
-            aria-pressed={group.sort === 'alpha'}
-            title={`Sort ${label} alphabetically`}
-          >
-            A
-          </button>
-          <button
-            type="button"
-            className={`sidecar-tree-control${group.reverse ? ' is-active' : ''}`}
-            onClick={onReverse}
-            aria-pressed={group.reverse}
-            title={`Reverse ${label} sort`}
-          >
-            R
-          </button>
+        <div className="sidecar-tree-group__controls" aria-label={`${label} folder controls`}>
           {extraControls}
         </div>
       </div>
@@ -1730,7 +1767,7 @@ function NavigatorEmptyState({ children }: PropsWithChildrenLike<{}>) {
   return <div className="sidecar-navigator-empty">{children}</div>;
 }
 
-function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onLoad, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder }: {
+function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onLoad, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort }: {
   path: string;
   label: string;
   depth: number;
@@ -1746,11 +1783,12 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
   pinnedFolders: string[];
   onPinFolder: (path: string) => void;
   onUnpinFolder: (path: string) => void;
+  navigatorSort: NavigatorSortState;
 }) {
   const key = navigatorGroupKey('folder', path);
   const group = navigatorGroupState(groupStates, key, { collapsed: defaultCollapsed, sort: 'alpha', reverse: false });
   const load = folderLoads[path] ?? null;
-  const entries = compareBySort(load?.entries ?? [], group, (entry) => entry.name, folderEntryTime);
+  const entries = compareBySort(load?.entries ?? [], { ...group, ...navigatorSort }, (entry) => entry.name, folderEntryTime);
   const normalizedPath = normalizePinnedPath(path);
   const isPinned = pinnedFolders.includes(normalizedPath);
   const isBuiltIn = builtInNavigatorFolders(projectRoot).map(normalizePinnedPath).includes(normalizedPath);
@@ -1763,11 +1801,6 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
         count={load?.entries.length ?? 0}
         group={group}
         onToggle={() => onToggle(key, path, group.collapsed)}
-        onSort={(sort) => {
-          onPatchGroup(key, { sort });
-          if (group.collapsed && !load) onLoad(path);
-        }}
-        onReverse={() => onPatchGroup(key, { reverse: !group.reverse })}
         extraControls={!isBuiltIn ? (
           <button
             type="button"
@@ -1799,7 +1832,6 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
                 }}
                 title={entry.absolutePath}
               >
-                <div className="sidecar-row__id sidecar-row__id--muted">file</div>
                 <div className="sidecar-row__title">{entry.name}</div>
                 {relativePath ? <div className="sidecar-row__meta">{relativePath}</div> : null}
               </button>
@@ -1822,6 +1854,7 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
               pinnedFolders={pinnedFolders}
               onPinFolder={onPinFolder}
               onUnpinFolder={onUnpinFolder}
+              navigatorSort={navigatorSort}
             />
           );
         })}
@@ -1889,6 +1922,34 @@ function ContextRailItem({ symbol, label, value, detail, metric }: {
   );
 }
 
+function ContextRailCommand({ symbol, label, value, detail, active = false, onClick }: {
+  symbol: string;
+  label: string;
+  value: string;
+  detail: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const detailId = `sidecar-context-command-${safeClassSuffix(label)}`;
+  return (
+    <button
+      type="button"
+      className={`sidecar-context-rail__item sidecar-context-rail__command${active ? ' is-active' : ''}`}
+      aria-describedby={detailId}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <span className="sidecar-context-rail__symbol" aria-hidden="true">{symbol}</span>
+      <div className="sidecar-context-rail__detail" id={detailId}>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{detail}</small>
+      </div>
+    </button>
+  );
+}
+
 function Pane({ title, count, extraCount, children }: PropsWithChildrenLike<{ title: string; count: number; extraCount?: number }>) {
   return (
     <section className="sidecar-pane">
@@ -1919,6 +1980,9 @@ function safeClassSuffix(value: string) {
 }
 
 function viewerTabTitle(state: SidecarState, tab: SidecarViewerTab) {
+  if (tab.kind === 'process') {
+    return 'Process Navigator';
+  }
   if (tab.kind === 'surface') {
     return tab.objectId.split('/').filter(Boolean).pop() ?? tab.objectId;
   }
@@ -1937,6 +2001,9 @@ function viewerTabTitle(state: SidecarState, tab: SidecarViewerTab) {
 }
 
 function resolveViewerTab(state: SidecarState, tab: SidecarViewerTab) {
+  if (tab.kind === 'process') {
+    return { kind: tab.kind, record: state.process };
+  }
   if (tab.kind === 'surface') {
     return { kind: tab.kind, record: tab.objectId };
   }
@@ -2111,6 +2178,7 @@ function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onTransi
             tab={activeTab}
             state={state}
             viewerAgent={viewerAgent}
+            dispatch={dispatch}
             onTransition={onTransition}
             onToggleRead={onToggleRead}
             onReplyOpen={onReplyOpen}
@@ -2126,10 +2194,11 @@ function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onTransi
   );
 }
 
-function ViewerTabBody({ tab, state, viewerAgent, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
+function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
   tab: SidecarViewerTab;
   state: SidecarState;
   viewerAgent: string;
+  dispatch: Dispatch<SidecarMsg>;
   onTransition: (id: string, lane: string) => void;
   onToggleRead: (id: string, currentlyUnread: boolean) => void;
   onReplyOpen: (id: string) => void;
@@ -2137,8 +2206,21 @@ function ViewerTabBody({ tab, state, viewerAgent, onTransition, onToggleRead, on
   onReplyCancel: () => void;
   onReplySubmit: (parentId: string, body: string) => void;
 }) {
+  if (tab.kind === 'process') {
+    return <ProcessNavigatorPanel state={state} dispatch={dispatch} />;
+  }
   if (tab.kind === 'surface') {
-    return <Inspector><SurfaceInspector projectRoot={state.context?.project.root ?? null} relativePath={tab.objectId} /></Inspector>;
+    return (
+      <Inspector>
+        <SurfaceInspector
+          projectRoot={state.context?.project.root ?? null}
+          tabId={tab.id}
+          relativePath={tab.objectId}
+          viewerState={state.ui.documentViewers[tab.id]}
+          dispatch={dispatch}
+        />
+      </Inspector>
+    );
   }
   const resolved = resolveViewerTab(state, tab);
   if (resolved.kind === 'ticket' && resolved.record) {
@@ -2171,7 +2253,1024 @@ function ViewerTabBody({ tab, state, viewerAgent, onTransition, onToggleRead, on
   return <div className="sidecar-inspector__empty">Selected record is no longer available.</div>;
 }
 
-function SurfaceInspector({ projectRoot, relativePath }: { projectRoot: string | null; relativePath: string }) {
+function ProcessNavigatorPanel({ state, dispatch }: {
+  state: SidecarState;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const projection = state.process;
+  const [search, setSearch] = useState('');
+  if (!projection) {
+    return <div className="sidecar-inspector__empty">Process projection is not loaded.</div>;
+  }
+  if (!projection.supported) {
+    return (
+      <div className="sidecar-process-navigator sidecar-process-navigator--unsupported">
+        <div className="sidecar-process-navigator__header">
+          <span className="panel__eyebrow">Process Navigator</span>
+          <h2>TypeScript process contract unavailable</h2>
+          <Pill kind="blocked">unsupported</Pill>
+        </div>
+        <p>{projection.unsupportedReason ?? 'This Project does not expose the odd_sdlc TypeScript process contract.'}</p>
+        <MetaGrid items={[
+          ['Required contract', `${projection.contractName} ${projection.contractVersion}`],
+          ['Project', projection.workspaceRoot || state.context?.project.root || '—'],
+          ['Generic workspace', 'Browse, pinned folders, recent paths, and shells remain available.'],
+        ]} />
+      </div>
+    );
+  }
+
+  const activeView = projection.views.find((view) => view.id === state.ui.activeProcessView) ?? projection.views[0] ?? null;
+  const viewRecords = activeView
+    ? projection.records.filter((record) => activeView.recordIds.includes(record.id))
+    : projection.records;
+  const normalizedSearch = search.trim().toLowerCase();
+  const records = normalizedSearch
+    ? viewRecords.filter((record) => processRecordMatchesSearch(record, normalizedSearch))
+    : viewRecords;
+  const selectedRecord = records.find((record) => record.id === state.ui.activeProcessRecordId)
+    ?? records[0]
+    ?? null;
+  const activeMap = projection.maps.find((map) => map.id === state.ui.activeProcessMap)
+    ?? projection.maps[0]
+    ?? null;
+  const activeRecordIds = records.map((record) => record.id);
+  const openTracePath = (absolutePath: string) => {
+    const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
+    if (!relativePath) {
+      dispatch({ type: 'action/result', ok: false, error: 'Trace archive is outside the active Project.' });
+      return;
+    }
+    dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
+  };
+
+  return (
+    <div className="sidecar-process-navigator" aria-label="Sidecar Process Navigator">
+      <div className="sidecar-process-navigator__header">
+        <div>
+          <span className="panel__eyebrow">Process Navigator</span>
+          <h2>TypeScript graph maps</h2>
+        </div>
+        <div className="sidecar-process-navigator__badges">
+          <Pill kind="process">ts-v1</Pill>
+          <Pill kind="default">{projection.eventCount} events</Pill>
+          <Pill kind="default">{records.length} of {projection.records.length}</Pill>
+          <Pill kind="default">{projection.maps.length} maps</Pill>
+          {projection.catalog && (
+            <span aria-label={`${projection.catalog.executives.length} executives, ${projection.catalog.library.length} library functions`}>
+              <Pill kind="default">{projection.catalog.leaves.length} leaves</Pill>
+            </span>
+          )}
+          {projection.leafOverlays && projection.leafOverlays.length > 0 && (
+            <span aria-label={`${projection.leafOverlays.reduce((n, ov) => n + ov.tracedEvidence.length, 0)} traced invocations`}>
+              <Pill kind="active">{projection.leafOverlays.length} active overlays</Pill>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="sidecar-process-map-stack">
+        <div className="sidecar-process-maps process-tab-grid" role="tablist" aria-label="Process maps">
+          {projection.maps.map((map) => {
+            const selected = activeMap?.id === map.id;
+            return (
+              <button
+                key={map.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="sidecar-process-map"
+                className={`sidecar-process-map-tab process-tab${selected ? ' is-selected' : ''}`}
+                onClick={() => dispatch({ type: 'process/select-map', map: map.id })}
+              >
+                <div className="process-tab__meta">
+                  <strong>{map.label}</strong>
+                  <span className={`status-chip ${selected ? 'active' : 'default'}`}>{map.nodes.length}</span>
+                </div>
+                <p>{map.summary}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <section className="sidecar-process-map process-map-host" id="sidecar-process-map" aria-label={activeMap?.label ?? 'Process graph'}>
+          {activeMap ? (
+            activeMap.id === 'process_flow' && projection.catalog ? (
+              <ProcessFlowMapVariantHost
+                map={activeMap}
+                catalog={projection.catalog}
+                overlays={projection.leafOverlays ?? []}
+                activeRecordIds={activeRecordIds}
+                selectedRecordId={selectedRecord?.id ?? null}
+                activeVariant={state.ui.activeProcessFlowVariant}
+                activeLeafName={state.ui.activeLeafName}
+                onSelectVariant={(variant) => dispatch({ type: 'process/select-variant', variant })}
+                onSelectRecord={(id) => dispatch({ type: 'process/select-record', id })}
+                onSelectLeaf={(leafName) => dispatch({ type: 'process/select-leaf', leafName })}
+                onOpenTracePath={openTracePath}
+              />
+            ) : (
+              <ProcessGraphMap
+                map={activeMap}
+                activeRecordIds={activeRecordIds}
+                selectedRecordId={selectedRecord?.id ?? null}
+                onSelectRecord={(id) => dispatch({ type: 'process/select-record', id })}
+                onOpenTracePath={openTracePath}
+              />
+            )
+          ) : (
+            <div className="sidecar-inspector__empty">No TypeScript process map is projected.</div>
+          )}
+        </section>
+      </div>
+
+      <div className="sidecar-process-navigator__views">
+        <div className="requirements-explorer__section-heading">
+          <span className="panel__eyebrow">Saved Views</span>
+        </div>
+        <div className="sidecar-process-views process-tab-grid" role="tablist" aria-label="Process views">
+          {projection.views.map((view) => {
+            const selected = activeView?.id === view.id;
+            return (
+              <button
+                key={view.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="sidecar-process-map"
+                className={`sidecar-process-view process-tab${selected ? ' is-selected' : ''}`}
+                onClick={() => dispatch({ type: 'process/select-view', view: view.id })}
+              >
+                <div className="process-tab__meta">
+                  <strong>{view.label}</strong>
+                  <span className={`status-chip ${selected ? 'active' : 'default'}`}>{view.recordIds.length}</span>
+                </div>
+                <p>{view.summary}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="sidecar-process-query process-explorer__query" aria-live="polite">
+        <div className="process-explorer__query-heading">
+          <span className="panel__eyebrow">Active Query</span>
+          <span className={`status-chip ${activeView ? 'active' : 'pending'}`}>{activeView?.label ?? 'Process'}</span>
+        </div>
+        <strong>{describeProcessQueryHeadline(records.length, viewRecords.length)}</strong>
+        <p>{describeProcessQuerySummary(activeMap, selectedRecord, normalizedSearch)}</p>
+        <div className="inline-pills">
+          {normalizedSearch ? <Pill kind="attention">Search: {search.trim()}</Pill> : null}
+          {selectedRecord ? <Pill kind={selectedRecord.tone}>Focused: {selectedRecord.title}</Pill> : null}
+        </div>
+      </div>
+
+      <div className="sidecar-process-layout sidecar-process-layout--graph process-page__lens">
+        <section className="sidecar-process-records process-page__explorer" aria-label="Process Explorer">
+          <div className="process-explorer__controls">
+            <div className="requirements-explorer__section-heading">
+              <span className="panel__eyebrow">Process Explorer</span>
+            </div>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search TypeScript process objects"
+              aria-label="Search process objects"
+            />
+          </div>
+          <div className="process-explorer__list">
+            <div className="list-stack">
+              {records.length ? records.map((record) => (
+                <button
+                  key={record.id}
+                  type="button"
+                  className={`sidecar-process-record list-row${selectedRecord?.id === record.id ? ' is-selected' : ''}`}
+                  onClick={() => dispatch({ type: 'process/select-record', id: record.id })}
+                >
+                  <div className="list-row__meta">
+                    <span className="panel__eyebrow">{record.kind}</span>
+                    <span className={`status-chip ${record.tone}`}>{record.status}</span>
+                  </div>
+                  <strong className="list-row__title">{record.title}</strong>
+                  <p className="list-row__summary">{record.summary}</p>
+                </button>
+              )) : (
+                <div className="empty-state">
+                  <strong>No process records match the current query.</strong>
+                  <p>Clear the search to restore the active process lane.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="sidecar-process-detail process-page__workbench" aria-label="Selected process record">
+          <ProcessMapSummary map={activeMap} activeViewLabel={activeView?.label ?? 'Process'} visibleRecordCount={records.length} />
+          {selectedRecord ? <ProcessRecordDetail record={selectedRecord} projection={projection} /> : (
+            <div className="sidecar-inspector__empty">No process record selected.</div>
+          )}
+        </section>
+      </div>
+
+      {projection.catalog && (
+        <ProcessCatalogPicker
+          catalog={projection.catalog}
+          overlays={projection.leafOverlays ?? []}
+          activeLeafName={state.ui.activeLeafName}
+          onSelectLeaf={(leafName) => dispatch({ type: 'process/select-leaf', leafName })}
+        />
+      )}
+
+      {projection.catalog && state.ui.activeLeafName && (
+        <LeafWorkbenchPanel
+          catalog={projection.catalog}
+          overlays={projection.leafOverlays ?? []}
+          activeLeafName={state.ui.activeLeafName}
+          onClose={() => dispatch({ type: 'process/select-leaf', leafName: null })}
+          onOpenTracePath={openTracePath}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// T-026: catalog picker. Shows executives + leaves grouped by catalog
+// (bootstrap / operational / triage) + library functions. Clicking a leaf
+// focuses it for the workbench. Read-only over admitted projection.
+// ---------------------------------------------------------------------------
+
+function ProcessCatalogPicker({
+  catalog,
+  overlays,
+  activeLeafName,
+  onSelectLeaf,
+}: {
+  catalog: NonNullable<SidecarProcessProjection['catalog']>;
+  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
+  activeLeafName: string | null;
+  onSelectLeaf: (leafName: string) => void;
+}) {
+  const leavesByCatalog = {
+    bootstrap: catalog.leaves.filter((l) => l.catalog === 'bootstrap'),
+    operational: catalog.leaves.filter((l) => l.catalog === 'operational'),
+    triage: catalog.leaves.filter((l) => l.catalog === 'triage'),
+  };
+  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
+
+  return (
+    <section className="sidecar-process-catalog" aria-label="Published TS module catalog">
+      <div className="requirements-explorer__section-heading">
+        <span className="panel__eyebrow">Catalog</span>
+        <span className="status-chip default">{catalog.leaves.length} leaves · {catalog.executives.length} executives · {catalog.library.length} library</span>
+      </div>
+      {(['bootstrap', 'operational', 'triage'] as const).map((catalogId) => {
+        const leaves = leavesByCatalog[catalogId];
+        if (leaves.length === 0) return null;
+        return (
+          <details key={catalogId} className="sidecar-process-catalog__group" open={catalogId !== 'triage'}>
+            <summary>
+              <strong>{catalogId === 'bootstrap' ? 'Bootstrap → Release' : catalogId === 'operational' ? 'Operational Cycle' : 'Triage Lane'}</strong>
+              <span className="status-chip default">{leaves.length}</span>
+            </summary>
+            <ul className="sidecar-process-catalog__leaves">
+              {leaves.map((leaf) => {
+                const overlay = overlayByLeaf.get(leaf.name);
+                const selected = leaf.name === activeLeafName;
+                return (
+                  <li key={leaf.name}>
+                    <button
+                      type="button"
+                      className={`sidecar-process-catalog__leaf list-row${selected ? ' is-selected' : ''}`}
+                      onClick={() => onSelectLeaf(leaf.name)}
+                      aria-pressed={selected}
+                    >
+                      <div className="sidecar-process-catalog__leaf-meta">
+                        <strong>{leaf.name}</strong>
+                        <span className="status-chip default">{overlay?.latestStatus ?? 'unattested'}</span>
+                      </div>
+                      <p>{leaf.intent}</p>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        );
+      })}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// T-022 + T-026: per-leaf workbench. Shows leaf metadata, overlay status,
+// 7-dim assurance vector, and traced call-out evidence per supervised actor
+// invocation. All data flows from admitted carriers; nothing reads disk.
+// ---------------------------------------------------------------------------
+
+function LeafWorkbenchPanel({
+  catalog,
+  overlays,
+  activeLeafName,
+  onClose,
+  onOpenTracePath,
+}: {
+  catalog: NonNullable<SidecarProcessProjection['catalog']>;
+  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
+  activeLeafName: string;
+  onClose: () => void;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const leaf = catalog.leaves.find((l) => l.name === activeLeafName) ?? null;
+  const overlay = overlays.find((ov) => ov.leafName === activeLeafName) ?? null;
+
+  if (!leaf) {
+    return (
+      <section className="sidecar-leaf-workbench" aria-label="Leaf workbench">
+        <header>
+          <span className="panel__eyebrow">Leaf Workbench</span>
+          <button type="button" className="sidecar-leaf-workbench__close" onClick={onClose}>×</button>
+        </header>
+        <p>Leaf <code>{activeLeafName}</code> is not present in the published catalog.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="sidecar-leaf-workbench" aria-label={`Leaf workbench: ${leaf.name}`}>
+      <header className="sidecar-leaf-workbench__header">
+        <div>
+          <span className="panel__eyebrow">{leaf.catalog}</span>
+          <h3>{leaf.name}</h3>
+          <p>{leaf.intent}</p>
+        </div>
+        <button type="button" className="sidecar-leaf-workbench__close" onClick={onClose} aria-label="Close leaf workbench">×</button>
+      </header>
+
+      <MetaGrid items={[
+        ['Inputs', leaf.inputs.join(', ') || '—'],
+        ['Outputs', leaf.outputs.join(', ') || '—'],
+        ['Transform contract', leaf.transformContractRef],
+        ['Evaluation contract', leaf.evaluationContractRef],
+        ['Modulation', leaf.traversalModulationStrategy],
+        ['Operator', `${leaf.operator.name} (${leaf.operator.regime})`],
+        ['Evaluators', leaf.evaluators.map((e) => `${e.name} (${e.regime})`).join(', ')],
+        ['Requirement refs', leaf.requirementRefs.join(', ') || '—'],
+        ['Proof obligations', leaf.proofObligations.join(', ') || '—'],
+      ]} />
+
+      {overlay ? (
+        <>
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Op-run Overlay</span>
+            <span className="status-chip default">{overlay.latestStatus}</span>
+            <span className="status-chip default">{overlay.invocationCount} invocations</span>
+          </div>
+          {overlay.assuranceVector && (
+            <AssuranceVectorGrid vector={overlay.assuranceVector} />
+          )}
+          {overlay.tracedEvidence.length > 0 ? (
+            <ul className="sidecar-leaf-workbench__evidence">
+              {overlay.tracedEvidence.map((evidence) => (
+                <li key={evidence.invocationId} className="sidecar-leaf-workbench__evidence-row">
+                  <div className="sidecar-leaf-workbench__evidence-head">
+                    <Pill kind={evidence.outcome.kind === 'exited' && evidence.status === 0 ? 'process' : 'blocked'}>
+                      {evidence.outcome.kind}
+                    </Pill>
+                    <span className="status-chip default">{evidence.executorProfile}</span>
+                    <span className="status-chip default">{evidence.parser}</span>
+                    {evidence.status !== null && (
+                      <span className="status-chip default">status {evidence.status}</span>
+                    )}
+                    <button
+                      type="button"
+                      className="status-chip active"
+                      onClick={() => onOpenTracePath(evidence.traceArchiveRoot)}
+                    >
+                      Trace archive
+                    </button>
+                    <button
+                      type="button"
+                      className="status-chip default"
+                      onClick={() => onOpenTracePath(evidence.traceArchivePaths.result)}
+                    >
+                      Result
+                    </button>
+                    {evidence.traceArchivePaths.terminalTranscript && (
+                      <button
+                        type="button"
+                        className="status-chip default"
+                        onClick={() => onOpenTracePath(evidence.traceArchivePaths.terminalTranscript as string)}
+                      >
+                        Terminal transcript
+                      </button>
+                    )}
+                  </div>
+                  <MetaGrid items={[
+                    ['Invocation', evidence.invocationId],
+                    ['Stream model', evidence.streamModel],
+                    ['Structured events', String(evidence.structuredEventCount)],
+                    ['API retries', String(evidence.apiRetryCount)],
+                    ['Tool calls', String(evidence.toolCallCount)],
+                    ['Terminal session', evidence.terminalSessionId ?? '—'],
+                    ['Trace archive', evidence.traceArchiveRoot],
+                    ['Result', evidence.traceArchivePaths.result],
+                  ]} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="sidecar-inspector__empty">No traced evidence admitted yet for this leaf.</div>
+          )}
+        </>
+      ) : (
+        <div className="sidecar-inspector__empty">No active op-run overlay carries an invocation of this leaf yet.</div>
+      )}
+    </section>
+  );
+}
+
+function AssuranceVectorGrid({ vector }: {
+  vector: NonNullable<NonNullable<SidecarProcessProjection['leafOverlays']>[number]['assuranceVector']>;
+}) {
+  const cells: Array<[string, 'pass' | 'fail' | 'pending']> = [
+    ['materialization', vector.materialization],
+    ['semantic', vector.semanticConvergence],
+    ['obligation', vector.obligationCarry],
+    ['requirement', vector.requirementFulfillment],
+    ['ambiguity', vector.ambiguity],
+    ['capability', vector.capability],
+    ['shallow', vector.shallowRealization],
+  ];
+  return (
+    <div className="sidecar-leaf-workbench__assurance" role="group" aria-label="7-dim assurance vector">
+      {cells.map(([label, state]) => (
+        <span key={label} className={`status-chip ${state === 'pass' ? 'active' : state === 'fail' ? 'blocked' : 'pending'}`}>
+          {label}: {state}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// T-026: process-flow-map variant host. V0 is canonical (the existing
+// ProcessGraphMap rendering). V1 / V2 / V4 ship under §13A scaffold-exemption
+// labels and are read-only renderings of the same admitted carriers.
+// ---------------------------------------------------------------------------
+
+type ProcessFlowMapVariantHostProps = {
+  map: SidecarProcessMap;
+  catalog: NonNullable<SidecarProcessProjection['catalog']>;
+  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
+  activeRecordIds: string[];
+  selectedRecordId: string | null;
+  activeVariant: 'v0' | 'v1' | 'v2' | 'v4';
+  activeLeafName: string | null;
+  onSelectVariant: (variant: 'v0' | 'v1' | 'v2' | 'v4') => void;
+  onSelectRecord: (id: string | null) => void;
+  onSelectLeaf: (leafName: string) => void;
+  onOpenTracePath: (absolutePath: string) => void;
+};
+
+const PROCESS_FLOW_VARIANT_DESCRIPTORS: Array<{
+  id: 'v0' | 'v1' | 'v2' | 'v4';
+  label: string;
+  badge: 'canonical' | 'paydown' | 'scaffold';
+  hint: string;
+}> = [
+  { id: 'v0', label: 'V0 Baseline', badge: 'paydown', hint: 'Existing graph map retained as local paydown.' },
+  { id: 'v1', label: 'V1 Three-lane', badge: 'canonical', hint: 'Canonical process flow map.' },
+  { id: 'v2', label: 'V2 Asset-DAG', badge: 'scaffold', hint: 'Asset-surface-centric topology (§13A scaffold).' },
+  { id: 'v4', label: 'V4 Assurance Matrix', badge: 'scaffold', hint: '43-row × 7-col closure grid (§13A scaffold).' },
+];
+
+function ProcessFlowMapVariantHost(props: ProcessFlowMapVariantHostProps) {
+  const { map, catalog, overlays, activeRecordIds, selectedRecordId, activeVariant, activeLeafName, onSelectVariant, onSelectRecord, onSelectLeaf, onOpenTracePath } = props;
+  return (
+    <div className="sidecar-process-flow-variant-host">
+      <div className="sidecar-process-flow-variants" role="tablist" aria-label="Process flow map variants">
+        {PROCESS_FLOW_VARIANT_DESCRIPTORS.map((descriptor) => {
+          const selected = descriptor.id === activeVariant;
+          return (
+            <button
+              key={descriptor.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              className={`sidecar-process-flow-variant-tab process-tab${selected ? ' is-selected' : ''}`}
+              onClick={() => onSelectVariant(descriptor.id)}
+              title={descriptor.hint}
+            >
+              <strong>{descriptor.label}</strong>
+              {descriptor.badge === 'canonical' && (
+                <span className="status-chip active" aria-label="Canonical process flow map">canonical</span>
+              )}
+              {descriptor.badge === 'paydown' && (
+                <span className="status-chip default" aria-label="Local paydown variant">paydown</span>
+              )}
+              {descriptor.badge === 'scaffold' && (
+                <span className="status-chip pending" aria-label="§13A scaffold (exploratory)">scaffold</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {activeVariant === 'v0' && (
+        <ProcessGraphMap
+          map={map}
+          activeRecordIds={activeRecordIds}
+          selectedRecordId={selectedRecordId}
+          onSelectRecord={onSelectRecord}
+          onOpenTracePath={onOpenTracePath}
+        />
+      )}
+      {activeVariant === 'v1' && (
+        <ProcessFlowMapV1ThreeLane
+          catalog={catalog}
+          overlays={overlays}
+          activeLeafName={activeLeafName}
+          onSelectLeaf={onSelectLeaf}
+        />
+      )}
+      {activeVariant === 'v2' && (
+        <ProcessFlowMapV2AssetDag
+          catalog={catalog}
+          overlays={overlays}
+          activeLeafName={activeLeafName}
+          onSelectLeaf={onSelectLeaf}
+        />
+      )}
+      {activeVariant === 'v4' && (
+        <ProcessFlowMapV4AssuranceMatrix
+          catalog={catalog}
+          overlays={overlays}
+          activeLeafName={activeLeafName}
+          onSelectLeaf={onSelectLeaf}
+        />
+      )}
+    </div>
+  );
+}
+
+type VariantBaseProps = {
+  catalog: NonNullable<SidecarProcessProjection['catalog']>;
+  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
+  activeLeafName: string | null;
+  onSelectLeaf: (leafName: string) => void;
+};
+
+// Helper: derive leaf-status class from overlay status.
+function leafStatusKind(status: string | undefined): 'active' | 'blocked' | 'pending' | 'default' {
+  if (!status) return 'default';
+  if (status === 'fd_postflight_passed' || status === 'fp_succeeded') return 'active';
+  if (status === 'failed') return 'blocked';
+  if (status === 'running' || status === 'queued') return 'pending';
+  return 'default';
+}
+
+// V1 — three-lane structural map. Bootstrap chain | Operational chain | Triage lane.
+function ProcessFlowMapV1ThreeLane({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
+  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
+  const lanes: Array<{ id: 'bootstrap' | 'operational' | 'triage'; label: string; leaves: typeof catalog.leaves }> = [
+    { id: 'bootstrap', label: 'Bootstrap → Release', leaves: catalog.leaves.filter((l) => l.catalog === 'bootstrap') },
+    { id: 'operational', label: 'Operational Cycle', leaves: catalog.leaves.filter((l) => l.catalog === 'operational') },
+    { id: 'triage', label: 'Triage Lane', leaves: catalog.leaves.filter((l) => l.catalog === 'triage') },
+  ];
+  return (
+    <div className="sidecar-process-flow-v1" role="region" aria-label="Three-lane structural map">
+      <div className="sidecar-process-flow-v1__lanes">
+        {lanes.map((lane) => (
+          <section key={lane.id} className="sidecar-process-flow-v1__lane" aria-label={lane.label}>
+            <header><strong>{lane.label}</strong> <span className="status-chip default">{lane.leaves.length}</span></header>
+            <ol className="sidecar-process-flow-v1__chain">
+              {lane.leaves.map((leaf, index) => {
+                const overlay = overlayByLeaf.get(leaf.name);
+                const selected = leaf.name === activeLeafName;
+                return (
+                  <li key={leaf.name}>
+                    <button
+                      type="button"
+                      className={`sidecar-process-flow-v1__node list-row${selected ? ' is-selected' : ''}`}
+                      onClick={() => onSelectLeaf(leaf.name)}
+                      aria-pressed={selected}
+                    >
+                      <span className="sidecar-process-flow-v1__index">{index + 1}</span>
+                      <div className="sidecar-process-flow-v1__node-meta">
+                        <strong>{leaf.name}</strong>
+                        <span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>
+                          {overlay?.latestStatus ?? 'unattested'}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+              {lane.leaves.length === 0 && (
+                <li><div className="sidecar-inspector__empty">No leaves in this lane.</div></li>
+              )}
+            </ol>
+          </section>
+        ))}
+      </div>
+      <details className="sidecar-process-flow-v1__library">
+        <summary><strong>Library functions</strong> <span className="status-chip default">{catalog.library.length}</span></summary>
+        <ul>
+          {catalog.library.map((fn) => (
+            <li key={fn.name}>
+              <strong>{fn.name}</strong>
+              <p>{fn.intent}</p>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+// V2 — asset-DAG. Nodes are *_surface assets; group leaves by the surface they produce.
+function ProcessFlowMapV2AssetDag({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
+  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
+  // Each surface is produced by one leaf (each leaf has one primary output).
+  // Group leaves by their primary output surface and show producers + consumers.
+  const surfaceProducers = new Map<string, typeof catalog.leaves[number]>();
+  for (const leaf of catalog.leaves) {
+    const primary = leaf.outputs[0];
+    if (primary && !surfaceProducers.has(primary)) {
+      surfaceProducers.set(primary, leaf);
+    }
+  }
+  // Compute fan-in: for each surface, count how many other leaves consume it.
+  const surfaceFanIn = new Map<string, string[]>();
+  for (const leaf of catalog.leaves) {
+    for (const input of leaf.inputs) {
+      if (!surfaceFanIn.has(input)) surfaceFanIn.set(input, []);
+      surfaceFanIn.get(input)!.push(leaf.name);
+    }
+  }
+  const surfaces = Array.from(surfaceProducers.keys());
+  return (
+    <div className="sidecar-process-flow-v2" role="region" aria-label="Asset-DAG variant">
+      <div className="sidecar-process-flow-v1__scaffold-banner">
+        §13A scaffold — V2 asset-DAG (owning ticket: T-026)
+      </div>
+      <ul className="sidecar-process-flow-v2__surfaces">
+        {surfaces.map((surface) => {
+          const producer = surfaceProducers.get(surface)!;
+          const consumers = surfaceFanIn.get(surface) ?? [];
+          const overlay = overlayByLeaf.get(producer.name);
+          const selected = producer.name === activeLeafName;
+          return (
+            <li key={surface}>
+              <button
+                type="button"
+                className={`sidecar-process-flow-v2__surface list-row${selected ? ' is-selected' : ''}`}
+                onClick={() => onSelectLeaf(producer.name)}
+              >
+                <div className="sidecar-process-flow-v2__surface-head">
+                  <strong>{surface}</strong>
+                  <span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>
+                    {overlay?.latestStatus ?? 'unattested'}
+                  </span>
+                </div>
+                <p>produced by <code>{producer.name}</code> ({producer.catalog})</p>
+                <p className="sidecar-process-flow-v2__fan">
+                  {consumers.length === 0
+                    ? 'terminal surface (not consumed downstream)'
+                    : `feeds ${consumers.length} downstream leaf${consumers.length === 1 ? '' : 'es'}`}
+                </p>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// V4 — assurance matrix. 7 columns (assurance dimensions) × N rows (leaves with overlays).
+function ProcessFlowMapV4AssuranceMatrix({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
+  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
+  const dims: Array<['materialization' | 'semanticConvergence' | 'obligationCarry' | 'requirementFulfillment' | 'ambiguity' | 'capability' | 'shallowRealization', string]> = [
+    ['materialization', 'mat'],
+    ['semanticConvergence', 'sem'],
+    ['obligationCarry', 'obl'],
+    ['requirementFulfillment', 'req'],
+    ['ambiguity', 'amb'],
+    ['capability', 'cap'],
+    ['shallowRealization', 'shal'],
+  ];
+  return (
+    <div className="sidecar-process-flow-v4" role="region" aria-label="Assurance-matrix variant">
+      <div className="sidecar-process-flow-v1__scaffold-banner">
+        §13A scaffold — V4 assurance matrix (owning ticket: T-026)
+      </div>
+      <table className="sidecar-process-flow-v4__matrix">
+        <thead>
+          <tr>
+            <th scope="col">Leaf</th>
+            <th scope="col">Catalog</th>
+            <th scope="col">Status</th>
+            {dims.map(([key, label]) => (
+              <th key={key} scope="col">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {catalog.leaves.map((leaf) => {
+            const overlay = overlayByLeaf.get(leaf.name);
+            const selected = leaf.name === activeLeafName;
+            return (
+              <tr
+                key={leaf.name}
+                className={selected ? 'is-selected' : ''}
+                onClick={() => onSelectLeaf(leaf.name)}
+                style={{ cursor: 'pointer' }}
+              >
+                <th scope="row">{leaf.name}</th>
+                <td>{leaf.catalog}</td>
+                <td><span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>{overlay?.latestStatus ?? 'unattested'}</span></td>
+                {dims.map(([key]) => {
+                  const cell = overlay?.assuranceVector?.[key];
+                  return (
+                    <td key={key}>
+                      <span className={`status-chip ${cell === 'pass' ? 'active' : cell === 'fail' ? 'blocked' : cell === 'pending' ? 'pending' : 'default'}`}>
+                        {cell ?? '—'}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function processRecordMatchesSearch(record: SidecarProcessRecord, normalizedSearch: string) {
+  const haystack = [
+    record.title,
+    record.summary,
+    record.kind,
+    record.status,
+    record.edge ?? '',
+    record.workKey ?? '',
+    record.graphFunctionId ?? '',
+    ...record.eventKinds,
+    ...record.evidenceRefs,
+  ].join(' ').toLowerCase();
+  return haystack.includes(normalizedSearch);
+}
+
+function describeProcessQueryHeadline(visibleCount: number, totalCount: number) {
+  const noun = totalCount === 1 ? 'process record' : 'process records';
+  return `Showing ${visibleCount} of ${totalCount} ${noun}.`;
+}
+
+function describeProcessQuerySummary(
+  map: SidecarProcessMap | null,
+  record: SidecarProcessRecord | null,
+  normalizedSearch: string,
+) {
+  const parts = [
+    map ? `${map.label} is the active graph carrier.` : null,
+    record ? `${record.title} anchors the workbench.` : 'No process object is focused.',
+    normalizedSearch ? 'Search is narrowing the active process lane.' : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
+function ProcessGraphMap({ map, activeRecordIds, selectedRecordId, onSelectRecord, onOpenTracePath }: {
+  map: SidecarProcessMap;
+  activeRecordIds: string[];
+  selectedRecordId: string | null;
+  onSelectRecord: (id: string) => void;
+  onOpenTracePath?: (absolutePath: string) => void;
+}) {
+  if (map.nodes.length === 0) {
+    return <div className="sidecar-inspector__empty">This map has no projected graph nodes.</div>;
+  }
+
+  const activeRecordSet = new Set(activeRecordIds);
+  const nodeWidth = 176;
+  const nodeHeight = 86;
+  const columnGap = 232;
+  const rowGap = 112;
+  const padding = 32;
+  const positions = new Map(map.nodes.map((node) => [
+    node.id,
+    {
+      x: padding + node.column * columnGap,
+      y: padding + node.row * rowGap,
+    },
+  ]));
+  const maxColumn = Math.max(0, ...map.nodes.map((node) => node.column));
+  const maxRow = Math.max(0, ...map.nodes.map((node) => node.row));
+  const width = padding * 2 + nodeWidth + maxColumn * columnGap;
+  const height = padding * 2 + nodeHeight + maxRow * rowGap;
+
+  return (
+    <div className="sidecar-process-map__viewport">
+      <div className="sidecar-process-map__canvas" style={{ width, height } as CSSProperties}>
+        <svg
+          className="sidecar-process-map__edges"
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          aria-hidden="true"
+        >
+          {map.edges.map((edge) => {
+            const from = positions.get(edge.from);
+            const to = positions.get(edge.to);
+            if (!from || !to) return null;
+            const active = edge.recordIds.length === 0 || edge.recordIds.some((id) => activeRecordSet.has(id));
+            const selected = selectedRecordId ? edge.recordIds.includes(selectedRecordId) : false;
+            const start = processMapEdgeAnchor(from, to, nodeWidth, nodeHeight);
+            const end = processMapEdgeAnchor(to, from, nodeWidth, nodeHeight);
+            return (
+              <line
+                key={edge.id}
+                className={`sidecar-process-map__edge sidecar-process-map__edge--${edge.tone}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
+                x1={start.x}
+                y1={start.y}
+                x2={end.x}
+                y2={end.y}
+              />
+            );
+          })}
+        </svg>
+        {map.edges.map((edge) => {
+          const from = positions.get(edge.from);
+          const to = positions.get(edge.to);
+          if (!from || !to) return null;
+          const active = edge.recordIds.length === 0 || edge.recordIds.some((id) => activeRecordSet.has(id));
+          const selected = selectedRecordId ? edge.recordIds.includes(selectedRecordId) : false;
+          const start = processMapEdgeAnchor(from, to, nodeWidth, nodeHeight);
+          const end = processMapEdgeAnchor(to, from, nodeWidth, nodeHeight);
+          const x = (start.x + end.x) / 2;
+          const y = (start.y + end.y) / 2;
+          const primaryRecordId = edge.recordIds.find((id) => activeRecordSet.has(id)) ?? edge.recordIds[0] ?? null;
+          const canOpenTrace = Boolean(edge.traceArchiveRoot && onOpenTracePath);
+          const canSelectRecord = Boolean(primaryRecordId);
+          const disabled = !canOpenTrace && !canSelectRecord;
+          return (
+            <button
+              key={`${edge.id}:glyph`}
+              type="button"
+              disabled={disabled}
+              className={`sidecar-process-map__edge-glyph sidecar-process-map__edge-glyph--outcome-${edge.latestOutcome ?? 'unattested'} sidecar-process-map__edge-glyph--executor-${edge.executorProfile ?? 'unattested'}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
+              style={{ left: x, top: y } as CSSProperties}
+              title={processEdgeGlyphLabel(edge)}
+              aria-label={processEdgeGlyphLabel(edge)}
+              onClick={() => {
+                if (edge.traceArchiveRoot && onOpenTracePath) {
+                  onOpenTracePath(edge.traceArchiveRoot);
+                  return;
+                }
+                if (primaryRecordId) onSelectRecord(primaryRecordId);
+              }}
+            >
+              <span className="sidecar-process-map__edge-outcome" aria-hidden="true" />
+              <span className="sidecar-process-map__edge-executor" aria-hidden="true" />
+            </button>
+          );
+        })}
+        {map.nodes.map((node) => {
+          const position = positions.get(node.id);
+          if (!position) return null;
+          const active = node.recordIds.length === 0 || node.recordIds.some((id) => activeRecordSet.has(id));
+          const selected = selectedRecordId ? node.recordIds.includes(selectedRecordId) : false;
+          const primaryRecordId = node.recordIds.find((id) => activeRecordSet.has(id)) ?? null;
+          return (
+            <button
+              key={node.id}
+              type="button"
+              disabled={!primaryRecordId}
+              className={`sidecar-process-map-node sidecar-process-map-node--${node.kind} sidecar-process-map-node--${node.tone}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
+              style={{ left: position.x, top: position.y } as CSSProperties}
+              onClick={() => primaryRecordId ? onSelectRecord(primaryRecordId) : undefined}
+              title={node.summary}
+            >
+              <span className="panel__eyebrow">{node.lane}</span>
+              <strong>{node.label}</strong>
+              <small>{node.kind.replace(/_/g, ' ')}</small>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function processMapEdgeAnchor(
+  node: { x: number; y: number },
+  other: { x: number; y: number },
+  nodeWidth: number,
+  nodeHeight: number,
+): { x: number; y: number } {
+  const dx = other.x - node.x;
+  const dy = other.y - node.y;
+  const centerX = node.x + nodeWidth / 2;
+  const centerY = node.y + nodeHeight / 2;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return {
+      x: dx >= 0 ? node.x + nodeWidth : node.x,
+      y: centerY,
+    };
+  }
+  return {
+    x: centerX,
+    y: dy >= 0 ? node.y + nodeHeight : node.y,
+  };
+}
+
+function processEdgeGlyphLabel(edge: SidecarProcessMap['edges'][number]) {
+  const outcome = edge.latestOutcome ?? 'unattested';
+  const executor = edge.executorProfile ?? 'no executor evidence';
+  const trace = edge.traceArchiveRoot ? `Trace archive: ${edge.traceArchiveRoot}` : 'No trace archive admitted';
+  return `${edge.label}: ${outcome}; ${executor}. ${trace}`;
+}
+
+function ProcessMapSummary({ map, activeViewLabel, visibleRecordCount }: {
+  map: SidecarProcessMap | null;
+  activeViewLabel: string;
+  visibleRecordCount: number;
+}) {
+  if (!map) return null;
+  return (
+    <div className="sidecar-process-map-summary">
+      <div>
+        <span className="panel__eyebrow">{activeViewLabel}</span>
+        <h3>{map.label}</h3>
+        <p>{map.summary}</p>
+      </div>
+      <div className="sidecar-process-map-summary__stats">
+        {map.stats.map((stat) => (
+          <span key={`${stat.label}:${stat.value}`} className={`sidecar-process-map-stat sidecar-process-map-stat--${stat.tone}`}>
+            <strong>{stat.value}</strong>
+            <small>{stat.label}</small>
+          </span>
+        ))}
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+          <strong>{visibleRecordCount}</strong>
+          <small>visible records</small>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ProcessRecordDetail({ record, projection }: {
+  record: SidecarProcessRecord;
+  projection: SidecarProcessProjection;
+}) {
+  return (
+    <div>
+      <div className="sidecar-inspector__id">{record.edge ?? record.kind}</div>
+      <h2 className="sidecar-inspector__title">{record.title}</h2>
+      <div className="inline-pills">
+        <Pill kind={record.tone}>{record.status}</Pill>
+        {record.vectorIndex !== null ? <Pill kind="default">vector {record.vectorIndex}</Pill> : null}
+        <Pill kind="default">{record.eventKinds.length} event kinds</Pill>
+      </div>
+      <p className="sidecar-body-text">{record.summary}</p>
+      <MetaGrid items={[
+        ['Contract', `${projection.contractName} ${projection.contractVersion}`],
+        ['Run', record.runId ?? '—'],
+        ['Work key', record.workKey ?? '—'],
+        ['Graph call', compactIdentity(record.graphCallId)],
+        ['Frame', compactIdentity(record.frameId)],
+      ]} />
+      <Section title="Observed Events">
+        <div className="inline-pills">
+          {record.eventKinds.map((kind) => <Pill key={kind} kind="default">{kind}</Pill>)}
+        </div>
+      </Section>
+      <Section title="Evidence">
+        {record.evidenceRefs.length === 0 ? <div className="sidecar-body-text">No evidence refs attached to this record.</div> : null}
+        <ul className="sidecar-criteria-list">
+          {record.evidenceRefs.slice(0, 8).map((ref) => <li key={ref}>{ref}</li>)}
+        </ul>
+      </Section>
+    </div>
+  );
+}
+
+function compactIdentity(value: string | null) {
+  if (!value) return '—';
+  if (value.length <= 72) return value;
+  return `${value.slice(0, 34)}...${value.slice(-28)}`;
+}
+
+function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispatch }: {
+  projectRoot: string | null;
+  tabId: string;
+  relativePath: string;
+  viewerState: SidecarDocumentViewerState | undefined;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
   const [surface, setSurface] = useState<SurfaceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2214,10 +3313,18 @@ function SurfaceInspector({ projectRoot, relativePath }: { projectRoot: string |
     return <div className="sidecar-inspector__empty">Surface not loaded.</div>;
   }
   if (surface.kind === 'file') {
+    const descriptor = documentDescriptorForPath(surface.relative_path);
     return (
       <div className="sidecar-surface-inspector">
-        <div className="sidecar-inspector__id">{surface.relative_path}</div>
-        <MarkdownDocument content={surface.content} />
+        <DocumentViewer
+          descriptor={descriptor}
+          content={surface.content}
+          state={viewerState}
+          onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
+          onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
+          onReset={() => dispatch({ type: 'document/reset', tabId })}
+          onFitWidth={() => dispatch({ type: 'document/fit-width', tabId })}
+        />
       </div>
     );
   }
@@ -2420,7 +3527,13 @@ function TerminalWorkspace({ state, projectRoot, dispatch, onSpawn, onKill, onCo
   const activeSessionMeta = terminalSessionMetaLabel(activeSession);
   const splitOrientation = terminalWorkspace.split === 'split-horizontal' ? 'horizontal' : 'vertical';
   const handleSessionSelect = (event: ChangeEvent<HTMLSelectElement>) => {
-    if (event.target.value) dispatch({ type: 'session/select', id: event.target.value });
+    if (event.target.value) {
+      dispatch({
+        type: 'terminal/open',
+        sessionId: event.target.value,
+        groupId: activeGroup?.id ?? terminalWorkspace.activeGroupId,
+      });
+    }
   };
   return (
     <div className="sidecar-shell-layout">

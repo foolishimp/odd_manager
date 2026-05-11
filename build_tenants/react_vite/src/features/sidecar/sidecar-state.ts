@@ -2,6 +2,7 @@ import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
+import type { SidecarProcessFlowVariantId, SidecarProcessMapId, SidecarProcessProjection, SidecarProcessViewId } from '../../contracts/process';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -9,7 +10,7 @@ export interface ContextRecord {
   session: null | { id: string };
 }
 
-export type SelectionKind = 'project' | 'ticket' | 'comment' | 'session' | 'surface' | null;
+export type SelectionKind = 'project' | 'ticket' | 'comment' | 'session' | 'surface' | 'process' | null;
 export type SidecarExplorerProviderId = 'projects' | 'tickets' | 'comments' | 'history' | 'browse';
 export type SidecarInfoSurface = SidecarExplorerProviderId;
 
@@ -76,6 +77,13 @@ export interface SidecarViewerTab {
   id: string;
   kind: SidecarViewerTabKind;
   objectId: string;
+}
+
+export type SidecarDocumentFitMode = 'none' | 'width';
+
+export interface SidecarDocumentViewerState {
+  zoom: number;
+  fit: SidecarDocumentFitMode;
 }
 
 export interface SidecarViewerGroup {
@@ -155,11 +163,23 @@ export interface SidecarLayoutProfile {
   contextKey: string;
   ui: {
     infoCollapsed: boolean;
+    infoPinned: boolean;
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
+    activeProcessView: SidecarProcessViewId;
+    activeProcessMap: SidecarProcessMapId;
+    activeProcessRecordId: string | null;
+    // T-026: variant selection over the process flow map. V0 is canonical;
+    // V1/V2/V4 are §13A scaffolds. Persisted across sessions via the layout
+    // profile so the operator's last-used variant is restored.
+    activeProcessFlowVariant: SidecarProcessFlowVariantId;
+    // T-026 + T-022: focused leaf for the per-leaf workbench (overlay,
+    // assurance vector, traced evidence). Null when no leaf is focused.
+    activeLeafName: string | null;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
+    documentViewers: Record<string, SidecarDocumentViewerState>;
     terminalWorkspace: SidecarTerminalWorkspace;
   };
 }
@@ -174,17 +194,25 @@ export interface SidecarState {
   tickets: TicketRecord[];
   comments: CommentRecord[];
   sessions: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
+  process: SidecarProcessProjection | null;
   selection: Selection;
   pathHistory: SidecarPathHistoryEntry[];
   activeSessionId: string | null;
   secondarySessionId: string | null;
   ui: {
     infoCollapsed: boolean;
+    infoPinned: boolean;
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
+    activeProcessView: SidecarProcessViewId;
+    activeProcessMap: SidecarProcessMapId;
+    activeProcessRecordId: string | null;
+    activeProcessFlowVariant: SidecarProcessFlowVariantId;
+    activeLeafName: string | null;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
+    documentViewers: Record<string, SidecarDocumentViewerState>;
     terminalWorkspace: SidecarTerminalWorkspace;
   };
   unreadIds: string[];
@@ -192,6 +220,7 @@ export interface SidecarState {
   lastAction: { ok: boolean; message?: string; error?: string } | null;
   replyDraft: { parentId: string; body: string } | null;
   loading: boolean;
+  activeLoadRoot: string | null;
   pendingCommands: PendingSidecarCmd[];
   nextCommandId: number;
 }
@@ -200,12 +229,38 @@ export type SidecarLoadReason = 'initial' | 'project_selected' | 'action_complet
 
 export type SidecarMsg =
   | { type: 'load/request'; projectRoot: string | null; reason: SidecarLoadReason }
-  | { type: 'load/start' }
-  | { type: 'load/done'; payload: Partial<SidecarState> }
+  | { type: 'load/start'; projectRoot: string | null }
+  | {
+      type: 'load/done';
+      projectRoot: string | null;
+      payload: {
+        context?: ContextRecord | null;
+        projects?: ProjectRecord[];
+        comments?: CommentRecord[];
+        tickets?: TicketRecord[];
+        sessions?: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
+        pathHistory?: SidecarPathHistoryEntry[];
+        unreadIds?: string[];
+        process?: SidecarProcessProjection | null;
+        selection?: Selection;
+        activeSessionId?: string | null;
+        secondarySessionId?: string | null;
+        ui?: SidecarState['ui'];
+        replyDraft?: { parentId: string; body: string } | null;
+        lastAction?: { ok: boolean; message?: string; error?: string } | null;
+        viewerAgent?: string;
+      }
+    }
   | { type: 'cmd/dispatched'; ids: string[] }
   | { type: 'ui/toggle-workspace'; workspace: 'info' | 'shell'; collapsed?: boolean }
+  | { type: 'ui/set-info-pinned'; pinned?: boolean }
   | { type: 'ui/set-shell-layout'; layout: SidecarShellLayout }
   | { type: 'ui/select-info-surface'; surface: SidecarInfoSurface; open?: boolean }
+  | { type: 'process/select-view'; view: SidecarProcessViewId }
+  | { type: 'process/select-map'; map: SidecarProcessMapId }
+  | { type: 'process/select-record'; id: string | null }
+  | { type: 'process/select-variant'; variant: SidecarProcessFlowVariantId }
+  | { type: 'process/select-leaf'; leafName: string | null }
   | { type: 'ui/resize-start'; target: SidecarResizeTarget; pointerId: number | null; clientX: number; clientY: number }
   | { type: 'ui/resize-preview'; target: SidecarResizeTarget; valuePx: number }
   | { type: 'ui/resize-commit'; target?: SidecarResizeTarget; valuePx?: number }
@@ -223,6 +278,9 @@ export type SidecarMsg =
   | { type: 'viewer/resize-boundary'; index: number; deltaRatio: number }
   | { type: 'viewer/reset-ratios' }
   | { type: 'viewer/focus-group'; groupId: SidecarViewerGroupId }
+  | { type: 'document/zoom'; tabId: string; delta: number }
+  | { type: 'document/reset'; tabId: string }
+  | { type: 'document/fit-width'; tabId: string }
   | { type: 'terminal/open'; sessionId: string; groupId?: SidecarTerminalGroupId }
   | { type: 'terminal/select-tab'; groupId: SidecarTerminalGroupId; tabId: string }
   | { type: 'terminal/close-tab'; groupId: SidecarTerminalGroupId; tabId: string }
@@ -267,17 +325,25 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   tickets: [],
   comments: [],
   sessions: { records: [], diagnostic: null },
+  process: null,
   selection: { kind: null, id: null },
   pathHistory: [],
   activeSessionId: null,
   secondarySessionId: null,
   ui: {
     infoCollapsed: false,
+    infoPinned: false,
     shellCollapsed: false,
     shellLayout: 'single',
     activeInfoSurface: 'tickets',
+    activeProcessView: 'active_work',
+    activeProcessMap: 'process_flow',
+    activeProcessRecordId: null,
+    activeProcessFlowVariant: 'v1',
+    activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: { ...SIDECAR_VIEWER_WORKSPACE_DEFAULTS, groups: [...SIDECAR_VIEWER_WORKSPACE_DEFAULTS.groups] },
+    documentViewers: {},
     terminalWorkspace: { ...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS, groups: [...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS.groups] },
   },
   unreadIds: [],
@@ -285,6 +351,7 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   lastAction: null,
   replyDraft: null,
   loading: true,
+  activeLoadRoot: null,
   pendingCommands: [],
   nextCommandId: 1,
 };
@@ -504,6 +571,50 @@ function selectionFromViewerTab(tab: SidecarViewerTab | null): Selection {
   return tab ? { kind: tab.kind, id: tab.objectId } : { kind: null, id: null };
 }
 
+export const SIDECAR_DOCUMENT_VIEWER_DEFAULTS: SidecarDocumentViewerState = {
+  zoom: 1,
+  fit: 'none',
+};
+
+export const SIDECAR_DOCUMENT_ZOOM_MIN = 0.5;
+export const SIDECAR_DOCUMENT_ZOOM_MAX = 2.5;
+export const SIDECAR_DOCUMENT_ZOOM_STEP = 0.15;
+
+function normalizeDocumentViewerState(value: unknown): SidecarDocumentViewerState {
+  if (!isRecord(value)) return { ...SIDECAR_DOCUMENT_VIEWER_DEFAULTS };
+  const zoom = typeof value.zoom === 'number' && Number.isFinite(value.zoom)
+    ? Math.min(SIDECAR_DOCUMENT_ZOOM_MAX, Math.max(SIDECAR_DOCUMENT_ZOOM_MIN, Number(value.zoom.toFixed(2))))
+    : SIDECAR_DOCUMENT_VIEWER_DEFAULTS.zoom;
+  const fit = value.fit === 'width' ? 'width' : 'none';
+  return { zoom, fit };
+}
+
+function normalizeDocumentViewers(value: unknown, workspace: SidecarViewerWorkspace): Record<string, SidecarDocumentViewerState> {
+  if (!isRecord(value)) return {};
+  const validTabIds = new Set(workspace.tabs.filter((tab) => tab.kind === 'surface').map((tab) => tab.id));
+  const next: Record<string, SidecarDocumentViewerState> = {};
+  for (const [tabId, viewerState] of Object.entries(value)) {
+    if (!validTabIds.has(tabId)) continue;
+    next[tabId] = normalizeDocumentViewerState(viewerState);
+  }
+  return next;
+}
+
+function updateDocumentViewer(
+  viewers: Record<string, SidecarDocumentViewerState>,
+  workspace: SidecarViewerWorkspace,
+  tabId: string,
+  update: (state: SidecarDocumentViewerState) => SidecarDocumentViewerState,
+) {
+  if (findViewerTab(normalizeViewerWorkspace(workspace), tabId)?.kind !== 'surface') {
+    return pruneDocumentViewers(viewers, workspace);
+  }
+  return {
+    ...pruneDocumentViewers(viewers, workspace),
+    [tabId]: normalizeDocumentViewerState(update(normalizeDocumentViewerState(viewers[tabId]))),
+  };
+}
+
 function openViewerTab(
   workspace: SidecarViewerWorkspace,
   kind: SidecarViewerTabKind,
@@ -548,6 +659,13 @@ function closeViewerTab(workspace: SidecarViewerWorkspace, groupId: SidecarViewe
   const referenced = new Set(groups.flatMap((group) => group.tabIds));
   const tabs = normalized.tabs.filter((tab) => referenced.has(tab.id));
   return normalizeViewerWorkspace({ ...normalized, tabs, groups, activeGroupId: groupId });
+}
+
+function pruneDocumentViewers(
+  viewers: Record<string, SidecarDocumentViewerState>,
+  workspace: SidecarViewerWorkspace,
+) {
+  return normalizeDocumentViewers(viewers, workspace);
 }
 
 function setViewerSplit(workspace: SidecarViewerWorkspace, split: SidecarViewerSplit): SidecarViewerWorkspace {
@@ -858,11 +976,19 @@ function isTerminalGroupId(value: unknown): value is SidecarTerminalGroupId {
 }
 
 function isViewerTabKind(value: unknown): value is SidecarViewerTabKind {
-  return value === 'project' || value === 'ticket' || value === 'comment' || value === 'session' || value === 'surface';
+  return value === 'project' || value === 'ticket' || value === 'comment' || value === 'session' || value === 'surface' || value === 'process';
 }
 
 function isInfoSurface(value: unknown): value is SidecarInfoSurface {
   return SIDECAR_EXPLORER_PROVIDERS.some((provider) => provider.id === value);
+}
+
+function isProcessView(value: unknown): value is SidecarProcessViewId {
+  return value === 'active_work' || value === 'blocked_waiting' || value === 'ready_handoff';
+}
+
+function isProcessMap(value: unknown): value is SidecarProcessMapId {
+  return value === 'process_flow' || value === 'builder_governance' || value === 'runtime_evidence';
 }
 
 function validWorkbenchLayout(value: unknown): SidecarWorkbenchLayout | null {
@@ -900,6 +1026,10 @@ function validViewerWorkspace(value: unknown): SidecarViewerWorkspace | null {
   return normalizeViewerWorkspace({ split: value.split, activeGroupId: value.activeGroupId, tabs, groups, ratios: normalizePaneRatios(value.ratios, groups.length) });
 }
 
+function validDocumentViewers(value: unknown, workspace: SidecarViewerWorkspace): Record<string, SidecarDocumentViewerState> {
+  return normalizeDocumentViewers(value, workspace);
+}
+
 function validTerminalWorkspace(value: unknown): SidecarTerminalWorkspace | null {
   if (!isRecord(value) || !isShellLayout(value.split) || !isTerminalGroupId(value.activeGroupId)) return null;
   if (!Array.isArray(value.tabs) || !Array.isArray(value.groups)) return null;
@@ -929,6 +1059,7 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
   const viewerWorkspace = validViewerWorkspace(ui.viewerWorkspace);
   const terminalWorkspace = validTerminalWorkspace(ui.terminalWorkspace);
   if (typeof ui.infoCollapsed !== 'boolean') return { ok: false, error: 'layout profile infoCollapsed is invalid' };
+  if (ui.infoPinned !== undefined && typeof ui.infoPinned !== 'boolean') return { ok: false, error: 'layout profile infoPinned is invalid' };
   if (typeof ui.shellCollapsed !== 'boolean') return { ok: false, error: 'layout profile shellCollapsed is invalid' };
   if (!isShellLayout(ui.shellLayout)) return { ok: false, error: 'layout profile shellLayout is invalid' };
   if (!isInfoSurface(ui.activeInfoSurface)) return { ok: false, error: 'layout profile activeInfoSurface is invalid' };
@@ -942,15 +1073,28 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
       contextKey,
       ui: {
         infoCollapsed: ui.infoCollapsed,
+        infoPinned: ui.infoPinned === true,
         shellCollapsed: ui.shellCollapsed,
         shellLayout: terminalWorkspace.split,
         activeInfoSurface: ui.activeInfoSurface,
+        activeProcessView: isProcessView(ui.activeProcessView) ? ui.activeProcessView : 'active_work',
+        activeProcessMap: isProcessMap(ui.activeProcessMap) ? ui.activeProcessMap : 'process_flow',
+        activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
+        activeProcessFlowVariant: isProcessFlowVariant(ui.activeProcessFlowVariant)
+          ? (ui.activeProcessFlowVariant as SidecarProcessFlowVariantId)
+          : 'v1',
+        activeLeafName: typeof ui.activeLeafName === 'string' ? ui.activeLeafName : null,
         workbenchLayout,
         viewerWorkspace,
+        documentViewers: validDocumentViewers(ui.documentViewers, viewerWorkspace),
         terminalWorkspace,
       },
     },
   };
+}
+
+function isProcessFlowVariant(value: unknown): value is SidecarProcessFlowVariantId {
+  return value === 'v0' || value === 'v1' || value === 'v2' || value === 'v4';
 }
 
 export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: string): SidecarLayoutProfile {
@@ -960,14 +1104,21 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
     contextKey,
     ui: {
       infoCollapsed: state.ui.infoCollapsed,
+      infoPinned: state.ui.infoPinned,
       shellCollapsed: state.ui.shellCollapsed,
       shellLayout: terminalWorkspace.split,
       activeInfoSurface: state.ui.activeInfoSurface,
+      activeProcessView: state.ui.activeProcessView,
+      activeProcessMap: state.ui.activeProcessMap,
+      activeProcessRecordId: state.ui.activeProcessRecordId,
+      activeProcessFlowVariant: state.ui.activeProcessFlowVariant,
+      activeLeafName: state.ui.activeLeafName,
       workbenchLayout: normalizeWorkbenchLayout({
         ...state.ui.workbenchLayout,
         activeResize: null,
       }),
       viewerWorkspace: normalizeViewerWorkspace(state.ui.viewerWorkspace),
+      documentViewers: normalizeDocumentViewers(state.ui.documentViewers, normalizeViewerWorkspace(state.ui.viewerWorkspace)),
       terminalWorkspace,
     },
   };
@@ -977,11 +1128,18 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
   const terminalWorkspace = normalizeTerminalWorkspace(defaultTerminalWorkspace(), state.sessions.records, state.activeSessionId);
   return {
     infoCollapsed: false,
+    infoPinned: false,
     shellCollapsed: false,
     shellLayout: terminalWorkspace.split,
     activeInfoSurface: 'tickets',
+    activeProcessView: 'active_work',
+    activeProcessMap: 'process_flow',
+    activeProcessRecordId: null,
+    activeProcessFlowVariant: 'v1',
+    activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: defaultViewerWorkspace(),
+    documentViewers: {},
     terminalWorkspace,
   };
 }
@@ -1001,6 +1159,7 @@ function normalizeLoadedState(state: SidecarState) {
     : firstSecondarySessionId(state.sessions.records, activeSessionId);
   const workbenchLayout = normalizeWorkbenchLayout(state.ui.workbenchLayout);
   const viewerWorkspace = normalizeViewerWorkspace(state.ui.viewerWorkspace);
+  const documentViewers = normalizeDocumentViewers(state.ui.documentViewers, viewerWorkspace);
   const terminalWorkspace = normalizeTerminalWorkspace(state.ui.terminalWorkspace, state.sessions.records, activeSessionId);
   const terminalTab = activeTerminalTab(terminalWorkspace);
   const normalizedActiveSessionId = terminalTab?.sessionId ?? activeSessionId;
@@ -1013,7 +1172,43 @@ function normalizeLoadedState(state: SidecarState) {
       shellLayout: terminalWorkspace.split,
       workbenchLayout,
       viewerWorkspace,
+      documentViewers,
       terminalWorkspace,
+    },
+  };
+}
+
+function hasLoadProjectionPayload(payload: SidecarMsg & { type: 'load/done' }['payload']) {
+  return (
+    payload.context !== undefined
+    || payload.projects !== undefined
+    || payload.comments !== undefined
+    || payload.tickets !== undefined
+    || payload.sessions !== undefined
+    || payload.pathHistory !== undefined
+    || payload.unreadIds !== undefined
+    || payload.process !== undefined
+    || payload.selection !== undefined
+    || payload.activeSessionId !== undefined
+    || payload.secondarySessionId !== undefined
+    || payload.replyDraft !== undefined
+    || payload.ui !== undefined
+    || payload.viewerAgent !== undefined
+  );
+}
+
+function isLoadPayloadMismatch(state: SidecarState, requestedRoot: string | null) {
+  return requestedRoot !== null && state.context?.project?.root !== requestedRoot;
+}
+
+function clearStaleProcessLoadState(state: SidecarState): SidecarState {
+  return {
+    ...state,
+    process: null,
+    ui: {
+      ...state.ui,
+      activeProcessRecordId: null,
+      activeLeafName: null,
     },
   };
 }
@@ -1021,10 +1216,34 @@ function normalizeLoadedState(state: SidecarState) {
 export function updateSidecarState(state: SidecarState, msg: SidecarMsg): SidecarState {
   switch (msg.type) {
     case 'load/request':
+      return { ...state, loading: true, activeLoadRoot: msg.projectRoot };
     case 'load/start':
-      return { ...state, loading: true };
+      return { ...state, loading: true, activeLoadRoot: msg.projectRoot };
     case 'load/done':
-      return normalizeLoadedState({ ...state, ...msg.payload, loading: false });
+      if (state.activeLoadRoot !== msg.projectRoot) {
+        return state;
+      }
+      if (!hasLoadProjectionPayload(msg.payload)) {
+        const next = clearStaleProcessLoadState(normalizeLoadedState({
+          ...state,
+          ...(msg.payload.lastAction ? { lastAction: msg.payload.lastAction } : {}),
+          loading: false,
+          activeLoadRoot: null,
+        }));
+        if (isLoadPayloadMismatch(state, msg.projectRoot)) {
+          return {
+            ...next,
+            tickets: [],
+            comments: [],
+            projects: [],
+            pathHistory: [],
+            unreadIds: [],
+            selection: { kind: null, id: null },
+          };
+        }
+        return next;
+      }
+      return normalizeLoadedState({ ...state, ...msg.payload, loading: false, activeLoadRoot: null });
     case 'cmd/dispatched': {
       const dispatched = new Set(msg.ids);
       return { ...state, pendingCommands: state.pendingCommands.filter((entry) => !dispatched.has(entry.id)) };
@@ -1037,9 +1256,19 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           [key]: collapsed,
+          ...(msg.workspace === 'info' && collapsed ? { infoPinned: false } : {}),
         },
       };
     }
+    case 'ui/set-info-pinned':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          infoCollapsed: false,
+          infoPinned: msg.pinned ?? !state.ui.infoPinned,
+        },
+      };
     case 'ui/set-shell-layout': {
       const terminalWorkspace = setTerminalSplit(state.ui.terminalWorkspace, state.sessions.records, msg.layout);
       return {
@@ -1059,6 +1288,48 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           ...state.ui,
           activeInfoSurface: msg.surface,
           infoCollapsed: msg.open === false ? true : false,
+          infoPinned: msg.open === false ? false : state.ui.infoPinned,
+        },
+      };
+    case 'process/select-view':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeProcessView: msg.view,
+          activeProcessRecordId: null,
+        },
+      };
+    case 'process/select-map':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeProcessMap: msg.map,
+        },
+      };
+    case 'process/select-variant':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeProcessFlowVariant: msg.variant,
+        },
+      };
+    case 'process/select-leaf':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeLeafName: msg.leafName,
+        },
+      };
+    case 'process/select-record':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeProcessRecordId: msg.id,
         },
       };
     case 'ui/resize-start': {
@@ -1170,11 +1441,16 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           infoCollapsed: validation.profile.ui.infoCollapsed,
+          infoPinned: validation.profile.ui.infoPinned,
           shellCollapsed: validation.profile.ui.shellCollapsed,
           shellLayout: terminalWorkspace.split,
           activeInfoSurface: validation.profile.ui.activeInfoSurface,
+          activeProcessView: validation.profile.ui.activeProcessView,
+          activeProcessMap: validation.profile.ui.activeProcessMap,
+          activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
           workbenchLayout: validation.profile.ui.workbenchLayout,
           viewerWorkspace: validation.profile.ui.viewerWorkspace,
+          documentViewers: validation.profile.ui.documentViewers,
           terminalWorkspace,
         },
       };
@@ -1203,6 +1479,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           viewerWorkspace,
+          documentViewers: pruneDocumentViewers(state.ui.documentViewers, viewerWorkspace),
         },
       };
     }
@@ -1221,6 +1498,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           viewerWorkspace,
+          documentViewers: pruneDocumentViewers(state.ui.documentViewers, viewerWorkspace),
           terminalWorkspace,
         },
       };
@@ -1240,6 +1518,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           viewerWorkspace,
+          documentViewers: pruneDocumentViewers(state.ui.documentViewers, viewerWorkspace),
           terminalWorkspace,
         },
       };
@@ -1300,6 +1579,38 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         },
       };
     }
+    case 'document/zoom':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          documentViewers: updateDocumentViewer(state.ui.documentViewers, state.ui.viewerWorkspace, msg.tabId, (viewerState) => ({
+            zoom: viewerState.zoom + msg.delta,
+            fit: 'none',
+          })),
+        },
+      };
+    case 'document/reset':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          documentViewers: updateDocumentViewer(state.ui.documentViewers, state.ui.viewerWorkspace, msg.tabId, () => ({
+            ...SIDECAR_DOCUMENT_VIEWER_DEFAULTS,
+          })),
+        },
+      };
+    case 'document/fit-width':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          documentViewers: updateDocumentViewer(state.ui.documentViewers, state.ui.viewerWorkspace, msg.tabId, () => ({
+            zoom: 1,
+            fit: 'width',
+          })),
+        },
+      };
     case 'terminal/open': {
       const terminalWorkspace = openTerminalTab(state.ui.terminalWorkspace, state.sessions.records, msg.sessionId, msg.groupId);
       const tab = activeTerminalTab(terminalWorkspace);

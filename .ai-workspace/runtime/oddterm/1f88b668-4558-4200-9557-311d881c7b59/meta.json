@@ -1,0 +1,20 @@
+{
+  "id": "1f88b668-4558-4200-9557-311d881c7b59",
+  "workspaceRoot": "/Users/jim/src/apps/odd_manager",
+  "label": "sidecar shell",
+  "archived": true,
+  "status": "closed",
+  "shell": "/bin/zsh -f -i",
+  "pid": 50937,
+  "backend": "python-pty-service",
+  "createdAt": "2026-04-28T17:45:47.552Z",
+  "lastOutputAt": "2026-04-28T17:45:49.336Z",
+  "attachedTrainId": "sidecar",
+  "attachedStationId": null,
+  "attachedEdgeId": null,
+  "conversationHistoryId": "oddterm_1f88b668-4558-4200-9557-311d881c7b59",
+  "historyBytes": 1272,
+  "liveClientCount": 1,
+  "exitCode": null,
+  "signal": "SIGTERM"
+}

@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function waitForWorldProjection(page: Page) {
-  await expect(page.getByRole("heading", { name: /Odd (Manager|SDLC|World Model)/ })).toBeVisible();
+  await expect(page.getByRole("banner")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open workspace selector" })).toBeVisible();
 }
 

@@ -42,6 +42,7 @@ type WorkspaceRouteProps = {
   onRefresh: () => void;
   onIterate: () => void;
   onStartAuto: () => void;
+  onProjectRootChange: (projectRoot: string) => void;
 };
 
 type OperatorContextRow = {
@@ -267,6 +268,7 @@ export function WorkspaceRoute({
   onRefresh,
   onIterate,
   onStartAuto,
+  onProjectRootChange,
 }: WorkspaceRouteProps) {
   const evidenceSurfaces = useMemo(() => deriveEvidenceSurfaces(world), [world]);
   const provenanceSurfaces = useMemo(() => deriveProvenanceSurfaces(), []);
@@ -575,7 +577,14 @@ export function WorkspaceRoute({
 
       {selectedPage === "sidecar" ? (
         <div className="workspace-view workspace-view--sidecar">
-          <SidecarPanel projectRoot={workspaceRoot} />
+          <SidecarPanel
+            projectRoot={workspaceRoot}
+            onContextChange={(ctx) => {
+              if (ctx.project.root !== workspaceRoot) {
+                onProjectRootChange(ctx.project.root);
+              }
+            }}
+          />
         </div>
       ) : null}
       {selectedPage === "provenance" ? (

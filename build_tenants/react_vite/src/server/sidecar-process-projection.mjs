@@ -1,0 +1,1712 @@
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
+export const SIDECAR_PROCESS_CONTRACT_NAME = "odd_sdlc.query-domain";
+export const SIDECAR_PROCESS_CONTRACT_VERSION = "ts-v1";
+export const SIDECAR_PROCESS_CATALOG_CONTRACT_NAME = "odd_sdlc.catalog";
+export const SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH = ".ai-workspace/events/events.jsonl";
+export const SIDECAR_OPERATOR_RUNS_RELATIVE_PATH = ".ai-workspace/runtime/odd_sdlc/operator-runs";
+
+// T-026: requirement refs every leaf graph function carries per the upstream
+// odd_sdlc TypeScript module (`graphFunctionDeclarations` in module.ts).
+// Held as a default because the CLI catalog payload does not surface
+// declarations per leaf; the upstream module guarantees these refs.
+const SIDECAR_LEAF_DEFAULT_REQUIREMENT_REFS = Object.freeze([
+  "REQ-F-ODDSDLC-013",
+  "REQ-F-ODDSDLC-014",
+  "REQ-F-ODDSDLC-015"
+]);
+
+const SIDECAR_LEAF_DEFAULT_PROOF_OBLIGATIONS = Object.freeze([
+  "target_binding",
+  "operation_type",
+  "evidence_refs",
+  "input_output_identity_or_digest"
+]);
+
+const SIDECAR_LEAF_DEFAULT_TRAVERSAL_MODULATION = "single_vertical_slice";
+
+// T-022: outcome kinds enumerated by abiogenesis 3.5.0-rc.1 traced call-out
+// substrate (T-108 / T-109 / T-110 / T-111).
+const TRACED_OUTCOME_KINDS = new Set([
+  "exited",
+  "signaled",
+  "hard_timeout",
+  "inactivity_timeout",
+  "executor_unavailable",
+  "launch_failed",
+  "process_error",
+  "lost_terminal"
+]);
+const TRACED_EXECUTOR_PROFILES = new Set(["local-spawn", "pty-terminal"]);
+const TRACED_STREAM_MODELS = new Set(["stdio", "terminal-transcript"]);
+const TRACED_PARSERS = new Set(["generic-text", "claude-stream-json"]);
+const ASSURANCE_CELL_STATES = new Set(["pass", "fail", "pending"]);
+const LEAF_INVOCATION_STATUSES = new Set([
+  "queued",
+  "running",
+  "fp_succeeded",
+  "fd_postflight_passed",
+  "failed",
+  "unattested"
+]);
+
+export const SIDECAR_PROCESS_VIEWS = Object.freeze([
+  Object.freeze({
+    id: "active_work",
+    label: "Active Work",
+    summary: "Graph calls, frames, vectors, and worker assessments currently moving through the TypeScript process lane."
+  }),
+  Object.freeze({
+    id: "blocked_waiting",
+    label: "Blocked / Waiting",
+    summary: "Blocked vectors, retry repair, reopened continuation, and fail-closed process pressure."
+  }),
+  Object.freeze({
+    id: "ready_handoff",
+    label: "Ready for Handoff",
+    summary: "Closed vectors and advanced process objects with downstream handoff evidence."
+  })
+]);
+
+const TS_INSTALL_PROJECTION_RELATIVE_PATH = ".ai-workspace/runtime/odd_sdlc-typescript-installation.json";
+const TS_INSTALL_MANIFEST_RELATIVE_PATH = ".abiogenesis/odd_sdlc/typescript/install-manifest.json";
+
+const ACTIVE_EVENT_KINDS = new Set([
+  "graph_call_opened",
+  "frame_opened",
+  "vector_traversal_planned",
+  "assessed",
+  "retry_attempt_opened"
+]);
+
+const BLOCKED_EVENT_KINDS = new Set([
+  "retry_repair_planned",
+  "continuation_reopened",
+  "continuation_terminated"
+]);
+
+const READY_EVENT_KINDS = new Set(["vector_closed"]);
+
+const SUPPORTED_TS_EVENT_KINDS = new Set([
+  "graph_call_opened",
+  "frame_opened",
+  "vector_traversal_planned",
+  "vector_evaluated",
+  "vector_closed",
+  "assessed",
+  "retry_repair_planned",
+  "retry_attempt_opened",
+  "continuation_terminated",
+  "continuation_reopened"
+]);
+
+export function loadSidecarProcessProjection(workspaceRoot) {
+  const root = String(workspaceRoot ?? "").trim();
+  if (!root) {
+    return unsupportedProcessProjection("", "workspace root is required");
+  }
+
+  const installValidation = validateTypeScriptInstall(root);
+  if (!installValidation.ok) {
+    return unsupportedProcessProjection(root, installValidation.reason);
+  }
+  const queryDomain = loadInstalledQueryDomain(root, installValidation.manifest);
+
+  // T-026: catalog backbone. Live read each call (no memoization).
+  const catalog = loadInstalledCatalog(root, installValidation.manifest);
+
+  // T-026: per-leaf overlay from latest op-run. Live scan each call.
+  // T-022: traced evidence is folded into each overlay's tracedEvidence.
+  const leafOverlays = loadLeafOverlaysForLatestOpRun(root);
+
+  const eventPath = join(root, SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH);
+  if (!existsSync(eventPath)) {
+    const records = [];
+    return {
+      ...baseProjection(root),
+      supported: true,
+      views: materializeViews([]),
+      records,
+      maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
+      catalog,
+      leafOverlays
+    };
+  }
+
+  const eventRead = readRuntimeEvents(eventPath);
+  if (eventRead.events.length > 0 && !eventRead.events.some(isTypeScriptRuntimeEvent)) {
+    return unsupportedProcessProjection(root, "event log does not contain odd_sdlc TypeScript runtime basis");
+  }
+
+  const records = projectProcessRecords(eventRead.events);
+  return {
+    ...baseProjection(root),
+    supported: true,
+    eventCount: eventRead.events.length,
+    eventKinds: uniqueSorted(eventRead.events.map((event) => stringField(event, "kind")).filter(Boolean)),
+    views: materializeViews(records),
+    records,
+    maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
+    catalog,
+    leafOverlays
+  };
+}
+
+// ---------------------------------------------------------------------------
+// T-024: per-edge outcome glyph decoration. Folds the most recent
+// TracedCalloutEvidence per leaf onto every edge whose label or id matches
+// the leaf name. Pure post-pass — does not mutate the original maps.
+// ---------------------------------------------------------------------------
+
+function decorateMapsWithOverlays(maps, leafOverlays) {
+  if (!Array.isArray(leafOverlays) || leafOverlays.length === 0) return maps;
+  const overlayByLeaf = new Map(leafOverlays.map((ov) => [ov.leafName, ov]));
+  // Edges are keyed `flow-function:<leafName>:<hash>` or
+  // `governed-function:<leafName>:<hash>` on either `from` or `to`.
+  // The producing leaf carries the outcome (the edge represents the leaf's
+  // primary output surface). Match by extracting a leaf name from endpoint ids
+  // first, then fall back to a raw edge label match.
+  const leafNameFromNodeId = (nodeId) => {
+    const match = String(nodeId || "").match(/^(?:flow-function|governed-function):([^:]+):/);
+    return match ? match[1] : null;
+  };
+  return Object.freeze(
+    maps.map((map) => {
+      const decoratedEdges = map.edges.map((edge) => {
+        const leafKey =
+          leafNameFromNodeId(edge.from) ||
+          leafNameFromNodeId(edge.to) ||
+          // fallback: some maps use raw leaf names as edge id/label
+          (overlayByLeaf.has(edge.label) ? edge.label : null) ||
+          edge.id ||
+          "";
+        const overlay = overlayByLeaf.get(leafKey);
+        if (!overlay) return edge;
+        const evidence = overlay.tracedEvidence[overlay.tracedEvidence.length - 1] ?? null;
+        return Object.freeze({
+          ...edge,
+          latestOutcome: evidence ? evidence.outcome.kind : null,
+          executorProfile: evidence ? evidence.executorProfile : null,
+          traceArchiveRoot: overlay.traceArchiveRoot ?? null,
+        });
+      });
+      return Object.freeze({ ...map, edges: Object.freeze(decoratedEdges) });
+    })
+  );
+}
+
+// ---------------------------------------------------------------------------
+// T-026: catalog loader. Invokes `odd-sdlc-ts catalog` (sibling of
+// query-domain) on the active workspace's installed TS tenant. Returns
+// SidecarProcessCatalog or null when the install is unreachable / the
+// payload contract is unrecognised.
+// ---------------------------------------------------------------------------
+
+function loadInstalledCatalog(root, manifest) {
+  const commandPath = queryDomainCommandPath(root, manifest);
+  if (!commandPath || !existsSync(commandPath)) return null;
+  const result = spawnSync(process.execPath, [commandPath, "catalog", "--workspace", root], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 12 * 1024 * 1024,
+    timeout: 10_000
+  });
+  if (result.error || result.status !== 0) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+  const payload = parsed?.payload;
+  if (payload?.kind !== "sdlc_graph_function_catalog") return null;
+  return mapSdlcCatalogToSidecar(payload, root);
+}
+
+function mapSdlcCatalogToSidecar(payload, installRoot) {
+  const executives = Array.isArray(payload.executives) ? payload.executives : [];
+  const functions = Array.isArray(payload.functions) ? payload.functions : [];
+  const libraryFunctions = Array.isArray(payload.libraryFunctions) ? payload.libraryFunctions : [];
+
+  // Catalog origin is derived from executive `steps` arrays.
+  // bootstrap_release_self_test owns BOOTSTRAP_RELEASE_FUNCTION_CATALOG names;
+  // release_operational_cycle owns OPERATIONAL_FUNCTION_CATALOG names;
+  // anything else is triage.
+  const bootstrapNames = new Set(
+    stringArray(executives.find((e) => e?.name === "bootstrap_release_self_test")?.steps ?? [])
+  );
+  const operationalNames = new Set(
+    stringArray(executives.find((e) => e?.name === "release_operational_cycle")?.steps ?? [])
+  );
+
+  const sidecarLeaves = functions.map((fn) => mapLeafToSidecar(fn, bootstrapNames, operationalNames));
+  const sidecarExecutives = executives.map(mapExecutiveToSidecar).filter(Boolean);
+  const sidecarLibrary = libraryFunctions.map(mapLibraryToSidecar).filter(Boolean);
+
+  return Object.freeze({
+    kind: "sidecar_process_catalog",
+    contractName: SIDECAR_PROCESS_CATALOG_CONTRACT_NAME,
+    contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+    fetchedAt: new Date().toISOString(),
+    installRoot,
+    executives: Object.freeze(sidecarExecutives),
+    leaves: Object.freeze(sidecarLeaves),
+    library: Object.freeze(sidecarLibrary)
+  });
+}
+
+function mapLeafToSidecar(fn, bootstrapNames, operationalNames) {
+  const name = stringField(fn, "name") || "";
+  const catalog = bootstrapNames.has(name)
+    ? "bootstrap"
+    : operationalNames.has(name)
+    ? "operational"
+    : "triage";
+  return Object.freeze({
+    kind: "sidecar_leaf_graph_function_view",
+    name,
+    intent: stringField(fn, "intent"),
+    inputs: stringArray(fn?.inputs),
+    outputs: stringArray(fn?.outputs),
+    catalog,
+    transformContractRef:
+      stringField(fn, "transformContractRef") || `transform://odd_sdlc/${name}`,
+    evaluationContractRef:
+      stringField(fn, "evaluationContractRef") || `evaluation://odd_sdlc/${name}`,
+    traversalModulationStrategy: SIDECAR_LEAF_DEFAULT_TRAVERSAL_MODULATION,
+    proofObligations: SIDECAR_LEAF_DEFAULT_PROOF_OBLIGATIONS,
+    requirementRefs: SIDECAR_LEAF_DEFAULT_REQUIREMENT_REFS,
+    evaluators: Object.freeze([
+      Object.freeze({
+        name: `${name}_core_fd`,
+        regime: "F_D",
+        binding: `fd://odd_sdlc/${name}/core`
+      }),
+      Object.freeze({
+        name: `${name}_semantic_fp`,
+        regime: "F_P",
+        binding: `fp://odd_sdlc/${name}/construct`
+      })
+    ]),
+    operator: Object.freeze({
+      name: "odd_sdlc_typescript_builder",
+      regime: "F_P",
+      binding: "agent://odd_sdlc/typescript-builder"
+    })
+  });
+}
+
+function mapExecutiveToSidecar(executive) {
+  if (!executive || typeof executive.name !== "string") return null;
+  return Object.freeze({
+    kind: "sidecar_executive_view",
+    name: executive.name,
+    intent: stringField(executive, "intent"),
+    steps: stringArray(executive.steps),
+    outputs: stringArray(executive.outputs)
+  });
+}
+
+function mapLibraryToSidecar(libraryFn) {
+  if (!libraryFn || typeof libraryFn.name !== "string") return null;
+  return Object.freeze({
+    kind: "sidecar_library_function_view",
+    name: libraryFn.name,
+    intent: stringField(libraryFn, "intent"),
+    stableOuterContract: stringField(libraryFn, "stableOuterContract"),
+    computeOrder: stringArray(libraryFn.computeOrder),
+    abgOwnedRuntimeTruth: stringArray(libraryFn.abgOwnedRuntimeTruth),
+    sdlcOwnedDomainTruth: stringArray(libraryFn.sdlcOwnedDomainTruth)
+  });
+}
+
+// ---------------------------------------------------------------------------
+// T-026 + T-022: per-leaf overlay loader. Reads the latest op-run dir under
+// .ai-workspace/runtime/odd_sdlc/operator-runs/, and for each leaf trace
+// directory builds a SidecarLeafOverlay. Folds traced call-out evidence
+// from `result.json` (if present) into the overlay's tracedEvidence array.
+// Returns [] when no op-runs are present.
+// ---------------------------------------------------------------------------
+
+function loadLeafOverlaysForLatestOpRun(root) {
+  // Each timestamped dir under .ai-workspace/runtime/odd_sdlc/operator-runs/
+  // is ONE supervised actor invocation; its leaf identity lives in
+  // handoff_manifest.json:edgeName. Many operator-runs accumulate over time
+  // — same leaf may be invoked across multiple operator-runs (retries, repair,
+  // separate executive passes). Group all operator-runs by leaf name and
+  // produce one overlay per leaf with accumulated evidence.
+  const runsDir = join(root, SIDECAR_OPERATOR_RUNS_RELATIVE_PATH);
+  if (!existsSync(runsDir)) return [];
+  let entries;
+  try {
+    entries = readdirSync(runsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const opRunDirs = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const path = join(runsDir, entry.name);
+      let mtime = 0;
+      try {
+        mtime = statSync(path).mtimeMs;
+      } catch {
+        /* swallow */
+      }
+      return { name: entry.name, path, mtime };
+    })
+    .sort((a, b) => a.mtime - b.mtime || a.name.localeCompare(b.name)); // oldest -> newest so derived status reflects most recent
+  const byLeaf = new Map();
+  for (const opRun of opRunDirs) {
+    const manifest = readOpRunManifest(opRun.path);
+    if (!manifest) continue;
+    const leafName = stringField(manifest, "edgeName");
+    if (!leafName) continue;
+    let group = byLeaf.get(leafName);
+    if (!group) {
+      group = { leafName, opRunIds: [], opRunPaths: [], latestPath: opRun.path };
+      byLeaf.set(leafName, group);
+    }
+    group.opRunIds.push(opRun.name);
+    group.opRunPaths.push(opRun.path);
+    group.latestPath = opRun.path;
+  }
+  const overlays = [];
+  for (const group of byLeaf.values()) {
+    overlays.push(buildLeafOverlay(group));
+  }
+  return overlays;
+}
+
+function readOpRunManifest(opRunPath) {
+  const manifestPath = join(opRunPath, "handoff_manifest.json");
+  if (!existsSync(manifestPath)) return null;
+  return readJsonFile(manifestPath);
+}
+
+function buildLeafOverlay(group) {
+  // Latest op-run drives the assurance vector + status. Earlier op-runs
+  // contribute to invocation count and accumulated traced evidence.
+  const latestPath = group.latestPath;
+  const assuranceVector = readAssuranceVector(
+    join(latestPath, "assurance_satisfaction.json")
+  );
+  const tracedEvidence = [];
+  let latestTracedEvidence = [];
+  for (const opRunPath of group.opRunPaths) {
+    const evidence = collectTracedEvidence(opRunPath);
+    if (opRunPath === latestPath) latestTracedEvidence = evidence;
+    tracedEvidence.push(...evidence);
+  }
+  const latestStatus = deriveLeafStatus(latestPath, latestTracedEvidence);
+  const latestTraceArchiveRoot =
+    latestTracedEvidence.at(-1)?.traceArchiveRoot ??
+    tracedEvidence.at(-1)?.traceArchiveRoot ??
+    null;
+  const opRunIdLabel =
+    group.opRunIds.length === 1
+      ? group.opRunIds[0]
+      : `${group.opRunIds[0]}..${group.opRunIds[group.opRunIds.length - 1]}`;
+  return Object.freeze({
+    kind: "sidecar_leaf_overlay",
+    leafName: group.leafName,
+    opRunId: opRunIdLabel,
+    invocationCount: group.opRunIds.length,
+    latestStatus,
+    assuranceVector,
+    traceArchiveRoot: latestTraceArchiveRoot,
+    tracedEvidence: Object.freeze(tracedEvidence)
+  });
+}
+
+function readAssuranceVector(path) {
+  if (!existsSync(path)) return null;
+  const json = readJsonFile(path);
+  if (!json || typeof json !== "object") return null;
+  const cell = (key) => {
+    const raw = stringField(json, key);
+    return ASSURANCE_CELL_STATES.has(raw) ? raw : "pending";
+  };
+  return Object.freeze({
+    kind: "sidecar_assurance_ledger_vector",
+    materialization: cell("materialization"),
+    semanticConvergence: cell("semanticConvergence"),
+    obligationCarry: cell("obligationCarry"),
+    requirementFulfillment: cell("requirementFulfillment"),
+    ambiguity: cell("ambiguity"),
+    capability: cell("capability"),
+    shallowRealization: cell("shallowRealization")
+  });
+}
+
+function collectTracedEvidence(opRunPath) {
+  // Per the t109 reference run, the traced call-out archive lives at
+  // <opRunPath>/worker_process_events.jsonl.trace/, with the result envelope
+  // at .../result.json directly inside that dir. Earlier traces pre-T-109 may
+  // also place result.json directly under the op-run.
+  const candidates = [];
+  const archiveDir = join(opRunPath, "worker_process_events.jsonl.trace");
+  const archiveResult = join(archiveDir, "result.json");
+  if (existsSync(archiveResult)) candidates.push({ path: archiveResult, archive: archiveDir });
+  const directResult = join(opRunPath, "result.json");
+  if (existsSync(directResult)) candidates.push({ path: directResult, archive: opRunPath });
+  return candidates
+    .map(({ path, archive }) => admitTracedEvidenceFromResult(path, archive))
+    .filter(Boolean);
+}
+
+function admitTracedEvidenceFromResult(resultPath, archiveRoot) {
+  const json = readJsonFile(resultPath);
+  if (!json || typeof json !== "object") return null;
+  const outcomeKind = stringField(json?.outcome, "kind");
+  const executorProfile = stringField(json, "executorProfile");
+  const streamModel = stringField(json, "streamModel");
+  const parser = stringField(json, "parser");
+  if (
+    !TRACED_OUTCOME_KINDS.has(outcomeKind) ||
+    !TRACED_EXECUTOR_PROFILES.has(executorProfile) ||
+    !TRACED_STREAM_MODELS.has(streamModel) ||
+    !TRACED_PARSERS.has(parser)
+  ) {
+    return null;
+  }
+  // Substrate publishes apiRetryEvents / toolCallEvents as arrays; surface
+  // their length as the count fields the contract expects.
+  const apiRetryCount = Array.isArray(json?.apiRetryEvents)
+    ? json.apiRetryEvents.length
+    : typeof json?.apiRetryCount === "number"
+    ? json.apiRetryCount
+    : 0;
+  const toolCallCount = Array.isArray(json?.toolCallEvents)
+    ? json.toolCallEvents.length
+    : typeof json?.toolCallCount === "number"
+    ? json.toolCallCount
+    : 0;
+  const structuredEventCount =
+    typeof json?.structuredEventCount === "number" ? json.structuredEventCount : 0;
+  // The substrate's own paths block (when present) wins over derived defaults.
+  const substratePaths = isObject(json?.paths) ? json.paths : null;
+  const tracePath = (name, fallback) =>
+    typeof substratePaths?.[name] === "string" && substratePaths[name].trim()
+      ? substratePaths[name]
+      : fallback;
+  const traceArchivePaths = Object.freeze({
+    meta: tracePath("meta", join(archiveRoot, "meta.json")),
+    command: tracePath("command", join(archiveRoot, "command.json")),
+    events: tracePath("events", join(archiveRoot, "events.ndjson")),
+    stdout: tracePath("stdout", join(archiveRoot, "stdout.log")),
+    stderr: tracePath("stderr", join(archiveRoot, "stderr.log")),
+    finalOutput: tracePath("finalOutput", join(archiveRoot, "final_output.json")),
+    result: tracePath("result", resultPath),
+    terminalTranscript:
+      executorProfile === "pty-terminal"
+        ? tracePath("terminalTranscript", join(archiveRoot, "terminal.transcript"))
+        : null
+  });
+  return Object.freeze({
+    kind: "traced_callout_evidence",
+    invocationId:
+      stringField(json, "sessionId") ||
+      stringField(json, "invocationId") ||
+      stableRecordId("inv", resultPath),
+    outcome: Object.freeze({
+      kind: outcomeKind,
+      detail: typeof json?.outcome?.detail === "string" ? json.outcome.detail : null
+    }),
+    executorProfile,
+    streamModel,
+    parser,
+    status: typeof json?.status === "number" ? json.status : null,
+    signal: typeof json?.signal === "string" ? json.signal : null,
+    timedOut: Boolean(json?.timedOut),
+    inactivityTimedOut: Boolean(json?.inactivityTimedOut),
+    structuredEventCount,
+    apiRetryCount,
+    toolCallCount,
+    terminalSessionId:
+      typeof json?.terminalSessionId === "string" ? json.terminalSessionId : null,
+    traceArchiveRoot: archiveRoot,
+    traceArchivePaths
+  });
+}
+
+function isObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deriveLeafStatus(leafPath, tracedEvidence) {
+  // Status precedence: any failure outcome -> failed; postflight pass -> fd_postflight_passed;
+  // FP success without postflight -> fp_succeeded; assurance fold present -> running;
+  // nothing -> unattested.
+  for (const evidence of tracedEvidence) {
+    const kind = evidence?.outcome?.kind;
+    if (
+      kind === "signaled" ||
+      kind === "hard_timeout" ||
+      kind === "inactivity_timeout" ||
+      kind === "executor_unavailable" ||
+      kind === "launch_failed" ||
+      kind === "process_error" ||
+      kind === "lost_terminal"
+    ) {
+      return "failed";
+    }
+    if (kind === "exited" && evidence?.status !== 0) {
+      return "failed";
+    }
+  }
+  if (existsSync(join(leafPath, "postflight.json"))) return "fd_postflight_passed";
+  if (existsSync(join(leafPath, "fp_evaluate_result.json"))) return "fp_succeeded";
+  if (existsSync(join(leafPath, "worker_process_events.jsonl"))) return "running";
+  return "unattested";
+}
+
+function validateTypeScriptInstall(root) {
+  const projectionPath = join(root, TS_INSTALL_PROJECTION_RELATIVE_PATH);
+  const manifestPath = join(root, TS_INSTALL_MANIFEST_RELATIVE_PATH);
+  if (!existsSync(projectionPath) || !existsSync(manifestPath)) {
+    return { ok: false, reason: "odd_sdlc TypeScript installation projection is missing" };
+  }
+  const projection = readJsonFile(projectionPath);
+  const manifest = readJsonFile(manifestPath);
+  if (projection?.kind !== "odd_sdlc_typescript_installation_projection") {
+    return { ok: false, reason: "odd_sdlc TypeScript installation projection has unsupported kind" };
+  }
+  if (manifest?.kind !== "odd_sdlc_typescript_install_manifest") {
+    return { ok: false, reason: "odd_sdlc TypeScript install manifest has unsupported kind" };
+  }
+  if (manifest?.packageName !== "@odd-sdlc/typescript-tenant") {
+    return { ok: false, reason: "workspace is not installed from @odd-sdlc/typescript-tenant" };
+  }
+  return { ok: true, projection, manifest };
+}
+
+function loadInstalledQueryDomain(root, manifest) {
+  const commandPath = queryDomainCommandPath(root, manifest);
+  if (!commandPath || !existsSync(commandPath)) return null;
+  const result = spawnSync(process.execPath, [commandPath, "query-domain", "--workspace", root], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 12 * 1024 * 1024,
+    timeout: 10_000
+  });
+  if (result.error || result.status !== 0) return null;
+  try {
+    const parsed = JSON.parse(result.stdout);
+    const payload = parsed?.payload;
+    if (
+      payload?.kind === "sdlc_query_domain_projection" &&
+      payload?.contractName === SIDECAR_PROCESS_CONTRACT_NAME &&
+      payload?.contractVersion === SIDECAR_PROCESS_CONTRACT_VERSION
+    ) {
+      return payload;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function queryDomainCommandPath(root, manifest) {
+  const bindings = Array.isArray(manifest?.commandBindings) ? manifest.commandBindings : [];
+  const binding = bindings.find((entry) => entry?.commandName === "odd-sdlc-ts") ?? bindings[0] ?? null;
+  const packageCommandPath = typeof binding?.packageCommandPath === "string" ? binding.packageCommandPath : "";
+  if (packageCommandPath) return packageCommandPath;
+  const commandPath = typeof binding?.commandPath === "string" ? binding.commandPath : "";
+  if (commandPath) return commandPath;
+  return join(root, "node_modules/@odd-sdlc/typescript-tenant/build/semantic/code/src/cli/main.js");
+}
+
+function readJsonFile(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function readRuntimeEvents(path) {
+  const events = [];
+  const malformed = [];
+  const lines = readFileSync(path, "utf8").split(/\r?\n/);
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") {
+        events.push(Object.freeze({ ...parsed, __eventIndex: index }));
+      }
+    } catch {
+      malformed.push(index);
+    }
+  });
+  return { events, malformed };
+}
+
+function isTypeScriptRuntimeEvent(event) {
+  const basisId = stringField(event, "basisId");
+  const resolvedRuntimeRef = stringField(event, "resolvedRuntimeRef");
+  return basisId.includes('"moduleName":"odd_sdlc_typescript"') ||
+    resolvedRuntimeRef.includes("typescript");
+}
+
+function projectProcessRecords(events) {
+  const records = new Map();
+  const latestVectorByEdge = new Map();
+
+  events.forEach((event, index) => {
+    const kind = stringField(event, "kind");
+    if (!SUPPORTED_TS_EVENT_KINDS.has(kind)) return;
+
+    if (kind === "graph_call_opened") {
+      const id = stableRecordId("call", stringField(event, "graphCallId") || `${index}`);
+      upsertRecord(records, id, {
+        kind: "graph_call",
+        title: graphFunctionTitle(event),
+        summary: `Graph call opened for ${graphFunctionTitle(event)}.`,
+        viewIds: ["active_work"],
+        tone: "active",
+        status: "opened",
+        graphFunctionId: stringOrNull(event, "graphFunctionId"),
+        graphCallId: stringOrNull(event, "graphCallId"),
+        frameId: null,
+        vectorIndex: null,
+        edge: edgeFromEvent(event),
+        runId: stringOrNull(event, "runId"),
+        workKey: stringOrNull(event, "workKey"),
+        eventKinds: [kind],
+        evidenceRefs: refsFromEvent(event),
+        lastEventIndex: event.__eventIndex ?? index
+      });
+      return;
+    }
+
+    if (kind === "frame_opened") {
+      const id = stableRecordId("frame", stringField(event, "frameId") || `${index}`);
+      upsertRecord(records, id, {
+        kind: "frame",
+        title: "Frame opened",
+        summary: `Frame opened with ${numberField(event, "vectorCount") ?? 0} vector(s).`,
+        viewIds: ["active_work"],
+        tone: "active",
+        status: "opened",
+        graphFunctionId: null,
+        graphCallId: stringOrNull(event, "graphCallId"),
+        frameId: stringOrNull(event, "frameId"),
+        vectorIndex: null,
+        edge: null,
+        runId: stringOrNull(event, "runId"),
+        workKey: stringOrNull(event, "workKey"),
+        eventKinds: [kind],
+        evidenceRefs: refsFromEvent(event),
+        lastEventIndex: event.__eventIndex ?? index
+      });
+      return;
+    }
+
+    if (kind === "vector_traversal_planned" || kind === "vector_evaluated" || kind === "vector_closed") {
+      const id = vectorRecordId(event, index);
+      latestVectorByEdge.set(edgeFromEvent(event) ?? id, id);
+      const status = vectorStatus(event, kind);
+      const viewIds = viewIdsForEvent(kind, status);
+      upsertRecord(records, id, {
+        kind: "vector",
+        title: edgeFromEvent(event) ?? "unnamed vector",
+        summary: vectorSummary(event, kind, status),
+        viewIds,
+        tone: toneForViews(viewIds),
+        status,
+        graphFunctionId: null,
+        graphCallId: stringOrNull(event, "graphCallId"),
+        frameId: stringOrNull(event, "frameId"),
+        vectorIndex: numberOrNull(event, "vectorIndex"),
+        edge: edgeFromEvent(event),
+        runId: stringOrNull(event, "runId"),
+        workKey: stringOrNull(event, "workKey"),
+        eventKinds: [kind],
+        evidenceRefs: refsFromEvent(event),
+        lastEventIndex: event.__eventIndex ?? index
+      });
+      return;
+    }
+
+    const edge = edgeFromEvent(event);
+    const vectorId = edge ? latestVectorByEdge.get(edge) : null;
+    const id = vectorId ?? stableRecordId(kind, edge || stringField(event, "graphCallId") || `${index}`);
+    const status = statusForNonVectorEvent(event, kind);
+    const viewIds = viewIdsForEvent(kind, status);
+    upsertRecord(records, id, {
+      kind: kind === "assessed" ? "assessment" : "continuation",
+      title: edge || kind,
+      summary: nonVectorSummary(event, kind, status),
+      viewIds,
+      tone: toneForViews(viewIds),
+      status,
+      graphFunctionId: null,
+      graphCallId: stringOrNull(event, "graphCallId") || stringOrNull(event, "retryCallId"),
+      frameId: stringOrNull(event, "frameId"),
+      vectorIndex: numberOrNull(event, "vectorIndex"),
+      edge,
+      runId: stringOrNull(event, "runId") || stringOrNull(event, "retryRunId"),
+      workKey: stringOrNull(event, "workKey"),
+      eventKinds: [kind],
+      evidenceRefs: refsFromEvent(event),
+      lastEventIndex: event.__eventIndex ?? index
+    });
+  });
+
+  return Object.freeze([...records.values()].sort((left, right) => right.lastEventIndex - left.lastEventIndex));
+}
+
+function upsertRecord(records, id, next) {
+  const existing = records.get(id);
+  if (!existing) {
+    records.set(id, freezeRecord({ id, ...next }));
+    return;
+  }
+  records.set(id, freezeRecord({
+    ...existing,
+    ...next,
+    viewIds: uniqueInOrder([...existing.viewIds, ...next.viewIds]),
+    eventKinds: uniqueInOrder([...existing.eventKinds, ...next.eventKinds]),
+    evidenceRefs: uniqueInOrder([...existing.evidenceRefs, ...next.evidenceRefs]),
+    graphFunctionId: next.graphFunctionId ?? existing.graphFunctionId,
+    graphCallId: next.graphCallId ?? existing.graphCallId,
+    frameId: next.frameId ?? existing.frameId,
+    vectorIndex: next.vectorIndex ?? existing.vectorIndex,
+    edge: next.edge ?? existing.edge,
+    runId: next.runId ?? existing.runId,
+    workKey: next.workKey ?? existing.workKey,
+    lastEventIndex: Math.max(existing.lastEventIndex, next.lastEventIndex)
+  }));
+}
+
+function freezeRecord(record) {
+  return Object.freeze({
+    ...record,
+    viewIds: Object.freeze(record.viewIds),
+    eventKinds: Object.freeze(record.eventKinds),
+    evidenceRefs: Object.freeze(record.evidenceRefs)
+  });
+}
+
+function materializeViews(records) {
+  return Object.freeze(SIDECAR_PROCESS_VIEWS.map((view) => Object.freeze({
+    ...view,
+    recordIds: Object.freeze(records.filter((record) => record.viewIds.includes(view.id)).map((record) => record.id))
+  })));
+}
+
+function materializeProcessMaps(records, queryDomain) {
+  return Object.freeze([
+    buildProcessFlowMap(records, queryDomain),
+    buildBuilderGovernanceMap(records, queryDomain),
+    buildRuntimeEvidenceMap(records)
+  ]);
+}
+
+function buildProcessFlowMap(records, queryDomain) {
+  const graphFunctions = graphFunctionSurfaces(queryDomain, records);
+  const recordsByName = recordsByGraphFunctionName(records);
+  const nodes = new Map();
+  const edges = [];
+  const rowsByColumn = new Map();
+  const nodeIdByFunction = new Map();
+  const producerNamesByAsset = new Map();
+
+  for (const graphFunction of graphFunctions) {
+    for (const outputName of stringArray(graphFunction.outputNames)) {
+      const producers = producerNamesByAsset.get(outputName) ?? [];
+      producers.push(graphFunction.name);
+      producerNamesByAsset.set(outputName, producers);
+    }
+  }
+
+  for (const graphFunction of graphFunctions) {
+    const lane = processLaneForGraphFunction(graphFunction);
+    const row = nextMapRow(rowsByColumn, lane.column);
+    const recordIds = recordIdsForGraphFunction(graphFunction.name, recordsByName);
+    const id = stableRecordId("flow-function", graphFunction.name);
+    nodeIdByFunction.set(graphFunction.name, id);
+    addMapNode(nodes, {
+      id,
+      label: graphFunction.name,
+      summary: graphFunctionSummary(graphFunction),
+      kind: "graph_function",
+      tone: toneForRecordIds(recordIds, records),
+      lane: lane.label,
+      column: lane.column,
+      row,
+      recordIds
+    });
+  }
+
+  for (const graphFunction of graphFunctions) {
+    const to = nodeIdByFunction.get(graphFunction.name);
+    if (!to) continue;
+    for (const inputName of stringArray(graphFunction.inputNames)) {
+      for (const producerName of producerNamesByAsset.get(inputName) ?? []) {
+        if (producerName === graphFunction.name) continue;
+        const from = nodeIdByFunction.get(producerName);
+        if (!from) continue;
+        const fromNode = nodes.get(from);
+        const toNode = nodes.get(to);
+        edges.push(mapEdge({
+          from,
+          to,
+          label: inputName,
+          tone: strongestTone([fromNode?.tone, toNode?.tone]),
+          recordIds: uniqueInOrder([...(fromNode?.recordIds ?? []), ...(toNode?.recordIds ?? [])])
+        }));
+      }
+    }
+  }
+
+  if (edges.length === 0) {
+    const ordered = [...nodes.values()].sort(compareMapNodes);
+    for (let index = 1; index < ordered.length; index += 1) {
+      edges.push(mapEdge({
+        from: ordered[index - 1].id,
+        to: ordered[index].id,
+        label: "observed flow",
+        tone: strongestTone([ordered[index - 1].tone, ordered[index].tone]),
+        recordIds: uniqueInOrder([...ordered[index - 1].recordIds, ...ordered[index].recordIds])
+      }));
+    }
+  }
+
+  return freezeMap({
+    id: "process_flow",
+    label: "Process Flow Map",
+    summary: queryDomain
+      ? "Graph-function handoffs derived from the TypeScript query-domain function catalog."
+      : "Runtime graph-function flow derived from observed TypeScript events.",
+    nodes,
+    edges,
+    stats: [
+      mapStat("Graph functions", graphFunctions.length, graphFunctions.length ? "active" : "pending"),
+      mapStat("Handoffs", uniqueMapEdges(edges).length, edges.length ? "active" : "pending"),
+      mapStat("Runtime anchors", records.filter((record) => record.edge || record.graphFunctionId).length, records.length ? "active" : "pending")
+    ]
+  });
+}
+
+function buildBuilderGovernanceMap(records, queryDomain) {
+  const recordsByName = recordsByGraphFunctionName(records);
+  const nodes = new Map();
+  const edges = [];
+  const rowsByColumn = new Map();
+  const claimedRowsByColumn = new Map();
+  const functionNodeIds = new Map();
+
+  // Coordinated row allocator. Each column owns a Set of claimed rows and a
+  // monotonic counter (the next row to consider). claimRow lets a single
+  // column reserve a row; claimCoordRow reserves the *same* row in two
+  // columns at once, which is the algorithmic key to making BOTH `starts`
+  // (col 1 ↔ col 2) AND `produces` (col 2 ↔ col 3) horizontal at the
+  // same time. Using independent per-column counters cannot satisfy both
+  // alignment obligations on col 2 simultaneously; cooperative allocation
+  // does, by ensuring the two paired endpoints share a row by construction.
+  function ensureColumnState(column) {
+    let claimed = claimedRowsByColumn.get(column);
+    if (!claimed) { claimed = new Set(); claimedRowsByColumn.set(column, claimed); }
+    return claimed;
+  }
+  function claimRow(column, preferredRow) {
+    const claimed = ensureColumnState(column);
+    let row;
+    if (typeof preferredRow === "number" && preferredRow >= 0 && !claimed.has(preferredRow)) {
+      row = preferredRow;
+    } else {
+      let candidate = rowsByColumn.get(column) ?? 0;
+      while (claimed.has(candidate)) candidate += 1;
+      row = candidate;
+    }
+    claimed.add(row);
+    rowsByColumn.set(column, Math.max(rowsByColumn.get(column) ?? 0, row + 1));
+    return row;
+  }
+  function claimCoordRow(colA, colB, preferredRow) {
+    const claimedA = ensureColumnState(colA);
+    const claimedB = ensureColumnState(colB);
+    if (
+      typeof preferredRow === "number"
+      && preferredRow >= 0
+      && !claimedA.has(preferredRow)
+      && !claimedB.has(preferredRow)
+    ) {
+      claimedA.add(preferredRow);
+      claimedB.add(preferredRow);
+      rowsByColumn.set(colA, Math.max(rowsByColumn.get(colA) ?? 0, preferredRow + 1));
+      rowsByColumn.set(colB, Math.max(rowsByColumn.get(colB) ?? 0, preferredRow + 1));
+      return preferredRow;
+    }
+    let candidate = Math.max(rowsByColumn.get(colA) ?? 0, rowsByColumn.get(colB) ?? 0);
+    while (claimedA.has(candidate) || claimedB.has(candidate)) candidate += 1;
+    claimedA.add(candidate);
+    claimedB.add(candidate);
+    rowsByColumn.set(colA, Math.max(rowsByColumn.get(colA) ?? 0, candidate + 1));
+    rowsByColumn.set(colB, Math.max(rowsByColumn.get(colB) ?? 0, candidate + 1));
+    return candidate;
+  }
+
+  const rootId = "governance:odd-sdlc-typescript";
+  addMapNode(nodes, {
+    id: rootId,
+    label: "odd_sdlc TypeScript Builder",
+    summary: "Installed governance package over the selected Project.",
+    kind: "governance",
+    tone: "active",
+    lane: "Governance",
+    column: 0,
+    row: claimRow(0),
+    recordIds: []
+  });
+
+  const conformanceStatus = stringField(queryDomain?.projectConformance ?? {}, "status") || "unknown";
+  const conformanceId = "governance:project-conformance";
+  addMapNode(nodes, {
+    id: conformanceId,
+    label: "Project Conformance",
+    summary: queryDomain?.projectConformance
+      ? `${conformanceStatus} under ${queryDomain.projectConformance.governingGraphFunction ?? "governing graph function"}.`
+      : "The TypeScript query-domain conformance report is not available.",
+    kind: "governance",
+    tone: toneForGovernanceStatus(conformanceStatus),
+    lane: "Governance",
+    column: 1,
+    row: claimRow(1),
+    recordIds: recordIdsForGraphFunction("Fg_conform_project", recordsByName)
+  });
+  edges.push(mapEdge({ from: rootId, to: conformanceId, label: "governs", tone: toneForGovernanceStatus(conformanceStatus) }));
+
+  const startTargets = queryArray(queryDomain, "startTargets");
+  const assetOwnership = queryArray(queryDomain, "assetOwnership");
+  const graphFunctions = graphFunctionSurfaces(queryDomain, records);
+
+  // Place a function node at col 2. The caller may pass a row that has
+  // already been reserved (via claimCoordRow or a prior claimRow), in which
+  // case it is used directly. Otherwise the row is freshly claimed in col 2.
+  function ensureGovernedFunction(name, opts = {}) {
+    const existing = functionNodeIds.get(name);
+    if (existing) return existing;
+    const graphFunction = graphFunctions.find((entry) => entry.name === name) ?? {
+      name,
+      inputNames: [],
+      outputNames: [],
+      vectorNames: []
+    };
+    const lane = processLaneForGraphFunction(graphFunction);
+    const id = stableRecordId("governed-function", name);
+    functionNodeIds.set(name, id);
+    const recordIds = recordIdsForGraphFunction(name, recordsByName);
+    const row = typeof opts.row === "number"
+      ? opts.row
+      : claimRow(2, opts.preferredRow);
+    addMapNode(nodes, {
+      id,
+      label: name,
+      summary: graphFunctionSummary(graphFunction),
+      kind: "graph_function",
+      tone: toneForRecordIds(recordIds, records),
+      lane: lane.label,
+      column: 2,
+      row,
+      recordIds
+    });
+    return id;
+  }
+
+  // Lay out start-targets first. Each start-target and its function are
+  // allocated a row that is fresh in BOTH col 1 and col 2 simultaneously
+  // via claimCoordRow, so the `starts` edge is horizontal by construction.
+  // If a start-target's function is also produced by an asset (rare), the
+  // asset will later try to align to this same row in col 3.
+  for (const target of startTargets) {
+    const name = stringField(target, "name");
+    if (!name) continue;
+    const id = stableRecordId("start-target", name);
+    const recordIds = recordIdsForGraphFunction(name, recordsByName);
+    const row = claimCoordRow(1, 2);
+    addMapNode(nodes, {
+      id,
+      label: name,
+      summary: `${stringField(target, "jobName") || "published job"} start target.`,
+      kind: "start_target",
+      tone: toneForRecordIds(recordIds, records),
+      lane: "Start Targets",
+      column: 1,
+      row,
+      recordIds
+    });
+    edges.push(mapEdge({ from: conformanceId, to: id, label: "admits", tone: toneForRecordIds(recordIds, records), recordIds }));
+    const functionId = ensureGovernedFunction(name, { row });
+    edges.push(mapEdge({ from: id, to: functionId, label: "starts", tone: toneForRecordIds(recordIds, records), recordIds }));
+  }
+
+  // Lay out assets next. Each asset and its primary producer are allocated
+  // a row that is fresh in BOTH col 2 and col 3 simultaneously via
+  // claimCoordRow, so the `produces` edge for the primary producer is
+  // horizontal by construction. If the primary producer was already placed
+  // earlier (because it is also a start-target's function), reuse that row
+  // for the asset when col 3 has it free; this keeps the edge horizontal
+  // for the dual-role function. Subsequent producers of a 1:N asset land
+  // at the next free col-2 row (acceptable diagonal — explicit 1:N case).
+  for (const ownership of assetOwnership) {
+    const assetType = stringField(ownership, "assetType");
+    if (!assetType) continue;
+    const assetId = stableRecordId("owned-asset", assetType);
+    const producers = stringArray(ownership.producerGraphFunctions);
+    const primaryName = producers[0];
+    const primaryExisting = primaryName ? functionNodeIds.get(primaryName) : null;
+    const primaryRow = primaryExisting ? nodes.get(primaryExisting)?.row : undefined;
+
+    let assetRow;
+    if (typeof primaryRow === "number") {
+      // Primary producer already placed (start-target overlap): try to align
+      // the asset to the same row in col 3.
+      assetRow = claimRow(3, primaryRow);
+    } else if (primaryName) {
+      // Primary producer not yet placed: cooperatively allocate a row that
+      // is fresh in both col 2 (for the producer) and col 3 (for the asset).
+      assetRow = claimCoordRow(2, 3);
+    } else {
+      // No producer (degenerate input): just place the asset.
+      assetRow = claimRow(3);
+    }
+
+    addMapNode(nodes, {
+      id: assetId,
+      label: assetType,
+      summary: `Owned asset type produced by ${producers.join(", ") || "unpublished graph functions"}.`,
+      kind: "asset",
+      tone: "pending",
+      lane: "Owned Assets",
+      column: 3,
+      row: assetRow,
+      recordIds: []
+    });
+
+    for (const producerName of producers) {
+      // Primary producer reuses the asset's row directly (already reserved
+      // in col 2 by claimCoordRow above when the function is fresh, or
+      // already placed at primaryRow when the function pre-existed).
+      // Subsequent producers fall back to the next free col-2 row.
+      const isPrimary = producerName === primaryName;
+      const opts = isPrimary ? { row: assetRow } : {};
+      const functionId = ensureGovernedFunction(producerName, opts);
+      const functionNode = nodes.get(functionId);
+      edges.push(mapEdge({
+        from: functionId,
+        to: assetId,
+        label: "produces",
+        tone: functionNode?.tone ?? "pending",
+        recordIds: functionNode?.recordIds ?? []
+      }));
+    }
+  }
+
+  const pressureRecords = records.filter((record) => record.tone === "blocked" || record.eventKinds.some((kind) => kind.includes("continuation")));
+  for (const record of pressureRecords) {
+    const id = stableRecordId("runtime-pressure", record.id);
+    addMapNode(nodes, {
+      id,
+      label: record.title,
+      summary: record.summary,
+      kind: "runtime",
+      tone: record.tone,
+      lane: "Runtime Pressure",
+      column: 4,
+      row: claimRow(4),
+      recordIds: [record.id]
+    });
+    const graphName = graphNamesForRecord(record)[0];
+    const functionId = graphName ? ensureGovernedFunction(graphName) : conformanceId;
+    edges.push(mapEdge({ from: functionId, to: id, label: record.status, tone: record.tone, recordIds: [record.id] }));
+  }
+
+  return freezeMap({
+    id: "builder_governance",
+    label: "Builder Governance Graph",
+    summary: "Start targets, conformance, owned assets, and runtime pressure projected from the TypeScript builder contract.",
+    nodes,
+    edges,
+    stats: [
+      mapStat("Conformance", conformanceStatus, toneForGovernanceStatus(conformanceStatus)),
+      mapStat("Start targets", startTargets.length, startTargets.length ? "active" : "pending"),
+      mapStat("Owned assets", assetOwnership.length, assetOwnership.length ? "active" : "pending"),
+      mapStat("Runtime pressure", pressureRecords.length, pressureRecords.length ? "blocked" : "converged")
+    ]
+  });
+}
+
+function buildRuntimeEvidenceMap(records) {
+  const ordered = [...records].sort((left, right) => left.lastEventIndex - right.lastEventIndex);
+  const layout = layoutRuntimeEvidenceRows(ordered);
+  const nodes = new Map();
+  const edges = [];
+  const rowsByColumn = new Map();
+
+  for (const record of ordered) {
+    const lane = runtimeLaneForRecord(record);
+    addMapNode(nodes, {
+      id: record.id,
+      label: record.title,
+      summary: `${record.status}; ${record.eventKinds.join(", ")}`,
+      kind: runtimeNodeKind(record),
+      tone: record.tone,
+      lane: lane.label,
+      column: lane.column,
+      row: layout.rowByRecordId.get(record.id) ?? nextMapRow(rowsByColumn, lane.column),
+      recordIds: [record.id]
+    });
+  }
+
+  for (const group of layout.groups) {
+    const graphCalls = group.records.filter((record) => record.kind === "graph_call").sort(compareRuntimeRecords);
+    const frames = group.records.filter((record) => record.kind === "frame").sort(compareRuntimeRecords);
+    const vectors = group.records.filter((record) => record.vectorIndex !== null).sort(compareRuntimeVectors);
+    const runtimePressure = group.records
+      .filter((record) => record.kind !== "graph_call" && record.kind !== "frame" && record.vectorIndex === null)
+      .sort(compareRuntimeRecords);
+    const linkedVectorIds = new Set();
+
+    for (const graphCall of graphCalls.filter((record) => record.graphCallId)) {
+      for (const frame of frames.filter((record) => record.graphCallId === graphCall.graphCallId)) {
+        edges.push(mapEdge({
+          from: graphCall.id,
+          to: frame.id,
+          label: "opens frame",
+          tone: strongestTone([graphCall.tone, frame.tone]),
+          recordIds: [graphCall.id, frame.id]
+        }));
+      }
+    }
+
+    for (const frame of frames.filter((record) => record.frameId)) {
+      const frameVectors = vectors.filter((record) => record.frameId === frame.frameId);
+      const firstVector = frameVectors[0];
+      if (!firstVector) continue;
+      linkedVectorIds.add(firstVector.id);
+      edges.push(mapEdge({
+        from: frame.id,
+        to: firstVector.id,
+        label: "starts vector",
+        tone: strongestTone([frame.tone, firstVector.tone]),
+        recordIds: [frame.id, firstVector.id]
+      }));
+      pushRuntimeVectorChain(edges, frameVectors, linkedVectorIds);
+    }
+
+    const unlinkedVectors = vectors.filter((record) => !linkedVectorIds.has(record.id));
+    const graphAnchors = graphCalls.length ? graphCalls : frames;
+    for (const anchor of graphAnchors.filter((record) => record.graphCallId || record.frameId)) {
+      const anchorVectors = unlinkedVectors.filter((record) => (
+        (anchor.graphCallId && record.graphCallId === anchor.graphCallId) ||
+        (anchor.frameId && record.frameId === anchor.frameId)
+      ));
+      const firstVector = anchorVectors[0];
+      if (!firstVector) continue;
+      linkedVectorIds.add(firstVector.id);
+      edges.push(mapEdge({
+        from: anchor.id,
+        to: firstVector.id,
+        label: "starts vector",
+        tone: strongestTone([anchor.tone, firstVector.tone]),
+        recordIds: [anchor.id, firstVector.id]
+      }));
+      pushRuntimeVectorChain(edges, anchorVectors, linkedVectorIds);
+    }
+
+    for (const pressure of runtimePressure) {
+      const source = runtimePressureSource(pressure, vectors, frames, graphCalls);
+      if (!source) continue;
+      edges.push(mapEdge({
+        from: source.id,
+        to: pressure.id,
+        label: pressure.status,
+        tone: strongestTone([source.tone, pressure.tone]),
+        recordIds: [source.id, pressure.id]
+      }));
+    }
+  }
+
+  return freezeMap({
+    id: "runtime_evidence",
+    label: "Runtime Evidence Flow",
+    summary: "Graph calls, frames, vectors, assessments, and continuations projected as TypeScript runtime carrier lineage.",
+    nodes,
+    edges,
+    stats: [
+      mapStat("Graph calls", records.filter((record) => record.kind === "graph_call").length, "active"),
+      mapStat("Frames", records.filter((record) => record.kind === "frame").length, "active"),
+      mapStat("Vectors", records.filter((record) => record.vectorIndex !== null).length, "active"),
+      mapStat("Event families", uniqueSorted(records.flatMap((record) => record.eventKinds)).length, "active")
+    ]
+  });
+}
+
+function layoutRuntimeEvidenceRows(records) {
+  const groups = runtimeEvidenceGroups(records);
+  const rowByRecordId = new Map();
+  let nextRow = 0;
+
+  for (const group of groups) {
+    const graphCalls = group.records.filter((record) => record.kind === "graph_call").sort(compareRuntimeRecords);
+    const frames = group.records.filter((record) => record.kind === "frame").sort(compareRuntimeRecords);
+    const vectors = group.records.filter((record) => record.vectorIndex !== null).sort(compareRuntimeVectors);
+    const runtimePressure = group.records
+      .filter((record) => record.kind !== "graph_call" && record.kind !== "frame" && record.vectorIndex === null)
+      .sort(compareRuntimeRecords);
+    const groupHeight = Math.max(1, graphCalls.length, frames.length, vectors.length, runtimePressure.length);
+
+    graphCalls.forEach((record, index) => {
+      rowByRecordId.set(record.id, nextRow + Math.min(index, groupHeight - 1));
+    });
+    frames.forEach((record, index) => {
+      rowByRecordId.set(record.id, nextRow + Math.min(index, groupHeight - 1));
+    });
+    vectors.forEach((record, index) => {
+      rowByRecordId.set(record.id, nextRow + index);
+    });
+    runtimePressure.forEach((record, index) => {
+      rowByRecordId.set(record.id, nextRow + index);
+    });
+
+    nextRow += groupHeight + 1;
+  }
+
+  return { groups, rowByRecordId };
+}
+
+function runtimeEvidenceGroups(records) {
+  const frameIdByGraphCallId = new Map();
+  for (const record of records) {
+    if (record.kind === "frame" && record.graphCallId && record.frameId) {
+      frameIdByGraphCallId.set(record.graphCallId, record.frameId);
+    }
+  }
+  const groupsByKey = new Map();
+  for (const record of records) {
+    const key = runtimeEvidenceScopeKey(record, frameIdByGraphCallId);
+    const existing = groupsByKey.get(key);
+    if (existing) {
+      existing.records.push(record);
+      existing.firstEventIndex = Math.min(existing.firstEventIndex, record.lastEventIndex);
+      continue;
+    }
+    groupsByKey.set(key, {
+      key,
+      firstEventIndex: record.lastEventIndex,
+      records: [record]
+    });
+  }
+  return [...groupsByKey.values()].sort((left, right) => left.firstEventIndex - right.firstEventIndex);
+}
+
+function runtimeEvidenceScopeKey(record, frameIdByGraphCallId) {
+  if (record.frameId) return record.frameId;
+  if (record.graphCallId && frameIdByGraphCallId.has(record.graphCallId)) {
+    return frameIdByGraphCallId.get(record.graphCallId);
+  }
+  return record.graphCallId ?? record.runId ?? record.workKey ?? record.id;
+}
+
+function pushRuntimeVectorChain(edges, vectors, linkedVectorIds) {
+  for (let index = 1; index < vectors.length; index += 1) {
+    const previous = vectors[index - 1];
+    const current = vectors[index];
+    linkedVectorIds.add(current.id);
+    edges.push(mapEdge({
+      from: previous.id,
+      to: current.id,
+      label: "next vector",
+      tone: strongestTone([previous.tone, current.tone]),
+      recordIds: [previous.id, current.id]
+    }));
+  }
+}
+
+function runtimePressureSource(record, vectors, frames, graphCalls) {
+  const vector = vectors.find((candidate) => (
+    (record.vectorIndex !== null && candidate.vectorIndex === record.vectorIndex) ||
+    (record.edge && candidate.edge === record.edge)
+  ));
+  if (vector) return vector;
+  const frame = frames.find((candidate) => record.frameId && candidate.frameId === record.frameId);
+  if (frame) return frame;
+  return graphCalls.find((candidate) => record.graphCallId && candidate.graphCallId === record.graphCallId) ?? null;
+}
+
+function compareRuntimeVectors(left, right) {
+  const leftIndex = left.vectorIndex ?? Number.MAX_SAFE_INTEGER;
+  const rightIndex = right.vectorIndex ?? Number.MAX_SAFE_INTEGER;
+  return leftIndex - rightIndex || compareRuntimeRecords(left, right);
+}
+
+function compareRuntimeRecords(left, right) {
+  return left.lastEventIndex - right.lastEventIndex || left.title.localeCompare(right.title);
+}
+
+function graphFunctionSurfaces(queryDomain, records) {
+  const graphFunctions = queryArray(queryDomain, "graphFunctions")
+    .map((entry) => ({
+      name: stringField(entry, "name"),
+      inputNames: stringArray(entry.inputNames),
+      outputNames: stringArray(entry.outputNames),
+      vectorNames: stringArray(entry.vectorNames)
+    }))
+    .filter((entry) => entry.name);
+  if (graphFunctions.length > 0) return graphFunctions;
+  return uniqueInOrder(records.flatMap(graphNamesForRecord))
+    .map((name) => ({
+      name,
+      inputNames: [],
+      outputNames: [],
+      vectorNames: [name]
+    }));
+}
+
+function recordsByGraphFunctionName(records) {
+  const byName = new Map();
+  for (const record of records) {
+    for (const name of graphNamesForRecord(record)) {
+      const existing = byName.get(name) ?? [];
+      existing.push(record);
+      byName.set(name, existing);
+    }
+  }
+  return byName;
+}
+
+function graphNamesForRecord(record) {
+  return uniqueInOrder([
+    record.edge,
+    graphFunctionNameFromId(record.graphFunctionId),
+    record.kind === "graph_call" ? record.title : null
+  ].filter(Boolean));
+}
+
+function graphFunctionNameFromId(value) {
+  if (!value) return null;
+  return String(value).split(":").filter(Boolean).at(-1) ?? null;
+}
+
+function recordIdsForGraphFunction(name, recordsByName) {
+  return Object.freeze((recordsByName.get(name) ?? []).map((record) => record.id));
+}
+
+function graphFunctionSummary(graphFunction) {
+  const inputs = stringArray(graphFunction.inputNames);
+  const outputs = stringArray(graphFunction.outputNames);
+  if (inputs.length || outputs.length) {
+    return `${inputs.length || 0} input(s) to ${outputs.length || 0} output(s): ${outputs.slice(0, 3).join(", ") || "no output surface"}.`;
+  }
+  const vectors = stringArray(graphFunction.vectorNames);
+  return vectors.length ? `${vectors.length} vector(s): ${vectors.slice(0, 3).join(", ")}.` : "Observed runtime graph function.";
+}
+
+function processLaneForGraphFunction(graphFunction) {
+  const text = [graphFunction.name, ...stringArray(graphFunction.inputNames), ...stringArray(graphFunction.outputNames)]
+    .join(" ")
+    .toLowerCase();
+  if (/(gap_|repricing|ticket_work|retire_gap|triage|route)/.test(text)) return { label: "Governance Loop", column: 6 };
+  if (/(runtime|retrofit|maintenance|operational)/.test(text)) return { label: "Runtime", column: 5 };
+  if (/(release|deployment|build_execution|test_execution|deployed)/.test(text)) return { label: "Release / Ops", column: 4 };
+  if (/(test|testcase|qualification|uat)/.test(text)) return { label: "Test", column: 3 };
+  if (/(implementation|realization|code|stack|module)/.test(text)) return { label: "Build", column: 2 };
+  if (/(design|scenario|feature)/.test(text)) return { label: "Design", column: 1 };
+  return { label: "Bootstrap", column: 0 };
+}
+
+function runtimeLaneForRecord(record) {
+  if (record.kind === "graph_call") return { label: "Graph Calls", column: 0 };
+  if (record.kind === "frame") return { label: "Frames", column: 1 };
+  if (record.vectorIndex !== null) return { label: "Vectors", column: 2 };
+  return { label: "Assessments / Continuations", column: 3 };
+}
+
+function runtimeNodeKind(record) {
+  if (record.kind === "frame") return "frame";
+  if (record.vectorIndex !== null) return "vector";
+  if (record.kind === "graph_call") return "graph_function";
+  return "runtime";
+}
+
+function toneForRecordIds(recordIds, records) {
+  const recordSet = new Set(recordIds);
+  return strongestTone(records.filter((record) => recordSet.has(record.id)).map((record) => record.tone));
+}
+
+function strongestTone(tones) {
+  if (tones.includes("blocked")) return "blocked";
+  if (tones.includes("active")) return "active";
+  if (tones.includes("pending")) return "pending";
+  if (tones.includes("converged")) return "converged";
+  return "pending";
+}
+
+function toneForGovernanceStatus(status) {
+  if (status === "passed" || status === "converged") return "converged";
+  if (status === "blocked" || status === "failed") return "blocked";
+  if (status === "active") return "active";
+  return "pending";
+}
+
+function mapStat(label, value, tone) {
+  return Object.freeze({ label, value: String(value), tone });
+}
+
+function addMapNode(nodes, node) {
+  const existing = nodes.get(node.id);
+  if (!existing) {
+    nodes.set(node.id, {
+      ...node,
+      recordIds: uniqueInOrder(node.recordIds ?? [])
+    });
+    return;
+  }
+  nodes.set(node.id, {
+    ...existing,
+    ...node,
+    tone: strongestTone([existing.tone, node.tone]),
+    recordIds: uniqueInOrder([...(existing.recordIds ?? []), ...(node.recordIds ?? [])])
+  });
+}
+
+function mapEdge(input) {
+  return {
+    id: stableRecordId("map-edge", `${input.from}->${input.to}:${input.label}`),
+    from: input.from,
+    to: input.to,
+    label: input.label,
+    tone: input.tone ?? "pending",
+    recordIds: uniqueInOrder(input.recordIds ?? [])
+  };
+}
+
+function freezeMap(input) {
+  const nodes = Object.freeze([...input.nodes.values()].sort(compareMapNodes).map((node) => Object.freeze({
+    ...node,
+    recordIds: Object.freeze(uniqueInOrder(node.recordIds ?? []))
+  })));
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = Object.freeze(uniqueMapEdges(input.edges)
+    .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
+    .map((edge) => Object.freeze({
+      ...edge,
+      recordIds: Object.freeze(uniqueInOrder(edge.recordIds ?? []))
+    })));
+  return Object.freeze({
+    id: input.id,
+    label: input.label,
+    summary: input.summary,
+    nodes,
+    edges,
+    stats: Object.freeze(input.stats)
+  });
+}
+
+function uniqueMapEdges(edges) {
+  const byId = new Map();
+  for (const edge of edges) {
+    const existing = byId.get(edge.id);
+    if (!existing) {
+      byId.set(edge.id, edge);
+      continue;
+    }
+    byId.set(edge.id, {
+      ...existing,
+      tone: strongestTone([existing.tone, edge.tone]),
+      recordIds: uniqueInOrder([...(existing.recordIds ?? []), ...(edge.recordIds ?? [])])
+    });
+  }
+  return [...byId.values()];
+}
+
+function compareMapNodes(left, right) {
+  return left.column - right.column || left.row - right.row || left.label.localeCompare(right.label);
+}
+
+function nextMapRow(rowsByColumn, column) {
+  const current = rowsByColumn.get(column) ?? 0;
+  rowsByColumn.set(column, current + 1);
+  return current;
+}
+
+function queryArray(queryDomain, key) {
+  const value = queryDomain?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function stringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()) : [];
+}
+
+function baseProjection(workspaceRoot) {
+  return {
+    kind: "sidecar_process_projection",
+    supported: false,
+    contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+    contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+    runtimeModel: "abg-native",
+    queryModel: "odd-domain-read-model",
+    readOnly: true,
+    workspaceRoot,
+    eventLogRelativePath: SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH,
+    eventCount: 0,
+    eventKinds: [],
+    views: materializeViews([]),
+    records: [],
+    maps: Object.freeze([])
+  };
+}
+
+function unsupportedProcessProjection(workspaceRoot, reason) {
+  return {
+    ...baseProjection(workspaceRoot),
+    supported: false,
+    unsupportedReason: reason
+  };
+}
+
+function vectorRecordId(event, fallbackIndex) {
+  return stableRecordId("vector", [
+    stringField(event, "graphCallId"),
+    stringField(event, "frameId"),
+    String(numberField(event, "vectorIndex") ?? fallbackIndex),
+    edgeFromEvent(event) ?? ""
+  ].join(":"));
+}
+
+function stableRecordId(prefix, value) {
+  const text = String(value);
+  const readable = text.replace(/[^a-zA-Z0-9_.:-]+/g, "-").slice(0, 72) || "record";
+  const digest = createHash("sha1").update(text).digest("hex").slice(0, 12);
+  return `${prefix}:${readable}:${digest}`;
+}
+
+function graphFunctionTitle(event) {
+  const graphFunctionId = stringField(event, "graphFunctionId");
+  const fromId = graphFunctionId.split(":").filter(Boolean).at(-1);
+  return fromId || edgeFromEvent(event) || "graph function";
+}
+
+function vectorStatus(event, kind) {
+  if (kind === "vector_closed") return stringField(event, "closureKind") || "closed";
+  if (kind === "vector_evaluated") return stringField(event, "status") || "evaluated";
+  return "planned";
+}
+
+function statusForNonVectorEvent(event, kind) {
+  if (kind === "assessed") return stringField(event, "assessmentKind") || "assessed";
+  if (kind === "retry_repair_planned") return "retry_repair_planned";
+  if (kind === "retry_attempt_opened") return "retry_attempt_opened";
+  if (kind === "continuation_reopened") return "continuation_reopened";
+  if (kind === "continuation_terminated") return stringField(event, "reason") || "continuation_terminated";
+  return kind;
+}
+
+function viewIdsForEvent(kind, status) {
+  const views = [];
+  if (ACTIVE_EVENT_KINDS.has(kind)) views.push("active_work");
+  if (BLOCKED_EVENT_KINDS.has(kind) || status === "blocked") views.push("blocked_waiting");
+  if (READY_EVENT_KINDS.has(kind) || status === "advanced" || status === "closed") views.push("ready_handoff");
+  return views.length > 0 ? views : ["active_work"];
+}
+
+function toneForViews(viewIds) {
+  if (viewIds.includes("blocked_waiting")) return "blocked";
+  if (viewIds.includes("ready_handoff")) return "converged";
+  return "active";
+}
+
+function vectorSummary(event, kind, status) {
+  const edge = edgeFromEvent(event) ?? "unnamed vector";
+  const vectorIndex = numberField(event, "vectorIndex");
+  if (kind === "vector_evaluated") {
+    const evaluators = Array.isArray(event.evaluatorIds) ? event.evaluatorIds.join(", ") : "declared evaluators";
+    return `Vector ${vectorIndex ?? "-"} ${edge} evaluated as ${status} by ${evaluators}.`;
+  }
+  if (kind === "vector_closed") {
+    return `Vector ${vectorIndex ?? "-"} ${edge} closed with ${status} closure.`;
+  }
+  return `Vector ${vectorIndex ?? "-"} ${edge} planned for traversal.`;
+}
+
+function nonVectorSummary(event, kind, status) {
+  const edge = edgeFromEvent(event) ?? "current edge";
+  if (kind === "assessed") {
+    const assessmentKind = stringField(event, "assessmentKind") || "assessment";
+    return `${assessmentKind} assessment admitted for ${edge}.`;
+  }
+  if (kind === "retry_repair_planned") {
+    return `Retry repair planned for ${edge}.`;
+  }
+  if (kind === "retry_attempt_opened") {
+    return `Retry attempt opened for ${edge}.`;
+  }
+  if (kind === "continuation_reopened") {
+    return `Continuation reopened for ${edge}.`;
+  }
+  if (kind === "continuation_terminated") {
+    return `Continuation terminated for ${edge}: ${status}.`;
+  }
+  return `${kind} observed for ${edge}.`;
+}
+
+function refsFromEvent(event) {
+  const refs = [
+    stringField(event, "publishedLedgerRef"),
+    stringField(event, "manifestId"),
+    stringField(event, "priorManifestId"),
+    stringField(event, "sourceProjectionRef"),
+    stringField(event, "continuationId"),
+    stringField(event, "closedContinuationId")
+  ].filter(Boolean);
+  return uniqueInOrder(refs);
+}
+
+function edgeFromEvent(event) {
+  return stringOrNull(event, "edge") ??
+    stringOrNull(event, "selectedEdgeGraphFunction") ??
+    stringOrNull(event, "targetGraphFunction");
+}
+
+function stringField(event, key) {
+  const value = event?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function stringOrNull(event, key) {
+  const value = stringField(event, key);
+  return value || null;
+}
+
+function numberField(event, key) {
+  const value = event?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberOrNull(event, key) {
+  return numberField(event, key);
+}
+
+function uniqueInOrder(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values)].sort();
+}
