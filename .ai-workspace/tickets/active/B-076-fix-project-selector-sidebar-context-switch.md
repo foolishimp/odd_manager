@@ -3,16 +3,17 @@ id: B-076
 title: Fix project selector sidebar context switch
 type: bug
 ticket_category: corrective_review
-status: backlog
+status: active
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Repair the project selector sidebar so selecting a different Project changes the active Project context consumed by Sidecar surfaces instead of leaving the workbench on the previous Project.
 change_class: realization_refactor
 re_entry_point: realization
-affected_boundary: build_tenants/react_vite/src/features/project-selector/ProjectSelector.tsx, build_tenants/react_vite/src/routes/WorkspaceRoute.tsx, build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx, build_tenants/react_vite/src/features/sidecar/sidecar-state.ts, build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts
+affected_boundary: build_tenants/react_vite/src/app/App.tsx, build_tenants/react_vite/src/features/project-selector/ProjectSelector.tsx, build_tenants/react_vite/src/routes/WorkspaceRoute.tsx, build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx, build_tenants/react_vite/src/features/sidecar/sidecar-state.ts, build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts
 priority: high
 triaged_at: 2026-05-01
 created_at: 2026-05-01
-updated_at: 2026-05-01T11:41:40+10:00
+updated_at: 2026-05-13T09:18:20+10:00
+sprint: SPRINT-2026-05-13-sidecar-project-context
 build_tenant: react_vite
 dependencies:
   - B-009 completed
@@ -73,3 +74,69 @@ sidebar selection through the same typed state and command path consumed by
 WorkspaceRoute, SidecarPanel, and Project-scoped API calls. The UI may expose
 the selected Project in multiple places, but those views must project one active
 context rather than maintaining competing local selections.
+
+## Sprint Boundary
+
+This ticket is coordinated by
+`.ai-workspace/sprints/SPRINT-2026-05-13-sidecar-project-context.md`.
+
+It remains active sprint work. Targeted replay, build, and focused browser proof
+can establish the current implementation direction, but they do not close the
+ticket while the sprint closure gates still include full `test:sidecar-wave`,
+full `test:e2e` or an explicit narrowed-browser review, and a live steel-thread
+workspace re-check of shell label, Sidecar root, Browse root, pins, and Recent
+Paths.
+
+## 2026-05-13 Crash Recovery Note
+
+The recovered symptom is visible root drift: the shell title/control can still
+show the previous `data_mapper.test35` root while a Sidecar project tab and
+viewer body are already loaded from a steel-thread sandbox workspace. That is a
+non-closure condition for this ticket because Browse and visible context labels
+must derive from the same active Project root.
+
+## 2026-05-13 Implementation Evidence
+
+Implemented in the Sidecar and route boundary:
+
+- Sidecar project selection now calls the Project registry active-project path
+  before dispatching the reducer selection.
+- Sidecar opened project roots use the same active-project path.
+- Sidecar derives the effective browser root from `activeLoadRoot` or loaded
+  context before falling back to the embedding prop.
+- Pinned-folder persistence is guarded by the root it was loaded for, so
+  old-root pins cannot overwrite the newly selected Project's stored pins
+  during a switch.
+- App-level workspace switching keeps the current Sidecar instance mounted
+  while Sidecar is the selected page, preserving the selected file tab during
+  root promotion.
+- `WorkspaceRoute` wires `onContextChange` back to the app-level project root
+  switch so the shell title/control and Sidecar browser share one root.
+- Sidecar filesystem browsing requests uncapped entries while the generic
+  folder picker remains bounded by default.
+
+Verification:
+
+- `npm run test:runtime:node -- runtime/tests/test_sidecar_msg_replay.mjs`
+  passed through the repo script's full Node runtime expansion: 142 passed.
+- `npm run build` passed.
+- `npx playwright test tests/e2e/odd-manager-smoke.spec.ts -g "project selection from sidecar Projects surface promotes active context|project switching from sidecar keeps sidecar open"` passed: 2 passed.
+
+## 2026-05-13 Open Sprint Evidence Update
+
+The sprint closure lanes have now been run in the active pass:
+
+- `npm run build` passed.
+- `npm run test:sidecar-wave` passed: 142 Node runtime tests and 9 Python
+  runtime tests.
+- `npm run test:e2e` passed: 38 browser tests.
+- Focused recovery checks passed for the earlier full-suite failures:
+  collaboration workspace activation, Sidecar section controls, and unpinned
+  active folder visibility.
+- Live steel-thread browser proof used
+  `/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/data_mapper_steel_thread_sandbox/20260512T170956378Z_pid24944/workspace`.
+  The shell root control, Sidecar Project rail, and Browse flyout resolved to
+  that workspace instead of the prior `data_mapper.test35` Project.
+
+Sprint state: implementation closure evidence is green, but B-076 remains
+active until operator close review transitions the ticket.

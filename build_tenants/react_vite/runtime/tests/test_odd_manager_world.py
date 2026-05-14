@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def _load_world_module():
@@ -21,6 +22,34 @@ world = _load_world_module()
 
 
 class RequirementProjectionTests(unittest.TestCase):
+    def test_surface_read_permission_denied_returns_unreadable_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir)
+            secret_path = workspace_root / "secret.json"
+            secret_path.write_text("{}", encoding="utf-8")
+            original_read_text = Path.read_text
+            secret_resolved = secret_path.resolve()
+
+            def deny_read_text(path: Path, *args: object, **kwargs: object) -> str:
+                if path.resolve() == secret_resolved:
+                    raise PermissionError(13, "Permission denied", str(path))
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", deny_read_text):
+                surface = world._read_surface(workspace_root, "secret.json")
+
+            self.assertEqual(surface["kind"], "unreadable")
+            self.assertEqual(surface["reason"], "permission_denied")
+            self.assertEqual(surface["relative_path"], "secret.json")
+
+    def test_surface_read_rejects_paths_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir)
+            surface = world._read_surface(workspace_root, "../outside.json")
+
+            self.assertEqual(surface["kind"], "unreadable")
+            self.assertEqual(surface["reason"], "outside_workspace")
+
     def test_projects_block_style_requirement_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_root = Path(temp_dir)

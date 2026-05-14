@@ -1,8 +1,44 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+const MANAGER_WORKSPACE = "/Users/jim/src/apps/odd_manager";
+
 async function waitForWorldProjection(page: Page) {
   await expect(page.getByRole("banner")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open workspace selector" })).toBeVisible();
+}
+
+async function openWorkspace(page: Page, workspaceRoot: string) {
+  await page.getByRole("button", { name: "Open workspace selector" }).click();
+  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("tab", { name: "Manual" }).click();
+  await dialog.getByRole("textbox").first().fill(workspaceRoot);
+  await dialog.getByRole("button", { name: "Add Project" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("tab", { name: "Projects" }).click();
+  const projectRow = dialog.locator(".project-selector__workspace").filter({ hasText: workspaceRoot }).first();
+  await expect(projectRow).toBeVisible();
+  const openButton = projectRow.getByRole("button", { name: "Open" });
+  const currentButton = projectRow.getByRole("button", { name: "Current" });
+  if ((await openButton.count()) > 0 && await openButton.isEnabled()) {
+    await openButton.click();
+  } else if ((await currentButton.count()) > 0) {
+    await dialog.getByRole("button", { name: "Close" }).click();
+  } else {
+    await dialog.getByRole("button", { name: "Close" }).click();
+  }
+  await expect(dialog).toHaveCount(0);
+  const registryActivated = await page.evaluate(async (root) => {
+    const response = await fetch("/api/projects/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ root, setActive: true }),
+    });
+    return response.ok;
+  }, workspaceRoot);
+  expect(registryActivated).toBe(true);
+  await page.reload();
+  await waitForWorldProjection(page);
 }
 
 async function ensureExpanded(page: Page, expandButtonName: string, collapseButtonName: string) {
@@ -42,6 +78,7 @@ function terminalPaneWithStatus(widget: Locator, status: string) {
 test("creates a live local shell and round-trips terminal input", async ({ page }) => {
   await page.goto("/");
   await waitForWorldProjection(page);
+  await openWorkspace(page, MANAGER_WORKSPACE);
 
   const oddterm = await oddtermSurface(page);
   const createButton = oddterm.getByRole("button", { name: "+ New Local Shell", exact: true });
@@ -69,6 +106,7 @@ test("creates a live local shell and round-trips terminal input", async ({ page 
 test("creates a topic and posts an operator room message", async ({ page }) => {
   await page.goto("/");
   await waitForWorldProjection(page);
+  await openWorkspace(page, MANAGER_WORKSPACE);
 
   const oddchat = await oddchatSurface(page);
   const topicTitle = `oddchat-regression-${Date.now()}`;

@@ -406,7 +406,7 @@ function flushPendingRoomMirror(session, force = false) {
   session.pendingRoomMirror = null;
 
   if (content && !isMirrorNoise(content)) {
-    appendLiveRoomMessage(session.workspaceRoot, {
+    appendLiveRoomMessageIfPossible(session.workspaceRoot, {
       roomId: mirror.roomId,
       senderId: sessionParticipantId(session.id),
       senderLabel: session.label,
@@ -419,6 +419,16 @@ function flushPendingRoomMirror(session, force = false) {
       stationId: mirror.stationId ?? session.attachedStationId,
       edgeId: mirror.edgeId ?? session.attachedEdgeId,
     });
+  }
+}
+
+function appendLiveRoomMessageIfPossible(workspaceRoot, payload) {
+  try {
+    return appendLiveRoomMessage(workspaceRoot, payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`oddterm room mirror skipped: ${message}`);
+    return null;
   }
 }
 
@@ -652,7 +662,7 @@ function createSession(workspaceRoot, options = {}) {
   store.sessions.set(sessionId, session);
   setActiveSession(store, sessionId);
   persistSessionMeta(session);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessageIfPossible(store.workspaceRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: session.label,
@@ -779,7 +789,7 @@ export function renameGTermSession(workspaceRoot, sessionId, label) {
     label: session.label,
   });
   persistSessionMeta(session);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessageIfPossible(store.workspaceRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: nextLabel,
@@ -834,7 +844,7 @@ export function closeGTermSession(workspaceRoot, sessionId) {
   }
   store.sessions.delete(sessionId);
   setActiveSession(store, Array.from(store.sessions.keys())[0] ?? null);
-  appendLiveRoomMessage(store.workspaceRoot, {
+  appendLiveRoomMessageIfPossible(store.workspaceRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
     senderLabel: session.label,

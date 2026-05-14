@@ -354,7 +354,8 @@ test("sidecar sections minimize and restore independently", async ({ page }, tes
 
   await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
 
-  const minimizeInfo = page.getByRole("button", { name: "Minimize info browser" });
+  const activityRail = page.locator("nav.sidecar-activity-rail");
+  const minimizeInfo = activityRail.getByRole("button", { name: "Close selection flyout" });
   const minimizeShell = page.getByRole("button", { name: "Minimize shell workspace" });
   const resetLayout = page.getByRole("button", { name: "Reset sidecar layout" });
   await expect(minimizeInfo).toBeVisible();
@@ -377,15 +378,15 @@ test("sidecar sections minimize and restore independently", async ({ page }, tes
   expect(Math.abs(chromeMetrics.contextTop - chromeMetrics.activityTop)).toBeLessThanOrEqual(4);
 
   await minimizeInfo.click();
-  await expect(page.getByRole("button", { name: "Restore info browser" })).toBeVisible();
+  await expect(activityRail.getByRole("button", { name: "Open selection flyout" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Minimize shell workspace" })).toBeVisible();
 
   await minimizeShell.click();
-  await expect(page.getByRole("button", { name: "Restore info browser" })).toBeVisible();
+  await expect(activityRail.getByRole("button", { name: "Open selection flyout" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Restore shell workspace" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Restore info browser" }).click();
-  await expect(page.getByRole("button", { name: "Minimize info browser" })).toBeVisible();
+  await activityRail.getByRole("button", { name: "Open selection flyout" }).click();
+  await expect(activityRail.getByRole("button", { name: "Close selection flyout" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Restore shell workspace" })).toBeVisible();
 
   await page.getByRole("button", { name: "Restore shell workspace" }).click();
@@ -534,6 +535,9 @@ test("sidecar selector uses the same filesystem browser for tickets and comments
   await expect(ticketGroupToggle).toHaveAttribute("aria-expanded", "true");
 
   const ticketControls = flyout.getByLabel("Browse sort controls");
+  await expect(ticketControls.getByRole("button", { name: "Name", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(ticketControls.getByRole("button", { name: "Time", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(ticketControls.getByRole("button", { name: "Reverse", exact: true })).toHaveAttribute("aria-pressed", "true");
   await ticketControls.getByRole("button", { name: "Name", exact: true }).click();
   await expect(ticketControls.getByRole("button", { name: "Name", exact: true })).toHaveAttribute("aria-pressed", "true");
   await ticketControls.getByRole("button", { name: "Reverse", exact: true }).click();
@@ -563,15 +567,21 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5173" });
   await page.goto("/");
   await waitForChrome(page);
-  await page.evaluate((root) => {
-    window.localStorage.removeItem("oman-sidecar-path-history");
+  await page.evaluate(({ root, abiogenesisRoot }) => {
+    window.localStorage.setItem("oman-sidecar-path-history", JSON.stringify([{
+      absolutePath: `${abiogenesisRoot}/AGENTS.md`,
+      projectRoot: abiogenesisRoot,
+      relativePath: "AGENTS.md",
+      source: "browse",
+      timestamp: "2026-05-12T00:00:00.000Z",
+    }]));
     window.localStorage.setItem(`oman-sidecar-pinned-folders:${root}`, JSON.stringify([
       `${root}/.ai-workspace/tickets`,
       `${root}/.ai-workspace/comments`,
       `${root}/specification`,
       `${root}/build_tenants`,
     ]));
-  }, MANAGER_WORKSPACE);
+  }, { root: MANAGER_WORKSPACE, abiogenesisRoot: ABIOGENESIS_WORKSPACE });
   await openManagerWorkspace(page);
 
   await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
@@ -579,17 +589,40 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
+  const expectCompactFlyoutHeader = async (name: string | RegExp) => {
+    const header = flyout.locator(".sidecar-pane__header").first();
+    await expect(header).toBeVisible();
+    await expect(header.getByRole("heading", { name })).toBeVisible();
+    await expect(header.locator(".sidecar-pane__title-count")).toHaveText(/\(\d+\)/);
+    await expect(header.getByRole("button", { name: /Pin selection flyout|Unpin selection flyout/ })).toBeVisible();
+    await expect(header.getByRole("button", { name: "Close selection flyout" })).toBeVisible();
+    const metrics = await header.evaluate((node) => ({
+      display: window.getComputedStyle(node).display,
+      height: node.getBoundingClientRect().height,
+      legacyHeaderCount: document.querySelectorAll(".sidecar-flyout__header").length,
+    }));
+    expect(metrics.display).toBe("flex");
+    expect(metrics.height).toBeLessThanOrEqual(44);
+    expect(metrics.legacyHeaderCount).toBe(0);
+  };
   const specificationRailButton = activityRail.getByRole("button", { name: "Pinned folder ./specification" });
   await expect(specificationRailButton).toBeVisible();
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.ai-workspace/tickets" })).toHaveCount(0);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.ai-workspace/comments" })).toHaveCount(0);
-  await expect(activityRail.locator(".sidecar-rail-divider")).toBeVisible();
+  await expect(activityRail.getByRole("separator", { name: "Favorites" })).toBeVisible();
+  await expect(activityRail.getByRole("separator", { name: "System navigation" })).toBeVisible();
+  await expect(activityRail.locator(".sidecar-rail-bottom").getByRole("separator", { name: "System navigation" })).toBeVisible();
   const railLabels = await activityRail.locator(".sidecar-rail-button").evaluateAll((buttons) => (
+    buttons.map((button) => button.getAttribute("aria-label"))
+  ));
+  const bottomRailLabels = await activityRail.locator(".sidecar-rail-bottom .sidecar-rail-button").evaluateAll((buttons) => (
     buttons.map((button) => button.getAttribute("aria-label"))
   ));
   expect(railLabels.filter((label) => label === "Tickets")).toHaveLength(1);
   expect(railLabels.filter((label) => label === "Comments")).toHaveLength(1);
-  expect(railLabels.at(-1)).toBe("Browse");
+  expect(railLabels.slice(-2)).toEqual(["Browse", "Recent Paths"]);
+  expect(bottomRailLabels).toEqual(["Browse", "Recent Paths"]);
+  expect(await activityRail.locator(".sidecar-rail-divider").count()).toBeGreaterThanOrEqual(2);
   const railMetrics = await activityRail.locator(".sidecar-rail-button").first().evaluate((button) => {
     const box = button.getBoundingClientRect();
     const icon = button.querySelector(".sidecar-rail-button__icon");
@@ -606,6 +639,11 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   expect(railMetrics.countFontSize).toBeLessThanOrEqual(10);
   await specificationRailButton.click();
   await expect(flyout.getByRole("heading", { name: "./specification" }).first()).toBeVisible();
+  await expectCompactFlyoutHeader("./specification");
+  const pinnedFolderSortControls = flyout.getByLabel("Browse sort controls");
+  await expect(pinnedFolderSortControls.getByRole("button", { name: "Name", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(pinnedFolderSortControls.getByRole("button", { name: "Time", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(pinnedFolderSortControls.getByRole("button", { name: "Reverse", exact: true })).toHaveAttribute("aria-pressed", "true");
   const goalsFile = flyout.getByRole("button", { name: /GOALS\.md/i }).first();
   await expect(goalsFile).toBeVisible({ timeout: 20_000 });
   await goalsFile.click();
@@ -616,15 +654,26 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
 
   await activityRail.getByRole("button", { name: "Recent Paths" }).click();
   await expect(flyout.getByRole("heading", { name: "Recent Paths" }).first()).toBeVisible();
+  await expectCompactFlyoutHeader("Recent Paths");
   const recentGoals = flyout.getByRole("button", { name: "Copy path specification/GOALS.md" });
   await expect(recentGoals).toBeVisible();
   await page.evaluate(() => navigator.clipboard.writeText("reset"));
   await recentGoals.click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expectedGoalsPath);
-  await expect(flyout.getByRole("button", { name: "Open path specification/GOALS.md" })).toBeVisible();
+  const recentGoalsOpen = flyout.getByRole("button", { name: "Open path specification/GOALS.md" });
+  await expect(recentGoalsOpen).toBeVisible();
+  await expect(recentGoalsOpen).toBeEnabled();
+  await page.getByRole("button", { name: "Open Process Navigator", exact: true }).click();
+  await expect(canvas.locator(".sidecar-viewer-tab.is-selected strong")).toHaveText("Process Navigator");
+  await activityRail.getByRole("button", { name: "Recent Paths" }).click();
+  await expect(flyout.getByRole("heading", { name: "Recent Paths" }).first()).toBeVisible();
+  await flyout.getByRole("button", { name: "Open path specification/GOALS.md" }).click();
+  await expect(canvas.locator(".sidecar-viewer-tab.is-selected .sidecar-viewer-tab__kind")).toHaveText("surface");
+  await expect(canvas.getByRole("heading", { name: "Goals", exact: true })).toBeVisible();
 
   await activityRail.getByRole("button", { name: "Browse" }).click();
   await expect(flyout.getByRole("heading", { name: "Browse" }).first()).toBeVisible();
+  await expectCompactFlyoutHeader("Browse");
   await expect(flyout.getByText("Recover")).toHaveCount(0);
   await expect(flyout.locator(".sidecar-tree-group").filter({ hasText: ".ai-workspace" }).first()).toBeVisible({ timeout: 20_000 });
   const specificationBrowserEntry = flyout.locator(".sidecar-tree-group").filter({ hasText: /specification/i }).first();
@@ -679,6 +728,15 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   await expect(flyout.getByRole("heading", { name: "Browse" }).first()).toBeVisible();
 
   await captureReviewShot(page, testInfo, "sidecar-browse-pinned-folder-navigator");
+  await activityRail.getByRole("button", { name: "Recent Paths" }).click();
+  await expect(flyout.getByRole("heading", { name: "Recent Paths" }).first()).toBeVisible();
+  const abiogenesisAgentsOpen = flyout.getByRole("button", { name: "Open path AGENTS.md" });
+  await expect(abiogenesisAgentsOpen).toBeVisible();
+  await expect(abiogenesisAgentsOpen).toBeEnabled();
+  await abiogenesisAgentsOpen.click();
+  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(ABIOGENESIS_WORKSPACE, { timeout: 30_000 });
+  await expect(canvas.locator(".sidecar-viewer-tab.is-selected .sidecar-viewer-tab__kind")).toHaveText("surface");
+  await expect(canvas.getByRole("tab", { name: "surface AGENTS.md", selected: true })).toBeVisible();
   await openWorkspace(page, OBSERVED_WORKSPACE);
 });
 
@@ -789,47 +847,66 @@ test("sidecar document viewer renders Mermaid, zoom controls, and highlighted so
   await expect(canvas.locator(".markdown-viewer__mermaid-error")).toHaveCount(0);
   const documentContent = canvas.locator(".document-viewer__content").first();
   await expect(documentContent).toHaveCSS("transform", /matrix\(1,\s*0,\s*0,\s*1,/);
-  const centerBeforeZoom = await page.evaluate(() => {
+  await page.evaluate(() => {
     const viewport = document.querySelector(".document-viewer__viewport") as HTMLElement | null;
-    const content = document.querySelector(".document-viewer__content") as HTMLElement | null;
     if (!viewport) throw new Error("document viewer viewport missing");
-    if (!content) throw new Error("document viewer content missing");
     const observation = viewport.closest(".sidecar-viewer-body") as HTMLElement | null;
     const scrollHost = observation ?? viewport;
     viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) * 0.35);
     scrollHost.scrollTop = Math.max(0, (scrollHost.scrollHeight - scrollHost.clientHeight) * 0.35);
-    const observationRect = scrollHost.getBoundingClientRect();
-    const contentRect = content.getBoundingClientRect();
-    const centerX = observationRect.left + observationRect.width / 2;
-    const centerY = observationRect.top + observationRect.height / 2;
-    return {
-      x: centerX - contentRect.left,
-      y: centerY - contentRect.top,
-    };
   });
   await canvas.getByRole("button", { name: "Zoom in document" }).click();
   await expect(documentContent).toHaveCSS("transform", /matrix\(1\.15,\s*0,\s*0,\s*1\.15,/);
   await expect(canvas.locator(".markdown-viewer__mermaid svg").first()).toBeVisible();
   await expect(canvas.locator(".markdown-viewer__mermaid-error")).toHaveCount(0);
-  const centerAfterZoom = await page.evaluate(() => {
+  const zoomInLayoutMetrics = await page.evaluate(() => {
     const viewport = document.querySelector(".document-viewer__viewport") as HTMLElement | null;
     const content = document.querySelector(".document-viewer__content") as HTMLElement | null;
     if (!viewport) throw new Error("document viewer viewport missing");
     if (!content) throw new Error("document viewer content missing");
-    const observation = viewport.closest(".sidecar-viewer-body") as HTMLElement | null;
-    const observationRect = (observation ?? viewport).getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
-    const centerX = observationRect.left + observationRect.width / 2;
-    const centerY = observationRect.top + observationRect.height / 2;
+    const layoutWidth = Number.parseFloat(window.getComputedStyle(content).getPropertyValue("--document-viewer-layout-width"));
     return {
-      x: (centerX - contentRect.left) / 1.15,
-      y: (centerY - contentRect.top) / 1.15,
+      viewportWidth: viewport.clientWidth,
+      contentLayoutWidth: content.offsetWidth,
+      contentRenderedWidth: contentRect.width,
+      layoutWidth,
+      overflowX: Math.max(0, viewport.scrollWidth - viewport.clientWidth),
     };
   });
-  expect(Math.abs(centerAfterZoom.x - centerBeforeZoom.x)).toBeLessThan(2);
-  expect(Math.abs(centerAfterZoom.y - centerBeforeZoom.y)).toBeLessThan(2);
+  expect(zoomInLayoutMetrics.layoutWidth).toBeCloseTo(zoomInLayoutMetrics.viewportWidth / 1.15, 0);
+  expect(zoomInLayoutMetrics.contentLayoutWidth).toBeCloseTo(zoomInLayoutMetrics.viewportWidth / 1.15, 0);
+  expect(zoomInLayoutMetrics.contentRenderedWidth).toBeLessThanOrEqual(zoomInLayoutMetrics.viewportWidth + 2);
+  expect(zoomInLayoutMetrics.overflowX).toBeLessThanOrEqual(2);
   await canvas.getByRole("button", { name: "Fit document to width" }).click();
   await expect(canvas.getByRole("button", { name: "Fit document to width" })).toHaveAttribute("aria-pressed", "true");
+  await canvas.getByRole("button", { name: "Reset document zoom" }).click();
+  await expect(documentContent).toHaveCSS("transform", /matrix\(1,\s*0,\s*0,\s*1,/);
+  const mermaidSvg = canvas.locator(".markdown-viewer__mermaid svg").first();
+  await mermaidSvg.scrollIntoViewIfNeeded();
+  await canvas.getByRole("button", { name: "Zoom out document" }).click();
+  await canvas.getByRole("button", { name: "Zoom out document" }).click();
+  await expect(documentContent).toHaveCSS("transform", /matrix\(0\.7,\s*0,\s*0,\s*0\.7,/);
+  const zoomOutMermaidMetrics = await page.evaluate(() => {
+    const svg = document.querySelector(".markdown-viewer__mermaid svg") as SVGElement | null;
+    const viewport = document.querySelector(".document-viewer__viewport") as HTMLElement | null;
+    const content = document.querySelector(".document-viewer__content") as HTMLElement | null;
+    if (!svg || !viewport || !content) throw new Error("Mermaid zoom-out target missing");
+    const observation = viewport.closest(".sidecar-viewer-body") as HTMLElement | null;
+    const svgRect = svg.getBoundingClientRect();
+    const observationRect = (observation ?? viewport).getBoundingClientRect();
+    return {
+      visibleWidth: Math.max(0, Math.min(svgRect.right, observationRect.right) - Math.max(svgRect.left, observationRect.left)),
+      visibleHeight: Math.max(0, Math.min(svgRect.bottom, observationRect.bottom) - Math.max(svgRect.top, observationRect.top)),
+      contentMarginBottom: Number.parseFloat(window.getComputedStyle(content).marginBottom),
+      contentHeight: content.getBoundingClientRect().height,
+      layoutHeight: content.offsetHeight,
+    };
+  });
+  expect(zoomOutMermaidMetrics.visibleWidth).toBeGreaterThan(80);
+  expect(zoomOutMermaidMetrics.visibleHeight).toBeGreaterThan(80);
+  expect(zoomOutMermaidMetrics.contentMarginBottom).toBeLessThan(0);
+  expect(zoomOutMermaidMetrics.contentHeight).toBeLessThan(zoomOutMermaidMetrics.layoutHeight);
   await canvas.getByRole("button", { name: "Reset document zoom" }).click();
   await expect(documentContent).toHaveCSS("transform", /matrix\(1,\s*0,\s*0,\s*1,/);
 
@@ -1179,7 +1256,7 @@ test("sidecar right context rail is narrow and sweeps out detail", async ({ page
   await captureReviewShot(page, testInfo, "sidecar-right-rail-sweep-out");
 });
 
-test("sidecar process navigator opens as a TypeScript-only object viewer tab", async ({ page }, testInfo) => {
+test("sidecar process navigator N0 opens as a TypeScript-only object viewer tab", async ({ page }, testInfo) => {
   await page.goto("/");
   await waitForChrome(page);
   await openWorkspace(page, PROCESS_WORKSPACE);
@@ -1188,7 +1265,7 @@ test("sidecar process navigator opens as a TypeScript-only object viewer tab", a
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
-  const processCommand = page.getByRole("button", { name: "Open Process Navigator" });
+  const processCommand = page.getByRole("button", { name: "Open Process Navigator N0" });
   await expect(processCommand).toBeVisible();
   await processCommand.click();
 

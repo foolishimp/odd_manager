@@ -59,6 +59,22 @@ function readJsonFile(filePath) {
   }
 }
 
+function isPermissionError(error) {
+  return error?.code === "EACCES" || error?.code === "EPERM";
+}
+
+function writeTextFileIfPossible(filePath, content) {
+  try {
+    writeFileSync(filePath, content, "utf8");
+    return true;
+  } catch (caught) {
+    if (isPermissionError(caught)) {
+      return false;
+    }
+    throw caught;
+  }
+}
+
 function loadCacheRecord(workspaceRoot, historyId) {
   const key = cacheKey(workspaceRoot, historyId);
   const existing = historyCache.get(key);
@@ -73,8 +89,16 @@ function loadCacheRecord(workspaceRoot, historyId) {
   };
 
   if (existsSync(entriesPath)) {
-    const trimmed = trimBufferTail(readFileSync(entriesPath, "utf8"), MAX_HISTORY_BYTES);
-    writeFileSync(entriesPath, trimmed, "utf8");
+    let raw = "";
+    try {
+      raw = readFileSync(entriesPath, "utf8");
+    } catch {
+      raw = "";
+    }
+    const trimmed = trimBufferTail(raw, MAX_HISTORY_BYTES);
+    if (trimmed !== raw) {
+      writeTextFileIfPossible(entriesPath, trimmed);
+    }
     record.historyBytes = Buffer.byteLength(trimmed, "utf8");
     record.tailLines = trimmed.split("\n").filter(Boolean).slice(-HISTORY_TAIL_LINES);
   }
@@ -85,7 +109,10 @@ function loadCacheRecord(workspaceRoot, historyId) {
 
 function persistMeta(workspaceRoot, historyId, meta) {
   mkdirSync(conversationHistoryDirectory(workspaceRoot, historyId), { recursive: true });
-  writeFileSync(conversationHistoryMetaPath(workspaceRoot, historyId), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  return writeTextFileIfPossible(
+    conversationHistoryMetaPath(workspaceRoot, historyId),
+    `${JSON.stringify(meta, null, 2)}\n`,
+  );
 }
 
 function pruneHistoryWithinBudget(workspaceRoot, historyId, cacheRecord) {
@@ -96,8 +123,16 @@ function pruneHistoryWithinBudget(workspaceRoot, historyId, cacheRecord) {
     return;
   }
 
-  const trimmed = trimBufferTail(readFileSync(entriesPath, "utf8"), MAX_HISTORY_BYTES);
-  writeFileSync(entriesPath, trimmed, "utf8");
+  let raw = "";
+  try {
+    raw = readFileSync(entriesPath, "utf8");
+  } catch {
+    raw = "";
+  }
+  const trimmed = trimBufferTail(raw, MAX_HISTORY_BYTES);
+  if (trimmed !== raw) {
+    writeTextFileIfPossible(entriesPath, trimmed);
+  }
   cacheRecord.historyBytes = Buffer.byteLength(trimmed, "utf8");
   cacheRecord.tailLines = trimmed.split("\n").filter(Boolean).slice(-HISTORY_TAIL_LINES);
 }
@@ -268,7 +303,13 @@ export function listConversationHistories(workspaceRoot, options = {}) {
 
   const ownerKind = options.ownerKind ?? null;
   const histories = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
+  let entries = [];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
     if (!entry.isDirectory()) {
       continue;
     }

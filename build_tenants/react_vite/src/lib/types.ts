@@ -599,6 +599,13 @@ export type SurfaceData =
       kind: "missing";
       relative_path: string;
       path: string;
+    }
+  | {
+      kind: "unreadable";
+      relative_path: string;
+      path: string;
+      reason: "permission_denied" | "outside_workspace" | "read_error";
+      error: string;
     };
 
 export type Selection =

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active_project_root": "/Users/jim/src/apps/abiogenesis",
+  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/data_mapper_steel_thread_sandbox/20260512T170956378Z_pid24944/workspace",
   "projects": [
     {
       "id": "odd_world_model-6f55d0a5",
@@ -8,31 +8,7 @@
       "label": "odd_world_model",
       "tags": [],
       "registered_at": "2026-04-28T02:40:35.990Z",
-      "updated_at": "2026-04-28T02:40:35.990Z"
-    },
-    {
-      "id": "odd_manager-f4214187",
-      "root": "/Users/jim/src/apps/odd_manager",
-      "label": "odd_manager",
-      "tags": [],
-      "registered_at": "2026-04-28T04:22:53.986Z",
-      "updated_at": "2026-05-05T01:27:06.646Z"
-    },
-    {
-      "id": "data_mapper.test57.fp.cx-403a3643",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test57.fp.cx",
-      "label": "data_mapper.test57.fp.cx",
-      "tags": [],
-      "registered_at": "2026-04-28T19:36:02.418Z",
-      "updated_at": "2026-04-28T19:36:02.418Z"
-    },
-    {
-      "id": "data_mapper.test57.fp.cl-9540fa12",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test57.fp.cl",
-      "label": "data_mapper.test57.fp.cl",
-      "tags": [],
-      "registered_at": "2026-04-28T19:36:09.917Z",
-      "updated_at": "2026-04-28T19:36:09.917Z"
+      "updated_at": "2026-05-12T22:37:08.850Z"
     },
     {
       "id": "data_mapper.test35-7ff9621b",
@@ -40,7 +16,7 @@
       "label": "data_mapper.test35",
       "tags": [],
       "registered_at": "2026-04-28T23:51:44.594Z",
-      "updated_at": "2026-05-01T05:30:59.402Z"
+      "updated_at": "2026-05-12T23:17:20.487Z"
     },
     {
       "id": "abiogenesis-bdf8c5ec",
@@ -48,71 +24,55 @@
       "label": "abiogenesis",
       "tags": [],
       "registered_at": "2026-04-29T13:34:03.905Z",
-      "updated_at": "2026-04-30T16:58:43.559Z"
+      "updated_at": "2026-05-12T23:16:05.305Z"
     },
     {
-      "id": "data_mapper.test58.fp.cl-18497816",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test58.fp.cl",
-      "label": "data_mapper.test58.fp.cl",
+      "id": "odd_sdlc-2b906493",
+      "root": "/Users/jim/src/apps/odd_sdlc",
+      "label": "odd_sdlc",
       "tags": [],
-      "registered_at": "2026-04-29T16:05:25.110Z",
-      "updated_at": "2026-04-29T16:05:25.110Z"
+      "registered_at": "2026-05-12T03:18:09.207Z",
+      "updated_at": "2026-05-12T03:18:09.207Z"
     },
     {
-      "id": "data_mapper.test59.fp.cl-45926e02",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test59.fp.cl",
-      "label": "data_mapper.test59.fp.cl",
+      "id": "scenario_t163_mindforge_ai_assistant_third_party_model_variant_live-c6ce9b7a",
+      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/scenario_t163_mindforge_ai_assistant_third_party_model_variant_live",
+      "label": "scenario_t163_mindforge_ai_assistant_third_party_model_variant_live",
       "tags": [],
-      "registered_at": "2026-04-30T02:57:21.260Z",
-      "updated_at": "2026-04-30T02:57:21.260Z"
+      "registered_at": "2026-05-12T14:13:45.060Z",
+      "updated_at": "2026-05-12T16:38:20.290Z"
     },
     {
-      "id": "data_mapper.test60.TS.cl-62911de5",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test60.TS.cl",
-      "label": "data_mapper.test60.TS.cl",
+      "id": "data_mapper_steel_thread_sandbox-46b031b2",
+      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/data_mapper_steel_thread_sandbox",
+      "label": "data_mapper_steel_thread_sandbox",
       "tags": [],
-      "registered_at": "2026-04-30T12:03:38.275Z",
-      "updated_at": "2026-04-30T12:03:38.275Z"
+      "registered_at": "2026-05-12T22:39:13.074Z",
+      "updated_at": "2026-05-12T22:39:13.074Z"
     },
     {
-      "id": "data_mapper.test61.TS.cl-3ccd28e3",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test61.TS.cl",
-      "label": "data_mapper.test61.TS.cl",
+      "id": "odd_manager-f4214187",
+      "root": "/Users/jim/src/apps/odd_manager",
+      "label": "odd_manager",
       "tags": [],
-      "registered_at": "2026-04-30T15:41:38.558Z",
-      "updated_at": "2026-04-30T15:41:38.558Z"
+      "registered_at": "2026-05-12T23:10:48.071Z",
+      "updated_at": "2026-05-12T23:16:19.022Z"
     },
     {
-      "id": "data_mapper.test56.ts-64cd6062",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test56.ts",
-      "label": "data_mapper.test56.ts",
-      "tags": [],
-      "registered_at": "2026-04-30T15:56:08.379Z",
-      "updated_at": "2026-04-30T16:01:01.826Z"
-    },
-    {
-      "id": "workspace-1657a11a",
-      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t109_live_installed_data_mapper_pty/20260504T121722717Z_pid84330/workspace",
+      "id": "workspace-fc607770",
+      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260513T203252970Z_pid4377/workspace",
       "label": "workspace",
       "tags": [],
-      "registered_at": "2026-05-04T14:03:05.258Z",
-      "updated_at": "2026-05-05T01:27:04.323Z"
+      "registered_at": "2026-05-14T00:07:57.965Z",
+      "updated_at": "2026-05-14T00:07:57.965Z"
     },
     {
-      "id": "data_mapper_induction-27ec9c5f",
-      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/fixtures/data_mapper_induction",
-      "label": "data_mapper_induction",
-      "tags": [],
-      "registered_at": "2026-05-04T14:37:39.647Z",
-      "updated_at": "2026-05-04T14:38:07.280Z"
-    },
-    {
-      "id": "workspace-08dc2d4a",
-      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t133_rust_hello_world_bootstrap_sandbox/20260510T125944081Z_pid68660/workspace",
+      "id": "workspace-b400c56a",
+      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/data_mapper_steel_thread_sandbox/20260512T170956378Z_pid24944/workspace",
       "label": "workspace",
       "tags": [],
-      "registered_at": "2026-05-10T13:01:29.037Z",
-      "updated_at": "2026-05-10T13:01:29.037Z"
+      "registered_at": "2026-05-14T12:39:08.717Z",
+      "updated_at": "2026-05-14T12:39:08.717Z"
     }
   ]
 }

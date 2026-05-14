@@ -25,8 +25,8 @@ export const SIDECAR_EXPLORER_PROVIDERS: SidecarExplorerProvider[] = [
   { id: 'projects', label: 'Projects', shortLabel: 'P', selectionKind: 'project' },
   { id: 'tickets', label: 'Tickets', shortLabel: 'T', selectionKind: 'ticket' },
   { id: 'comments', label: 'Comments', shortLabel: 'C', selectionKind: 'comment' },
-  { id: 'history', label: 'Recent Paths', shortLabel: 'H' },
   { id: 'browse', label: 'Browse', shortLabel: 'B' },
+  { id: 'history', label: 'Recent Paths', shortLabel: 'H' },
 ];
 
 export type SidecarPathHistorySource = 'browse' | 'pinned_folder' | 'history';

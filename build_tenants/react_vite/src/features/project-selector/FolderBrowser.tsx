@@ -5,10 +5,12 @@ import type { FsEntry } from "../../lib/collaboration";
 
 type FolderBrowserProps = {
   onSelectWorkspace: (absolutePath: string) => void;
+  onOpenWorkspace?: (absolutePath: string) => void;
   path?: string;
   disabled?: boolean;
   onPathChange?: (absolutePath: string) => void;
   selectLabel?: string;
+  openLabel?: string;
 };
 
 type BrowseState = {
@@ -25,10 +27,12 @@ function folderWorkspaceLabel(entry: FsEntry) {
 
 export function FolderBrowser({
   onSelectWorkspace,
+  onOpenWorkspace,
   path,
   disabled = false,
   onPathChange,
   selectLabel = "Open",
+  openLabel = "Open",
 }: FolderBrowserProps) {
   const [state, setState] = useState<BrowseState>({
     currentPath: "",
@@ -149,7 +153,7 @@ export function FolderBrowser({
                 ) : null}
               </button>
 
-              {entry.hasWorkspace ? (
+              <div className="folder-browser__actions">
                 <button
                   type="button"
                   className="folder-browser__select"
@@ -158,7 +162,17 @@ export function FolderBrowser({
                 >
                   {selectLabel}
                 </button>
-              ) : null}
+                {entry.hasWorkspace && onOpenWorkspace ? (
+                  <button
+                    type="button"
+                    className="folder-browser__select folder-browser__select--primary"
+                    onClick={() => onOpenWorkspace(entry.absolutePath)}
+                    disabled={disabled}
+                  >
+                    {openLabel}
+                  </button>
+                ) : null}
+              </div>
             </li>
           ))}
 

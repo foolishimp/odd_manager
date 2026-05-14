@@ -739,7 +739,9 @@ function scanForWorkspaces(rootPath, { oddOnly = false } = {}) {
 
 function browseDirectory(targetPath, options = {}) {
   const directory = targetPath || homedir();
-  const maxEntries = 500;
+  const maxEntries = Number.isFinite(options.maxEntries)
+    ? Math.max(0, Math.floor(options.maxEntries))
+    : 500;
   const includeHidden = options.includeHidden === true;
   const rawEntries = readdirSync(directory, { withFileTypes: true });
   const visibleEntries = rawEntries
@@ -749,13 +751,24 @@ function browseDirectory(targetPath, options = {}) {
       if (entry.isDirectory()) return true;
       return options.includeFiles === true && entry.isFile();
     })
+    .map((entry) => {
+      const absolutePath = join(directory, entry.name);
+      try {
+        return { entry, absolutePath, stat: statSync(absolutePath) };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
     .sort((left, right) => {
-      if (left.isDirectory() !== right.isDirectory()) return left.isDirectory() ? -1 : 1;
-      return left.name.localeCompare(right.name);
+      const timeDiff = right.stat.mtimeMs - left.stat.mtimeMs;
+      if (timeDiff !== 0) return timeDiff;
+      return left.entry.name.localeCompare(right.entry.name);
     });
 
-  const entries = visibleEntries.slice(0, maxEntries).map((entry) => {
-    const absolutePath = join(directory, entry.name);
+  const listedEntries = maxEntries > 0 ? visibleEntries.slice(0, maxEntries) : visibleEntries;
+  const entries = listedEntries.map(({ entry, absolutePath, stat }) => {
+    const updatedAt = stat.mtime.toISOString();
     const markers = isWorkspaceRoot(absolutePath) ? classifyOddWorkspace(absolutePath) : [];
     const profile = isWorkspaceRoot(absolutePath) ? profileWorkspace(absolutePath) : null;
     const hasWorkspace = markers.length > 0;
@@ -764,6 +777,7 @@ function browseDirectory(targetPath, options = {}) {
       name: entry.name,
       absolutePath,
       kind: entry.isDirectory() ? "directory" : "file",
+      updatedAt,
       hasWorkspace,
       markers,
       profile,
@@ -774,8 +788,16 @@ function browseDirectory(targetPath, options = {}) {
     path: directory,
     parent: directory === "/" ? null : dirname(directory),
     entries,
-    truncated: visibleEntries.length > maxEntries,
+    truncated: maxEntries > 0 && visibleEntries.length > maxEntries,
   };
+}
+
+function browseMaxEntriesFromParam(value) {
+  if (value === null) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "all") return 0;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 // Per-workspaceRoot AssetSurface cache (shared across requests; surfaces
@@ -890,6 +912,7 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, browseDirectory(url.searchParams.get("path") || undefined, {
         includeHidden: url.searchParams.get("includeHidden") === "1",
         includeFiles: url.searchParams.get("includeFiles") === "1",
+        maxEntries: browseMaxEntriesFromParam(url.searchParams.get("maxEntries")),
       }));
       return;
     }

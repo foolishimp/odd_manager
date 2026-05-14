@@ -129,6 +129,7 @@ function fixtureLeafOverlay() {
     }),
     traceArchiveRoot: '/fixture/archive',
     tracedEvidence: [fixtureTracedEvidence()],
+    edgeAssurance: null,
   });
 }
 

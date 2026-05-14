@@ -44,6 +44,15 @@ const TRACED_EXECUTOR_PROFILES = new Set(["local-spawn", "pty-terminal"]);
 const TRACED_STREAM_MODELS = new Set(["stdio", "terminal-transcript"]);
 const TRACED_PARSERS = new Set(["generic-text", "claude-stream-json"]);
 const ASSURANCE_CELL_STATES = new Set(["pass", "fail", "pending"]);
+const EDGE_CLOSURE_DISPOSITIONS = new Set([
+  "close",
+  "yield",
+  "retry",
+  "repair",
+  "re-enter",
+  "reprice",
+  "block"
+]);
 const LEAF_INVOCATION_STATUSES = new Set([
   "queued",
   "running",
@@ -114,6 +123,7 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     return unsupportedProcessProjection(root, installValidation.reason);
   }
   const queryDomain = loadInstalledQueryDomain(root, installValidation.manifest);
+  const traversalOverlays = mapTraversalOverlays(queryDomain);
 
   // T-026: catalog backbone. Live read each call (no memoization).
   const catalog = loadInstalledCatalog(root, installValidation.manifest);
@@ -131,6 +141,7 @@ export function loadSidecarProcessProjection(workspaceRoot) {
       views: materializeViews([]),
       records,
       maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
+      traversalOverlays,
       catalog,
       leafOverlays
     };
@@ -150,6 +161,7 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     views: materializeViews(records),
     records,
     maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
+    traversalOverlays,
     catalog,
     leafOverlays
   };
@@ -323,6 +335,49 @@ function mapLibraryToSidecar(libraryFn) {
   });
 }
 
+function mapTraversalOverlays(queryDomain) {
+  const overlays = Array.isArray(queryDomain?.traversalOverlays?.overlays)
+    ? queryDomain.traversalOverlays.overlays
+    : [];
+  return Object.freeze(overlays.map(mapTraversalOverlayToSidecar).filter(Boolean));
+}
+
+function mapTraversalOverlayToSidecar(overlay) {
+  if (!isObject(overlay) || typeof overlay.overlayRef !== "string") return null;
+  const termination = isObject(overlay.termination) ? overlay.termination : {};
+  const assetTemplates = Array.isArray(overlay.assetTemplates) ? overlay.assetTemplates : [];
+  return Object.freeze({
+    kind: "sidecar_traversal_overlay",
+    overlayRef: overlay.overlayRef,
+    name: stringField(overlay, "name") || overlay.overlayRef,
+    intent: stringField(overlay, "intent"),
+    graphFunctionRefs: Object.freeze(stringArray(overlay.graphFunctionRefs)),
+    graphVectorRefs: Object.freeze(stringArray(overlay.graphVectorRefs)),
+    publicStartTargets: Object.freeze(stringArray(overlay.publicStartTargets)),
+    defaultStartTarget: stringField(overlay, "defaultStartTarget"),
+    terminalAssetTypes: Object.freeze(stringArray(termination.terminalAssetTypes)),
+    terminalGraphFunctionRefs: Object.freeze(stringArray(termination.terminalGraphFunctionRefs)),
+    lawfulStopDispositions: Object.freeze(stringArray(termination.lawfulStopDispositions)),
+    nextEligibleOverlayRefs: Object.freeze(stringArray(termination.nextEligibleOverlayRefs)),
+    predecessorOverlayRefs: Object.freeze(stringArray(overlay.predecessorOverlayRefs)),
+    assetTemplates: Object.freeze(assetTemplates.map(mapOverlayAssetTemplateToSidecar).filter(Boolean))
+  });
+}
+
+function mapOverlayAssetTemplateToSidecar(template) {
+  if (!isObject(template) || typeof template.assetType !== "string") return null;
+  const terminalRole = stringField(template, "terminalRole");
+  return Object.freeze({
+    kind: "sidecar_overlay_asset_template",
+    assetType: template.assetType,
+    defaultPath: stringField(template, "defaultPath"),
+    producerGraphFunctionRef: stringField(template, "producerGraphFunctionRef"),
+    terminalRole:
+      terminalRole === "supporting_asset" ? "supporting_asset" : "terminal_asset",
+    templateRef: stringField(template, "templateRef")
+  });
+}
+
 // ---------------------------------------------------------------------------
 // T-026 + T-022: per-leaf overlay loader. Reads the latest op-run dir under
 // .ai-workspace/runtime/odd_sdlc/operator-runs/, and for each leaf trace
@@ -391,6 +446,7 @@ function buildLeafOverlay(group) {
   // Latest op-run drives the assurance vector + status. Earlier op-runs
   // contribute to invocation count and accumulated traced evidence.
   const latestPath = group.latestPath;
+  const latestManifest = readOpRunManifest(latestPath);
   const assuranceVector = readAssuranceVector(
     join(latestPath, "assurance_satisfaction.json")
   );
@@ -418,7 +474,8 @@ function buildLeafOverlay(group) {
     latestStatus,
     assuranceVector,
     traceArchiveRoot: latestTraceArchiveRoot,
-    tracedEvidence: Object.freeze(tracedEvidence)
+    tracedEvidence: Object.freeze(tracedEvidence),
+    edgeAssurance: readEdgeAssuranceOverlay(latestPath, group.leafName, latestManifest)
   });
 }
 
@@ -456,6 +513,134 @@ function collectTracedEvidence(opRunPath) {
   return candidates
     .map(({ path, archive }) => admitTracedEvidenceFromResult(path, archive))
     .filter(Boolean);
+}
+
+function readEdgeAssuranceOverlay(opRunPath, leafName, manifest) {
+  const ledger = readJsonFile(join(opRunPath, "sdlc_edge_fulfillment_ledger.json"));
+  const closure = readJsonFile(join(opRunPath, "sdlc_edge_closure_decision.json"));
+  const nextAction = readJsonFile(join(opRunPath, "sdlc_next_action_projection.json"));
+  const productManifestPath = join(opRunPath, "product_materialization_manifest.json");
+  const workerResult = readJsonFile(join(opRunPath, "worker_result_report.json"));
+  const postflightPresent = existsSync(join(opRunPath, "postflight.json"));
+  const ledgerOk = isObject(ledger) && ledger.kind === "sdlc_edge_fulfillment_ledger";
+  const closureOk = isObject(closure) && closure.kind === "sdlc_edge_closure_decision";
+  const nextActionOk = isObject(nextAction) && nextAction.kind === "sdlc_next_action_projection";
+  const manifestOk = isObject(manifest) && manifest.kind === "sdlc_worker_handoff_manifest";
+  const carrierAbsent = !ledgerOk && !closureOk && !nextActionOk;
+
+  if (carrierAbsent && !existsSync(productManifestPath) && !isObject(workerResult) && !postflightPresent) {
+    return null;
+  }
+
+  const closureDisposition = EDGE_CLOSURE_DISPOSITIONS.has(stringField(closure, "disposition"))
+    ? stringField(closure, "disposition")
+    : null;
+  const edgeAssuranceContractRef =
+    stringOrNull(ledger, "edgeAssuranceContractRef") ??
+    stringOrNull(closure, "edgeAssuranceContractRef") ??
+    stringOrNull(manifest, "edgeAssuranceContractRef");
+  const edgeAssuranceContractDigest =
+    stringOrNull(ledger, "edgeAssuranceContractDigest") ??
+    stringOrNull(closure, "edgeAssuranceContractDigest") ??
+    stringOrNull(manifest, "edgeAssuranceContractDigest");
+  const edgeGainRef =
+    stringOrNull(ledger, "edgeGainRef") ??
+    stringOrNull(closure, "edgeGainRef");
+  const edgeClosureFunctionRef = stringOrNull(closure, "edgeClosureFunctionRef");
+  const edgeResidualPressureRefs = uniqueInOrder([
+    ...stringArray(ledger?.edgeResidualPressureRefs),
+    ...stringArray(closure?.edgeResidualPressureRefs)
+  ]);
+  const reasonRefs = uniqueInOrder(stringArray(closure?.reasonRefs));
+  const gapPressureRefs = uniqueInOrder(stringArray(nextAction?.gapPressureRefs));
+  const edgeConverged = booleanOrNull(ledger?.edgeConverged);
+  const diagnostics = [];
+  if (!ledgerOk) diagnostics.push("edge_fulfillment_ledger_missing");
+  if (!closureOk) diagnostics.push("edge_closure_decision_missing");
+  if (existsSync(productManifestPath) && (!ledgerOk || !closureOk)) {
+    diagnostics.push("artifact_presence_without_edge_closure_carrier");
+  }
+  if (isObject(workerResult) && (!ledgerOk || !closureOk)) {
+    diagnostics.push("worker_report_without_edge_closure_carrier");
+  }
+  if (hasWorkerPercentComplete(workerResult)) {
+    diagnostics.push("worker_percent_complete_not_metric_authority");
+  }
+  if (postflightPresent && closureDisposition !== "close") {
+    diagnostics.push("postflight_success_not_metric_authority");
+  }
+  if (ledgerOk || closureOk || nextActionOk || manifestOk) {
+    if (!edgeAssuranceContractRef) diagnostics.push("edge_assurance_contract_ref_missing");
+    if (!edgeAssuranceContractDigest) diagnostics.push("edge_assurance_contract_digest_missing");
+    if (!edgeGainRef) diagnostics.push("edge_gain_ref_missing");
+    if (closureOk && !edgeClosureFunctionRef) diagnostics.push("edge_closure_function_ref_missing");
+  }
+  if (
+    closureOk &&
+    closureDisposition !== "close" &&
+    edgeResidualPressureRefs.length === 0 &&
+    reasonRefs.length === 0 &&
+    gapPressureRefs.length === 0
+  ) {
+    diagnostics.push("non_close_without_residual_pressure_refs");
+  }
+
+  const closeReady = Boolean(
+    ledgerOk &&
+    closureOk &&
+    closureDisposition === "close" &&
+    edgeConverged === true &&
+    edgeAssuranceContractRef &&
+    edgeGainRef &&
+    edgeClosureFunctionRef
+  );
+  const carrierState =
+    carrierAbsent
+      ? "absent"
+      : diagnostics.some((code) =>
+          code.endsWith("_missing") ||
+          code === "edge_fulfillment_ledger_missing" ||
+          code === "edge_closure_decision_missing"
+        )
+      ? "incomplete"
+      : "complete";
+
+  return Object.freeze({
+    kind: "sidecar_edge_assurance_overlay",
+    carrierState,
+    opRunRoot: opRunPath,
+    edgeName: stringField(manifest, "edgeName") || leafName,
+    edgeRef: stringOrNull(ledger, "edgeRef"),
+    vectorIndex: numberOrNull(manifest, "vectorIndex"),
+    targetAssetType: stringOrNull(manifest, "targetAssetType"),
+    edgeAssuranceContractRef,
+    edgeAssuranceContractDigest,
+    edgeGainRef,
+    edgeClosureFunctionRef,
+    edgeResidualPressureRefs: Object.freeze(edgeResidualPressureRefs),
+    ledgerRef: stringOrNull(ledger, "ledgerRef"),
+    ledgerVersionRef: stringOrNull(ledger, "ledgerVersionRef"),
+    closureDecisionRef: stringOrNull(closure, "decisionRef"),
+    closureDisposition,
+    closeReady,
+    edgeConverged,
+    carryConverged: booleanOrNull(ledger?.carryConverged),
+    fulfillmentConverged: booleanOrNull(ledger?.fulfillmentConverged),
+    admitted: booleanOrNull(ledger?.admitted),
+    targetCertificationPassed: booleanOrNull(ledger?.targetCertificationPassed),
+    fdRecheckPassed: booleanOrNull(ledger?.fdRecheckPassed),
+    counts: edgeAssuranceCounts(ledger?.counts),
+    materializationRefCount: stringArray(ledger?.materializationRefs).length,
+    admissionRefCount: stringArray(ledger?.admissionRefs).length,
+    evidenceBundleRefCount: stringArray(ledger?.evidenceBundleRefs).length,
+    targetBindingRefCount: stringArray(ledger?.targetBindingRefs).length,
+    nextActionBasisKind: stringOrNull(nextAction, "nextActionBasisKind"),
+    nextGraphVectorRef: stringOrNull(nextAction, "nextGraphVectorRef"),
+    selectedActionRef: stringOrNull(nextAction, "selectedActionRef"),
+    reasonRefs: Object.freeze(reasonRefs),
+    gapPressureRefs: Object.freeze(gapPressureRefs),
+    diagnostics: Object.freeze(uniqueInOrder(diagnostics))
+  });
 }
 
 function admitTracedEvidenceFromResult(resultPath, archiveRoot) {
@@ -562,6 +747,40 @@ function deriveLeafStatus(leafPath, tracedEvidence) {
   if (existsSync(join(leafPath, "fp_evaluate_result.json"))) return "fp_succeeded";
   if (existsSync(join(leafPath, "worker_process_events.jsonl"))) return "running";
   return "unattested";
+}
+
+function edgeAssuranceCounts(value) {
+  if (!isObject(value)) return null;
+  const counts = {
+    expected: numberField(value, "expected"),
+    fulfilled: numberField(value, "fulfilled"),
+    partial: numberField(value, "partial"),
+    blocked: numberField(value, "blocked"),
+    unfulfilled: numberField(value, "unfulfilled"),
+    missing: numberField(value, "missing"),
+    extra: numberField(value, "extra")
+  };
+  if (Object.values(counts).some((entry) => entry === null)) return null;
+  return Object.freeze(counts);
+}
+
+function booleanOrNull(value) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function hasWorkerPercentComplete(value, depth = 0) {
+  if (!isObject(value) || depth > 3) return false;
+  for (const [key, entry] of Object.entries(value)) {
+    if (/percent.*complete/i.test(key) || /complete.*percent/i.test(key)) {
+      return true;
+    }
+    if (Array.isArray(entry)) {
+      if (entry.some((item) => hasWorkerPercentComplete(item, depth + 1))) return true;
+      continue;
+    }
+    if (hasWorkerPercentComplete(entry, depth + 1)) return true;
+  }
+  return false;
 }
 
 function validateTypeScriptInstall(root) {
@@ -1562,7 +1781,8 @@ function baseProjection(workspaceRoot) {
     eventKinds: [],
     views: materializeViews([]),
     records: [],
-    maps: Object.freeze([])
+    maps: Object.freeze([]),
+    traversalOverlays: Object.freeze([])
   };
 }
 

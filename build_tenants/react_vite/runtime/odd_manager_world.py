@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import re
@@ -2852,24 +2853,43 @@ def _compose_world(workspace_root: Path) -> dict[str, Any]:
 def _read_surface(workspace_root: Path, relative_path: str) -> dict[str, Any]:
     root = workspace_root.resolve()
     target = (root / relative_path).resolve()
-    target.relative_to(root)
-    if not target.exists():
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return {
+            "kind": "unreadable",
+            "relative_path": relative_path,
+            "path": str(target),
+            "reason": "outside_workspace",
+            "error": "surface path resolves outside the active Project root",
+        }
+    try:
+        exists = target.exists()
+        is_directory = target.is_dir() if exists else False
+    except OSError as error:
+        return _unreadable_surface(relative_path, target, error)
+    if not exists:
         return {
             "kind": "missing",
             "relative_path": relative_path,
             "path": str(target),
         }
-    if target.is_dir():
+    if is_directory:
         entries = []
-        for child in sorted(target.iterdir(), key=lambda item: item.name):
+        try:
+            children = sorted(target.iterdir(), key=lambda item: item.name)
+        except OSError as error:
+            return _unreadable_surface(relative_path, target, error)
+        for child in children:
             try:
                 child_relative = child.relative_to(root).as_posix()
-            except ValueError:
+                child_kind = "directory" if child.is_dir() else "file"
+            except (OSError, ValueError):
                 continue
             entries.append(
                 {
                     "name": child.name,
-                    "kind": "directory" if child.is_dir() else "file",
+                    "kind": child_kind,
                     "relative_path": child_relative,
                 }
             )
@@ -2880,11 +2900,30 @@ def _read_surface(workspace_root: Path, relative_path: str) -> dict[str, Any]:
             "entries": entries[:200],
             "truncated": len(entries) > 200,
         }
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        return _unreadable_surface(relative_path, target, error)
     return {
         "kind": "file",
         "relative_path": relative_path,
         "path": str(target),
-        "content": target.read_text(encoding="utf-8", errors="replace"),
+        "content": content,
+    }
+
+
+def _unreadable_surface(relative_path: str, target: Path, error: OSError) -> dict[str, Any]:
+    reason = (
+        "permission_denied"
+        if error.errno in {errno.EACCES, errno.EPERM}
+        else "read_error"
+    )
+    return {
+        "kind": "unreadable",
+        "relative_path": relative_path,
+        "path": str(target),
+        "reason": reason,
+        "error": str(error),
     }
 
 

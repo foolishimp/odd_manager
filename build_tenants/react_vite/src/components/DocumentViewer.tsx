@@ -127,16 +127,22 @@ export function DocumentViewer({
   const zoomAnchorRef = useRef<{ x: number; y: number; centerX: number; centerY: number } | null>(null);
 
   useLayoutEffect(() => {
+    const viewport = viewportRef.current;
     const content = contentRef.current;
-    if (!content) return;
-    const updateScaledOverflow = () => {
-      const marginRight = `${Math.max(0, content.offsetWidth * (zoom - 1))}px`;
-      const marginBottom = `${Math.max(0, content.offsetHeight * (zoom - 1))}px`;
+    if (!viewport || !content) return;
+    const updateZoomLayout = () => {
+      const layoutWidth = `${Math.max(1, viewport.clientWidth / zoom)}px`;
+      if (content.style.getPropertyValue("--document-viewer-layout-width") !== layoutWidth) {
+        content.style.setProperty("--document-viewer-layout-width", layoutWidth);
+      }
+      const marginRight = `${content.offsetWidth * (zoom - 1)}px`;
+      const marginBottom = `${content.offsetHeight * (zoom - 1)}px`;
       if (content.style.marginRight !== marginRight) content.style.marginRight = marginRight;
       if (content.style.marginBottom !== marginBottom) content.style.marginBottom = marginBottom;
     };
-    updateScaledOverflow();
-    const observer = new ResizeObserver(updateScaledOverflow);
+    updateZoomLayout();
+    const observer = new ResizeObserver(updateZoomLayout);
+    observer.observe(viewport);
     observer.observe(content);
     return () => observer.disconnect();
   }, [descriptor.id, content, zoom]);
@@ -322,6 +328,13 @@ export const MarkdownDocumentContent = memo(function MarkdownDocumentContent({ d
               </a>
             );
           },
+          table({ children, ...props }) {
+            return (
+              <div className="markdown-viewer__table-wrap">
+                <table {...props}>{children}</table>
+              </div>
+            );
+          },
         }}
       >
         {content}
@@ -405,6 +418,7 @@ function MermaidDiagram({ descriptorId, blockIndex, source }: { descriptorId: st
         const { svg } = await mermaid.render(renderId, source);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
+        normalizeMermaidSvg(hostRef.current);
       } catch (caught) {
         if (!cancelled) {
           setError(caught instanceof Error ? caught.message : String(caught));
@@ -431,6 +445,15 @@ function MermaidDiagram({ descriptorId, blockIndex, source }: { descriptorId: st
   }
 
   return <div ref={hostRef} className="markdown-viewer__mermaid" data-render-id={renderId} />;
+}
+
+function normalizeMermaidSvg(host: HTMLDivElement) {
+  const svg = host.querySelector("svg");
+  if (!(svg instanceof SVGSVGElement)) return;
+  const viewBoxWidth = svg.viewBox.baseVal.width;
+  if (Number.isFinite(viewBoxWidth) && viewBoxWidth > 0) {
+    svg.style.width = `${viewBoxWidth}px`;
+  }
 }
 
 function extensionForPath(path: string) {

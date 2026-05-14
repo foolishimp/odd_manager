@@ -66,14 +66,22 @@ function writeOpRun(root, name, leafName, result, options = {}) {
   const opRunPath = join(root, '.ai-workspace/runtime/odd_sdlc/operator-runs', name);
   const tracePath = join(opRunPath, 'worker_process_events.jsonl.trace');
   mkdirSync(tracePath, { recursive: true });
-  writeFileSync(join(opRunPath, 'handoff_manifest.json'), JSON.stringify({ edgeName: leafName }));
+  writeJsonFile(join(opRunPath, 'handoff_manifest.json'), {
+    kind: 'sdlc_worker_handoff_manifest',
+    edgeName: leafName,
+    ...options.manifest,
+  });
   writeFileSync(join(opRunPath, 'worker_process_events.jsonl'), '');
-  if (options.postflight) writeFileSync(join(opRunPath, 'postflight.json'), JSON.stringify({ ok: true }));
-  if (options.fpEvaluate) writeFileSync(join(opRunPath, 'fp_evaluate_result.json'), JSON.stringify({ ok: true }));
-  writeFileSync(join(tracePath, 'result.json'), JSON.stringify(result));
+  if (options.postflight) writeJsonFile(join(opRunPath, 'postflight.json'), { ok: true });
+  if (options.fpEvaluate) writeJsonFile(join(opRunPath, 'fp_evaluate_result.json'), { ok: true });
+  writeJsonFile(join(tracePath, 'result.json'), result);
   const mtime = new Date(options.mtime ?? Date.now());
   utimesSync(opRunPath, mtime, mtime);
   return opRunPath;
+}
+
+function writeJsonFile(path, value) {
+  writeFileSync(path, JSON.stringify(value));
 }
 
 function tracedResult(overrides = {}) {
@@ -360,4 +368,198 @@ test('per-edge outcome decoration uses the latest traced invocation and trace ar
   assert.equal(decorated.latestOutcome, 'exited');
   assert.equal(decorated.executorProfile, 'local-spawn');
   assert.equal(decorated.traceArchiveRoot, join(latestPath, 'worker_process_events.jsonl.trace'));
+});
+
+test('T-164 edge assurance carriers are projected without treating postflight as closure authority', () => {
+  const root = installedTempWorkspace();
+  installFakeOddSdlcCli(root, {
+    kind: 'sdlc_query_domain_projection',
+    contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+    contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+    graphFunctions: [
+      {
+        name: 'derive_design_surface',
+        inputNames: ['requirement_surface'],
+        outputNames: ['design_surface'],
+        vectorNames: ['derive_design_surface'],
+      },
+    ],
+  });
+  const opRunPath = writeOpRun(
+    root,
+    '20260514T010000Z_pid164',
+    'derive_design_surface',
+    tracedResult({ sessionId: 'edge-assurance-fixture' }),
+    {
+      postflight: true,
+      manifest: {
+        graphFunctionName: 'bootstrap_release_self_test',
+        vectorIndex: 3,
+        targetAssetType: 'design_surface',
+        inputAssetTypes: ['requirement_surface'],
+        edgeAssuranceContractRef: 'edge-assurance-contract://odd-sdlc/derive_design_surface',
+        edgeAssuranceContractDigest: 'sha256:t164-design-contract',
+      },
+    },
+  );
+  writeJsonFile(join(opRunPath, 'sdlc_edge_fulfillment_ledger.json'), {
+    kind: 'sdlc_edge_fulfillment_ledger',
+    ledgerRef: 'ledger://odd-sdlc/t164/design',
+    ledgerVersionRef: 'ledger-version://odd-sdlc/t164/design/1',
+    edgeRef: 'edge://odd-sdlc/bootstrap/derive-design/3',
+    edgeAssuranceContractRef: 'edge-assurance-contract://odd-sdlc/derive_design_surface',
+    edgeAssuranceContractDigest: 'sha256:t164-design-contract',
+    edgeGainRef: 'edge-gain://odd-sdlc/t164/design',
+    edgeResidualPressureRefs: ['pressure://odd-sdlc/t164/design/missing-proof'],
+    targetBindingRefs: ['target-binding://odd-sdlc/t164/design'],
+    evidenceBundleRefs: ['evidence://odd-sdlc/t164/design/worksite'],
+    materializationRefs: ['file://build_tenants/app/design/design_surface.md'],
+    admissionRefs: ['evidence://odd-sdlc/t164/design/worksite'],
+    counts: {
+      expected: 2,
+      fulfilled: 1,
+      partial: 0,
+      blocked: 1,
+      unfulfilled: 0,
+      missing: 0,
+      extra: 0,
+    },
+    carryConverged: true,
+    fulfillmentConverged: false,
+    admitted: true,
+    targetCertificationPassed: false,
+    fdRecheckPassed: true,
+    edgeConverged: false,
+  });
+  writeJsonFile(join(opRunPath, 'sdlc_edge_closure_decision.json'), {
+    kind: 'sdlc_edge_closure_decision',
+    decisionRef: 'closure-decision://odd-sdlc/t164/design/1',
+    ledgerRef: 'ledger://odd-sdlc/t164/design',
+    ledgerVersionRef: 'ledger-version://odd-sdlc/t164/design/1',
+    edgeAssuranceContractRef: 'edge-assurance-contract://odd-sdlc/derive_design_surface',
+    edgeAssuranceContractDigest: 'sha256:t164-design-contract',
+    edgeGainRef: 'edge-gain://odd-sdlc/t164/design',
+    edgeClosureFunctionRef: 'function://odd-sdlc/edge-gain/solution_formalisation/close-edge',
+    edgeResidualPressureRefs: ['pressure://odd-sdlc/t164/design/missing-proof'],
+    disposition: 'retry',
+    reasonRefs: ['blocking-reason://odd-sdlc/t164/design/missing-proof'],
+  });
+  writeJsonFile(join(opRunPath, 'sdlc_next_action_projection.json'), {
+    kind: 'sdlc_next_action_projection',
+    nextActionBasisKind: 'post_retry',
+    selectedActionRef: 'construction-action://odd-sdlc/t164/design/retry',
+    nextGraphVectorRef: 'derive_design_surface',
+    gapPressureRefs: ['pressure://odd-sdlc/t164/design/missing-proof'],
+  });
+
+  const projection = loadSidecarProcessProjection(root);
+  const overlay = projection.leafOverlays.find((entry) => entry.leafName === 'derive_design_surface');
+  assert.ok(overlay, 'leaf overlay should be projected');
+  assert.equal(overlay.latestStatus, 'fd_postflight_passed');
+  assert.equal(overlay.edgeAssurance.carrierState, 'complete');
+  assert.equal(overlay.edgeAssurance.closureDisposition, 'retry');
+  assert.equal(overlay.edgeAssurance.closeReady, false);
+  assert.equal(overlay.edgeAssurance.edgeAssuranceContractRef, 'edge-assurance-contract://odd-sdlc/derive_design_surface');
+  assert.equal(overlay.edgeAssurance.edgeGainRef, 'edge-gain://odd-sdlc/t164/design');
+  assert.deepEqual(overlay.edgeAssurance.edgeResidualPressureRefs, ['pressure://odd-sdlc/t164/design/missing-proof']);
+  assert.equal(overlay.edgeAssurance.counts.expected, 2);
+  assert.equal(overlay.edgeAssurance.counts.fulfilled, 1);
+  assert.equal(overlay.edgeAssurance.targetCertificationPassed, false);
+  assert.ok(
+    overlay.edgeAssurance.diagnostics.includes('postflight_success_not_metric_authority'),
+    'postflight success must remain separate from edge closure',
+  );
+});
+
+test('T-164 artifact presence and worker percent complete do not close Sidecar edge assurance', () => {
+  const root = installedTempWorkspace();
+  const opRunPath = writeOpRun(
+    root,
+    '20260514T020000Z_pid164',
+    'derive_component_code_surface',
+    tracedResult({ sessionId: 'artifact-only-fixture' }),
+    {
+      postflight: true,
+      manifest: {
+        vectorIndex: 8,
+        targetAssetType: 'component_code_surface',
+      },
+    },
+  );
+  writeJsonFile(join(opRunPath, 'product_materialization_manifest.json'), {
+    kind: 'sdlc_product_materialization_manifest',
+    files: [{ relativePath: 'src/main.rs', role: 'source' }],
+  });
+  writeJsonFile(join(opRunPath, 'worker_result_report.json'), {
+    kind: 'odd_sdlc.worker_result_report',
+    workerPercentComplete: 100,
+    summary: 'worker claimed complete',
+  });
+
+  const projection = loadSidecarProcessProjection(root);
+  const overlay = projection.leafOverlays.find((entry) => entry.leafName === 'derive_component_code_surface');
+  assert.ok(overlay, 'leaf overlay should be projected from the op-run manifest');
+  assert.equal(overlay.latestStatus, 'fd_postflight_passed');
+  assert.equal(overlay.edgeAssurance.carrierState, 'absent');
+  assert.equal(overlay.edgeAssurance.closeReady, false);
+  assert.equal(overlay.edgeAssurance.closureDisposition, null);
+  assert.ok(overlay.edgeAssurance.diagnostics.includes('edge_fulfillment_ledger_missing'));
+  assert.ok(overlay.edgeAssurance.diagnostics.includes('edge_closure_decision_missing'));
+  assert.ok(overlay.edgeAssurance.diagnostics.includes('artifact_presence_without_edge_closure_carrier'));
+  assert.ok(overlay.edgeAssurance.diagnostics.includes('worker_percent_complete_not_metric_authority'));
+});
+
+test('query-domain traversal overlays project as Sidecar graph overlays', () => {
+  const root = installedTempWorkspace();
+  installFakeOddSdlcCli(root, {
+    kind: 'sdlc_query_domain_projection',
+    contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+    contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+    traversalOverlays: {
+      kind: 'sdlc_traversal_overlay_catalog',
+      overlays: [
+        {
+          kind: 'sdlc_traversal_overlay',
+          overlayRef: 'overlay://odd-sdlc/lite-design-module-implementation',
+          name: 'lite_design_module_implementation',
+          intent: 'fixture traversal overlay',
+          graphFunctionRefs: [
+            'lite_design_module_implementation',
+            'derive_lite_component_code_surface',
+          ],
+          graphVectorRefs: ['derive_lite_component_code_surface'],
+          publicStartTargets: ['lite_design_module_implementation'],
+          defaultStartTarget: 'lite_design_module_implementation',
+          termination: {
+            terminalAssetTypes: ['component_code_surface'],
+            terminalGraphFunctionRefs: ['derive_lite_component_code_surface'],
+            lawfulStopDispositions: ['overlay_segment_complete', 'blocked'],
+            nextEligibleOverlayRefs: ['overlay://odd-sdlc/current-full-traversal'],
+          },
+          predecessorOverlayRefs: ['overlay://odd-sdlc/solution-architecture'],
+          assetTemplates: [
+            {
+              kind: 'sdlc_overlay_asset_template',
+              assetType: 'component_code_surface',
+              defaultPath: 'build_tenants/hello_world_javascript/src/hello.js',
+              producerGraphFunctionRef: 'derive_lite_component_code_surface',
+              terminalRole: 'terminal_asset',
+              templateRef: 'overlay://odd-sdlc/lite-design-module-implementation/asset-template/component_code_surface',
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const projection = loadSidecarProcessProjection(root);
+  assert.equal(projection.supported, true);
+  assert.equal(projection.traversalOverlays.length, 1);
+  const overlay = projection.traversalOverlays[0];
+  assert.equal(overlay.kind, 'sidecar_traversal_overlay');
+  assert.equal(overlay.name, 'lite_design_module_implementation');
+  assert.deepEqual(overlay.terminalAssetTypes, ['component_code_surface']);
+  assert.deepEqual(overlay.nextEligibleOverlayRefs, ['overlay://odd-sdlc/current-full-traversal']);
+  assert.equal(overlay.assetTemplates[0].kind, 'sidecar_overlay_asset_template');
+  assert.equal(overlay.assetTemplates[0].assetType, 'component_code_surface');
 });

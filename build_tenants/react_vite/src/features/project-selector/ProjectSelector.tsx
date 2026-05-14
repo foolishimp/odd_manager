@@ -127,6 +127,27 @@ export function ProjectSelector({
     }
   }
 
+  async function openProjectRoot(path: string) {
+    const root = path.trim();
+    if (!root) {
+      setActionError("Project root is required.");
+      return;
+    }
+    setActionError(null);
+    setActionStatus(null);
+    try {
+      const result = await setActiveProject(root);
+      setProjects(mergeProjectList(result.projects, result.project));
+      setDiagnostic(result.diagnostic);
+      setRecentProjectId(null);
+      onWorkspaceDraftChange(result.project.root);
+      onApplyWorkspace(result.project.root);
+      onClose();
+    } catch (caught) {
+      setActionError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   async function addProject(path: string) {
     const root = path.trim();
     if (!root) {
@@ -146,6 +167,14 @@ export function ProjectSelector({
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : String(caught));
     }
+  }
+
+  function browseRegisteredRoot(project: ProjectRecord) {
+    setBrowseRoot(project.root);
+    setBrowseMode("folders");
+    setScanResults([]);
+    setScanError(null);
+    setTab("browse");
   }
 
   async function removeProject(project: ProjectRecord) {
@@ -271,6 +300,15 @@ export function ProjectSelector({
                     <button
                       type="button"
                       className="secondary"
+                      onClick={() => browseRegisteredRoot(project)}
+                      title="Browse under this registered root."
+                      disabled={disabled}
+                    >
+                      Browse
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
                       onClick={() => void activateProject(project)}
                       title={currentTitle}
                       disabled={disabled || isCurrent}
@@ -324,14 +362,16 @@ export function ProjectSelector({
           {browseMode === "folders" ? (
             <>
               <div className="project-selector__browse-summary">
-                <strong>Browse to a Project root and add it to the maintained list.</strong>
-                <p>The folder list shows only the current directory. Recursive scan results appear in a separate view.</p>
+                <strong>Browse to a Project or sandbox root and add it to the maintained list.</strong>
+                <p>The folder list uses the workspace default order. Add keeps a root in the selector; Open loads a discovered child Project.</p>
               </div>
               <FolderBrowser
                 path={browseRoot}
                 onSelectWorkspace={(absolutePath) => void addProject(absolutePath)}
+                onOpenWorkspace={(absolutePath) => void openProjectRoot(absolutePath)}
                 disabled={disabled}
                 selectLabel="Add"
+                openLabel="Open"
                 onPathChange={(absolutePath) => {
                   setBrowseRoot(absolutePath);
                   setBrowseMode("folders");
@@ -370,6 +410,14 @@ export function ProjectSelector({
                         disabled={disabled || scanning}
                       >
                         Add
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => void openProjectRoot(entry.path)}
+                        disabled={disabled || scanning}
+                      >
+                        Open
                       </button>
                     </div>
                   </div>

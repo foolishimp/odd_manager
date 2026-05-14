@@ -163,7 +163,9 @@ export function App() {
     const previousWorkspace = workspaceRoot;
     setWorkspaceRoot(targetWorkspace);
     setWorkspaceDraft(targetWorkspace);
-    setWorld(null);
+    if (selectedPage !== "sidecar") {
+      setWorld(null);
+    }
     setSelectedGraphId("");
     setSelectedNodeId(null);
     setSelection(null);

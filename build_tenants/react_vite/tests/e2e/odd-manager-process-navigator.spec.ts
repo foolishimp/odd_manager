@@ -1,5 +1,5 @@
-// T-026 + T-022 + T-024 — Playwright e2e walks for the sidecar Process
-// Navigator wave. Exercises:
+// T-026 + T-022 + T-024 — Playwright e2e walks for the legacy sidecar Process
+// Navigator N0 wave. Exercises:
 //   1. Navigator opens against a workspace with admitted live projection
 //   2. Catalog dimension surfaces (44 leaves, 2 executives, 11 library)
 //   3. Variant tab strip switches V0 / V1 / V2 / V4 in the process flow map
@@ -62,7 +62,7 @@ async function openSidecar(page: Page) {
   if ((await sidecarNav.count()) > 0) {
     await sidecarNav.click();
   }
-  const trigger = page.getByRole("button", { name: "Open Process Navigator" });
+  const trigger = page.getByRole("button", { name: "Open Process Navigator N0" });
   await expect(trigger).toBeVisible({ timeout: 30_000 });
   await trigger.click();
   await expect(page.locator(".sidecar-process-navigator")).toBeVisible({ timeout: 30_000 });

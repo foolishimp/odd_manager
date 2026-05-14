@@ -14,6 +14,8 @@ import ts from 'typescript';
 const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
+const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
+const serverIndexPath = resolve(here, '../../src/server/index.mjs');
 const stylesPath = resolve(here, '../../src/app/styles.css');
 const documentViewerPath = resolve(here, '../../src/components/DocumentViewer.tsx');
 
@@ -292,7 +294,8 @@ test('section chrome commands are consolidated into the right rail', () => {
   );
   assert.doesNotMatch(source, /sidecar-section-controls/);
   assert.doesNotMatch(styles, /\.sidecar-section-controls\s*\{/);
-  assert.match(railSource, /<ContextRailCommand[\s\S]*label=\{state\.ui\.infoCollapsed \? 'Restore info browser' : 'Minimize info browser'\}/);
+  assert.doesNotMatch(railSource, /Restore info browser|Minimize info browser/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label=\{state\.ui\.shellCollapsed \? 'Restore shell workspace' : 'Minimize shell workspace'\}/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
   assert.match(styles, /\.sidecar-context-rail__command\s*\{/);
@@ -440,21 +443,62 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /setPointerCapture\(event\.pointerId\)/);
   assert.match(source, /onWheel=\{handleWheel\}/);
   assert.match(source, /nearestScrollableParent\(viewport\)/);
+  assert.match(source, /viewport\.clientWidth \/ zoom/);
+  assert.match(source, /--document-viewer-layout-width/);
+  assert.match(source, /content\.offsetWidth \* \(zoom - 1\)/);
+  assert.match(source, /content\.offsetHeight \* \(zoom - 1\)/);
+  assert.doesNotMatch(source, /Math\.max\(0,\s*content\.offsetWidth \* \(zoom - 1\)\)/);
+  assert.match(source, /normalizeMermaidSvg\(hostRef\.current\)/);
+  assert.match(source, /svg\.style\.width = `\$\{viewBoxWidth\}px`/);
+  assert.match(source, /className="markdown-viewer__table-wrap"/);
   assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*overflow:\s*auto;[^}]*cursor:\s*grab;[^}]*touch-action:\s*pan-x\s+pan-y;/s);
+  assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*container-type:\s*inline-size;/s);
+  assert.match(styles, /\.document-viewer__content\s*\{[^}]*width:\s*var\(--document-viewer-layout-width,\s*100%\);[^}]*max-width:\s*var\(--document-viewer-layout-width,\s*100%\);/s);
   assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
+  assert.match(styles, /\.markdown-viewer__table-wrap\s*\{[^}]*width:\s*min\(100%,\s*100cqw\);[^}]*max-width:\s*100cqw;[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.markdown-viewer table\s*\{[^}]*table-layout:\s*fixed;/s);
+  assert.match(styles, /\.markdown-viewer th,\s*\.markdown-viewer td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(styles, /\.markdown-viewer__mermaid\s*\{[^}]*width:\s*fit-content;[^}]*max-width:\s*100%;/s);
+  assert.match(styles, /\.markdown-viewer__mermaid svg\s*\{[^}]*margin:\s*0;/s);
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*background:\s*var\(--code-bg\)\s*!important;/s);
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*overflow:\s*visible;/s);
 });
 
-test('sidecar project boundary keeps pins and context promotion scoped to active Project', () => {
+test('Sidecar load keeps Projects visible when a workspace-scoped surface fails', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
-  assert.match(source, /const currentProjectRoot = projectRoot \?\? state\.context\?\.project\.root \?\? null;/);
+  assert.match(source, /settleSurface\('projects'/);
+  assert.match(source, /payload\.projects = projects\.value/);
+  assert.match(source, /load partial:/);
+  assert.doesNotMatch(source, /const error = `load failed:/);
+});
+
+test('Sidecar browser requests uncapped filesystem entries while generic browse stays bounded', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const serverSource = readFileSync(serverIndexPath, 'utf-8');
+  assert.match(source, /\/api\/fs\/browse\?path=\$\{encodeURIComponent\(path\)\}&includeFiles=1&includeHidden=1&maxEntries=0/);
+  assert.match(source, /No child entries\./);
+  assert.match(source, /Showing first 500 entries\./);
+  assert.doesNotMatch(source, /Showing first 500 folders\./);
+  assert.match(serverSource, /function browseMaxEntriesFromParam\(value\)/);
+  assert.match(serverSource, /if \(normalized === "all"\) return 0;/);
+  assert.match(serverSource, /const listedEntries = maxEntries > 0 \? visibleEntries\.slice\(0, maxEntries\) : visibleEntries;/);
+  assert.match(serverSource, /truncated: maxEntries > 0 && visibleEntries\.length > maxEntries/);
+});
+
+test('sidecar project selection promotes one active Project root across shell and browser', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const routeSource = readFileSync(workspaceRoutePath, 'utf-8');
+  assert.match(source, /const currentProjectRoot = state\.activeLoadRoot \?\? state\.context\?\.project\.root \?\? projectRoot \?\? null;/);
+  assert.match(source, /await setActiveProject\(project\.id\)/);
+  assert.match(source, /await setActiveProject\(root\)/);
+  assert.match(routeSource, /<SidecarPanel[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onContextChange=\{\(ctx\) => \{/);
+  assert.match(routeSource, /if \(ctx\.project\.root !== workspaceRoot\) \{[\s\S]*onProjectRootChange\(ctx\.project\.root\);/);
   assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
   assert.match(source, /if \(projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere\) return;/);
   assert.match(source, /projectRootOverride=\{currentProjectRoot\}/);
   assert.match(source, /const projectRoot = projectRootOverride \?\? state\.context\?\.project\.root \?\? null;/);
-  assert.match(source, /return path === root \|\| path\.startsWith\(`\$\{root\}\/`\);/);
-  assert.match(source, /const activeProjectPinnedFolderPath = activePinnedFolderPath && resolvedPinnedFolders\.includes\(activePinnedFolderPath\)/);
+  assert.match(source, /return normalizedPath === root \|\| normalizedPath\.startsWith\(`\$\{root\}\/`\);/);
+  assert.match(source, /const activeProjectPinnedFolderPath = activePinnedFolderPath && isProjectFolderPath\(activePinnedFolderPath, currentProjectRoot\)/);
 });
 
 test('invalid layout profile load fails closed without replacing current layout', async () => {
@@ -504,7 +548,7 @@ test('explorer provider registry omits sessions while session selection replays 
   const module = await loadStateModule();
   assert.deepEqual(
     module.SIDECAR_EXPLORER_PROVIDERS.map((provider) => provider.id),
-    ['projects', 'tickets', 'comments', 'history', 'browse'],
+    ['projects', 'tickets', 'comments', 'browse', 'history'],
   );
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'select', kind: 'session', id: 'sess-1' },
@@ -812,11 +856,20 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="P"[\s\S]*label="Project"/);
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="O"[\s\S]*label="Selection"/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N0"[\s\S]*label="Open Process Navigator N0"/);
+  assert.ok(
+    railSource.indexOf('label="Open Process Navigator"') < railSource.indexOf("label={state.ui.shellCollapsed ? 'Restore shell workspace' : 'Minimize shell workspace'}"),
+    'Process Navigator is the first right-rail command',
+  );
   assert.doesNotMatch(railSource, /ResizeHandle/);
   assert.doesNotMatch(railSource, /target="contextRail"/);
 
   const sidecarBlock = readSidecarCssBlock();
   assert.match(sidecarBlock, /grid-template-columns:\s*3\.35rem\s+minmax\(0,\s*1fr\)\s+3\.25rem;/s);
+  assert.match(
+    sidecarBlock,
+    /\.sidecar-context-rail\s*\{[^}]*grid-row:\s*1;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/s,
+  );
   assert.match(
     sidecarBlock,
     /\.sidecar-context-rail__detail\s*\{[^}]*position:\s*absolute;[^}]*right:\s*calc\(100%\s*\+\s*0\.5rem\);[^}]*opacity:\s*0;/s,
@@ -838,15 +891,32 @@ test('process navigator source is right-rail selected and object-viewer hosted',
     source.indexOf('function ProcessNavigatorPanel'),
     source.indexOf('function ProcessRecordDetail'),
   );
+  const simpleProcessPanelSource = source.slice(
+    source.indexOf('function ProcessNavigatorSimplePanel'),
+    source.indexOf('function ProcessNavigatorPanel'),
+  );
 
-  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator-simple'/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N0"[\s\S]*label="Open Process Navigator N0"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
   assert.match(railSource, /type: 'ui\/toggle-workspace', workspace: 'info', collapsed: true/);
   assert.match(source, /state\.ui\.infoPinned\) return;/);
   assert.match(source, /type: 'ui\/set-info-pinned'/);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-main-area\s*\{[^}]*grid-template-columns:\s*min\(var\(--sidecar-explorer-width,\s*24rem\),\s*42%\)\s+minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-flyout\s*\{[^}]*position:\s*relative;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-canvas\s*\{[^}]*grid-column:\s*2;/s);
-  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*<ProcessNavigatorPanel state=\{state\} dispatch=\{dispatch\} \/>/);
+  assert.match(source, /if \(tab\.objectId === 'navigator-simple'\) \{[\s\S]*<ProcessNavigatorSimplePanel state=\{state\} dispatch=\{dispatch\} \/>/);
+  assert.match(source, /return tab\.objectId === 'navigator' \? 'Process Navigator N0' : 'Process Navigator';/);
+  assert.match(simpleProcessPanelSource, /Graph Overlays/);
+  assert.match(simpleProcessPanelSource, /Graph Functions/);
+  assert.match(simpleProcessPanelSource, /Leaf Assets/);
+  assert.match(simpleProcessPanelSource, /traversalOverlays/);
+  assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
+  assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
+  assert.match(simpleProcessPanelSource, /buildSimpleOverlayGraph/);
+  assert.match(simpleProcessPanelSource, /buildSimpleFunctionGraph/);
+  assert.match(simpleProcessPanelSource, /buildSimpleAssetGraph/);
+  assert.match(simpleProcessPanelSource, /Use N0 for the legacy process maps/);
+  assert.match(simpleProcessPanelSource, /processAssetRelationships/);
   assert.doesNotMatch(processPanelSource, /Observed SDLC Surfaces|Recent Failures|Recent Activity|Tests \/ Qualification/);
   assert.match(processPanelSource, /ProcessGraphMap/);
   assert.match(processPanelSource, /aria-label="Process maps"/);
@@ -859,6 +929,12 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-process-navigator\s*\{/);
   assert.match(styles, /\.sidecar-process-layout\s*\{[^}]*grid-template-columns:\s*minmax\(18rem,\s*0\.82fr\)\s+minmax\(0,\s*1\.28fr\);/s);
   assert.match(styles, /\.sidecar-process-map-stack\s*,\s*\.sidecar-process-navigator__views\s*\{/s);
+  assert.match(styles, /\.sidecar-process-simple\s*\{/);
+  assert.match(styles, /\.sidecar-process-simple__tabs\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /\.sidecar-process-simple__graph\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);/s);
+  assert.match(styles, /\.sidecar-process-simple__graph\s+\.sidecar-process-map__viewport\s*\{/);
+  assert.match(styles, /\.sidecar-process-overlay-card\s*,\s*\.sidecar-process-function-card\s*,\s*\.sidecar-process-asset-card\s*\{/);
+  assert.match(styles, /\.sidecar-process-overlay-card\.is-selected,\s*\.sidecar-process-function-card\.is-selected,\s*\.sidecar-process-asset-card\.is-selected\s*\{/);
   assert.match(styles, /\.sidecar-process-map__viewport\s*\{/);
   assert.match(styles, /\.sidecar-process-map__edge\s*\{[^}]*stroke-width:\s*8px;[^}]*opacity:\s*0\.24;/s);
   assert.match(styles, /\.sidecar-process-map__edge\.is-selected\s*\{[^}]*stroke-width:\s*14px;/s);

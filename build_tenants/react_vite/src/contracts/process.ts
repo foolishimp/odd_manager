@@ -98,6 +98,10 @@ export interface SidecarProcessProjection {
   views: SidecarProcessView[];
   records: SidecarProcessRecord[];
   maps: SidecarProcessMap[];
+  // Installed odd_sdlc TypeScript traversal overlays projected from query-domain.
+  // These are the operator-level graph overlays, distinct from Sidecar's internal
+  // process-map renderings.
+  traversalOverlays?: SidecarTraversalOverlay[];
   // T-026: catalog backbone projected from `odd-sdlc-ts catalog`.
   // Present when supported === true and the install responds with ts-v1.
   catalog?: SidecarProcessCatalog;
@@ -172,6 +176,34 @@ export interface SidecarProcessCatalog {
   library: SidecarLibraryFunctionView[];
 }
 
+export type SidecarOverlayTerminalRole = 'terminal_asset' | 'supporting_asset';
+
+export interface SidecarOverlayAssetTemplate {
+  kind: 'sidecar_overlay_asset_template';
+  assetType: string;
+  defaultPath: string;
+  producerGraphFunctionRef: string;
+  terminalRole: SidecarOverlayTerminalRole;
+  templateRef: string;
+}
+
+export interface SidecarTraversalOverlay {
+  kind: 'sidecar_traversal_overlay';
+  overlayRef: string;
+  name: string;
+  intent: string;
+  graphFunctionRefs: string[];
+  graphVectorRefs: string[];
+  publicStartTargets: string[];
+  defaultStartTarget: string;
+  terminalAssetTypes: string[];
+  terminalGraphFunctionRefs: string[];
+  lawfulStopDispositions: string[];
+  nextEligibleOverlayRefs: string[];
+  predecessorOverlayRefs: string[];
+  assetTemplates: SidecarOverlayAssetTemplate[];
+}
+
 // ---------------------------------------------------------------------------
 // T-026: per-leaf overlay — runtime status + 7-dim assurance vector + trace
 // archive ref + (optional) traced call-out evidence per supervised actor
@@ -200,6 +232,67 @@ export interface SidecarAssuranceLedgerVector {
   shallowRealization: SidecarAssuranceCellState;
 }
 
+export type SidecarEdgeClosureDisposition =
+  | 'close'
+  | 'yield'
+  | 'retry'
+  | 'repair'
+  | 're-enter'
+  | 'reprice'
+  | 'block';
+
+export type SidecarEdgeAssuranceCarrierState =
+  | 'absent'
+  | 'incomplete'
+  | 'complete';
+
+export interface SidecarEdgeAssuranceCounts {
+  expected: number;
+  fulfilled: number;
+  partial: number;
+  blocked: number;
+  unfulfilled: number;
+  missing: number;
+  extra: number;
+}
+
+export interface SidecarEdgeAssuranceOverlay {
+  kind: 'sidecar_edge_assurance_overlay';
+  carrierState: SidecarEdgeAssuranceCarrierState;
+  opRunRoot: string;
+  edgeName: string;
+  edgeRef: string | null;
+  vectorIndex: number | null;
+  targetAssetType: string | null;
+  edgeAssuranceContractRef: string | null;
+  edgeAssuranceContractDigest: string | null;
+  edgeGainRef: string | null;
+  edgeClosureFunctionRef: string | null;
+  edgeResidualPressureRefs: string[];
+  ledgerRef: string | null;
+  ledgerVersionRef: string | null;
+  closureDecisionRef: string | null;
+  closureDisposition: SidecarEdgeClosureDisposition | null;
+  closeReady: boolean;
+  edgeConverged: boolean | null;
+  carryConverged: boolean | null;
+  fulfillmentConverged: boolean | null;
+  admitted: boolean | null;
+  targetCertificationPassed: boolean | null;
+  fdRecheckPassed: boolean | null;
+  counts: SidecarEdgeAssuranceCounts | null;
+  materializationRefCount: number;
+  admissionRefCount: number;
+  evidenceBundleRefCount: number;
+  targetBindingRefCount: number;
+  nextActionBasisKind: string | null;
+  nextGraphVectorRef: string | null;
+  selectedActionRef: string | null;
+  reasonRefs: string[];
+  gapPressureRefs: string[];
+  diagnostics: string[];
+}
+
 export interface SidecarLeafOverlay {
   kind: 'sidecar_leaf_overlay';
   leafName: string;
@@ -212,6 +305,9 @@ export interface SidecarLeafOverlay {
   // produce multiple TracedCalloutEvidence entries; the array is empty
   // when no admitted invocation has produced result.json yet.
   tracedEvidence: TracedCalloutEvidence[];
+  // T-164: ledger-derived edge close state. This is separate from invocation
+  // status because worker/postflight/artifact evidence is not metric authority.
+  edgeAssurance: SidecarEdgeAssuranceOverlay | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +464,28 @@ const ASSURANCE_CELL_STATES: readonly SidecarAssuranceCellState[] = [
   'pending',
 ];
 
+const EDGE_CLOSURE_DISPOSITIONS: readonly SidecarEdgeClosureDisposition[] = [
+  'close',
+  'yield',
+  'retry',
+  'repair',
+  're-enter',
+  'reprice',
+  'block',
+];
+
+const EDGE_ASSURANCE_CARRIER_STATES: readonly SidecarEdgeAssuranceCarrierState[] = [
+  'absent',
+  'incomplete',
+  'complete',
+];
+
 const COMPUTE_REGIMES: readonly SidecarComputeRegime[] = ['F_D', 'F_P', 'F_H'];
+
+const OVERLAY_TERMINAL_ROLES: readonly SidecarOverlayTerminalRole[] = [
+  'terminal_asset',
+  'supporting_asset',
+];
 
 const LEAF_CATALOG_IDS: readonly SidecarLeafCatalogId[] = [
   'bootstrap',
@@ -389,6 +506,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === 'number';
+}
+
+function isNullableBoolean(value: unknown): value is boolean | null {
+  return value === null || typeof value === 'boolean';
 }
 
 function isOneOf<T extends string>(
@@ -461,6 +590,66 @@ export function isSidecarAssuranceLedgerVector(
   );
 }
 
+export function isSidecarEdgeAssuranceCounts(
+  value: unknown,
+): value is SidecarEdgeAssuranceCounts {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.expected === 'number' &&
+    typeof value.fulfilled === 'number' &&
+    typeof value.partial === 'number' &&
+    typeof value.blocked === 'number' &&
+    typeof value.unfulfilled === 'number' &&
+    typeof value.missing === 'number' &&
+    typeof value.extra === 'number'
+  );
+}
+
+export function isSidecarEdgeAssuranceOverlay(
+  value: unknown,
+): value is SidecarEdgeAssuranceOverlay {
+  if (!isObject(value)) return false;
+  if (value.kind !== 'sidecar_edge_assurance_overlay') return false;
+  if (!isOneOf(value.carrierState, EDGE_ASSURANCE_CARRIER_STATES)) return false;
+  if (typeof value.opRunRoot !== 'string') return false;
+  if (typeof value.edgeName !== 'string') return false;
+  if (!isNullableString(value.edgeRef)) return false;
+  if (!isNullableNumber(value.vectorIndex)) return false;
+  if (!isNullableString(value.targetAssetType)) return false;
+  if (!isNullableString(value.edgeAssuranceContractRef)) return false;
+  if (!isNullableString(value.edgeAssuranceContractDigest)) return false;
+  if (!isNullableString(value.edgeGainRef)) return false;
+  if (!isNullableString(value.edgeClosureFunctionRef)) return false;
+  if (!isStringArray(value.edgeResidualPressureRefs)) return false;
+  if (!isNullableString(value.ledgerRef)) return false;
+  if (!isNullableString(value.ledgerVersionRef)) return false;
+  if (!isNullableString(value.closureDecisionRef)) return false;
+  if (
+    value.closureDisposition !== null &&
+    !isOneOf(value.closureDisposition, EDGE_CLOSURE_DISPOSITIONS)
+  )
+    return false;
+  if (typeof value.closeReady !== 'boolean') return false;
+  if (!isNullableBoolean(value.edgeConverged)) return false;
+  if (!isNullableBoolean(value.carryConverged)) return false;
+  if (!isNullableBoolean(value.fulfillmentConverged)) return false;
+  if (!isNullableBoolean(value.admitted)) return false;
+  if (!isNullableBoolean(value.targetCertificationPassed)) return false;
+  if (!isNullableBoolean(value.fdRecheckPassed)) return false;
+  if (value.counts !== null && !isSidecarEdgeAssuranceCounts(value.counts)) return false;
+  if (typeof value.materializationRefCount !== 'number') return false;
+  if (typeof value.admissionRefCount !== 'number') return false;
+  if (typeof value.evidenceBundleRefCount !== 'number') return false;
+  if (typeof value.targetBindingRefCount !== 'number') return false;
+  if (!isNullableString(value.nextActionBasisKind)) return false;
+  if (!isNullableString(value.nextGraphVectorRef)) return false;
+  if (!isNullableString(value.selectedActionRef)) return false;
+  if (!isStringArray(value.reasonRefs)) return false;
+  if (!isStringArray(value.gapPressureRefs)) return false;
+  if (!isStringArray(value.diagnostics)) return false;
+  return true;
+}
+
 export function isSidecarLeafOverlay(value: unknown): value is SidecarLeafOverlay {
   if (!isObject(value)) return false;
   if (value.kind !== 'sidecar_leaf_overlay') return false;
@@ -480,6 +669,11 @@ export function isSidecarLeafOverlay(value: unknown): value is SidecarLeafOverla
     return false;
   if (!Array.isArray(value.tracedEvidence)) return false;
   if (!value.tracedEvidence.every(isTracedCalloutEvidence)) return false;
+  if (
+    value.edgeAssurance !== null &&
+    !isSidecarEdgeAssuranceOverlay(value.edgeAssurance)
+  )
+    return false;
   return true;
 }
 
@@ -555,6 +749,40 @@ export function isSidecarProcessCatalog(value: unknown): value is SidecarProcess
   return true;
 }
 
+export function isSidecarOverlayAssetTemplate(
+  value: unknown,
+): value is SidecarOverlayAssetTemplate {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_overlay_asset_template' &&
+    typeof value.assetType === 'string' &&
+    typeof value.defaultPath === 'string' &&
+    typeof value.producerGraphFunctionRef === 'string' &&
+    isOneOf(value.terminalRole, OVERLAY_TERMINAL_ROLES) &&
+    typeof value.templateRef === 'string'
+  );
+}
+
+export function isSidecarTraversalOverlay(value: unknown): value is SidecarTraversalOverlay {
+  if (!isObject(value)) return false;
+  if (value.kind !== 'sidecar_traversal_overlay') return false;
+  if (typeof value.overlayRef !== 'string') return false;
+  if (typeof value.name !== 'string') return false;
+  if (typeof value.intent !== 'string') return false;
+  if (!isStringArray(value.graphFunctionRefs)) return false;
+  if (!isStringArray(value.graphVectorRefs)) return false;
+  if (!isStringArray(value.publicStartTargets)) return false;
+  if (typeof value.defaultStartTarget !== 'string') return false;
+  if (!isStringArray(value.terminalAssetTypes)) return false;
+  if (!isStringArray(value.terminalGraphFunctionRefs)) return false;
+  if (!isStringArray(value.lawfulStopDispositions)) return false;
+  if (!isStringArray(value.nextEligibleOverlayRefs)) return false;
+  if (!isStringArray(value.predecessorOverlayRefs)) return false;
+  if (!Array.isArray(value.assetTemplates)) return false;
+  if (!value.assetTemplates.every(isSidecarOverlayAssetTemplate)) return false;
+  return true;
+}
+
 export function isSidecarProcessFlowVariantId(
   value: unknown,
 ): value is SidecarProcessFlowVariantId {
@@ -590,6 +818,10 @@ export function isSidecarProcessProjection(
   if (!Array.isArray(value.views)) return false;
   if (!Array.isArray(value.records)) return false;
   if (!Array.isArray(value.maps)) return false;
+  if (value.traversalOverlays !== undefined) {
+    if (!Array.isArray(value.traversalOverlays)) return false;
+    if (!value.traversalOverlays.every(isSidecarTraversalOverlay)) return false;
+  }
   if (
     value.catalog !== undefined &&
     !isSidecarProcessCatalog(value.catalog)
