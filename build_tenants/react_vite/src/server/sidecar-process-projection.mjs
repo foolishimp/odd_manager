@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const SIDECAR_PROCESS_CONTRACT_NAME = "odd_sdlc.query-domain";
@@ -112,6 +112,9 @@ const SUPPORTED_TS_EVENT_KINDS = new Set([
   "continuation_reopened"
 ]);
 
+const SIDECAR_PROCESS_MAX_EVENT_LOG_BYTES = 1024 * 1024;
+const SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS = 1200;
+
 export function loadSidecarProcessProjection(workspaceRoot) {
   const root = String(workspaceRoot ?? "").trim();
   if (!root) {
@@ -149,7 +152,10 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     };
   }
 
-  const eventRead = readRuntimeEvents(eventPath);
+  const eventRead = readRuntimeEvents(eventPath, {
+    maxBytes: SIDECAR_PROCESS_MAX_EVENT_LOG_BYTES,
+    maxEvents: SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS
+  });
   if (eventRead.events.length > 0 && !eventRead.events.some(isTypeScriptRuntimeEvent)) {
     return unsupportedProcessProjection(root, "event log does not contain odd_sdlc TypeScript runtime basis");
   }
@@ -402,7 +408,8 @@ function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
       diagnostics: Object.freeze(detailIndex.diagnosticsByRun.get(operatorRunRef) ?? []),
       retryForensics: Object.freeze(detailIndex.retryForensicsByRun.get(operatorRunRef) ?? []),
       stageCoverage: Object.freeze(detailIndex.stageCoverageByRun.get(operatorRunRef) ?? []),
-      cliTranscript: operatorRunPath ? readLiveAnalysisCliTranscript(operatorRunPath) : emptyLiveAnalysisCliTranscript()
+      cliTranscript: operatorRunPath ? readLiveAnalysisCliTranscript(operatorRunPath) : emptyLiveAnalysisCliTranscript(),
+      events: operatorRunPath ? readLiveAnalysisEventTickets(operatorRunPath) : Object.freeze([])
     })
   });
 }
@@ -644,6 +651,509 @@ function transcriptMessageContent(message) {
     return JSON.stringify(entry, null, 2);
   });
   return rendered.filter((part) => typeof part === "string" && part.length > 0).join("\n\n");
+}
+
+const LIVE_ANALYSIS_EVENT_ARTIFACTS = Object.freeze([
+  ["run.json", "Run envelope"],
+  ["run_compact.json", "Run compact"],
+  ["operator_summary.json", "Operator summary"],
+  ["worker_process_started.json", "Worker process started"],
+  ["worker_process_started_context.json", "Worker launch context"],
+  ["worker_run.json", "Worker run"],
+  ["worker_result_report.json", "Worker result report"],
+  ["worker_process_summary.json", "Worker process summary"],
+  ["fp_evaluate_result.json", "F_P evaluate result"],
+  ["fp_transform_result.json", "F_P transform result"],
+  ["fp_transform_request.json", "F_P transform request"],
+  ["post_transform_observation.json", "Post-transform observation"],
+  ["postflight.json", "Postflight"],
+  ["sdlc_construction_intent.json", "Construction intent"],
+  ["traversal_intent_package.json", "Traversal intent"],
+  ["sdlc_edge_fulfillment_ledger.json", "Edge fulfillment ledger"],
+  ["sdlc_edge_closure_decision.json", "Edge closure decision"],
+  ["sdlc_next_action_projection.json", "Next action projection"],
+  ["sdlc_edge_residual_pressure.json", "Residual pressure"],
+  ["sdlc_edge_gain.json", "Edge gain"],
+  ["assurance_satisfaction.json", "Assurance satisfaction"],
+  ["assurance_ledgers.json", "Assurance ledgers"],
+  ["product_materialization_manifest.json", "Product materialization"],
+  ["handoff_manifest.json", "Handoff manifest"],
+  ["runtime_liveness_observer_projection.json", "Runtime liveness observer"],
+  ["hook_outcome.json", "Hook outcome"],
+  ["sdlc_decomposition_summary.json", "Decomposition summary"],
+  ["sdlc_implementation_decomposition_summary.json", "Implementation decomposition"],
+  ["sdlc_frontdoor_decomposition_summary.json", "Frontdoor decomposition"],
+  ["sdlc_overlay_segment_completion.json", "Overlay segment completion"],
+  ["sdlc_traversal_hop_selection.json", "Traversal hop selection"],
+  ["sdlc_frontdoor_traversal_hop_selection.json", "Frontdoor traversal hop"],
+  ["sdlc_module_dependency_map.json", "Module dependency map"],
+  ["sdlc_module_dependency_traversal_selection.json", "Module dependency traversal"],
+  ["conformed_project.json", "Conformed project"],
+]);
+
+const LIVE_ANALYSIS_MAX_RUNTIME_EVENTS = 420;
+const LIVE_ANALYSIS_MAX_WORKER_EVENTS = 120;
+const LIVE_ANALYSIS_EVENT_PREVIEW_BYTES = 2600;
+const LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES = 8 * 1024 * 1024;
+const LIVE_ANALYSIS_MAX_EVENT_STREAM_BYTES = 4 * 1024 * 1024;
+
+function readLiveAnalysisEventTickets(operatorRunPath) {
+  const rows = [];
+  let index = 0;
+  for (const [fileName, title] of LIVE_ANALYSIS_EVENT_ARTIFACTS) {
+    const sourcePath = join(operatorRunPath, fileName);
+    if (!existsSync(sourcePath)) continue;
+    const read = readBoundedJsonFile(sourcePath, LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES);
+    if (read.skipped) {
+      rows.push(liveAnalysisSkippedArchiveTicket({
+        index: index++,
+        sourceKind: "artifact",
+        sourcePath,
+        eventType: fileName.replace(/\.json$/, ""),
+        title,
+        byteSize: read.byteSize,
+        limitBytes: LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES,
+        reason: read.reason
+      }));
+      continue;
+    }
+    const payload = read.payload;
+    if (payload === null) continue;
+    rows.push(liveAnalysisEventTicket({
+      index: index++,
+      sourceKind: "artifact",
+      sourcePath,
+      eventType: fileName.replace(/\.json$/, ""),
+      title,
+      summary: summarizeLiveArtifact(fileName, payload),
+      tone: liveArtifactTone(fileName, payload),
+      elapsedMs: null,
+      observedAtMs: null,
+      detailRows: liveEventDetailRows(payload, liveArtifactPreferredKeys(fileName)),
+      evidenceRefs: liveEventEvidenceRefs(payload),
+      rawPayload: payload
+    }));
+  }
+
+  const runtimePath = join(operatorRunPath, "runtime_events.json");
+  const runtimeRead = readBoundedJsonFile(runtimePath, LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES);
+  if (runtimeRead.skipped) {
+    rows.push(liveAnalysisSkippedArchiveTicket({
+      index: index++,
+      sourceKind: "runtime_event",
+      sourcePath: runtimePath,
+      eventType: "runtime_events_deferred",
+      title: "Runtime events deferred",
+      byteSize: runtimeRead.byteSize,
+      limitBytes: LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES,
+      reason: runtimeRead.reason
+    }));
+  }
+  const runtimePayload = runtimeRead.skipped ? null : runtimeRead.payload;
+  const runtimeEvents = Array.isArray(runtimePayload?.events) ? runtimePayload.events : [];
+  runtimeEvents.slice(0, LIVE_ANALYSIS_MAX_RUNTIME_EVENTS).forEach((event) => {
+    if (!isObject(event)) return;
+    rows.push(mapRuntimeEventTicket(event, index++, runtimePath, "runtime_event"));
+  });
+  if (runtimeEvents.length > LIVE_ANALYSIS_MAX_RUNTIME_EVENTS) {
+    rows.push(liveAnalysisEventTicket({
+      index: index++,
+      sourceKind: "runtime_event",
+      sourcePath: runtimePath,
+      eventType: "runtime_events_truncated",
+      title: "Runtime events truncated",
+      summary: `${runtimeEvents.length - LIVE_ANALYSIS_MAX_RUNTIME_EVENTS} additional runtime events are available in the raw archive.`,
+      tone: "pending",
+      elapsedMs: null,
+      observedAtMs: null,
+      detailRows: liveDetailRows([
+        ["Projected", String(LIVE_ANALYSIS_MAX_RUNTIME_EVENTS)],
+        ["Archived", String(runtimeEvents.length)]
+      ]),
+      evidenceRefs: [],
+      rawPayload: { archived: runtimeEvents.length, projected: LIVE_ANALYSIS_MAX_RUNTIME_EVENTS }
+    }));
+  }
+
+  const workerPath = join(operatorRunPath, "worker_process_events.jsonl");
+  if (existsSync(workerPath)) {
+    const workerRead = readRuntimeEvents(workerPath, {
+      maxBytes: LIVE_ANALYSIS_MAX_EVENT_STREAM_BYTES,
+      maxEvents: LIVE_ANALYSIS_MAX_WORKER_EVENTS
+    });
+    workerRead.events.forEach((event) => {
+      rows.push(mapWorkerEventTicket(event, index++, workerPath));
+    });
+    if (workerRead.truncated) {
+      rows.push(liveAnalysisEventTicket({
+        index: index++,
+        sourceKind: "worker_event",
+        sourcePath: workerPath,
+        eventType: "worker_events_truncated",
+        title: "Worker stream truncated",
+        summary: "Additional worker stream events are available in the raw JSONL archive.",
+        tone: "pending",
+        elapsedMs: null,
+        observedAtMs: null,
+        detailRows: liveDetailRows([
+          ["Projected", String(workerRead.events.length)],
+          ["Archive size", formatLiveBytes(workerRead.byteSize)],
+          ["Read limit", `${formatLiveBytes(LIVE_ANALYSIS_MAX_EVENT_STREAM_BYTES)} / ${LIVE_ANALYSIS_MAX_WORKER_EVENTS} events`]
+        ]),
+        evidenceRefs: [],
+        rawPayload: {
+          archivedBytes: workerRead.byteSize,
+          projected: workerRead.events.length,
+          maxBytes: LIVE_ANALYSIS_MAX_EVENT_STREAM_BYTES,
+          maxEvents: LIVE_ANALYSIS_MAX_WORKER_EVENTS
+        }
+      }));
+    }
+  }
+
+  return Object.freeze(rows);
+}
+
+function mapRuntimeEventTicket(event, index, sourcePath, sourceKind) {
+  const eventType = stringField(event, "kind") || stringField(event, "type") || "event";
+  return liveAnalysisEventTicket({
+    index,
+    sourceKind,
+    sourcePath,
+    eventType,
+    title: humanizeLiveEvent(eventType),
+    summary: summarizeRuntimeEvent(event),
+    tone: liveRuntimeEventTone(event),
+    elapsedMs: numberOrNull(event, "elapsedMs"),
+    observedAtMs: numberOrNull(event, "observedAtMs"),
+    detailRows: liveEventDetailRows(event, [
+      "edge",
+      "vectorIndex",
+      "graphFunctionId",
+      "workerId",
+      "backendId",
+      "probeSource",
+      "streamName",
+      "byteLength",
+      "pid",
+      "exitCode",
+      "status",
+      "detail",
+      "activityRef",
+      "correlationId"
+    ]),
+    evidenceRefs: liveEventEvidenceRefs(event),
+    rawPayload: event
+  });
+}
+
+function mapWorkerEventTicket(event, index, sourcePath) {
+  const eventType = stringField(event, "type") || stringField(event, "kind") || "worker_event";
+  return liveAnalysisEventTicket({
+    index,
+    sourceKind: "worker_event",
+    sourcePath,
+    eventType,
+    title: humanizeLiveEvent(eventType),
+    summary: summarizeWorkerEvent(event),
+    tone: liveWorkerEventTone(event),
+    elapsedMs: null,
+    observedAtMs: null,
+    detailRows: liveEventDetailRows(event, [
+      "type",
+      "subtype",
+      "role",
+      "is_error",
+      "duration_ms",
+      "total_cost_usd",
+      "session_id",
+      "cwd",
+      "model"
+    ]),
+    evidenceRefs: liveEventEvidenceRefs(event),
+    rawPayload: event
+  });
+}
+
+function liveAnalysisSkippedArchiveTicket({
+  index,
+  sourceKind,
+  sourcePath,
+  eventType,
+  title,
+  byteSize,
+  limitBytes,
+  reason
+}) {
+  return liveAnalysisEventTicket({
+    index,
+    sourceKind,
+    sourcePath,
+    eventType,
+    title,
+    summary: `${title} is ${formatLiveBytes(byteSize)}; preview parsing was deferred to keep the Live View responsive.`,
+    tone: "pending",
+    elapsedMs: null,
+    observedAtMs: null,
+    detailRows: liveDetailRows([
+      ["Archive size", formatLiveBytes(byteSize)],
+      ["Parse limit", formatLiveBytes(limitBytes)],
+      ["Reason", reason ?? "oversized_json"]
+    ]),
+    evidenceRefs: [],
+    rawPayload: {
+      deferred: true,
+      reason: reason ?? "oversized_json",
+      sourcePath,
+      byteSize,
+      limitBytes
+    }
+  });
+}
+
+function liveAnalysisEventTicket({
+  index,
+  sourceKind,
+  sourcePath,
+  eventType,
+  title,
+  summary,
+  tone,
+  elapsedMs,
+  observedAtMs,
+  detailRows,
+  evidenceRefs,
+  rawPayload
+}) {
+  return Object.freeze({
+    kind: "sidecar_live_analysis_event",
+    index,
+    sourceKind,
+    sourcePath,
+    eventType,
+    title,
+    summary,
+    tone,
+    elapsedMs,
+    observedAtMs,
+    detailRows: Object.freeze(detailRows),
+    evidenceRefs: Object.freeze(evidenceRefs),
+    rawPreview: truncateLiveEventPreview(JSON.stringify(rawPayload, null, 2))
+  });
+}
+
+function summarizeLiveArtifact(fileName, payload) {
+  if (!isObject(payload)) {
+    return Array.isArray(payload)
+      ? `${fileName} archived ${payload.length} rows.`
+      : `${fileName} archived ${typeof payload} payload.`;
+  }
+  const candidates = [
+    stringField(payload, "summary"),
+    stringField(payload, "detail"),
+    stringField(payload, "status"),
+    stringField(payload, "disposition"),
+    stringField(payload, "targetCarrierAdmissionStatus"),
+    stringField(payload, "result"),
+    stringField(payload, "outcome")
+  ].filter(Boolean);
+  if (candidates.length > 0) return candidates[0];
+  const kind = stringField(payload, "kind") || fileName.replace(/\.json$/, "");
+  const fieldCount = Object.keys(payload).length;
+  return `${humanizeLiveEvent(kind)} artifact with ${fieldCount} top-level fields.`;
+}
+
+function summarizeRuntimeEvent(event) {
+  const detail = stringField(event, "detail");
+  if (detail) return detail;
+  const edge = stringField(event, "edge");
+  const probe = stringField(event, "probeSource");
+  const streamName = stringField(event, "streamName");
+  const byteLength = numberField(event, "byteLength");
+  if (edge && probe) return `${edge} emitted ${probe}${byteLength === null ? "" : ` (${byteLength} bytes)`}.`;
+  if (edge) return `${edge} runtime event.`;
+  if (probe) return `Runtime probe ${probe} observed.`;
+  if (streamName) return `${streamName} stream activity observed.`;
+  return "Runtime event archived for this selected stage.";
+}
+
+function summarizeWorkerEvent(event) {
+  const type = stringField(event, "type") || "worker_event";
+  if (type === "assistant" || type === "user") {
+    const message = isObject(event.message) ? event.message : {};
+    return truncateLiveEventPreview(transcriptMessageContent(message), 360);
+  }
+  if (type === "result") {
+    return stringField(event, "subtype") || stringField(event, "result") || "worker result event";
+  }
+  if (type === "system") {
+    return `worker session ${stringField(event, "session_id") || "unknown"} initialized`;
+  }
+  return stringField(event, "subtype") || `${type} worker stream event`;
+}
+
+function liveArtifactPreferredKeys(fileName) {
+  const common = [
+    "kind",
+    "status",
+    "disposition",
+    "edge",
+    "edgeName",
+    "graphFunctionName",
+    "graphVectorRef",
+    "targetAssetType",
+    "workerStatus",
+    "pid",
+    "exitCode",
+    "command",
+    "cwd",
+    "durationMs",
+    "elapsedMs",
+    "admitted",
+    "closeReady",
+    "edgeConverged",
+    "carryConverged",
+    "fulfillmentConverged",
+    "targetCarrierAdmissionStatus",
+    "targetCertificationPassed",
+    "fdRecheckPassed",
+    "selectedNextActionRef",
+    "nextGraphVectorRef"
+  ];
+  if (fileName.includes("assurance")) {
+    return ["kind", "status", "satisfiedDimensions", "missingRequiredDimensions", "gapReasons", "blockingReasons", ...common];
+  }
+  if (fileName.includes("ledger")) {
+    return ["kind", "version", "edgeName", "targetAssetType", "counts", "rows", "gapPressureRefs", ...common];
+  }
+  return common;
+}
+
+function liveEventDetailRows(payload, preferredKeys) {
+  if (!isObject(payload)) {
+    return liveDetailRows([
+      ["Payload", Array.isArray(payload) ? `${payload.length} rows` : typeof payload]
+    ]);
+  }
+  const rows = [];
+  for (const key of preferredKeys) {
+    if (payload[key] === undefined || payload[key] === null) continue;
+    rows.push(liveDetailRow(humanizeLiveEvent(key), summarizeLiveValue(payload[key])));
+    if (rows.length >= 14) break;
+  }
+  if (rows.length < 10) {
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === undefined || value === null || preferredKeys.includes(key)) continue;
+      rows.push(liveDetailRow(humanizeLiveEvent(key), summarizeLiveValue(value)));
+      if (rows.length >= 14) break;
+    }
+  }
+  return rows;
+}
+
+function liveDetailRows(entries) {
+  return entries.map(([label, value]) => liveDetailRow(label, value));
+}
+
+function liveDetailRow(label, value) {
+  return Object.freeze({
+    kind: "sidecar_live_analysis_event_detail_row",
+    label,
+    value: String(value)
+  });
+}
+
+function summarizeLiveValue(value) {
+  let rendered;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "0";
+    const sample = value.slice(0, 4).map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).join(", ");
+    rendered = value.length > 4 ? `${value.length} rows: ${sample}` : sample;
+    return truncateLiveSummary(rendered);
+  }
+  if (isObject(value)) {
+    const keys = Object.keys(value);
+    const sample = keys.slice(0, 5).map((key) => `${key}: ${summarizeLiveScalar(value[key])}`).join("; ");
+    rendered = keys.length > 5 ? `${keys.length} fields: ${sample}` : sample || "{}";
+    return truncateLiveSummary(rendered);
+  }
+  return truncateLiveSummary(summarizeLiveScalar(value));
+}
+
+function summarizeLiveScalar(value) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "0";
+    const sample = value.slice(0, 3).map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).join(", ");
+    return value.length > 3 ? `${value.length} rows: ${sample}` : sample;
+  }
+  if (isObject(value)) {
+    const keys = Object.keys(value);
+    return keys.length ? `${keys.length} fields: ${keys.slice(0, 4).join(", ")}` : "{}";
+  }
+  if (typeof value === "string") return value.length > 240 ? `${value.slice(0, 237)}...` : value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value === null || value === undefined) return "—";
+  return String(value);
+}
+
+function truncateLiveSummary(value) {
+  return value.length > 420 ? `${value.slice(0, 417)}...` : value;
+}
+
+function liveEventEvidenceRefs(payload) {
+  if (!isObject(payload)) return [];
+  const refs = [
+    ...stringArray(payload.evidenceRefs),
+    ...stringArray(payload.reasonRefs),
+    ...stringArray(payload.basisRefs),
+    ...stringArray(payload.causationEventRefs)
+  ];
+  for (const key of ["stdoutRef", "stderrRef", "streamRef", "ledgerRef", "decisionRef", "edgeGainRef"]) {
+    const value = stringField(payload, key);
+    if (value) refs.push(value);
+  }
+  return uniqueInOrder(refs).slice(0, 12);
+}
+
+function liveArtifactTone(fileName, payload) {
+  const folded = JSON.stringify(payload).toLowerCase();
+  const status = isObject(payload) ? `${stringField(payload, "status")} ${stringField(payload, "disposition")} ${stringField(payload, "outcome")}`.toLowerCase() : "";
+  if (status.includes("fail") || status.includes("error") || status.includes("block") || folded.includes('"is_error":true')) return "blocked";
+  if (status.includes("retry") || status.includes("repair") || fileName.includes("residual_pressure")) return "pending";
+  if (status.includes("pass") || status.includes("close") || fileName.includes("gain") || fileName.includes("assurance")) return "active";
+  return "default";
+}
+
+function liveRuntimeEventTone(event) {
+  const kind = stringField(event, "kind").toLowerCase();
+  const detail = stringField(event, "detail").toLowerCase();
+  if (kind.includes("error") || kind.includes("failed") || detail.includes("failed") || detail.includes("error")) return "blocked";
+  if (kind.includes("closed") || kind.includes("validated") || kind.includes("admitted") || kind.includes("result")) return "active";
+  if (kind.includes("dispatch") || kind.includes("planned") || kind.includes("started") || kind.includes("probe")) return "pending";
+  return "default";
+}
+
+function liveWorkerEventTone(event) {
+  if (event?.is_error === true) return "blocked";
+  const type = stringField(event, "type");
+  if (type === "result") return "active";
+  if (type === "assistant") return "active";
+  if (type === "rate_limit_event") return "pending";
+  return "default";
+}
+
+function humanizeLiveEvent(value) {
+  return String(value)
+    .replace(/\.json$/, "")
+    .replace(/[_:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function truncateLiveEventPreview(value, maxLength = LIVE_ANALYSIS_EVENT_PREVIEW_BYTES) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}\n... truncated ${value.length - maxLength} chars`;
 }
 
 function stripAnsi(value) {
@@ -1405,11 +1915,35 @@ function readJsonFile(path) {
   }
 }
 
-function readRuntimeEvents(path) {
+function readBoundedJsonFile(path, maxBytes) {
+  if (!existsSync(path)) {
+    return { payload: null, skipped: false, byteSize: 0, reason: "missing" };
+  }
+  const byteSize = fileSizeBytes(path);
+  if (byteSize > maxBytes) {
+    return { payload: null, skipped: true, byteSize, reason: "oversized_json" };
+  }
+  return { payload: readJsonFile(path), skipped: false, byteSize, reason: null };
+}
+
+function readRuntimeEvents(path, options = {}) {
   const events = [];
   const malformed = [];
-  const lines = readFileSync(path, "utf8").split(/\r?\n/);
+  const maxBytes = Number.isFinite(options.maxBytes) ? Math.max(0, Math.floor(options.maxBytes)) : null;
+  const maxEvents = Number.isFinite(options.maxEvents) ? Math.max(0, Math.floor(options.maxEvents)) : null;
+  const byteSize = fileSizeBytes(path);
+  const byteLimited = maxBytes !== null && byteSize > maxBytes;
+  let text = byteLimited ? readFileHead(path, maxBytes) : readFileSync(path, "utf8");
+  if (byteLimited && !/\r?\n$/.test(text)) {
+    text = text.replace(/[^\r\n]*$/, "");
+  }
+  let truncated = byteLimited;
+  const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => {
+    if (maxEvents !== null && events.length >= maxEvents) {
+      truncated = true;
+      return;
+    }
     const trimmed = line.trim();
     if (!trimmed) return;
     try {
@@ -1421,7 +1955,35 @@ function readRuntimeEvents(path) {
       malformed.push(index);
     }
   });
-  return { events, malformed };
+  return { events, malformed, truncated, byteSize };
+}
+
+function readFileHead(path, maxBytes) {
+  if (maxBytes <= 0) return "";
+  const fd = openSync(path, "r");
+  try {
+    const buffer = Buffer.allocUnsafe(maxBytes);
+    const bytesRead = readSync(fd, buffer, 0, maxBytes, 0);
+    return buffer.toString("utf8", 0, bytesRead);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function fileSizeBytes(path) {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+function formatLiveBytes(value) {
+  const bytes = Number.isFinite(value) ? Math.max(0, Number(value)) : 0;
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GiB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KiB`;
+  return `${bytes}B`;
 }
 
 function isTypeScriptRuntimeEvent(event) {

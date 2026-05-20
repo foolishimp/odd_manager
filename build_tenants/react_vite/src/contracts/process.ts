@@ -369,6 +369,17 @@ export type SidecarLiveAnalysisTranscriptTone =
   | 'pending'
   | 'blocked';
 
+export type SidecarLiveAnalysisEventSourceKind =
+  | 'artifact'
+  | 'runtime_event'
+  | 'worker_event';
+
+export type SidecarLiveAnalysisEventTone =
+  | 'default'
+  | 'active'
+  | 'pending'
+  | 'blocked';
+
 export interface SidecarLiveAnalysisByteSummary {
   totalBytes: number;
   promptContextBytes: number;
@@ -531,6 +542,28 @@ export interface SidecarLiveAnalysisCliTranscript {
   lines: SidecarLiveAnalysisTranscriptLine[];
 }
 
+export interface SidecarLiveAnalysisEventDetailRow {
+  kind: 'sidecar_live_analysis_event_detail_row';
+  label: string;
+  value: string;
+}
+
+export interface SidecarLiveAnalysisEvent {
+  kind: 'sidecar_live_analysis_event';
+  index: number;
+  sourceKind: SidecarLiveAnalysisEventSourceKind;
+  sourcePath: string | null;
+  eventType: string;
+  title: string;
+  summary: string;
+  tone: SidecarLiveAnalysisEventTone;
+  elapsedMs: number | null;
+  observedAtMs: number | null;
+  detailRows: SidecarLiveAnalysisEventDetailRow[];
+  evidenceRefs: string[];
+  rawPreview: string;
+}
+
 export interface SidecarLiveAnalysisRunDetail {
   kind: 'sidecar_live_analysis_run_detail';
   edgeAssurance: SidecarEdgeAssuranceOverlay | null;
@@ -540,6 +573,7 @@ export interface SidecarLiveAnalysisRunDetail {
   retryForensics: SidecarLiveAnalysisRetryForensic[];
   stageCoverage: SidecarLiveAnalysisStageCoverage[];
   cliTranscript: SidecarLiveAnalysisCliTranscript;
+  events: SidecarLiveAnalysisEvent[];
 }
 
 export interface SidecarLiveAnalysisProjection {
@@ -815,6 +849,19 @@ const LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS: readonly SidecarLiveAnalysisTranscr
 ];
 
 const LIVE_ANALYSIS_TRANSCRIPT_TONES: readonly SidecarLiveAnalysisTranscriptTone[] = [
+  'default',
+  'active',
+  'pending',
+  'blocked',
+];
+
+const LIVE_ANALYSIS_EVENT_SOURCE_KINDS: readonly SidecarLiveAnalysisEventSourceKind[] = [
+  'artifact',
+  'runtime_event',
+  'worker_event',
+];
+
+const LIVE_ANALYSIS_EVENT_TONES: readonly SidecarLiveAnalysisEventTone[] = [
   'default',
   'active',
   'pending',
@@ -1167,6 +1214,39 @@ export function isSidecarLiveAnalysisCliTranscript(
   );
 }
 
+export function isSidecarLiveAnalysisEventDetailRow(
+  value: unknown,
+): value is SidecarLiveAnalysisEventDetailRow {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_event_detail_row' &&
+    typeof value.label === 'string' &&
+    typeof value.value === 'string'
+  );
+}
+
+export function isSidecarLiveAnalysisEvent(
+  value: unknown,
+): value is SidecarLiveAnalysisEvent {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_event' &&
+    typeof value.index === 'number' &&
+    isOneOf(value.sourceKind, LIVE_ANALYSIS_EVENT_SOURCE_KINDS) &&
+    isNullableString(value.sourcePath) &&
+    typeof value.eventType === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.summary === 'string' &&
+    isOneOf(value.tone, LIVE_ANALYSIS_EVENT_TONES) &&
+    isNullableNumber(value.elapsedMs) &&
+    isNullableNumber(value.observedAtMs) &&
+    Array.isArray(value.detailRows) &&
+    value.detailRows.every(isSidecarLiveAnalysisEventDetailRow) &&
+    isStringArray(value.evidenceRefs) &&
+    typeof value.rawPreview === 'string'
+  );
+}
+
 export function isSidecarLiveAnalysisRunDetail(
   value: unknown,
 ): value is SidecarLiveAnalysisRunDetail {
@@ -1183,7 +1263,9 @@ export function isSidecarLiveAnalysisRunDetail(
     value.retryForensics.every(isSidecarLiveAnalysisRetryForensic) &&
     Array.isArray(value.stageCoverage) &&
     value.stageCoverage.every(isSidecarLiveAnalysisStageCoverage) &&
-    isSidecarLiveAnalysisCliTranscript(value.cliTranscript)
+    isSidecarLiveAnalysisCliTranscript(value.cliTranscript) &&
+    Array.isArray(value.events) &&
+    value.events.every(isSidecarLiveAnalysisEvent)
   );
 }
 

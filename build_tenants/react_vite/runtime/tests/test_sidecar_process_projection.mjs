@@ -400,6 +400,34 @@ test('legacy non-TypeScript process event shape is explicitly unsupported', () =
   assert.equal(projection.maps.length, 0);
 });
 
+test('large TypeScript process event logs are capped before projection', () => {
+  const root = installedTempWorkspace();
+  installFakeOddSdlcCli(root, {
+    kind: 'sdlc_query_domain_projection',
+    contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+    contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+    graphFunctions: [],
+  });
+  const line = JSON.stringify({
+    kind: 'graph_call_opened',
+    basisId: 'execution_basis:{"moduleName":"odd_sdlc_typescript"}',
+    graphFunctionId: 'derive_intent_surface',
+    graphCallId: 'graph-call-fixture',
+    frameId: 'frame-fixture',
+    detail: 'x'.repeat(760),
+  });
+  writeFileSync(
+    join(root, '.ai-workspace/events/events.jsonl'),
+    Array.from({ length: 13000 }, () => line).join('\n'),
+  );
+
+  const projection = loadSidecarProcessProjection(root);
+  assert.equal(projection.supported, true);
+  assert.ok(projection.eventCount > 0);
+  assert.ok(projection.eventCount < 13000, 'projection should not parse the entire oversized event log');
+  assert.ok(projection.eventKinds.includes('graph_call_opened'));
+});
+
 test('per-leaf overlay derives status and trace archive from latest invocation only', () => {
   const root = installedTempWorkspace();
   writeOpRun(
@@ -517,6 +545,36 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
     'derive_intent_surface',
     tracedResult({ sessionId: 'live-analysis-fixture' }),
   );
+  const operatorRunRef = pathToFileURL(opRunPath).href;
+  writeJsonFile(join(opRunPath, 'runtime_events.json'), {
+    kind: 'sdlc_runtime_event_archive_projection',
+    eventCount: 2,
+    events: [
+      {
+        kind: 'actor_process_started',
+        edge: 'derive_intent_surface',
+        workerId: 'worker://odd-sdlc/fixture',
+        backendId: 'backend://fixture',
+        detail: 'worker process started',
+        elapsedMs: 3,
+        evidenceRefs: [operatorRunRef],
+      },
+      {
+        kind: 'payload_validated',
+        edge: 'derive_intent_surface',
+        detail: 'closure payload validated',
+        elapsedMs: 24,
+      },
+    ],
+  });
+  writeFileSync(
+    join(opRunPath, 'worker_process_events.jsonl'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-model', session_id: 'fixture-session' }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'completed' }),
+      '',
+    ].join('\n'),
+  );
   writeFileSync(
     join(opRunPath, 'worker_process_events.jsonl.trace', 'terminal.transcript'),
     [
@@ -532,7 +590,6 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
       '',
     ].join('\n'),
   );
-  const operatorRunRef = pathToFileURL(opRunPath).href;
   installFakeOddSdlcCli(
     root,
     {
@@ -568,10 +625,61 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.sourceKind, 'terminal_transcript');
   assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.lineCount, 3);
   assert.match(projection.liveAnalysis.attempts[0].detail.cliTranscript.lines[1].text, /Tool call: Read/);
+  assert.ok(
+    projection.liveAnalysis.attempts[0].detail.events.length >= 4,
+    'event viewer should project artifact, runtime, and worker tickets for the selected stage',
+  );
+  assert.ok(projection.liveAnalysis.attempts[0].detail.events.some((event) => event.sourceKind === 'artifact' && event.eventType === 'handoff_manifest'));
+  assert.ok(projection.liveAnalysis.attempts[0].detail.events.some((event) => event.sourceKind === 'runtime_event' && event.eventType === 'actor_process_started'));
+  assert.ok(projection.liveAnalysis.attempts[0].detail.events.some((event) => event.sourceKind === 'worker_event' && event.eventType === 'system'));
+  assert.match(
+    projection.liveAnalysis.attempts[0].detail.events.find((event) => event.eventType === 'actor_process_started').rawPreview,
+    /worker process started/,
+  );
   assert.equal(projection.liveAnalysis.diagnostics[0].kind, 'sidecar_live_analysis_diagnostic');
   assert.equal(projection.liveAnalysis.runtimeArtifactGapCount, 1);
   assert.equal(projection.liveAnalysis.retryForensicCount, 1);
   assert.equal(projection.liveAnalysis.summaryDriftCount, 1);
+});
+
+test('Live View event projection defers oversized archive JSON instead of parsing it', () => {
+  const root = installedTempWorkspace();
+  const opRunPath = writeOpRun(
+    root,
+    '20260518T020000Z_pid2',
+    'derive_intent_surface',
+    tracedResult({ sessionId: 'oversized-archive-fixture' }),
+  );
+  const operatorRunRef = pathToFileURL(opRunPath).href;
+  writeFileSync(
+    join(opRunPath, 'fp_transform_request.json'),
+    `{"payload":"${'x'.repeat(9 * 1024 * 1024)}"}`,
+  );
+  installFakeOddSdlcCli(
+    root,
+    {
+      kind: 'sdlc_query_domain_projection',
+      contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+      contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+      graphFunctions: [],
+    },
+    null,
+    analysisPayload({ operatorRunRef }),
+  );
+
+  const projection = loadSidecarProcessProjection(root);
+  const event = projection.liveAnalysis.attempts[0].detail.events.find(
+    (candidate) => candidate.eventType === 'fp_transform_request',
+  );
+  assert.ok(event, 'oversized artifact should still be visible as an event ticket');
+  assert.equal(event.sourceKind, 'artifact');
+  assert.equal(event.tone, 'pending');
+  assert.match(event.summary, /preview parsing was deferred/);
+  assert.match(event.rawPreview, /"deferred": true/);
+  assert.match(event.rawPreview, /"reason": "oversized_json"/);
+  assert.ok(event.rawPreview.length < 2600, 'raw preview should remain bounded');
+  assert.ok(event.detailRows.some((row) => row.label === 'Archive size'));
+  assert.ok(event.detailRows.some((row) => row.label === 'Parse limit'));
 });
 
 test('T-164 edge assurance carriers are projected without treating postflight as closure authority', () => {

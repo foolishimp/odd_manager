@@ -2964,6 +2964,8 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
             refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
             liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
             onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
+            liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
+            onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
           />
         </section>
       ) : (
@@ -4160,6 +4162,8 @@ function ProcessNavigatorPanel({ state, dispatch }: {
               refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
               liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
               onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
+              liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
+              onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
             />
           ) : activeMap ? (
             activeMap.id === 'process_flow' && projection.catalog ? (
@@ -4968,6 +4972,8 @@ function describeProcessQuerySummary(
 type SidecarLiveAnalysis = NonNullable<SidecarProcessProjection['liveAnalysis']>;
 type SidecarLiveAnalysisAttempt = SidecarLiveAnalysis['attempts'][number];
 type SidecarLiveAnalysisDiagnostic = SidecarLiveAnalysis['diagnostics'][number];
+type SidecarLiveAnalysisEvent = SidecarLiveAnalysisAttempt['detail']['events'][number];
+type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
   materialization: {
@@ -5015,13 +5021,15 @@ function liveAssuranceLedgerDescription(dimension: string) {
   };
 }
 
-function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing, liveTranscriptCollapsed, onLiveTranscriptCollapsedChange }: {
+function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing, liveTranscriptCollapsed, onLiveTranscriptCollapsedChange, liveDetailRowCollapsed, onLiveDetailRowCollapsedChange }: {
   analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
   onOpenTracePath: (absolutePath: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
   liveTranscriptCollapsed: boolean;
   onLiveTranscriptCollapsedChange: (collapsed: boolean) => void;
+  liveDetailRowCollapsed: boolean;
+  onLiveDetailRowCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [selectedAttemptRef, setSelectedAttemptRef] = useState<string | null>(null);
   if (!analysis) {
@@ -5124,6 +5132,8 @@ function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing
       {selectedAttempt ? (
         <ProcessLiveRunDetail
           attempt={selectedAttempt}
+          detailRowCollapsed={liveDetailRowCollapsed}
+          onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
           onOpenTracePath={onOpenTracePath}
         />
       ) : null}
@@ -5176,8 +5186,10 @@ function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing
   );
 }
 
-function ProcessLiveRunDetail({ attempt, onOpenTracePath }: {
+function ProcessLiveRunDetail({ attempt, detailRowCollapsed, onDetailRowCollapsedChange, onOpenTracePath }: {
   attempt: SidecarLiveAnalysisAttempt;
+  detailRowCollapsed: boolean;
+  onDetailRowCollapsedChange: (collapsed: boolean) => void;
   onOpenTracePath: (absolutePath: string) => void;
 }) {
   const edge = attempt.detail.edgeAssurance;
@@ -5217,76 +5229,99 @@ function ProcessLiveRunDetail({ attempt, onOpenTracePath }: {
         </div>
       </header>
 
-      <div className="sidecar-live-view__detail-grid">
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Ledger State</span>
+      <section className={`sidecar-live-view__detail-row-group${detailRowCollapsed ? ' is-collapsed' : ''}`} aria-label="Ledger and assurance row">
+        <button
+          type="button"
+          className="sidecar-live-view__row-collapse-toggle"
+          onClick={() => onDetailRowCollapsedChange(!detailRowCollapsed)}
+          aria-expanded={!detailRowCollapsed}
+          aria-label={`${detailRowCollapsed ? 'Expand' : 'Collapse'} ledger and assurance row`}
+          title={`${detailRowCollapsed ? 'Expand' : 'Collapse'} ledger and assurance row`}
+        >
+          <span className="panel__eyebrow">Ledger / Assurance Row</span>
+          <span className="sidecar-live-view__row-collapse-meta">
             <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
-          </div>
-          <div className="sidecar-live-view__stats sidecar-live-view__stats--compact">
-            <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-              <strong>{counts?.fulfilled ?? '—'}</strong>
-              <small>completed</small>
-            </span>
-            <span className={`sidecar-process-map-stat ${outstanding && outstanding > 0 ? 'sidecar-process-map-stat--blocked' : ''}`}>
-              <strong>{outstanding ?? '—'}</strong>
-              <small>outstanding</small>
-            </span>
-            <span className="sidecar-process-map-stat">
-              <strong>{counts?.expected ?? attempt.requirementObligationCount ?? '—'}</strong>
-              <small>expected</small>
-            </span>
-          </div>
-          <MetaGrid items={[
-            ['Edge converged', formatLiveBoolean(edge?.edgeConverged)],
-            ['Carry converged', formatLiveBoolean(edge?.carryConverged)],
-            ['Fulfillment', formatLiveBoolean(edge?.fulfillmentConverged)],
-            ['Admitted', formatLiveBoolean(edge?.admitted)],
-            ['Target cert', formatLiveBoolean(edge?.targetCertificationPassed)],
-            ['F_D recheck', formatLiveBoolean(edge?.fdRecheckPassed)],
-            ['Target carrier', edge?.targetAssetType ?? attempt.targetAssetType ?? '—'],
-            ['Next action', edge?.nextGraphVectorRef ?? attempt.selectedNextActionRef ?? '—'],
-          ]} />
-        </section>
-
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Assurance Ledgers</span>
             <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
               {assurance?.status ?? 'missing'}
             </span>
-          </div>
-          {assurance?.ledgers.length ? (
-            <ul className="sidecar-live-view__ledger-list">
-              {assurance.ledgers.map((ledger) => {
-                const description = liveAssuranceLedgerDescription(ledger.dimension);
-                return (
-                  <li key={ledger.dimension}>
-                    <div className="sidecar-live-view__ledger-head">
-                      <strong>{ledger.dimension}</strong>
-                      <span
-                        className="sidecar-live-view__ledger-info"
-                        title={description.detail}
-                        aria-label={`${ledger.dimension}: ${description.detail}`}
-                        tabIndex={0}
-                      >
-                        i
-                      </span>
-                    </div>
-                    <span className={`status-chip ${ledger.verdict === 'satisfied' ? 'active' : ledger.verdict === 'blocked' ? 'blocked' : ledger.verdict === 'open_gap' ? 'pending' : 'default'}`}>
-                      {ledger.verdict}
-                    </span>
-                    <p className="sidecar-live-view__ledger-description">{description.summary}</p>
-                    <small>{ledger.evidenceRefCount} evidence · {ledger.reasonCount} reasons</small>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <div className="sidecar-body-text">No assurance ledger fold was archived for this run.</div>
-          )}
-        </section>
+            <span className="sidecar-live-view__row-collapse-symbol" aria-hidden="true">{detailRowCollapsed ? '⊞' : '⊟'}</span>
+          </span>
+        </button>
+        {!detailRowCollapsed ? (
+          <div className="sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary">
+            <section className="sidecar-live-view__detail">
+              <div className="requirements-explorer__section-heading">
+                <span className="panel__eyebrow">Ledger State</span>
+                <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
+              </div>
+              <div className="sidecar-live-view__stats sidecar-live-view__stats--compact">
+                <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+                  <strong>{counts?.fulfilled ?? '—'}</strong>
+                  <small>completed</small>
+                </span>
+                <span className={`sidecar-process-map-stat ${outstanding && outstanding > 0 ? 'sidecar-process-map-stat--blocked' : ''}`}>
+                  <strong>{outstanding ?? '—'}</strong>
+                  <small>outstanding</small>
+                </span>
+                <span className="sidecar-process-map-stat">
+                  <strong>{counts?.expected ?? attempt.requirementObligationCount ?? '—'}</strong>
+                  <small>expected</small>
+                </span>
+              </div>
+              <MetaGrid items={[
+                ['Edge converged', formatLiveBoolean(edge?.edgeConverged)],
+                ['Carry converged', formatLiveBoolean(edge?.carryConverged)],
+                ['Fulfillment', formatLiveBoolean(edge?.fulfillmentConverged)],
+                ['Admitted', formatLiveBoolean(edge?.admitted)],
+                ['Target cert', formatLiveBoolean(edge?.targetCertificationPassed)],
+                ['F_D recheck', formatLiveBoolean(edge?.fdRecheckPassed)],
+                ['Target carrier', edge?.targetAssetType ?? attempt.targetAssetType ?? '—'],
+                ['Next action', edge?.nextGraphVectorRef ?? attempt.selectedNextActionRef ?? '—'],
+              ]} />
+            </section>
 
+            <section className="sidecar-live-view__detail">
+              <div className="requirements-explorer__section-heading">
+                <span className="panel__eyebrow">Assurance Ledgers</span>
+                <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
+                  {assurance?.status ?? 'missing'}
+                </span>
+              </div>
+              {assurance?.ledgers.length ? (
+                <ul className="sidecar-live-view__ledger-list">
+                  {assurance.ledgers.map((ledger) => {
+                    const description = liveAssuranceLedgerDescription(ledger.dimension);
+                    return (
+                      <li key={ledger.dimension}>
+                        <div className="sidecar-live-view__ledger-head">
+                          <strong>{ledger.dimension}</strong>
+                          <span
+                            className="sidecar-live-view__ledger-info"
+                            title={description.detail}
+                            aria-label={`${ledger.dimension}: ${description.detail}`}
+                            tabIndex={0}
+                          >
+                            i
+                          </span>
+                        </div>
+                        <span className={`status-chip ${ledger.verdict === 'satisfied' ? 'active' : ledger.verdict === 'blocked' ? 'blocked' : ledger.verdict === 'open_gap' ? 'pending' : 'default'}`}>
+                          {ledger.verdict}
+                        </span>
+                        <p className="sidecar-live-view__ledger-description">{description.summary}</p>
+                        <small>{ledger.evidenceRefCount} evidence · {ledger.reasonCount} reasons</small>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="sidecar-body-text">No assurance ledger fold was archived for this run.</div>
+              )}
+            </section>
+          </div>
+        ) : null}
+      </section>
+
+      <div className="sidecar-live-view__detail-grid">
         <section className="sidecar-live-view__detail">
           <div className="requirements-explorer__section-heading">
             <span className="panel__eyebrow">Gap Analysis</span>
@@ -5325,7 +5360,222 @@ function ProcessLiveRunDetail({ attempt, onOpenTracePath }: {
           ) : null}
         </section>
       </div>
+
+      <ProcessLiveEventViewer attempt={attempt} onOpenTracePath={onOpenTracePath} />
     </section>
+  );
+}
+
+function ProcessLiveEventViewer({ attempt, onOpenTracePath }: {
+  attempt: SidecarLiveAnalysisAttempt;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const [sourceFilter, setSourceFilter] = useState<SidecarLiveAnalysisEventSourceFilter>('all');
+  const [collapsedEventKeys, setCollapsedEventKeys] = useState<Set<string>>(() => new Set());
+  const events = attempt.detail.events ?? [];
+  const sourceFilters: Array<{ id: SidecarLiveAnalysisEventSourceFilter; label: string; count: number }> = [
+    { id: 'all', label: 'All', count: events.length },
+    { id: 'artifact', label: 'Artifacts', count: events.filter((event) => event.sourceKind === 'artifact').length },
+    { id: 'runtime_event', label: 'Runtime', count: events.filter((event) => event.sourceKind === 'runtime_event').length },
+    { id: 'worker_event', label: 'Worker', count: events.filter((event) => event.sourceKind === 'worker_event').length },
+  ];
+  const visibleEvents = sourceFilter === 'all'
+    ? events
+    : events.filter((event) => event.sourceKind === sourceFilter);
+  const visibleEventKeys = visibleEvents.map(liveAnalysisEventKey);
+
+  useEffect(() => {
+    const currentKeys = new Set(events.map(liveAnalysisEventKey));
+    setCollapsedEventKeys((previous) => {
+      let changed = false;
+      const next = new Set<string>();
+      previous.forEach((key) => {
+        if (currentKeys.has(key)) {
+          next.add(key);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : previous;
+    });
+  }, [events]);
+
+  const setEventCollapsed = (key: string, collapsed: boolean) => {
+    setCollapsedEventKeys((previous) => {
+      const next = new Set(previous);
+      if (collapsed) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const setVisibleEventsCollapsed = (collapsed: boolean) => {
+    setCollapsedEventKeys((previous) => {
+      const next = new Set(previous);
+      visibleEventKeys.forEach((key) => {
+        if (collapsed) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+      });
+      return next;
+    });
+  };
+
+  return (
+    <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__event-viewer" aria-label="Stage event viewer">
+      <div className="requirements-explorer__section-heading">
+        <div>
+          <span className="panel__eyebrow">Event Viewer</span>
+          <p className="sidecar-live-view__event-scope">
+            Filtered to {attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'selected stage'} · {attempt.targetAssetType ?? attempt.traversalClass}
+          </p>
+        </div>
+        <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
+      </div>
+
+      <div className="sidecar-live-view__event-filters" role="tablist" aria-label="Event source filters">
+        {sourceFilters.map((filter) => (
+          <button
+            key={filter.id}
+            type="button"
+            className={`process-tab sidecar-live-view__event-filter${sourceFilter === filter.id ? ' is-selected' : ''}`}
+            onClick={() => setSourceFilter(filter.id)}
+            aria-selected={sourceFilter === filter.id}
+            role="tab"
+          >
+            <span>{filter.label}</span>
+            <span className="status-chip default">{filter.count}</span>
+          </button>
+        ))}
+        {visibleEvents.length ? (
+          <div className="sidecar-live-view__event-row-actions" aria-label="Event row visibility">
+            <button
+              type="button"
+              className="status-chip default sidecar-live-view__event-row-toggle"
+              onClick={() => setVisibleEventsCollapsed(true)}
+              aria-label="Collapse all event rows"
+              title="Collapse all event rows"
+            >
+              <span aria-hidden="true">⊟</span>
+            </button>
+            <button
+              type="button"
+              className="status-chip default sidecar-live-view__event-row-toggle"
+              onClick={() => setVisibleEventsCollapsed(false)}
+              aria-label="Expand all event rows"
+              title="Expand all event rows"
+            >
+              <span aria-hidden="true">⊞</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {visibleEvents.length ? (
+        <ol className="sidecar-live-view__event-list" aria-label="Scrollable stage event tickets">
+          {visibleEvents.map((event) => {
+            const key = liveAnalysisEventKey(event);
+            return (
+              <ProcessLiveEventTicket
+                key={key}
+                event={event}
+                collapsed={collapsedEventKeys.has(key)}
+                onCollapsedChange={(collapsed) => setEventCollapsed(key, collapsed)}
+                onOpenTracePath={onOpenTracePath}
+              />
+            );
+          })}
+        </ol>
+      ) : (
+        <div className="sidecar-body-text">No archived events matched this selected stage filter.</div>
+      )}
+    </section>
+  );
+}
+
+function liveAnalysisEventKey(event: SidecarLiveAnalysisEvent) {
+  return `${event.sourceKind}:${event.index}:${event.eventType}`;
+}
+
+function ProcessLiveEventTicket({ event, collapsed, onCollapsedChange, onOpenTracePath }: {
+  event: SidecarLiveAnalysisEvent;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const sourcePath = event.sourcePath ? refToAbsolutePath(event.sourcePath) ?? event.sourcePath : null;
+  const eventTime = event.observedAtMs ?? event.elapsedMs;
+  return (
+    <li className={`sidecar-live-view__event-ticket sidecar-live-view__event-ticket--${event.tone}${collapsed ? ' is-collapsed' : ''}`}>
+      <header className="sidecar-live-view__event-ticket-header">
+        <div className="sidecar-live-view__event-ticket-title">
+          <span className="sidecar-live-view__event-index">{event.index + 1}</span>
+          <div>
+            <strong>{event.title}</strong>
+            <small>{event.eventType} · {event.sourceKind.replace(/_/g, ' ')}</small>
+          </div>
+        </div>
+        <div className="sidecar-live-view__event-ticket-actions">
+          {eventTime !== null ? <span className="status-chip default">{formatDurationMs(eventTime)}</span> : null}
+          <span className={`status-chip ${event.tone}`}>{event.tone}</span>
+          <button
+            type="button"
+            className="status-chip default sidecar-live-view__event-toggle"
+            onClick={() => onCollapsedChange(!collapsed)}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? 'Show' : 'Hide'} ${event.title} details`}
+          >
+            <span>{collapsed ? 'show' : 'hide'}</span>
+            <span className="sidecar-live-view__collapsible-chevron" aria-hidden="true">{collapsed ? '>' : 'v'}</span>
+          </button>
+          {sourcePath ? (
+            <button type="button" className="status-chip default" onClick={() => onOpenTracePath(sourcePath)}>
+              Open source
+            </button>
+          ) : null}
+        </div>
+      </header>
+      {!collapsed ? (
+        <div className="sidecar-live-view__event-ticket-body">
+          <p className="sidecar-live-view__event-summary">{event.summary}</p>
+          {event.detailRows.length ? (
+            <dl className="sidecar-live-view__event-fields">
+              {event.detailRows.map((row, rowIndex) => (
+                <div key={`${event.index}:${rowIndex}:${row.label}:${row.value}`}>
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {event.evidenceRefs.length ? (
+            <div className="sidecar-live-view__event-evidence" aria-label="Event evidence refs">
+              {event.evidenceRefs.map((ref) => {
+                const path = refToAbsolutePath(ref);
+                return path ? (
+                  <button key={ref} type="button" className="status-chip default" onClick={() => onOpenTracePath(path)}>
+                    {compactIdentity(ref)}
+                  </button>
+                ) : (
+                  <span key={ref} className="status-chip default">{compactIdentity(ref)}</span>
+                );
+              })}
+            </div>
+          ) : null}
+          {event.rawPreview ? (
+            <details className="sidecar-live-view__event-raw">
+              <summary>Raw event payload</summary>
+              <pre>{event.rawPreview}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
   );
 }
 

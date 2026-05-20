@@ -373,6 +373,7 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'process/select-view', view: 'blocked_waiting' },
     { type: 'process/select-record', id: 'process-record-1' },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
+    { type: 'process/set-live-detail-row-collapsed', collapsed: true },
     { type: 'process/set-graph-mode', mode: 'compressed' },
     { type: 'session/select', id: 'sess-1' },
   ]).state;
@@ -388,6 +389,7 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
+  assert.equal(result.state.ui.liveDetailRowCollapsed, true);
   assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
 });
@@ -602,6 +604,7 @@ test('process navigator opens as an object viewer tab and keeps view selection i
     { type: 'process/select-view', view: 'ready_handoff' },
     { type: 'process/select-record', id: 'process-record-2' },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
+    { type: 'process/set-live-detail-row-collapsed', collapsed: true },
     { type: 'process/set-graph-mode', mode: 'compressed' },
   ]);
   assert.deepEqual(result.commands, []);
@@ -610,6 +613,7 @@ test('process navigator opens as an object viewer tab and keeps view selection i
   assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
+  assert.equal(result.state.ui.liveDetailRowCollapsed, true);
   assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.deepEqual(
     result.state.ui.viewerWorkspace.tabs.map((tab) => [tab.id, tab.kind, tab.objectId]),
@@ -936,6 +940,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /refreshing=\{state\.loading && state\.activeLoadRoot === liveRefreshRoot\}/);
   assert.match(simpleProcessPanelSource, /liveTranscriptCollapsed=\{state\.ui\.liveTranscriptCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-transcript-collapsed/);
+  assert.match(simpleProcessPanelSource, /liveDetailRowCollapsed=\{state\.ui\.liveDetailRowCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-detail-row-collapsed/);
   assert.match(simpleProcessPanelSource, /traversalOverlays/);
   assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
   assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
@@ -957,6 +963,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /Live View/);
   assert.match(processPanelSource, /ProcessLiveViewPanel/);
   assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
+  assert.match(processPanelSource, /detailRowCollapsed=\{liveDetailRowCollapsed\}/);
+  assert.match(processPanelSource, /onDetailRowCollapsedChange=\{onLiveDetailRowCollapsedChange\}/);
   assert.match(processPanelSource, /formatLiveRefreshTime\(analysis\.generatedAt\)/);
   assert.match(processPanelSource, /last refresh/);
   assert.match(processPanelSource, /sidecar-live-view__refresh-button/);
@@ -967,6 +975,20 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /Checks prior retry obligations were closed, carried forward, or repriced\./);
   assert.match(processPanelSource, /sidecar-live-view__ledger-info/);
   assert.match(processPanelSource, /sidecar-live-view__ledger-description/);
+  assert.match(processPanelSource, /ProcessLiveEventViewer/);
+  assert.match(processPanelSource, /aria-label="Stage event viewer"/);
+  assert.match(processPanelSource, /Filtered to \{attempt\.graphFunctionName/);
+  assert.match(processPanelSource, /className=\{`process-tab sidecar-live-view__event-filter\$\{sourceFilter === filter\.id \? ' is-selected' : ''\}`\}/);
+  assert.match(processPanelSource, /aria-label="Event row visibility"/);
+  assert.match(processPanelSource, /aria-label="Collapse all event rows"/);
+  assert.match(processPanelSource, /aria-label="Expand all event rows"/);
+  assert.match(processPanelSource, /collapsed=\{collapsedEventKeys\.has\(key\)\}/);
+  assert.match(processPanelSource, /onCollapsedChange=\{\(collapsed\) => setEventCollapsed\(key, collapsed\)\}/);
+  assert.match(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Show' : 'Hide'\} \$\{event\.title\} details`\}/);
+  assert.match(processPanelSource, /aria-label=\{`\$\{detailRowCollapsed \? 'Expand' : 'Collapse'\} ledger and assurance row`\}/);
+  assert.match(processPanelSource, /sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary/);
+  assert.match(processPanelSource, /aria-label="Scrollable stage event tickets"/);
+  assert.match(processPanelSource, /Raw event payload/);
   assert.ok(liveMapTabIndex !== -1 && mapLoopIndex !== -1 && liveMapTabIndex < mapLoopIndex);
   assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
   assert.match(processPanelSource, /sidecar-live-view__collapsible-header/);
@@ -994,6 +1016,22 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__ledger-head\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.28rem;/s);
   assert.match(styles, /\.sidecar-live-view__ledger-info\s*\{[^}]*border-radius:\s*999px;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__ledger-description\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(styles, /\.sidecar-live-view__event-viewer\s*>\s*\.requirements-explorer__section-heading\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
+  assert.match(styles, /\.sidecar-live-view__event-filters\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*width:\s*auto;[^}]*min-width:\s*max-content;[^}]*min-height:\s*1\.45rem;[^}]*padding:\s*0\.16rem\s+0\.42rem;/s);
+  assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*>\s*span:first-child\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(styles, /\.sidecar-live-view__detail-row-group\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.5rem;/s);
+  assert.match(styles, /\.sidecar-live-view__row-collapse-toggle\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*1\.9rem;/s);
+  assert.match(styles, /\.sidecar-live-view__row-collapse-symbol\s*\{[^}]*display:\s*inline-grid;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__event-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
+  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip,\s*\.sidecar-live-view__event-toggle\.status-chip\s*\{[^}]*min-height:\s*1\.45rem;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip\s*\{[^}]*width:\s*1\.45rem;[^}]*min-width:\s*1\.45rem;/s);
+  assert.match(styles, /\.sidecar-live-view__event-ticket\.is-collapsed\s*\{[^}]*gap:\s*0;/s);
+  assert.match(styles, /\.sidecar-live-view__event-ticket-body\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.48rem;/s);
+  assert.match(styles, /\.sidecar-live-view__event-list\s*\{[^}]*max-height:\s*clamp\(20rem,\s*54vh,\s*42rem\);[^}]*overflow:\s*auto;/s);
+  assert.match(styles, /\.sidecar-live-view__event-ticket\s*\{[^}]*display:\s*grid;[^}]*border:/s);
+  assert.match(styles, /\.sidecar-live-view__event-fields\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /\.sidecar-live-view__event-raw\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
   assert.match(styles, /\.sidecar-live-view__collapsible-header\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
   assert.match(styles, /\.sidecar-live-view__transcript\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__transcript\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
