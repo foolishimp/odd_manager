@@ -49,6 +49,7 @@ export interface Selection {
 export type SidecarShellLayout = 'single' | 'split-vertical' | 'split-horizontal';
 export type SidecarResizeTarget = 'explorer' | 'contextRail' | 'bottomDock';
 export type SidecarPaneGroupId = 'main' | 'secondary' | 'tertiary' | 'quaternary';
+export type SidecarProcessGraphMode = 'expanded' | 'compressed';
 
 export const SIDECAR_PANE_GROUP_IDS: SidecarPaneGroupId[] = ['main', 'secondary', 'tertiary', 'quaternary'];
 export const SIDECAR_MAX_PANE_GROUPS = SIDECAR_PANE_GROUP_IDS.length;
@@ -170,6 +171,8 @@ export interface SidecarLayoutProfile {
     activeProcessView: SidecarProcessViewId;
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
+    liveTranscriptCollapsed: boolean;
+    activeProcessGraphMode: SidecarProcessGraphMode;
     // T-026: variant selection over the process flow map. V0 is canonical;
     // V1/V2/V4 are §13A scaffolds. Persisted across sessions via the layout
     // profile so the operator's last-used variant is restored.
@@ -187,6 +190,46 @@ export interface SidecarLayoutProfile {
 export type SidecarLayoutProfileValidation =
   | { ok: true; profile: SidecarLayoutProfile }
   | { ok: false; error: string };
+
+export type SidecarBrowseScope = 'in-project' | 'cross-project';
+
+export interface SidecarBrowseFsEntry {
+  readonly name: string;
+  readonly absolutePath: string;
+  readonly kind?: 'directory' | 'file';
+  readonly hasWorkspace: boolean;
+}
+
+export interface SidecarBrowseLoaded {
+  readonly path: string;
+  readonly parent: string | null;
+  readonly entries: readonly SidecarBrowseFsEntry[];
+  readonly truncated: boolean;
+}
+
+export interface SidecarBrowseState {
+  scope: SidecarBrowseScope;
+  currentPath: string | null;
+  parent: string | null;
+  entries: readonly SidecarBrowseFsEntry[];
+  truncated: boolean;
+  loading: boolean;
+  error: string | null;
+  favouriteError: string | null;
+  unfavouriteError: string | null;
+}
+
+export const INITIAL_SIDECAR_BROWSE_STATE: SidecarBrowseState = Object.freeze({
+  scope: 'in-project',
+  currentPath: null,
+  parent: null,
+  entries: Object.freeze([]),
+  truncated: false,
+  loading: false,
+  error: null,
+  favouriteError: null,
+  unfavouriteError: null,
+});
 
 export interface SidecarState {
   context: ContextRecord | null;
@@ -208,12 +251,15 @@ export interface SidecarState {
     activeProcessView: SidecarProcessViewId;
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
+    liveTranscriptCollapsed: boolean;
+    activeProcessGraphMode: SidecarProcessGraphMode;
     activeProcessFlowVariant: SidecarProcessFlowVariantId;
     activeLeafName: string | null;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
     documentViewers: Record<string, SidecarDocumentViewerState>;
     terminalWorkspace: SidecarTerminalWorkspace;
+    browse: SidecarBrowseState;
   };
   unreadIds: string[];
   viewerAgent: string;
@@ -259,6 +305,8 @@ export type SidecarMsg =
   | { type: 'process/select-view'; view: SidecarProcessViewId }
   | { type: 'process/select-map'; map: SidecarProcessMapId }
   | { type: 'process/select-record'; id: string | null }
+  | { type: 'process/set-live-transcript-collapsed'; collapsed: boolean }
+  | { type: 'process/set-graph-mode'; mode: SidecarProcessGraphMode }
   | { type: 'process/select-variant'; variant: SidecarProcessFlowVariantId }
   | { type: 'process/select-leaf'; leafName: string | null }
   | { type: 'ui/resize-start'; target: SidecarResizeTarget; pointerId: number | null; clientX: number; clientY: number }
@@ -303,6 +351,18 @@ export type SidecarMsg =
   | { type: 'session/spawn/request'; groupId?: SidecarTerminalGroupId }
   | { type: 'session/spawn/done'; record: SessionRecord; groupId: SidecarTerminalGroupId }
   | { type: 'session/kill/request'; id: string }
+  | { type: 'browse/scope-set'; scope: SidecarBrowseScope }
+  | { type: 'browse/navigate-up' }
+  | { type: 'browse/navigate-to'; path: string }
+  | { type: 'browse/loaded'; result: SidecarBrowseLoaded; scope?: SidecarBrowseScope }
+  | { type: 'browse/load-failed'; error: string }
+  | { type: 'browse/favourite-folder'; path: string }
+  | { type: 'browse/favourite-succeeded'; project: ProjectRecord; projects: ProjectRecord[] }
+  | { type: 'browse/favourite-failed'; path: string; error: string }
+  | { type: 'browse/dismiss-error' }
+  | { type: 'projects/unfavourite'; projectId: string }
+  | { type: 'projects/unfavourite-succeeded'; projectId: string; projects: ProjectRecord[] }
+  | { type: 'projects/unfavourite-failed'; projectId: string; error: string }
   | { type: 'action/result'; ok: boolean; message?: string; error?: string; reload?: boolean };
 
 export type SidecarCmd =
@@ -312,7 +372,10 @@ export type SidecarCmd =
   | { type: 'comment.reply'; parentId: string; body: string; projectRoot: string | null }
   | { type: 'clipboard.write'; text: string; label: string }
   | { type: 'session.spawn'; projectRoot: string | null; groupId: SidecarTerminalGroupId }
-  | { type: 'session.kill'; id: string; projectRoot: string | null };
+  | { type: 'session.kill'; id: string; projectRoot: string | null }
+  | { type: 'browse.path'; path: string | null; scope: SidecarBrowseScope }
+  | { type: 'projects.register'; path: string }
+  | { type: 'projects.unregister'; projectId: string };
 
 export interface PendingSidecarCmd {
   id: string;
@@ -339,12 +402,15 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
     activeProcessView: 'active_work',
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
+    liveTranscriptCollapsed: false,
+    activeProcessGraphMode: 'expanded',
     activeProcessFlowVariant: 'v1',
     activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: { ...SIDECAR_VIEWER_WORKSPACE_DEFAULTS, groups: [...SIDECAR_VIEWER_WORKSPACE_DEFAULTS.groups] },
     documentViewers: {},
     terminalWorkspace: { ...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS, groups: [...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS.groups] },
+    browse: { ...INITIAL_SIDECAR_BROWSE_STATE },
   },
   unreadIds: [],
   viewerAgent: 'operator',
@@ -358,6 +424,15 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
 
 function currentProjectRoot(state: SidecarState) {
   return state.context?.project.root ?? null;
+}
+
+function parentFolderPath(path: string | null) {
+  if (!path) return null;
+  const normalized = path.trim().replace(/\/+$/, '');
+  if (!normalized || normalized === '/') return null;
+  const index = normalized.lastIndexOf('/');
+  if (index <= 0) return '/';
+  return normalized.slice(0, index);
 }
 
 function firstLiveSessionId(sessions: SessionRecord[]) {
@@ -988,7 +1063,7 @@ function isProcessView(value: unknown): value is SidecarProcessViewId {
 }
 
 function isProcessMap(value: unknown): value is SidecarProcessMapId {
-  return value === 'process_flow' || value === 'builder_governance' || value === 'runtime_evidence';
+  return value === 'process_flow' || value === 'builder_governance' || value === 'runtime_evidence' || value === 'live_view';
 }
 
 function validWorkbenchLayout(value: unknown): SidecarWorkbenchLayout | null {
@@ -1080,6 +1155,8 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         activeProcessView: isProcessView(ui.activeProcessView) ? ui.activeProcessView : 'active_work',
         activeProcessMap: isProcessMap(ui.activeProcessMap) ? ui.activeProcessMap : 'process_flow',
         activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
+        liveTranscriptCollapsed: ui.liveTranscriptCollapsed === true,
+        activeProcessGraphMode: isProcessGraphMode(ui.activeProcessGraphMode) ? ui.activeProcessGraphMode : 'expanded',
         activeProcessFlowVariant: isProcessFlowVariant(ui.activeProcessFlowVariant)
           ? (ui.activeProcessFlowVariant as SidecarProcessFlowVariantId)
           : 'v1',
@@ -1091,6 +1168,10 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
       },
     },
   };
+}
+
+function isProcessGraphMode(value: unknown): value is SidecarProcessGraphMode {
+  return value === 'expanded' || value === 'compressed';
 }
 
 function isProcessFlowVariant(value: unknown): value is SidecarProcessFlowVariantId {
@@ -1111,6 +1192,8 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       activeProcessView: state.ui.activeProcessView,
       activeProcessMap: state.ui.activeProcessMap,
       activeProcessRecordId: state.ui.activeProcessRecordId,
+      liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed,
+      activeProcessGraphMode: state.ui.activeProcessGraphMode,
       activeProcessFlowVariant: state.ui.activeProcessFlowVariant,
       activeLeafName: state.ui.activeLeafName,
       workbenchLayout: normalizeWorkbenchLayout({
@@ -1135,12 +1218,15 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
     activeProcessView: 'active_work',
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
+    liveTranscriptCollapsed: false,
+    activeProcessGraphMode: 'expanded',
     activeProcessFlowVariant: 'v1',
     activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: defaultViewerWorkspace(),
     documentViewers: {},
     terminalWorkspace,
+    browse: { ...INITIAL_SIDECAR_BROWSE_STATE },
   };
 }
 
@@ -1169,6 +1255,8 @@ function normalizeLoadedState(state: SidecarState) {
     secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, normalizedActiveSessionId) ?? secondarySessionId,
     ui: {
       ...state.ui,
+      liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed === true,
+      activeProcessGraphMode: isProcessGraphMode(state.ui.activeProcessGraphMode) ? state.ui.activeProcessGraphMode : 'expanded',
       shellLayout: terminalWorkspace.split,
       workbenchLayout,
       viewerWorkspace,
@@ -1332,6 +1420,22 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeProcessRecordId: msg.id,
         },
       };
+    case 'process/set-live-transcript-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveTranscriptCollapsed: msg.collapsed,
+        },
+      };
+    case 'process/set-graph-mode':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeProcessGraphMode: msg.mode,
+        },
+      };
     case 'ui/resize-start': {
       const startValuePx = getLayoutValue(state.ui.workbenchLayout, msg.target);
       return {
@@ -1448,6 +1552,8 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeProcessView: validation.profile.ui.activeProcessView,
           activeProcessMap: validation.profile.ui.activeProcessMap,
           activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
+          liveTranscriptCollapsed: validation.profile.ui.liveTranscriptCollapsed,
+          activeProcessGraphMode: validation.profile.ui.activeProcessGraphMode,
           workbenchLayout: validation.profile.ui.workbenchLayout,
           viewerWorkspace: validation.profile.ui.viewerWorkspace,
           documentViewers: validation.profile.ui.documentViewers,
@@ -1817,6 +1923,120 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       return state.replyDraft ? { ...state, replyDraft: { ...state.replyDraft, body: msg.body } } : state;
     case 'reply/cancel':
       return { ...state, replyDraft: null };
+    case 'browse/scope-set':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: {
+            ...state.ui.browse,
+            scope: msg.scope,
+            loading: msg.scope === 'cross-project' && state.ui.browse.currentPath === null ? true : state.ui.browse.loading,
+            error: null,
+          },
+        },
+      };
+    case 'browse/navigate-up':
+    case 'browse/navigate-to':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: {
+            ...state.ui.browse,
+            loading: true,
+            error: null,
+          },
+        },
+      };
+    case 'browse/loaded':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: {
+            ...state.ui.browse,
+            scope: msg.scope ?? state.ui.browse.scope,
+            currentPath: msg.result.path,
+            parent: msg.result.parent,
+            entries: msg.result.entries,
+            truncated: msg.result.truncated,
+            loading: false,
+            error: null,
+          },
+        },
+      };
+    case 'browse/load-failed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, loading: false, error: msg.error },
+        },
+      };
+    case 'browse/favourite-folder':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, favouriteError: null },
+        },
+      };
+    case 'browse/favourite-succeeded':
+      return {
+        ...state,
+        projects: msg.projects,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, favouriteError: null },
+        },
+      };
+    case 'browse/favourite-failed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, favouriteError: msg.error },
+        },
+      };
+    case 'browse/dismiss-error':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: {
+            ...state.ui.browse,
+            error: null,
+            favouriteError: null,
+            unfavouriteError: null,
+          },
+        },
+      };
+    case 'projects/unfavourite':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, unfavouriteError: null },
+        },
+      };
+    case 'projects/unfavourite-succeeded':
+      return {
+        ...state,
+        projects: msg.projects,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, unfavouriteError: null },
+        },
+      };
+    case 'projects/unfavourite-failed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          browse: { ...state.ui.browse, unfavouriteError: msg.error },
+        },
+      };
     case 'action/result':
       return { ...state, lastAction: { ok: msg.ok, message: msg.message, error: msg.error } };
     default:
@@ -1858,6 +2078,23 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
       return msg.ok && msg.reload
         ? [{ type: 'load', projectRoot: currentProjectRoot(state), reason: 'action_completed' }]
         : [];
+    case 'browse/scope-set': {
+      if (msg.scope !== 'cross-project') return [];
+      if (state.ui.browse.currentPath !== null) return [];
+      const root = currentProjectRoot(state);
+      return [{ type: 'browse.path', path: parentFolderPath(root) ?? root, scope: 'cross-project' }];
+    }
+    case 'browse/navigate-up': {
+      const parent = state.ui.browse.parent;
+      if (parent === null) return [];
+      return [{ type: 'browse.path', path: parent, scope: state.ui.browse.scope }];
+    }
+    case 'browse/navigate-to':
+      return [{ type: 'browse.path', path: msg.path, scope: state.ui.browse.scope }];
+    case 'browse/favourite-folder':
+      return [{ type: 'projects.register', path: msg.path }];
+    case 'projects/unfavourite':
+      return [{ type: 'projects.unregister', projectId: msg.projectId }];
     default:
       return [];
   }

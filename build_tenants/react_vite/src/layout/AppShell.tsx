@@ -109,19 +109,21 @@ export function AppShell({
         </div>
 
         <div className="shell__control-strip">
-          <button
-            ref={workspacePickerButtonRef}
-            type="button"
-            className="shell__control-card shell__control-card--button"
-            onClick={() => setWorkspacePickerOpen((current) => !current)}
-            aria-expanded={workspacePickerOpen}
-            aria-label="Open workspace selector"
-            title="Open workspace selector"
-          >
-            <span className="shell__control-label">Project Root</span>
-            <strong>{workspaceRoot}</strong>
-            <small>Click to change project</small>
-          </button>
+          {isSidecarPage ? null : (
+            <button
+              ref={workspacePickerButtonRef}
+              type="button"
+              className="shell__control-card shell__control-card--button"
+              onClick={() => setWorkspacePickerOpen((current) => !current)}
+              aria-expanded={workspacePickerOpen}
+              aria-label="Open workspace selector"
+              title="Open workspace selector"
+            >
+              <span className="shell__control-label">Project Root</span>
+              <strong>{workspaceRoot}</strong>
+              <small>Click to change project</small>
+            </button>
+          )}
 
           <div className="shell__control-card shell__control-card--status">
             <span className="shell__control-label">Workspace Status</span>
@@ -182,7 +184,7 @@ export function AppShell({
           ))}
         </nav>
 
-        {workspacePickerOpen ? (
+        {workspacePickerOpen && !isSidecarPage ? (
           <div ref={workspacePickerRef} className="shell__workspace-picker" role="dialog" aria-label="Workspace selector">
             <ProjectSelector
               currentWorkspaceRoot={workspaceRoot}

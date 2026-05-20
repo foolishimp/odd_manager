@@ -26,6 +26,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -37,6 +38,7 @@ import {
   type PointerEvent,
   type PropsWithChildren,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
@@ -53,8 +55,15 @@ import type {
   SidecarProcessMap,
   SidecarProcessProjection,
   SidecarProcessRecord,
+  SidecarProcessTone,
 } from '../../contracts/process';
-import { PROJECT_REGISTRY_CHANGED_EVENT, setActiveProject } from '../../lib/collaboration';
+import {
+  PROJECT_REGISTRY_CHANGED_EVENT,
+  browsePath,
+  registerProject,
+  setActiveProject,
+  unregisterProject,
+} from '../../lib/collaboration';
 import type { SurfaceData } from '../../lib/types';
 import {
   INITIAL_SIDECAR_STATE,
@@ -67,12 +76,15 @@ import {
 import type {
   ContextRecord,
   PendingSidecarCmd,
+  SidecarBrowseFsEntry,
+  SidecarBrowseLoaded,
   SidecarCmd,
   SidecarExplorerProviderId,
   SidecarInfoSurface,
   SidecarMsg,
   SidecarPathHistoryEntry,
   SidecarPathHistorySource,
+  SidecarProcessGraphMode,
   SidecarResizeGesture,
   SidecarResizeTarget,
   SidecarState,
@@ -97,6 +109,7 @@ const SIDECAR_PINNED_FOLDERS_STORAGE_PREFIX = 'oman-sidecar-pinned-folders:';
 const SIDECAR_PATH_HISTORY_STORAGE_KEY = 'oman-sidecar-path-history';
 
 type NavigatorSortMode = 'time' | 'alpha';
+type ProjectBrowserTab = 'favourites' | 'recent' | 'pick';
 
 interface NavigatorGroupState {
   collapsed: boolean;
@@ -438,7 +451,103 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
     } catch (err) {
       dispatch({ type: 'action/result', ok: false, error: String(err) });
     }
+    return;
   }
+
+  if (cmd.type === 'browse.path') {
+    try {
+      const raw = await browsePath(cmd.path ?? undefined);
+      const validated = validateBrowseResult(raw);
+      dispatch({ type: 'browse/loaded', result: validated, scope: cmd.scope });
+    } catch (err) {
+      dispatch({ type: 'browse/load-failed', error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  if (cmd.type === 'projects.register') {
+    try {
+      const result = await registerProject(cmd.path, { setActive: false });
+      if (!result.ok || !result.project) {
+        dispatch({ type: 'browse/favourite-failed', path: cmd.path, error: 'registry did not return a project' });
+        return;
+      }
+      dispatch({
+        type: 'browse/favourite-succeeded',
+        project: result.project,
+        projects: result.projects,
+      });
+      dispatch({ type: 'action/result', ok: true, message: `favourited ${cmd.path}` });
+    } catch (err) {
+      dispatch({
+        type: 'browse/favourite-failed',
+        path: cmd.path,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'projects.unregister') {
+    try {
+      const result = await unregisterProject(cmd.projectId);
+      if (!result.ok) {
+        dispatch({ type: 'projects/unfavourite-failed', projectId: cmd.projectId, error: 'unregister rejected' });
+        return;
+      }
+      dispatch({
+        type: 'projects/unfavourite-succeeded',
+        projectId: cmd.projectId,
+        projects: result.projects,
+      });
+      dispatch({ type: 'action/result', ok: true, message: `unfavourited ${cmd.projectId}` });
+    } catch (err) {
+      dispatch({
+        type: 'projects/unfavourite-failed',
+        projectId: cmd.projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+// Validate filesystem browse payloads before they enter reducer-owned UI state.
+function validateBrowseResult(raw: unknown): SidecarBrowseLoaded {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('browse response is not an object');
+  }
+  const record = raw as Record<string, unknown>;
+  if (typeof record.path !== 'string' || record.path.length === 0) {
+    throw new Error('browse response is missing path');
+  }
+  const parent = record.parent;
+  if (parent !== null && typeof parent !== 'string') {
+    throw new Error('browse response parent is not string|null');
+  }
+  if (!Array.isArray(record.entries)) {
+    throw new Error('browse response entries is not an array');
+  }
+  const entries: SidecarBrowseFsEntry[] = [];
+  for (const entry of record.entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rec = entry as Record<string, unknown>;
+    if (typeof rec.name !== 'string' || typeof rec.absolutePath !== 'string') continue;
+    const kindValue = rec.kind;
+    const kind: 'directory' | 'file' | undefined =
+      kindValue === 'directory' || kindValue === 'file' ? kindValue : undefined;
+    entries.push(Object.freeze({
+      name: rec.name,
+      absolutePath: rec.absolutePath,
+      kind,
+      hasWorkspace: rec.hasWorkspace === true,
+    }));
+  }
+  return Object.freeze({
+    path: record.path,
+    parent,
+    entries: Object.freeze(entries),
+    truncated: record.truncated === true,
+  });
 }
 
 interface SidecarPanelProps {
@@ -734,9 +843,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const selectedProject = state.selection.kind === 'project' ? state.projects.find((p) => p.id === state.selection.id) : null;
   const selectedSurfacePath = state.selection.kind === 'surface' ? state.selection.id : null;
   const selectedProcessNavigator = state.selection.kind === 'process';
-  const selectedProcessNavigatorTitle = selectedProcessNavigator
-    ? state.selection.id === 'navigator' ? 'Process Navigator N0' : 'Process Navigator'
-    : null;
+  const selectedProcessNavigatorTitle = selectedProcessNavigator ? 'Process Navigator' : null;
   const activeInspectorSession = state.activeSessionId
     ? state.sessions.records.find((s) => s.id === state.activeSessionId) ?? null
     : null;
@@ -859,6 +966,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
               <SelectionFlyout
                 surface={activeInfoSurface}
                 state={state}
+                dispatch={dispatch}
                 activePinnedFolderPath={activeProjectPinnedFolderPath}
                 pinnedFolders={resolvedPinnedFolders}
                 headerActions={selectionHeaderActions}
@@ -915,18 +1023,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
             symbol="N"
             label="Open Process Navigator"
             value={state.process?.supported ? 'ts-v1' : 'unsupported'}
-            detail="Simplified graph/function/assets navigator"
-            active={state.selection.kind === 'process' && state.selection.id === 'navigator-simple'}
-            onClick={() => {
-              dispatch({ type: 'viewer/open', kind: 'process', id: 'navigator-simple' });
-              dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
-            }}
-          />
-          <ContextRailCommand
-            symbol="N0"
-            label="Open Process Navigator N0"
-            value={state.process?.supported ? 'legacy' : 'unsupported'}
-            detail="Original TypeScript odd_sdlc process projection"
+            detail="Graph, function, asset, and live-run navigator"
             active={state.selection.kind === 'process' && state.selection.id === 'navigator'}
             onClick={() => {
               dispatch({ type: 'viewer/open', kind: 'process', id: 'navigator' });
@@ -1103,6 +1200,72 @@ function relativeProjectPath(projectRoot: string | null, path: string) {
   if (target === root) return '.';
   if (target.startsWith(`${root}/`)) return target.slice(root.length + 1);
   return null;
+}
+
+function parentFolderPath(path: string | null) {
+  if (!path) return null;
+  const normalized = normalizePinnedPath(path);
+  if (!normalized || normalized === '/') return null;
+  const index = normalized.lastIndexOf('/');
+  if (index <= 0) return '/';
+  return normalized.slice(0, index);
+}
+
+interface FolderPathSegment {
+  label: string;
+  path: string;
+}
+
+function folderPathSegments(path: string | null): FolderPathSegment[] {
+  if (!path) return [];
+  const normalized = normalizePinnedPath(path);
+  if (!normalized) return [];
+  if (normalized === '/') return [{ label: '/', path: '/' }];
+  const absolute = normalized.startsWith('/');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length === 0) return [];
+  const segments: FolderPathSegment[] = [];
+  if (absolute) {
+    segments.push({ label: '/', path: '/' });
+  }
+  let current = absolute ? '' : '';
+  for (const part of parts) {
+    current = absolute
+      ? `${current}/${part}`
+      : current
+        ? `${current}/${part}`
+        : part;
+    segments.push({ label: part, path: current });
+  }
+  return segments;
+}
+
+interface ProjectFavouriteCandidate {
+  path: string;
+  label: string;
+  meta: string;
+}
+
+function projectFavouriteCandidatesFromHistory(
+  entries: SidecarPathHistoryEntry[],
+  currentProjectRoot: string | null,
+  projects: ProjectRecord[],
+) {
+  const registeredRoots = new Set(projects.map((project) => normalizePinnedPath(project.root)));
+  const seen = new Set<string>();
+  const candidates: ProjectFavouriteCandidate[] = [];
+  for (const entry of entries) {
+    const candidate = parentFolderPath(entry.absolutePath);
+    if (!candidate || registeredRoots.has(candidate) || seen.has(candidate)) continue;
+    seen.add(candidate);
+    candidates.push({
+      path: candidate,
+      label: folderDisplayPath(candidate, currentProjectRoot),
+      meta: entry.relativePath,
+    });
+    if (candidates.length >= 6) break;
+  }
+  return candidates;
 }
 
 function pathHistoryEntry(projectRoot: string, absolutePath: string, source: SidecarPathHistorySource): SidecarPathHistoryEntry | null {
@@ -1487,6 +1650,7 @@ function PaneSplitHandle({ surface, index, orientation, ratios, dispatch }: {
 function SelectionFlyout({
   surface,
   state,
+  dispatch,
   activePinnedFolderPath,
   pinnedFolders,
   headerActions,
@@ -1501,6 +1665,7 @@ function SelectionFlyout({
 }: {
   surface: SidecarInfoSurface;
   state: SidecarState;
+  dispatch: Dispatch<SidecarMsg>;
   activePinnedFolderPath: string | null;
   pinnedFolders: string[];
   headerActions?: ReactNode;
@@ -1519,6 +1684,7 @@ function SelectionFlyout({
   const [pinDraft, setPinDraft] = useState('');
   const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
   const [expandedProjectRoots, setExpandedProjectRoots] = useState<Record<string, boolean>>({});
+  const [projectBrowserTab, setProjectBrowserTab] = useState<ProjectBrowserTab>('favourites');
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
 
@@ -1586,6 +1752,13 @@ function SelectionFlyout({
     }));
     if (!folderLoads[normalizedRoot]) {
       void loadFolder(normalizedRoot);
+    }
+  };
+
+  const selectProjectBrowserTab = (tab: ProjectBrowserTab) => {
+    setProjectBrowserTab(tab);
+    if (tab === 'pick') {
+      dispatch({ type: 'browse/scope-set', scope: 'cross-project' });
     }
   };
 
@@ -1693,65 +1866,211 @@ function SelectionFlyout({
   }
 
   if (surface === 'projects') {
+    const browseState = state.ui.browse;
+    const projectFavouriteCandidates = projectFavouriteCandidatesFromHistory(state.pathHistory, projectRoot, state.projects);
+    const projectBrowserTabs: Array<{ id: ProjectBrowserTab; label: string; count: number }> = [
+      { id: 'favourites', label: 'Favourite', count: state.projects.length },
+      { id: 'recent', label: 'Recent', count: projectFavouriteCandidates.length },
+      { id: 'pick', label: 'Browse', count: browseState.entries.length },
+    ];
+    const projectBrowserTabStrip = (
+      <div className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header" role="tablist" aria-label="Project Browser views">
+        {projectBrowserTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={projectBrowserTab === tab.id}
+            className={`sidecar-project-browser__tab${projectBrowserTab === tab.id ? ' is-active' : ''}`}
+            onClick={() => selectProjectBrowserTab(tab.id)}
+          >
+            <span>{tab.label}</span>
+            <span>{tab.count}</span>
+          </button>
+        ))}
+      </div>
+    );
     return (
-      <Pane title="Projects" count={state.projects.length} actions={headerActions}>
-        {sortToolbar}
-        <div className="sidecar-project-browser">
-          {state.projects.map((project) => {
-            const normalizedRoot = normalizePinnedPath(project.root);
-            const selected = state.selection.kind === 'project' && state.selection.id === project.id;
-            const expanded = expandedProjectRoots[normalizedRoot] ?? selected;
-            return (
-              <div key={project.id} className="sidecar-project-browser__entry">
-                <div className={`sidecar-row sidecar-row--project${selected ? ' is-selected' : ''}`}>
-                  <button
-                    type="button"
-                    className="sidecar-project-browser__main"
-                    onClick={() => onProjectSelect(project)}
-                  >
-                    <div className="sidecar-row__title">{project.name || project.id}</div>
-                    <div className="sidecar-row__meta">
-                      {project.odd_type !== 'unknown' && <Pill kind="odd-type">{project.odd_type}</Pill>}
-                      {project.build_tenants.length > 0 && <span>{project.build_tenants.length} tenant{project.build_tenants.length === 1 ? '' : 's'}</span>}
+      <Pane title="Project Browser" count={state.projects.length} actions={headerActions} titleAddon={projectBrowserTabStrip}>
+        <div className="sidecar-project-browser sidecar-project-browser--tabbed">
+          {projectBrowserTab === 'favourites' ? (
+            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Favourite">
+              {sortToolbar}
+              {state.projects.length === 0 ? <NavigatorEmptyState>No Project favourites.</NavigatorEmptyState> : null}
+              {state.projects.map((project) => {
+                const normalizedRoot = normalizePinnedPath(project.root);
+                const selected = state.selection.kind === 'project' && state.selection.id === project.id;
+                const expanded = expandedProjectRoots[normalizedRoot] ?? selected;
+                const activeRoot = projectRoot ? normalizePinnedPath(projectRoot) : null;
+                const unfavouriteDisabled = normalizedRoot === activeRoot || project.is_active === true;
+                const unfavouriteTitle = unfavouriteDisabled
+                  ? 'Open another Project before removing this favourite.'
+                  : `Unfavourite project ${project.name || project.id}`;
+                return (
+                  <div key={project.id} className="sidecar-project-browser__entry">
+                    <div className={`sidecar-row sidecar-row--project${selected ? ' is-selected' : ''}`}>
+                      <button
+                        type="button"
+                        className="sidecar-project-browser__main"
+                        onClick={() => onProjectSelect(project)}
+                      >
+                        <div className="sidecar-row__title">{project.name || project.id}</div>
+                        <div className="sidecar-row__meta">
+                          {project.odd_type !== 'unknown' && <Pill kind="odd-type">{project.odd_type}</Pill>}
+                          {project.build_tenants.length > 0 && <span>{project.build_tenants.length} tenant{project.build_tenants.length === 1 ? '' : 's'}</span>}
+                        </div>
+                      </button>
+                      <div className="sidecar-row__actions">
+                        <button
+                          type="button"
+                          className={`sidecar-tree-control sidecar-tree-control--text${expanded ? ' is-active' : ''}`}
+                          onClick={() => toggleProjectBrowse(project.root)}
+                          aria-expanded={expanded}
+                          title={`Browse folders under ${project.root}`}
+                        >
+                          Browse
+                        </button>
+                        <button
+                          type="button"
+                          className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+                          onClick={() => dispatch({ type: 'projects/unfavourite', projectId: project.id })}
+                          aria-label={`Unfavourite project ${project.name || project.id}`}
+                          title={unfavouriteTitle}
+                          disabled={unfavouriteDisabled}
+                        >
+                          [U]
+                        </button>
+                      </div>
                     </div>
-                  </button>
+                    {state.ui.browse.unfavouriteError && state.selection.kind === 'project' && state.selection.id === project.id ? (
+                      <div className="sidecar-row__error" role="alert">{state.ui.browse.unfavouriteError}</div>
+                    ) : null}
+                    {expanded ? (
+                      <div className="sidecar-project-browser__tree">
+                        <FolderTreeNode
+                          path={normalizedRoot}
+                          label="."
+                          depth={0}
+                          projectRoot={normalizedRoot}
+                          groupStates={groupStates}
+                          folderLoads={folderLoads}
+                          defaultCollapsed={false}
+                          onPatchGroup={patchGroup}
+                          onToggle={handleFolderToggle}
+                          onLoad={loadFolder}
+                          onSurfaceSelect={onSurfaceSelect}
+                          pathSource="browse"
+                          pinnedFolders={[]}
+                          onPinFolder={() => undefined}
+                          onUnpinFolder={() => undefined}
+                          navigatorSort={navigatorSort}
+                          projectBrowser
+                          onProjectRootOpen={onProjectRootOpen}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {projectBrowserTab === 'recent' ? (
+            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Recent folders">
+              {projectFavouriteCandidates.length === 0 ? (
+                <NavigatorEmptyState>No recent folder candidates.</NavigatorEmptyState>
+              ) : null}
+              {projectFavouriteCandidates.map((candidate) => (
+                <div key={candidate.path} className="sidecar-row sidecar-row--project-candidate">
+                  <div className="sidecar-project-browser__main" title={candidate.path}>
+                    <div className="sidecar-row__title">{candidate.label}</div>
+                    <div className="sidecar-row__meta">{candidate.meta}</div>
+                  </div>
                   <button
                     type="button"
-                    className={`sidecar-tree-control sidecar-tree-control--text${expanded ? ' is-active' : ''}`}
-                    onClick={() => toggleProjectBrowse(project.root)}
-                    aria-expanded={expanded}
-                    title={`Browse folders under ${project.root}`}
+                    className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+                    onClick={() => dispatch({ type: 'browse/favourite-folder', path: candidate.path })}
+                    aria-label={`Add ${candidate.label} to Project Favourites`}
+                    title={`Add ${candidate.path} to Project Favourites`}
                   >
-                    {expanded ? 'Hide' : 'Browse'}
+                    [+]
                   </button>
                 </div>
-                {expanded ? (
-                  <div className="sidecar-project-browser__tree">
-                    <FolderTreeNode
-                      path={normalizedRoot}
-                      label="."
-                      depth={0}
-                      projectRoot={normalizedRoot}
-                      groupStates={groupStates}
-                      folderLoads={folderLoads}
-                      defaultCollapsed={false}
-                      onPatchGroup={patchGroup}
-                      onToggle={handleFolderToggle}
-                      onLoad={loadFolder}
-                      onSurfaceSelect={onSurfaceSelect}
-                      pathSource="browse"
-                      pinnedFolders={[]}
-                      onPinFolder={() => undefined}
-                      onUnpinFolder={() => undefined}
-                      navigatorSort={navigatorSort}
-                      projectBrowser
-                      onProjectRootOpen={onProjectRootOpen}
-                    />
+              ))}
+            </div>
+          ) : null}
+
+          {projectBrowserTab === 'pick' ? (
+            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Browse Project Favourite">
+              <div className="sidecar-project-picker">
+                <div className="sidecar-project-picker__header">
+                  <FolderPathBreadcrumb
+                    currentPath={browseState.currentPath}
+                    loading={browseState.loading}
+                    onNavigate={(path) => dispatch({ type: 'browse/navigate-to', path })}
+                  />
+                </div>
+                {browseState.error ? (
+                  <div className="sidecar-row__error" role="alert">{browseState.error}</div>
+                ) : null}
+                {browseState.favouriteError ? (
+                  <div className="sidecar-row__error" role="alert">{browseState.favouriteError}</div>
+                ) : null}
+                {browseState.loading ? <NavigatorEmptyState>Loading folders...</NavigatorEmptyState> : null}
+                {!browseState.loading && browseState.entries.length === 0 && browseState.currentPath ? (
+                  <NavigatorEmptyState>No subfolders here.</NavigatorEmptyState>
+                ) : null}
+                {!browseState.loading && browseState.entries.length > 0 ? (
+                  <div className="sidecar-project-picker__entries">
+                    {browseState.entries.filter((entry) => entry.kind !== 'file').map((entry) => {
+                      const registered = state.projects.some((project) => normalizePinnedPath(project.root) === normalizePinnedPath(entry.absolutePath));
+                      return (
+                        <div key={entry.absolutePath} className="sidecar-row sidecar-row--project-candidate">
+                          <div className="sidecar-project-browser__main" title={entry.absolutePath}>
+                            <button
+                              type="button"
+                              className="sidecar-project-picker__name-button"
+                              onClick={() => dispatch({ type: 'browse/navigate-to', path: entry.absolutePath })}
+                              title={`Browse ${entry.absolutePath}`}
+                            >
+                              {entry.name}
+                            </button>
+                            <div className="sidecar-row__meta sidecar-project-picker__meta">
+                              {entry.hasWorkspace ? (
+                                <button
+                                  type="button"
+                                  className="sidecar-project-picker__workspace-button"
+                                  onClick={() => onProjectRootOpen(entry.absolutePath)}
+                                  aria-label={`Open workspace ${entry.name}`}
+                                  title={`Open workspace ${entry.absolutePath}`}
+                                >
+                                  wspace
+                                </button>
+                              ) : null}
+                              <span>{entry.absolutePath}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+                            onClick={() => dispatch({ type: 'browse/favourite-folder', path: entry.absolutePath })}
+                            aria-label={`Add ${entry.name} to Project Favourites`}
+                            title={registered ? 'Already a Project Favourite.' : `Add ${entry.absolutePath} to Project Favourites`}
+                            disabled={registered}
+                          >
+                            [+]
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
+                {browseState.truncated ? (
+                  <div className="sidecar-project-picker__notice">Listing truncated.</div>
+                ) : null}
               </div>
-            );
-          })}
+            </div>
+          ) : null}
         </div>
       </Pane>
     );
@@ -1770,8 +2089,9 @@ function SelectionFlyout({
   }
 
   if (surface === 'browse') {
+    const browseCount = projectRootPath ? folderLoads[projectRootPath]?.entries.length ?? 0 : 0;
     return (
-      <Pane title="Browse" count={projectRootPath ? folderLoads[projectRootPath]?.entries.length ?? 0 : 0} actions={headerActions}>
+      <Pane title="Browse" count={browseCount} actions={headerActions}>
         {sortToolbar}
         <form className="sidecar-pin-form" onSubmit={handlePinSubmit}>
           <input
@@ -1929,6 +2249,51 @@ function NavigatorTreeGroup({ label, count, group, onToggle, extraControls, chil
 
 function NavigatorEmptyState({ children }: PropsWithChildrenLike<{}>) {
   return <div className="sidecar-navigator-empty">{children}</div>;
+}
+
+function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
+  currentPath: string | null;
+  loading: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  const segments = folderPathSegments(currentPath);
+  if (segments.length === 0) {
+    return (
+      <span className="sidecar-project-picker__path" title={currentPath ?? ''}>
+        {loading ? 'Loading...' : 'No folder loaded'}
+      </span>
+    );
+  }
+  const normalizedCurrent = currentPath ? normalizePinnedPath(currentPath) : null;
+  return (
+    <nav
+      className="sidecar-project-picker__path sidecar-project-picker__breadcrumb"
+      aria-label="Current folder path"
+      title={currentPath ?? ''}
+    >
+      {segments.map((segment, index) => {
+        const isCurrent = normalizedCurrent === segment.path;
+        return (
+          <span key={segment.path} className="sidecar-project-picker__crumb">
+            {index > 0 ? <span className="sidecar-project-picker__separator" aria-hidden="true">/</span> : null}
+            {isCurrent ? (
+              <span className="sidecar-project-picker__segment is-current">{segment.label}</span>
+            ) : (
+              <button
+                type="button"
+                className="sidecar-project-picker__segment"
+                onClick={() => onNavigate(segment.path)}
+                aria-label={`Navigate to ${segment.path}`}
+                title={`Navigate to ${segment.path}`}
+              >
+                {segment.label}
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </nav>
+  );
 }
 
 function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onLoad, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, canOpenProject = false, onProjectRootOpen }: {
@@ -2138,14 +2503,17 @@ function ContextRailCommand({ symbol, label, value, detail, active = false, onCl
   );
 }
 
-function Pane({ title, count, extraCount, actions, children }: PropsWithChildrenLike<{ title: string; count: number; extraCount?: number; actions?: ReactNode }>) {
+function Pane({ title, count, extraCount, actions, titleAddon, children }: PropsWithChildrenLike<{ title: string; count: number; extraCount?: number; actions?: ReactNode; titleAddon?: ReactNode }>) {
   return (
     <section className="sidecar-pane">
       <div className="sidecar-pane__header">
-        <h3>
-          <span className="sidecar-pane__title">{title}</span>
-          <span className="sidecar-pane__title-count">({count})</span>
-        </h3>
+        <div className="sidecar-pane__title-row">
+          <h3>
+            <span className="sidecar-pane__title">{title}</span>
+            <span className="sidecar-pane__title-count">({count})</span>
+          </h3>
+          {titleAddon ? <div className="sidecar-pane__title-addon">{titleAddon}</div> : null}
+        </div>
         <div className="sidecar-pane__header-actions">
           {extraCount ? <span className="summary-pill summary-pill--warn sidecar-pane__count">{extraCount} unread</span> : null}
           {actions}
@@ -2172,7 +2540,7 @@ function safeClassSuffix(value: string) {
 
 function viewerTabTitle(state: SidecarState, tab: SidecarViewerTab) {
   if (tab.kind === 'process') {
-    return tab.objectId === 'navigator' ? 'Process Navigator N0' : 'Process Navigator';
+    return 'Process Navigator';
   }
   if (tab.kind === 'surface') {
     return tab.objectId.split('/').filter(Boolean).pop() ?? tab.objectId;
@@ -2398,10 +2766,7 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
   onReplySubmit: (parentId: string, body: string) => void;
 }) {
   if (tab.kind === 'process') {
-    if (tab.objectId === 'navigator-simple') {
-      return <ProcessNavigatorSimplePanel state={state} dispatch={dispatch} />;
-    }
-    return <ProcessNavigatorPanel state={state} dispatch={dispatch} />;
+    return <ProcessNavigatorSimplePanel state={state} dispatch={dispatch} />;
   }
   if (tab.kind === 'surface') {
     return (
@@ -2447,7 +2812,7 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
   return <div className="sidecar-inspector__empty">Selected record is no longer available.</div>;
 }
 
-type ProcessNavigatorSimpleTab = 'graphs' | 'functions' | 'assets';
+type ProcessNavigatorSimpleTab = 'graphs' | 'functions' | 'assets' | 'live';
 type ProcessSimpleFunctionItem = {
   id: string;
   name: string;
@@ -2466,7 +2831,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   dispatch: Dispatch<SidecarMsg>;
 }) {
   const projection = state.process;
-  const [activeTab, setActiveTab] = useState<ProcessNavigatorSimpleTab>('graphs');
+  const [activeTab, setActiveTab] = useState<ProcessNavigatorSimpleTab>('live');
   const [selectedOverlayRef, setSelectedOverlayRef] = useState<string | null>(null);
   const [selectedFunctionId, setSelectedFunctionId] = useState<string | null>(null);
   const [selectedAssetName, setSelectedAssetName] = useState<string | null>(null);
@@ -2492,6 +2857,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   const graphTabCount = traversalOverlays.length;
   const assetRelationships = catalog ? processAssetRelationships(catalog) : [];
   const functionItems = catalog ? processFunctionItems(catalog) : [];
+  const liveAttemptCount = projection.liveAnalysis?.attempts.length ?? 0;
   const selectedOverlay = traversalOverlays.find((overlay) => overlay.overlayRef === selectedOverlayRef) ?? traversalOverlays[0] ?? null;
   const selectedFunction = functionItems.find((item) => item.id === selectedFunctionId) ?? functionItems[0] ?? null;
   const selectedAsset = assetRelationships.find((asset) => asset.name === selectedAssetName) ?? assetRelationships[0] ?? null;
@@ -2502,25 +2868,55 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
       : selectedAsset && catalog && activeTab === 'assets'
         ? buildSimpleAssetGraph(selectedAsset, catalog)
         : null;
-  const selectedRecordId = activeTab === 'graphs' && selectedOverlay
+  const defaultSelectedRecordId = activeTab === 'live'
+    ? null
+    : activeTab === 'graphs' && selectedOverlay
     ? processGraphRecordId('overlay-function', selectedOverlay.defaultStartTarget || selectedOverlay.graphFunctionRefs[0] || selectedOverlay.overlayRef)
     : activeTab === 'functions' && selectedFunction
       ? processGraphRecordId('function', selectedFunction.name)
       : activeTab === 'assets' && selectedAsset
         ? processGraphRecordId('asset', selectedAsset.name)
         : null;
+  const selectedRecordId = simpleMap && state.ui.activeProcessRecordId && processMapHasRecordId(simpleMap, state.ui.activeProcessRecordId)
+    ? state.ui.activeProcessRecordId
+    : defaultSelectedRecordId;
   const graphTitle = activeTab === 'graphs'
     ? selectedOverlay?.name ?? 'Graph Overlays'
     : activeTab === 'functions'
       ? selectedFunction?.title ?? 'Graph Functions'
+      : activeTab === 'live'
+        ? 'Live View'
       : selectedAsset?.name ?? 'Leaf Assets';
   const graphSummary = activeTab === 'graphs'
     ? selectedOverlay?.intent ?? 'No graph overlay is selected.'
     : activeTab === 'functions'
       ? selectedFunction?.summary ?? 'No graph function is selected.'
+      : activeTab === 'live'
+        ? 'Analyze-run timeline and active runtime liveness.'
       : selectedAsset
         ? `Produced by ${selectedAsset.producers.length} and consumed by ${selectedAsset.consumers.length}.`
         : 'No leaf asset is selected.';
+  const openTracePath = (absolutePath: string) => {
+    const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
+    if (!relativePath) {
+      dispatch({ type: 'action/result', ok: false, error: 'Trace archive is outside the active Project.' });
+      return;
+    }
+    dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
+  };
+  const liveRefreshRoot = state.context?.project.root ?? projection.workspaceRoot ?? null;
+  const requestLiveRefresh = useCallback(() => {
+    if (!liveRefreshRoot || state.loading) return;
+    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+  }, [liveRefreshRoot, state.loading]);
+
+  useEffect(() => {
+    if (activeTab !== 'live' || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
+    const refreshTimer = window.setInterval(() => {
+      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+    }, 30000);
+    return () => window.clearInterval(refreshTimer);
+  }, [activeTab, liveRefreshRoot, state.loading]);
 
   return (
     <div className="sidecar-process-simple" aria-label="Process Navigator">
@@ -2534,11 +2930,13 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
           <Pill kind="default">{graphTabCount} overlays</Pill>
           <Pill kind="default">{catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0} functions</Pill>
           <Pill kind="default">{assetRelationships.length} assets</Pill>
+          {projection.liveAnalysis && <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>{projection.liveAnalysis.telemetry.operatorRunCount} analyze runs</Pill>}
         </div>
       </div>
 
       <div className="sidecar-process-simple__tabs" role="tablist" aria-label="Process navigator sections">
         {([
+          ['live', 'Live View', liveAttemptCount],
           ['graphs', 'Graph Overlays', graphTabCount],
           ['functions', 'Graph Functions', catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0],
           ['assets', 'Leaf Assets', assetRelationships.length],
@@ -2557,19 +2955,35 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         ))}
       </div>
 
-      <ProcessSimpleGraphPanel
-        title={graphTitle}
-        summary={graphSummary}
-        map={simpleMap}
-        selectedRecordId={selectedRecordId}
-        onSelectRecord={(id) => {
-          const parsed = parseProcessGraphRecordId(id);
-          if (!parsed) return;
-          if (parsed.kind === 'overlay') setSelectedOverlayRef(parsed.value);
-          if (parsed.kind === 'function') setSelectedFunctionId(functionItems.find((item) => item.name === parsed.value)?.id ?? selectedFunctionId);
-          if (parsed.kind === 'asset') setSelectedAssetName(parsed.value);
-        }}
-      />
+      {activeTab === 'live' ? (
+        <section className="sidecar-process-simple__live sidecar-process-map" aria-label="Live View">
+          <ProcessLiveViewPanel
+            analysis={projection.liveAnalysis ?? null}
+            onOpenTracePath={openTracePath}
+            onRefresh={requestLiveRefresh}
+            refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
+            liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
+            onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
+          />
+        </section>
+      ) : (
+        <ProcessSimpleGraphPanel
+          title={graphTitle}
+          summary={graphSummary}
+          map={simpleMap}
+          selectedRecordId={selectedRecordId}
+          graphMode={state.ui.activeProcessGraphMode}
+          onGraphModeChange={(mode) => dispatch({ type: 'process/set-graph-mode', mode })}
+          onSelectRecord={(id) => {
+            dispatch({ type: 'process/select-record', id });
+            const parsed = parseProcessGraphRecordId(id);
+            if (!parsed) return;
+            if (parsed.kind === 'overlay') setSelectedOverlayRef(parsed.value);
+            if (parsed.kind === 'function') setSelectedFunctionId(functionItems.find((item) => item.name === parsed.value)?.id ?? selectedFunctionId);
+            if (parsed.kind === 'asset') setSelectedAssetName(parsed.value);
+          }}
+        />
+      )}
 
       {activeTab === 'graphs' && (
         <section className="sidecar-process-simple__section" aria-label="Graph overlays">
@@ -2580,13 +2994,17 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
                   key={overlay.overlayRef}
                   overlay={overlay}
                   selected={selectedOverlay?.overlayRef === overlay.overlayRef}
-                  onSelect={() => setSelectedOverlayRef(overlay.overlayRef)}
+                  onSelect={() => {
+                    const firstRef = overlay.defaultStartTarget || overlay.graphFunctionRefs[0] || overlay.overlayRef;
+                    setSelectedOverlayRef(overlay.overlayRef);
+                    dispatch({ type: 'process/select-record', id: processGraphRecordId('overlay-function', firstRef) });
+                  }}
                 />
               ))}
             </div>
           ) : (
             <div className="sidecar-inspector__empty">
-              No TypeScript graph overlay catalog is projected for this workspace. Use N0 for the legacy process maps.
+              No TypeScript graph overlay catalog is projected for this workspace.
             </div>
           )}
         </section>
@@ -2602,7 +3020,10 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
                     key={item.id}
                     item={item}
                     selected={selectedFunction?.id === item.id}
-                    onSelect={() => setSelectedFunctionId(item.id)}
+                    onSelect={() => {
+                      setSelectedFunctionId(item.id);
+                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
+                    }}
                   />
                 ))}
               </ProcessFunctionGroup>
@@ -2612,7 +3033,10 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
                     key={item.id}
                     item={item}
                     selected={selectedFunction?.id === item.id}
-                    onSelect={() => setSelectedFunctionId(item.id)}
+                    onSelect={() => {
+                      setSelectedFunctionId(item.id);
+                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
+                    }}
                   />
                 ))}
               </ProcessFunctionGroup>
@@ -2622,7 +3046,10 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
                     key={item.id}
                     item={item}
                     selected={selectedFunction?.id === item.id}
-                    onSelect={() => setSelectedFunctionId(item.id)}
+                    onSelect={() => {
+                      setSelectedFunctionId(item.id);
+                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
+                    }}
                   />
                 ))}
               </ProcessFunctionGroup>
@@ -2642,7 +3069,10 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
                   key={asset.name}
                   asset={asset}
                   selected={selectedAsset?.name === asset.name}
-                  onSelect={() => setSelectedAssetName(asset.name)}
+                  onSelect={() => {
+                    setSelectedAssetName(asset.name);
+                    dispatch({ type: 'process/select-record', id: processGraphRecordId('asset', asset.name) });
+                  }}
                 />
               ))}
             </div>
@@ -2655,35 +3085,301 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   );
 }
 
-function ProcessSimpleGraphPanel({ title, summary, map, selectedRecordId, onSelectRecord }: {
+function ProcessSimpleGraphPanel({ title, summary, map, selectedRecordId, graphMode, onGraphModeChange, onSelectRecord }: {
   title: string;
   summary: string;
   map: SidecarProcessMap | null;
   selectedRecordId: string | null;
+  graphMode: SidecarProcessGraphMode;
+  onGraphModeChange: (mode: SidecarProcessGraphMode) => void;
   onSelectRecord: (id: string) => void;
 }) {
   const activeRecordIds = map ? processMapRecordIds(map) : [];
+  const toggleGraphMode = () => onGraphModeChange(graphMode === 'compressed' ? 'expanded' : 'compressed');
   return (
-    <section className="sidecar-process-simple__graph sidecar-process-map" aria-label="Selected process graph">
+    <section className={`sidecar-process-simple__graph sidecar-process-simple__graph--${graphMode} sidecar-process-map`} aria-label="Selected process graph">
       <div className="sidecar-process-simple__graph-header">
         <div>
           <span className="panel__eyebrow">Selected Graph</span>
           <h3>{title}</h3>
         </div>
         <p>{summary}</p>
+        <button
+          type="button"
+          className="sidecar-process-simple__mode-toggle"
+          onClick={toggleGraphMode}
+          disabled={!map}
+          aria-expanded={graphMode === 'expanded'}
+          aria-label={graphMode === 'compressed' ? 'Show full graph' : 'Show compressed navigator'}
+          title={graphMode === 'compressed' ? 'Show full graph' : 'Show compressed navigator'}
+        >
+          <span aria-hidden="true">{graphMode === 'compressed' ? '⌄' : '⌃'}</span>
+        </button>
       </div>
       {map ? (
-        <ProcessGraphMap
-          map={map}
-          activeRecordIds={activeRecordIds}
-          selectedRecordId={selectedRecordId}
-          onSelectRecord={onSelectRecord}
-        />
+        graphMode === 'compressed' ? (
+          <ProcessCompressedNavigator
+            map={map}
+            selectedRecordId={selectedRecordId}
+            onSelectRecord={onSelectRecord}
+          />
+        ) : (
+          <ProcessGraphMap
+            map={map}
+            activeRecordIds={activeRecordIds}
+            selectedRecordId={selectedRecordId}
+            onSelectRecord={onSelectRecord}
+          />
+        )
       ) : (
         <div className="sidecar-inspector__empty">Select a process object to render its graph.</div>
       )}
     </section>
   );
+}
+
+const PROCESS_RAIL_ROWS = 2;
+const PROCESS_RAIL_COLUMN_WIDTH = 136;
+
+type ProcessRailNode = SidecarProcessMap['nodes'][number];
+type ProcessRailColumn = {
+  key: string;
+  index: number;
+  topNode: ProcessRailNode | null;
+  bottomNode: ProcessRailNode | null;
+  topConnectorTone: SidecarProcessTone | null;
+  bottomConnectorTone: SidecarProcessTone | null;
+  topConnectorEmphasis: 'selected' | 'related' | 'muted' | null;
+  bottomConnectorEmphasis: 'selected' | 'related' | 'muted' | null;
+  hiddenCount: number;
+};
+type ProcessRailModel = {
+  columns: ProcessRailColumn[];
+  selectedNodeIds: Set<string>;
+  relatedNodeIds: Set<string>;
+  focusRange: { start: number; end: number } | null;
+};
+
+function ProcessCompressedNavigator({ map, selectedRecordId, onSelectRecord }: {
+  map: SidecarProcessMap;
+  selectedRecordId: string | null;
+  onSelectRecord: (id: string) => void;
+}) {
+  const topLaneRef = useRef<HTMLDivElement | null>(null);
+  const bottomLaneRef = useRef<HTMLDivElement | null>(null);
+  const rail = useMemo(() => buildProcessRailModel(map, selectedRecordId), [map, selectedRecordId]);
+
+  useEffect(() => {
+    if (!rail.focusRange) return;
+    const center = ((rail.focusRange.start + rail.focusRange.end + 1) * PROCESS_RAIL_COLUMN_WIDTH) / 2;
+    for (const element of [topLaneRef.current, bottomLaneRef.current]) {
+      if (!element) continue;
+      const nextLeft = Math.max(center - element.clientWidth / 2, 0);
+      element.scrollTo({ left: nextLeft, behavior: 'smooth' });
+    }
+  }, [rail.focusRange]);
+
+  return (
+    <section className="sidecar-process-compressed" aria-label="Compressed process navigator">
+      <div className="sidecar-process-compressed__legend">
+        <span className="panel__eyebrow">Compressed Navigator</span>
+        <p>Two guarded lanes over the same left-to-right process order. Selecting a stop centers its direct neighborhood.</p>
+      </div>
+      <div className="sidecar-process-compressed__lane-shell">
+        <ProcessCompressedLane
+          laneRef={topLaneRef}
+          lane="top"
+          columns={rail.columns}
+          selectedNodeIds={rail.selectedNodeIds}
+          relatedNodeIds={rail.relatedNodeIds}
+          onSelectRecord={onSelectRecord}
+        />
+        <ProcessCompressedLane
+          laneRef={bottomLaneRef}
+          lane="bottom"
+          columns={rail.columns}
+          selectedNodeIds={rail.selectedNodeIds}
+          relatedNodeIds={rail.relatedNodeIds}
+          onSelectRecord={onSelectRecord}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ProcessCompressedLane({ laneRef, lane, columns, selectedNodeIds, relatedNodeIds, onSelectRecord }: {
+  laneRef: RefObject<HTMLDivElement | null>;
+  lane: 'top' | 'bottom';
+  columns: ProcessRailColumn[];
+  selectedNodeIds: Set<string>;
+  relatedNodeIds: Set<string>;
+  onSelectRecord: (id: string) => void;
+}) {
+  return (
+    <div ref={laneRef} className={`sidecar-process-compressed__lane sidecar-process-compressed__lane--${lane}`}>
+      <div
+        className="sidecar-process-compressed__track"
+        style={{ gridTemplateColumns: `repeat(${columns.length}, ${PROCESS_RAIL_COLUMN_WIDTH}px)` } as CSSProperties}
+      >
+        {columns.map((column) => {
+          const node = lane === 'top' ? column.topNode : column.bottomNode;
+          const connectorTone = lane === 'top' ? column.topConnectorTone : column.bottomConnectorTone;
+          const connectorState = lane === 'top' ? column.topConnectorEmphasis : column.bottomConnectorEmphasis;
+          const stateClass = node
+            ? selectedNodeIds.has(node.id)
+              ? 'is-selected'
+              : relatedNodeIds.has(node.id)
+                ? 'is-related'
+                : selectedNodeIds.size > 0
+                  ? 'is-muted'
+                  : ''
+            : '';
+          const primaryRecordId = node?.recordIds[0] ?? null;
+          return (
+            <div key={`${lane}:${column.key}`} className="sidecar-process-compressed__slot">
+              {node ? (
+                <button
+                  type="button"
+                  className={`sidecar-process-compressed__stop sidecar-process-compressed__stop--${node.tone} ${stateClass}`}
+                  disabled={!primaryRecordId}
+                  onClick={() => primaryRecordId ? onSelectRecord(primaryRecordId) : undefined}
+                  title={node.summary}
+                >
+                  <span className={`sidecar-process-compressed__signal sidecar-process-compressed__signal--${node.tone}`} />
+                  <span className="sidecar-process-compressed__label">{node.label}</span>
+                  {lane === 'top' && column.hiddenCount > 0 ? (
+                    <span className="sidecar-process-compressed__overflow" title={`${column.hiddenCount} additional node(s) are collapsed in this stage`}>
+                      +{column.hiddenCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : (
+                <div className="sidecar-process-compressed__spacer" aria-hidden="true" />
+              )}
+              {connectorTone ? (
+                <span
+                  className={`sidecar-process-compressed__connector sidecar-process-compressed__connector--${connectorTone}${connectorState ? ` is-${connectorState}` : ''}`}
+                  aria-hidden="true"
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function buildProcessRailModel(map: SidecarProcessMap, selectedRecordId: string | null): ProcessRailModel {
+  const buckets = new Map<number, ProcessRailNode[]>();
+  for (const node of map.nodes) {
+    const bucket = buckets.get(node.column) ?? [];
+    bucket.push(node);
+    buckets.set(node.column, bucket);
+  }
+
+  const selectedNodeIds = new Set(
+    selectedRecordId
+      ? map.nodes.filter((node) => node.recordIds.includes(selectedRecordId)).map((node) => node.id)
+      : [],
+  );
+  const relatedNodeIds = new Set<string>();
+  if (selectedNodeIds.size > 0) {
+    for (const edge of map.edges) {
+      if (selectedNodeIds.has(edge.from)) relatedNodeIds.add(edge.to);
+      if (selectedNodeIds.has(edge.to)) relatedNodeIds.add(edge.from);
+    }
+  }
+
+  const orderedBuckets = [...buckets.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, nodes]) => nodes.sort((left, right) => left.row - right.row || left.label.localeCompare(right.label)));
+
+  const nodeToColumnIndex = new Map<string, number>();
+  orderedBuckets.forEach((bucket, index) => {
+    bucket.forEach((node) => nodeToColumnIndex.set(node.id, index));
+  });
+
+  const columns = orderedBuckets.map((bucket, index): ProcessRailColumn => {
+    const prioritized = [...bucket].sort((left, right) => {
+      const leftRank = processRailPriority(left.id, selectedNodeIds, relatedNodeIds);
+      const rightRank = processRailPriority(right.id, selectedNodeIds, relatedNodeIds);
+      return leftRank - rightRank || left.row - right.row || left.label.localeCompare(right.label);
+    });
+    const visible = prioritized.slice(0, PROCESS_RAIL_ROWS).sort((left, right) => left.row - right.row);
+    return {
+      key: bucket.map((node) => node.id).join(':'),
+      index,
+      topNode: visible[0] ?? null,
+      bottomNode: visible[1] ?? null,
+      topConnectorTone: null,
+      bottomConnectorTone: null,
+      topConnectorEmphasis: null,
+      bottomConnectorEmphasis: null,
+      hiddenCount: Math.max(bucket.length - visible.length, 0),
+    };
+  });
+
+  for (let index = 0; index < columns.length - 1; index += 1) {
+    const current = columns[index];
+    const next = columns[index + 1];
+    if (current.topNode && next.topNode) {
+      current.topConnectorTone = processRailConnectorTone(map, current.topNode, next.topNode);
+      current.topConnectorEmphasis = processRailConnectorEmphasis(current.topNode.id, next.topNode.id, selectedNodeIds, relatedNodeIds);
+    }
+    if (current.bottomNode && next.bottomNode) {
+      current.bottomConnectorTone = processRailConnectorTone(map, current.bottomNode, next.bottomNode);
+      current.bottomConnectorEmphasis = processRailConnectorEmphasis(current.bottomNode.id, next.bottomNode.id, selectedNodeIds, relatedNodeIds);
+    }
+  }
+
+  const focusColumnIndexes = new Set<number>();
+  selectedNodeIds.forEach((nodeId) => {
+    const columnIndex = nodeToColumnIndex.get(nodeId);
+    if (columnIndex !== undefined) focusColumnIndexes.add(columnIndex);
+  });
+  relatedNodeIds.forEach((nodeId) => {
+    const columnIndex = nodeToColumnIndex.get(nodeId);
+    if (columnIndex !== undefined) focusColumnIndexes.add(columnIndex);
+  });
+  const orderedFocus = [...focusColumnIndexes].sort((left, right) => left - right);
+  const focusRange = orderedFocus.length
+    ? {
+        start: Math.max(orderedFocus[0] - 1, 0),
+        end: Math.min(orderedFocus[orderedFocus.length - 1] + 1, columns.length - 1),
+      }
+    : null;
+
+  return { columns, selectedNodeIds, relatedNodeIds, focusRange };
+}
+
+function processRailPriority(nodeId: string, selectedNodeIds: Set<string>, relatedNodeIds: Set<string>) {
+  if (selectedNodeIds.has(nodeId)) return 0;
+  if (relatedNodeIds.has(nodeId)) return 1;
+  return 2;
+}
+
+function processRailConnectorTone(map: SidecarProcessMap, left: ProcessRailNode, right: ProcessRailNode): SidecarProcessTone {
+  const edge = map.edges.find((candidate) =>
+    (candidate.from === left.id && candidate.to === right.id) ||
+    (candidate.from === right.id && candidate.to === left.id),
+  );
+  if (edge) return edge.tone;
+  if (left.tone === 'blocked' || right.tone === 'blocked') return 'blocked';
+  if (left.tone === 'active' || right.tone === 'active') return 'active';
+  if (left.tone === 'pending' || right.tone === 'pending') return 'pending';
+  return 'converged';
+}
+
+function processRailConnectorEmphasis(
+  leftId: string,
+  rightId: string,
+  selectedNodeIds: Set<string>,
+  relatedNodeIds: Set<string>,
+) {
+  if (selectedNodeIds.has(leftId) || selectedNodeIds.has(rightId)) return 'selected';
+  if (relatedNodeIds.has(leftId) || relatedNodeIds.has(rightId)) return 'related';
+  return selectedNodeIds.size > 0 ? 'muted' : null;
 }
 
 function ProcessOverlayCard({ overlay, selected = false, onSelect }: {
@@ -3282,6 +3978,11 @@ function processMapRecordIds(map: SidecarProcessMap) {
   ]));
 }
 
+function processMapHasRecordId(map: SidecarProcessMap, recordId: string) {
+  return map.nodes.some((node) => node.recordIds.includes(recordId)) ||
+    map.edges.some((edge) => edge.recordIds.includes(recordId));
+}
+
 function processGraphNodeId(kind: string, value: string, index?: number) {
   return `${kind}:${index ?? 'main'}:${safeProcessGraphId(value)}`;
 }
@@ -3353,9 +4054,12 @@ function ProcessNavigatorPanel({ state, dispatch }: {
   const selectedRecord = records.find((record) => record.id === state.ui.activeProcessRecordId)
     ?? records[0]
     ?? null;
-  const activeMap = projection.maps.find((map) => map.id === state.ui.activeProcessMap)
-    ?? projection.maps[0]
-    ?? null;
+  const liveViewActive = state.ui.activeProcessMap === 'live_view';
+  const activeMap = liveViewActive
+    ? null
+    : projection.maps.find((map) => map.id === state.ui.activeProcessMap)
+      ?? projection.maps[0]
+      ?? null;
   const activeRecordIds = records.map((record) => record.id);
   const openTracePath = (absolutePath: string) => {
     const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
@@ -3365,6 +4069,19 @@ function ProcessNavigatorPanel({ state, dispatch }: {
     }
     dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
   };
+  const liveRefreshRoot = state.context?.project.root ?? projection.workspaceRoot ?? null;
+  const requestLiveRefresh = useCallback(() => {
+    if (!liveRefreshRoot || state.loading) return;
+    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+  }, [liveRefreshRoot, state.loading]);
+
+  useEffect(() => {
+    if (!liveViewActive || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
+    const refreshTimer = window.setInterval(() => {
+      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+    }, 30000);
+    return () => window.clearInterval(refreshTimer);
+  }, [liveViewActive, liveRefreshRoot, state.loading]);
 
   return (
     <div className="sidecar-process-navigator" aria-label="Sidecar Process Navigator">
@@ -3388,11 +4105,30 @@ function ProcessNavigatorPanel({ state, dispatch }: {
               <Pill kind="active">{projection.leafOverlays.length} active overlays</Pill>
             </span>
           )}
+          {projection.liveAnalysis && (
+            <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>
+              {projection.liveAnalysis.telemetry.operatorRunCount} analyze runs
+            </Pill>
+          )}
         </div>
       </div>
 
       <div className="sidecar-process-map-stack">
         <div className="sidecar-process-maps process-tab-grid" role="tablist" aria-label="Process maps">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={liveViewActive}
+            aria-controls="sidecar-process-map"
+            className={`sidecar-process-map-tab process-tab${liveViewActive ? ' is-selected' : ''}`}
+            onClick={() => dispatch({ type: 'process/select-map', map: 'live_view' })}
+          >
+            <div className="process-tab__meta">
+              <strong>Live View</strong>
+              <span className={`status-chip ${liveViewActive ? 'active' : 'default'}`}>{projection.liveAnalysis?.attempts.length ?? 0}</span>
+            </div>
+            <p>Analyze-run timeline and active runtime liveness.</p>
+          </button>
           {projection.maps.map((map) => {
             const selected = activeMap?.id === map.id;
             return (
@@ -3415,8 +4151,17 @@ function ProcessNavigatorPanel({ state, dispatch }: {
           })}
         </div>
 
-        <section className="sidecar-process-map process-map-host" id="sidecar-process-map" aria-label={activeMap?.label ?? 'Process graph'}>
-          {activeMap ? (
+        <section className="sidecar-process-map process-map-host" id="sidecar-process-map" aria-label={liveViewActive ? 'Live View' : activeMap?.label ?? 'Process graph'}>
+          {liveViewActive ? (
+            <ProcessLiveViewPanel
+              analysis={projection.liveAnalysis ?? null}
+              onOpenTracePath={openTracePath}
+              onRefresh={requestLiveRefresh}
+              refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
+              liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
+              onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
+            />
+          ) : activeMap ? (
             activeMap.id === 'process_flow' && projection.catalog ? (
               <ProcessFlowMapVariantHost
                 map={activeMap}
@@ -3480,7 +4225,7 @@ function ProcessNavigatorPanel({ state, dispatch }: {
           <span className={`status-chip ${activeView ? 'active' : 'pending'}`}>{activeView?.label ?? 'Process'}</span>
         </div>
         <strong>{describeProcessQueryHeadline(records.length, viewRecords.length)}</strong>
-        <p>{describeProcessQuerySummary(activeMap, selectedRecord, normalizedSearch)}</p>
+        <p>{describeProcessQuerySummary(liveViewActive ? 'Live View' : activeMap?.label ?? null, selectedRecord, normalizedSearch)}</p>
         <div className="inline-pills">
           {normalizedSearch ? <Pill kind="attention">Search: {search.trim()}</Pill> : null}
           {selectedRecord ? <Pill kind={selectedRecord.tone}>Focused: {selectedRecord.title}</Pill> : null}
@@ -3527,7 +4272,11 @@ function ProcessNavigatorPanel({ state, dispatch }: {
         </section>
 
         <section className="sidecar-process-detail process-page__workbench" aria-label="Selected process record">
-          <ProcessMapSummary map={activeMap} activeViewLabel={activeView?.label ?? 'Process'} visibleRecordCount={records.length} />
+          {liveViewActive && projection.liveAnalysis ? (
+            <ProcessLiveAnalysisSummary analysis={projection.liveAnalysis} visibleRecordCount={records.length} />
+          ) : (
+            <ProcessMapSummary map={activeMap} activeViewLabel={activeView?.label ?? 'Process'} visibleRecordCount={records.length} />
+          )}
           {selectedRecord ? <ProcessRecordDetail record={selectedRecord} projection={projection} /> : (
             <div className="sidecar-inspector__empty">No process record selected.</div>
           )}
@@ -4204,16 +4953,547 @@ function describeProcessQueryHeadline(visibleCount: number, totalCount: number) 
 }
 
 function describeProcessQuerySummary(
-  map: SidecarProcessMap | null,
+  activeCarrierLabel: string | null,
   record: SidecarProcessRecord | null,
   normalizedSearch: string,
 ) {
   const parts = [
-    map ? `${map.label} is the active graph carrier.` : null,
+    activeCarrierLabel ? `${activeCarrierLabel} is the active carrier.` : null,
     record ? `${record.title} anchors the workbench.` : 'No process object is focused.',
     normalizedSearch ? 'Search is narrowing the active process lane.' : null,
   ].filter(Boolean);
   return parts.join(' ');
+}
+
+type SidecarLiveAnalysis = NonNullable<SidecarProcessProjection['liveAnalysis']>;
+type SidecarLiveAnalysisAttempt = SidecarLiveAnalysis['attempts'][number];
+type SidecarLiveAnalysisDiagnostic = SidecarLiveAnalysis['diagnostics'][number];
+
+const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
+  materialization: {
+    summary: 'Checks that declared product files were produced with valid paths, roles, and file evidence.',
+    detail: 'Measures the materialization contract: output paths stay inside the allowed root, files exist, byte or digest checks match, and product roles line up with the handoff.',
+  },
+  shallow_realization: {
+    summary: 'Rejects placeholder, stub, constant-success, identity-only, or trace-only output.',
+    detail: 'Measures whether the produced implementation is more than a shell. It looks for placeholders, constant success logic, identity-only transforms, and tests that only prove a trace exists.',
+  },
+  semantic_convergence: {
+    summary: 'Checks that candidate evidence covers the target meaning, not just the target shape.',
+    detail: 'Measures semantic coverage against the declared target. Missing, restated, or contradicted semantic claims keep the same edge open or force repricing.',
+  },
+  component_depth: {
+    summary: 'Checks component-depth register rows against observed component and framework truth.',
+    detail: 'Measures whether admitted component rows have stable ids, file paths, public boundaries, requirement allocation, source refs, and required materialized files for the target surface.',
+  },
+  requirement_fulfillment: {
+    summary: 'Checks that admitted requirements have closure evidence for this edge authority.',
+    detail: 'Measures requirement authority coverage from the closure register and lineage evidence. It can pass even when a produced file is still shallow if requirement evidence is otherwise fulfilled.',
+  },
+  obligation_carry: {
+    summary: 'Checks prior retry obligations were closed, carried forward, or repriced.',
+    detail: 'Measures continuity across retries. Prior gap pressure cannot disappear silently; each prior obligation must be closed, remain carried, or be repriced.',
+  },
+  ambiguity: {
+    summary: 'Checks unresolved ambiguity is typed as re-entry pressure instead of hidden in prose.',
+    detail: 'Measures ambiguity handling over the edge contract. Ambiguity must become explicit state with lawful retry, escalation, or repricing pressure.',
+  },
+  capability: {
+    summary: 'Checks produced evidence covers the required capability inventory.',
+    detail: 'Measures whether generated product evidence covers tenant or project capability contracts, especially for code surfaces with declared capability requirements.',
+  },
+  design_completeness: {
+    summary: 'Checks design rows are complete enough to support downstream implementation or tests.',
+    detail: 'Measures whether design evidence has the structural completeness needed by later materialization and execution edges.',
+  },
+});
+
+function liveAssuranceLedgerDescription(dimension: string) {
+  return LIVE_ASSURANCE_LEDGER_DESCRIPTIONS[dimension] ?? {
+    summary: 'Checks one deterministic assurance dimension in the archived traversal fold.',
+    detail: `Measures archived assurance dimension ${dimension}. The verdict contributes to the folded next lawful action.`,
+  };
+}
+
+function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing, liveTranscriptCollapsed, onLiveTranscriptCollapsedChange }: {
+  analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
+  onOpenTracePath: (absolutePath: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+  liveTranscriptCollapsed: boolean;
+  onLiveTranscriptCollapsedChange: (collapsed: boolean) => void;
+}) {
+  const [selectedAttemptRef, setSelectedAttemptRef] = useState<string | null>(null);
+  if (!analysis) {
+    return <div className="sidecar-inspector__empty">No analyze-run projection is available for this Project.</div>;
+  }
+  const attempts = analysis.attempts;
+  const liveness = analysis.liveness;
+  const activeAttemptRef = liveness.activeOperatorRunRef;
+  const latestAttempt = attempts[attempts.length - 1] ?? null;
+  const selectedAttempt =
+    attempts.find((attempt) => attempt.operatorRunRef === selectedAttemptRef) ??
+    attempts.find((attempt) => activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef) ??
+    latestAttempt;
+  const visibleDiagnostics = analysis.diagnostics.slice(0, 6);
+
+  return (
+    <div className="sidecar-live-view" aria-label="Live analyze-run view">
+      <header className="sidecar-live-view__header">
+        <div>
+          <span className="panel__eyebrow">Live View</span>
+          <h3>{analysis.telemetry.scenarioName ?? 'analyze-run projection'}</h3>
+          <p>{analysis.telemetry.inspectedKind} · {analysis.telemetry.profile} · {analysis.telemetry.inspectedRoot}</p>
+        </div>
+        <div className="sidecar-live-view__actions">
+          <Pill kind={liveAnalysisTone(liveness.productiveSignal)}>{liveness.productiveSignal.replace(/_/g, ' ')}</Pill>
+          {liveness.activeOperatorRunPath ? (
+            <button
+              type="button"
+              className="status-chip active"
+              onClick={() => onOpenTracePath(liveness.activeOperatorRunPath as string)}
+            >
+              Active archive
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="sidecar-live-view__stats" aria-label="Analyze-run summary">
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+          <strong>{analysis.telemetry.operatorRunCount}</strong>
+          <small>operator runs</small>
+        </span>
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--blocked">
+          <strong>{analysis.telemetry.sameEdgeRetryCount + analysis.telemetry.blockedAttemptCount}</strong>
+          <small>retry/block</small>
+        </span>
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--converged">
+          <strong>{formatDurationMs(analysis.telemetry.totalWorkerElapsedMs)}</strong>
+          <small>worker time</small>
+        </span>
+        <span className="sidecar-process-map-stat">
+          <strong>{formatBytes(analysis.telemetry.archiveBytes.totalBytes)}</strong>
+          <small>archive</small>
+        </span>
+        <span className="sidecar-process-map-stat">
+          <strong>{analysis.telemetry.finalClosureDisposition ?? 'open'}</strong>
+          <small>final disposition</small>
+        </span>
+        <span className="sidecar-process-map-stat">
+          <strong title={analysis.generatedAt}>{formatLiveRefreshTime(analysis.generatedAt)}</strong>
+          <small>last refresh</small>
+        </span>
+        <button
+          type="button"
+          className="sidecar-process-map-stat sidecar-live-view__refresh-button"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          <strong>{refreshing ? 'refreshing' : 'Refresh'}</strong>
+          <small>force refresh</small>
+        </button>
+      </div>
+
+      <ol className="sidecar-live-view__timeline" aria-label="Analyze-run attempts">
+        {attempts.length ? attempts.map((attempt) => {
+          const tone = liveAttemptTone(attempt);
+          const active = activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef;
+          const canOpen = Boolean(attempt.operatorRunPath);
+          return (
+            <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
+              <button
+                type="button"
+                disabled={!canOpen && attempts.length === 0}
+                aria-pressed={selectedAttempt?.operatorRunRef === attempt.operatorRunRef}
+                onClick={() => setSelectedAttemptRef(attempt.operatorRunRef)}
+                title={attempt.operatorRunPath ?? attempt.operatorRunRef}
+              >
+                <span className="sidecar-live-view__attempt-index">{attempt.attemptOrdinal + 1}</span>
+                <strong>{attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</strong>
+                <small>{attempt.targetAssetType ?? attempt.traversalClass}</small>
+                <span className={`status-chip ${tone}`}>{attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open'}</span>
+              </button>
+            </li>
+          );
+        }) : (
+          <li className="sidecar-inspector__empty">No operator-run attempts were reported by analyze-run.</li>
+        )}
+      </ol>
+
+      {selectedAttempt ? (
+        <ProcessLiveRunDetail
+          attempt={selectedAttempt}
+          onOpenTracePath={onOpenTracePath}
+        />
+      ) : null}
+
+      <div className="sidecar-live-view__details">
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Active Run</span>
+            <span className={`status-chip ${liveAnalysisTone(liveness.productiveSignal)}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
+          </div>
+          <MetaGrid items={[
+            ['Active edge', liveness.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? '—'],
+            ['Graph vector', liveness.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? '—'],
+            ['Target', liveness.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? '—'],
+            ['Worker pid', liveness.workerPid === null ? '—' : String(liveness.workerPid)],
+            ['No-output gap', liveness.maxNoOutputGapMs === null ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
+            ['Archive growth/min', liveness.archiveGrowthBytesPerMinute === null ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
+            ['Last blocking reason', liveness.lastBlockingReason ?? '—'],
+          ]} />
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Diagnostics</span>
+            <span className={`status-chip ${analysis.diagnostics.some((d) => d.severity === 'error') ? 'blocked' : analysis.diagnostics.length > 0 ? 'pending' : 'active'}`}>
+              {analysis.diagnostics.length}
+            </span>
+          </div>
+          {visibleDiagnostics.length ? (
+            <ul className="sidecar-live-view__diagnostics">
+              {visibleDiagnostics.map((diagnostic) => (
+                <LiveAnalysisDiagnosticRow key={`${diagnostic.code}:${diagnostic.detail}`} diagnostic={diagnostic} onOpenTracePath={onOpenTracePath} />
+              ))}
+            </ul>
+          ) : (
+            <div className="sidecar-body-text">No analyze-run diagnostics were reported.</div>
+          )}
+        </section>
+      </div>
+
+      {selectedAttempt ? (
+        <ProcessLiveCliTranscriptWidget
+          transcript={selectedAttempt.detail.cliTranscript}
+          collapsed={liveTranscriptCollapsed}
+          onCollapsedChange={onLiveTranscriptCollapsedChange}
+          onOpenTracePath={onOpenTracePath}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ProcessLiveRunDetail({ attempt, onOpenTracePath }: {
+  attempt: SidecarLiveAnalysisAttempt;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const edge = attempt.detail.edgeAssurance;
+  const assurance = attempt.detail.assurance;
+  const counts = edge?.counts ?? null;
+  const outstanding =
+    counts === null
+      ? null
+      : counts.partial + counts.blocked + counts.unfulfilled + counts.missing;
+  const gapCount =
+    attempt.detail.runtimeGaps.length +
+    attempt.detail.diagnostics.length +
+    attempt.detail.retryForensics.length +
+    (edge?.gapPressureRefs.length ?? 0) +
+    (edge?.edgeResidualPressureRefs.length ?? 0);
+  const ledgerTone =
+    edge?.closeReady === true
+      ? 'active'
+      : edge?.carrierState === 'absent' || gapCount > 0
+        ? 'blocked'
+        : 'pending';
+  return (
+    <section className="sidecar-live-view__run-detail" aria-label="Selected analyze-run detail">
+      <header className="sidecar-live-view__run-header">
+        <div>
+          <span className="panel__eyebrow">Selected Run</span>
+          <h4>{attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</h4>
+          <p>{attempt.operatorRunPath ?? attempt.operatorRunRef}</p>
+        </div>
+        <div className="sidecar-live-view__actions">
+          <span className={`status-chip ${ledgerTone}`}>{edge?.closureDisposition ?? attempt.closureDisposition ?? 'open'}</span>
+          {attempt.operatorRunPath ? (
+            <button type="button" className="status-chip default" onClick={() => onOpenTracePath(attempt.operatorRunPath as string)}>
+              Open archive
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="sidecar-live-view__detail-grid">
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Ledger State</span>
+            <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
+          </div>
+          <div className="sidecar-live-view__stats sidecar-live-view__stats--compact">
+            <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+              <strong>{counts?.fulfilled ?? '—'}</strong>
+              <small>completed</small>
+            </span>
+            <span className={`sidecar-process-map-stat ${outstanding && outstanding > 0 ? 'sidecar-process-map-stat--blocked' : ''}`}>
+              <strong>{outstanding ?? '—'}</strong>
+              <small>outstanding</small>
+            </span>
+            <span className="sidecar-process-map-stat">
+              <strong>{counts?.expected ?? attempt.requirementObligationCount ?? '—'}</strong>
+              <small>expected</small>
+            </span>
+          </div>
+          <MetaGrid items={[
+            ['Edge converged', formatLiveBoolean(edge?.edgeConverged)],
+            ['Carry converged', formatLiveBoolean(edge?.carryConverged)],
+            ['Fulfillment', formatLiveBoolean(edge?.fulfillmentConverged)],
+            ['Admitted', formatLiveBoolean(edge?.admitted)],
+            ['Target cert', formatLiveBoolean(edge?.targetCertificationPassed)],
+            ['F_D recheck', formatLiveBoolean(edge?.fdRecheckPassed)],
+            ['Target carrier', edge?.targetAssetType ?? attempt.targetAssetType ?? '—'],
+            ['Next action', edge?.nextGraphVectorRef ?? attempt.selectedNextActionRef ?? '—'],
+          ]} />
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Assurance Ledgers</span>
+            <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
+              {assurance?.status ?? 'missing'}
+            </span>
+          </div>
+          {assurance?.ledgers.length ? (
+            <ul className="sidecar-live-view__ledger-list">
+              {assurance.ledgers.map((ledger) => {
+                const description = liveAssuranceLedgerDescription(ledger.dimension);
+                return (
+                  <li key={ledger.dimension}>
+                    <div className="sidecar-live-view__ledger-head">
+                      <strong>{ledger.dimension}</strong>
+                      <span
+                        className="sidecar-live-view__ledger-info"
+                        title={description.detail}
+                        aria-label={`${ledger.dimension}: ${description.detail}`}
+                        tabIndex={0}
+                      >
+                        i
+                      </span>
+                    </div>
+                    <span className={`status-chip ${ledger.verdict === 'satisfied' ? 'active' : ledger.verdict === 'blocked' ? 'blocked' : ledger.verdict === 'open_gap' ? 'pending' : 'default'}`}>
+                      {ledger.verdict}
+                    </span>
+                    <p className="sidecar-live-view__ledger-description">{description.summary}</p>
+                    <small>{ledger.evidenceRefCount} evidence · {ledger.reasonCount} reasons</small>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="sidecar-body-text">No assurance ledger fold was archived for this run.</div>
+          )}
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Gap Analysis</span>
+            <span className={`status-chip ${gapCount > 0 ? 'blocked' : 'active'}`}>{gapCount}</span>
+          </div>
+          <LiveAnalysisRunGapList attempt={attempt} edge={edge} />
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Requirement / Stage State</span>
+            <span className={`status-chip ${outstanding && outstanding > 0 ? 'blocked' : counts ? 'active' : 'pending'}`}>
+              {counts ? `${counts.fulfilled}/${counts.expected}` : attempt.requirementObligationCount ?? '—'}
+            </span>
+          </div>
+          <MetaGrid items={[
+            ['Requirement obligations', attempt.requirementObligationCount === null ? '—' : String(attempt.requirementObligationCount)],
+            ['Product lineage', String(attempt.productLineageCount)],
+            ['Product files written', String(attempt.productFilesWritten.length)],
+            ['Product files replayed', String(attempt.productFilesReplayed.length)],
+            ['Residual pressure', String(edge?.edgeResidualPressureRefs.length ?? attempt.residualPressureRefCount)],
+            ['Runtime artifacts', attempt.detail.runtimeGaps.length ? `${attempt.detail.runtimeGaps.length} gaps` : 'complete'],
+          ]} />
+          {attempt.detail.stageCoverage.length ? (
+            <ul className="sidecar-live-view__stage-list">
+              {attempt.detail.stageCoverage.map((stage) => (
+                <li key={`${stage.test35StageRef}:${stage.expectedEdgeName}`}>
+                  <strong>{stage.test35StageRef}</strong>
+                  <span className={`status-chip ${stage.stageClass === 'missing' ? 'blocked' : stage.stageClass === 'unmapped' ? 'pending' : 'active'}`}>
+                    {stage.stageClass}
+                  </span>
+                  <small>{stage.expectedEdgeName} → {stage.mappedEdgeName ?? 'unmapped'}</small>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function ProcessLiveCliTranscriptWidget({ transcript, collapsed, onCollapsedChange, onOpenTracePath }: {
+  transcript: SidecarLiveAnalysisAttempt['detail']['cliTranscript'];
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  return (
+    <section className={`sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript sidecar-live-view__detail--collapsible${collapsed ? ' is-collapsed' : ''}`} aria-label="CLI transcript">
+      <button
+        type="button"
+        className="sidecar-live-view__collapsible-header"
+        onClick={() => onCollapsedChange(!collapsed)}
+        aria-expanded={!collapsed}
+      >
+        <span className="panel__eyebrow">CLI Transcript</span>
+        <span className="sidecar-live-view__collapsible-meta">
+          <span className={`status-chip ${transcript.sourceKind === 'missing' ? 'default' : 'active'}`}>
+            {transcript.lineCount}
+          </span>
+          <span className="sidecar-live-view__collapsible-chevron" aria-hidden="true">{collapsed ? '>' : 'v'}</span>
+        </span>
+      </button>
+      {!collapsed ? (
+        <div className="sidecar-live-view__collapsible-body">
+          <div className="sidecar-live-view__transcript-toolbar">
+            <span>{transcript.sourceKind.replace(/_/g, ' ')}</span>
+            <span>{formatBytes(transcript.byteCount)}</span>
+            {transcript.sourcePath ? (
+              <button type="button" className="status-chip default" onClick={() => onOpenTracePath(transcript.sourcePath as string)}>
+                Open raw
+              </button>
+            ) : null}
+          </div>
+          {transcript.lines.length ? (
+            <ol className="sidecar-live-view__transcript" aria-label="Scrollable CLI interaction log">
+              {transcript.lines.map((line) => (
+                <li key={`${line.index}:${line.eventType}`} className={`sidecar-live-view__transcript-line sidecar-live-view__transcript-line--${line.tone}`}>
+                  <span className="sidecar-live-view__transcript-index">{line.index + 1}</span>
+                  <div className="sidecar-live-view__transcript-body">
+                    <div className="sidecar-live-view__transcript-meta">
+                      <span className={`status-chip ${line.tone}`}>{line.label}</span>
+                      <small>{line.role ?? line.eventType}</small>
+                    </div>
+                    <pre>{line.text}</pre>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="sidecar-body-text">No CLI transcript was archived for this run.</div>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function LiveAnalysisRunGapList({ attempt, edge }: {
+  attempt: SidecarLiveAnalysisAttempt;
+  edge: SidecarLiveAnalysisAttempt['detail']['edgeAssurance'];
+}) {
+  const rows = [
+    ...attempt.detail.runtimeGaps.map((gap) => ({
+      key: `gap:${gap.artifact}`,
+      tone: gap.status === 'missing' ? 'blocked' : 'pending',
+      label: gap.artifact,
+      value: gap.status,
+      detail: gap.detail ?? 'runtime artifact gap',
+    })),
+    ...attempt.detail.diagnostics.map((diagnostic) => ({
+      key: `diag:${diagnostic.code}:${diagnostic.detail}`,
+      tone: diagnostic.severity === 'error' ? 'blocked' : diagnostic.severity === 'warn' ? 'pending' : 'default',
+      label: diagnostic.code,
+      value: diagnostic.severity,
+      detail: diagnostic.detail,
+    })),
+    ...attempt.detail.retryForensics.map((retry) => ({
+      key: `retry:${retry.edgeName}:${retry.likelyCauseClass}`,
+      tone: 'pending',
+      label: retry.edgeName,
+      value: retry.likelyCauseClass,
+      detail: retry.blockingReasonCodes.join(', ') || 'retry forensic',
+    })),
+    ...(edge?.edgeResidualPressureRefs ?? []).map((ref) => ({
+      key: `residual:${ref}`,
+      tone: 'blocked',
+      label: 'residual pressure',
+      value: 'open',
+      detail: ref,
+    })),
+    ...(edge?.gapPressureRefs ?? []).map((ref) => ({
+      key: `gap-pressure:${ref}`,
+      tone: 'pending',
+      label: 'gap pressure',
+      value: 'carried',
+      detail: ref,
+    })),
+  ] as Array<{ key: string; tone: string; label: string; value: string; detail: string }>;
+
+  if (rows.length === 0) {
+    return <div className="sidecar-body-text">No runtime gaps, residual pressure, retry forensic, or diagnostics are attached to this run.</div>;
+  }
+  return (
+    <ul className="sidecar-live-view__gap-list">
+      {rows.map((row) => (
+        <li key={row.key}>
+          <div>
+            <strong>{row.label}</strong>
+            <span className={`status-chip ${row.tone}`}>{row.value}</span>
+          </div>
+          <p>{row.detail}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LiveAnalysisDiagnosticRow({ diagnostic, onOpenTracePath }: {
+  diagnostic: SidecarLiveAnalysisDiagnostic;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const operatorPath = refToAbsolutePath(diagnostic.operatorRunRef);
+  return (
+    <li className="sidecar-live-view__diagnostic">
+      <div>
+        <span className={`status-chip ${diagnostic.severity === 'error' ? 'blocked' : diagnostic.severity === 'warn' ? 'pending' : 'default'}`}>{diagnostic.severity}</span>
+        <strong>{diagnostic.code}</strong>
+      </div>
+      <p>{diagnostic.detail}</p>
+      {operatorPath ? (
+        <button type="button" className="status-chip default" onClick={() => onOpenTracePath(operatorPath)}>
+          Run archive
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
+function ProcessLiveAnalysisSummary({ analysis, visibleRecordCount }: {
+  analysis: SidecarLiveAnalysis;
+  visibleRecordCount: number;
+}) {
+  return (
+    <div className="sidecar-process-map-summary">
+      <div>
+        <span className="panel__eyebrow">Live View</span>
+        <h3>Analyze-run detail</h3>
+        <p>{analysis.telemetry.graphEdgeSequence.length} unique graph edges observed across {analysis.telemetry.operatorRunCount} operator runs.</p>
+      </div>
+      <div className="sidecar-process-map-summary__stats">
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+          <strong>{analysis.attempts.length}</strong>
+          <small>attempts</small>
+        </span>
+        <span className="sidecar-process-map-stat sidecar-process-map-stat--blocked">
+          <strong>{analysis.diagnostics.length}</strong>
+          <small>diagnostics</small>
+        </span>
+        <span className="sidecar-process-map-stat">
+          <strong>{visibleRecordCount}</strong>
+          <small>visible records</small>
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function ProcessGraphMap({ map, activeRecordIds, selectedRecordId, onSelectRecord, onOpenTracePath }: {
@@ -4436,6 +5716,75 @@ function compactIdentity(value: string | null) {
   if (!value) return '—';
   if (value.length <= 72) return value;
   return `${value.slice(0, 34)}...${value.slice(-28)}`;
+}
+
+function liveAnalysisTone(signal: string) {
+  if (signal === 'progressing' || signal === 'completed') return 'active';
+  if (signal === 'aborted_or_killed' || signal === 'stalled_no_io' || signal === 'stalled_with_io') return 'blocked';
+  return 'pending';
+}
+
+function liveAttemptTone(attempt: SidecarLiveAnalysisAttempt) {
+  if (attempt.closureDisposition === 'close' || attempt.postflightStatus === 'passed') return 'converged';
+  if (
+    attempt.closureDisposition === 'retry' ||
+    attempt.closureDisposition === 'repair' ||
+    attempt.closureDisposition === 'block' ||
+    attempt.blockingReasonCodes.length > 0
+  ) {
+    return 'blocked';
+  }
+  if (attempt.fpEvaluateStatus || attempt.workerStatus) return 'active';
+  return 'pending';
+}
+
+function formatLiveBoolean(value: boolean | null | undefined) {
+  if (value === true) return 'pass';
+  if (value === false) return 'fail';
+  return '—';
+}
+
+function formatDurationMs(value: number) {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${minutes.toFixed(minutes < 10 ? 1 : 0)}m`;
+  const hours = minutes / 60;
+  return `${hours.toFixed(hours < 10 ? 1 : 0)}h`;
+}
+
+function formatLiveRefreshTime(value: string | null | undefined) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${Math.round(value)}B`;
+  const kib = value / 1024;
+  if (kib < 1024) return `${kib.toFixed(kib < 10 ? 1 : 0)}KiB`;
+  const mib = kib / 1024;
+  if (mib < 1024) return `${mib.toFixed(mib < 10 ? 1 : 0)}MiB`;
+  const gib = mib / 1024;
+  return `${gib.toFixed(gib < 10 ? 1 : 0)}GiB`;
+}
+
+function refToAbsolutePath(ref: string | null) {
+  if (!ref) return null;
+  if (!ref.startsWith('file://')) return ref.startsWith('/') ? ref : null;
+  try {
+    return decodeURIComponent(new URL(ref).pathname);
+  } catch {
+    return ref.slice('file://'.length) || null;
+  }
 }
 
 function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispatch }: {

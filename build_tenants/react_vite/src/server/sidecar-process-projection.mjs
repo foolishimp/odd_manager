@@ -131,6 +131,7 @@ export function loadSidecarProcessProjection(workspaceRoot) {
   // T-026: per-leaf overlay from latest op-run. Live scan each call.
   // T-022: traced evidence is folded into each overlay's tracedEvidence.
   const leafOverlays = loadLeafOverlaysForLatestOpRun(root);
+  const liveAnalysis = loadLiveAnalysisProjection(root, installValidation.manifest);
 
   const eventPath = join(root, SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH);
   if (!existsSync(eventPath)) {
@@ -143,7 +144,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
       maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
       traversalOverlays,
       catalog,
-      leafOverlays
+      leafOverlays,
+      liveAnalysis
     };
   }
 
@@ -163,7 +165,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     maps: decorateMapsWithOverlays(materializeProcessMaps(records, queryDomain), leafOverlays),
     traversalOverlays,
     catalog,
-    leafOverlays
+    leafOverlays,
+    liveAnalysis
   };
 }
 
@@ -236,6 +239,561 @@ function loadInstalledCatalog(root, manifest) {
   const payload = parsed?.payload;
   if (payload?.kind !== "sdlc_graph_function_catalog") return null;
   return mapSdlcCatalogToSidecar(payload, root);
+}
+
+function loadLiveAnalysisProjection(root, manifest) {
+  const commandPath = queryDomainCommandPath(root, manifest);
+  if (!commandPath || !existsSync(commandPath)) return null;
+  const result = spawnSync(process.execPath, [commandPath, "analyze-run", "--workspace", root, "--format", "json"], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 24 * 1024 * 1024,
+    timeout: 15_000
+  });
+  if (result.error || result.status !== 0) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+  const analysis = extractSdlcFdRunAnalysis(parsed);
+  return analysis ? mapLiveAnalysisToSidecar(analysis) : null;
+}
+
+function extractSdlcFdRunAnalysis(payload) {
+  if (payload?.kind === "sdlc_fd_run_analysis") return payload;
+  if (payload?.kind === "sdlc_analyze_run_cli_envelope" && payload?.analysis?.kind === "sdlc_fd_run_analysis") {
+    return payload.analysis;
+  }
+  if (payload?.analysis?.kind === "sdlc_fd_run_analysis") return payload.analysis;
+  if (payload?.payload?.kind === "sdlc_fd_run_analysis") return payload.payload;
+  if (payload?.payload?.analysis?.kind === "sdlc_fd_run_analysis") return payload.payload.analysis;
+  return null;
+}
+
+function mapLiveAnalysisToSidecar(analysis) {
+  const telemetry = isObject(analysis.currentStateTelemetrySummary)
+    ? analysis.currentStateTelemetrySummary
+    : {};
+  const liveness = isObject(analysis.activeRunLiveness)
+    ? analysis.activeRunLiveness
+    : {};
+  const archiveBytes = isObject(telemetry.archiveBytes) ? telemetry.archiveBytes : {};
+  const attempts = Array.isArray(analysis.edgeTraversal) ? analysis.edgeTraversal : [];
+  const diagnostics = Array.isArray(analysis.diagnostics) ? analysis.diagnostics : [];
+  const runtimeArtifactGaps = Array.isArray(analysis.runtimeArtifactGaps) ? analysis.runtimeArtifactGaps : [];
+  const retryForensics = Array.isArray(analysis.retryForensics) ? analysis.retryForensics : [];
+  const conceptualStageCoverage = Array.isArray(analysis.conceptualStageCoverage)
+    ? analysis.conceptualStageCoverage
+    : [];
+  const summaryDrift = isObject(analysis.summaryDrift) && Array.isArray(analysis.summaryDrift.drifts)
+    ? analysis.summaryDrift.drifts
+    : [];
+  const sidecarDiagnostics = diagnostics.map(mapLiveAnalysisDiagnosticToSidecar).filter(Boolean);
+  const detailIndex = Object.freeze({
+    runtimeGapsByRun: groupByOperatorRunRef(runtimeArtifactGaps, mapLiveAnalysisRuntimeGapToSidecar),
+    diagnosticsByRun: groupMappedByKey(sidecarDiagnostics, (diagnostic) => diagnostic.operatorRunRef),
+    retryForensicsByRun: groupByAttemptRef(retryForensics, mapLiveAnalysisRetryForensicToSidecar),
+    stageCoverageByRun: groupStageCoverageByOperatorRun(conceptualStageCoverage)
+  });
+  return Object.freeze({
+    kind: "sidecar_live_analysis_projection",
+    sourceKind: "sdlc_fd_run_analysis",
+    version: numberField(analysis, "version") ?? 1,
+    generatedAt: new Date().toISOString(),
+    readOnly: true,
+    telemetry: Object.freeze({
+      inspectedRoot: stringField(telemetry, "inspectedRoot"),
+      inspectedKind: liveAnalysisInspectedKind(stringField(telemetry, "inspectedKind")),
+      scenarioName: stringOrNull(telemetry, "scenarioName"),
+      profile: liveAnalysisProfile(stringField(telemetry, "profile")),
+      operatorRunCount: numberField(telemetry, "operatorRunCount") ?? attempts.length,
+      graphEdgeSequence: Object.freeze(stringArray(telemetry.graphEdgeSequence)),
+      sameEdgeRetryCount: numberField(telemetry, "sameEdgeRetryCount") ?? 0,
+      blockedAttemptCount: numberField(telemetry, "blockedAttemptCount") ?? 0,
+      repairAttemptCount: numberField(telemetry, "repairAttemptCount") ?? 0,
+      abortedAttemptCount: numberField(telemetry, "abortedAttemptCount") ?? 0,
+      finalClosureDisposition: stringOrNull(telemetry, "finalClosureDisposition"),
+      totalWallClockMs: numberOrNull(telemetry, "totalWallClockMs"),
+      totalWorkerElapsedMs: numberField(telemetry, "totalWorkerElapsedMs") ?? 0,
+      archiveBytes: Object.freeze({
+        totalBytes: numberField(archiveBytes, "totalBytes") ?? 0,
+        promptContextBytes: numberField(archiveBytes, "promptContextBytes") ?? 0,
+        handoffBytes: numberField(archiveBytes, "handoffBytes") ?? 0,
+        stdoutBytes: numberField(archiveBytes, "stdoutBytes") ?? 0,
+        runtimeEventBytes: numberField(archiveBytes, "runtimeEventBytes") ?? 0
+      }),
+      productFileCount: numberField(telemetry, "productFileCount") ?? 0,
+      requirementObligationCount: numberField(telemetry, "requirementObligationCount") ?? 0,
+      productFileLineageCount: numberField(telemetry, "productFileLineageCount") ?? 0
+    }),
+    liveness: Object.freeze({
+      activeOperatorRunRef: stringOrNull(liveness, "activeOperatorRunRef"),
+      activeOperatorRunPath: fileRefToPath(stringOrNull(liveness, "activeOperatorRunRef")),
+      activeEdgeRef: stringOrNull(liveness, "activeEdgeRef"),
+      activeGraphVectorRef: stringOrNull(liveness, "activeGraphVectorRef"),
+      activeTargetAssetType: stringOrNull(liveness, "activeTargetAssetType"),
+      workerPid: numberOrNull(liveness, "workerPid"),
+      processAlive: booleanOrNull(liveness?.processAlive),
+      lastEventAtMs: numberOrNull(liveness, "lastEventAtMs"),
+      lastStdoutAtMs: numberOrNull(liveness, "lastStdoutAtMs"),
+      heartbeatAgeMs: numberOrNull(liveness, "heartbeatAgeMs"),
+      maxNoOutputGapMs: numberOrNull(liveness, "maxNoOutputGapMs"),
+      archiveGrowthBytesPerMinute: numberOrNull(liveness, "archiveGrowthBytesPerMinute"),
+      productiveSignal: liveAnalysisProductiveSignal(stringField(liveness, "productiveSignal")),
+      lastBlockingReason: liveAnalysisBlockingReason(liveness.lastBlockingReason)
+    }),
+    attempts: Object.freeze(attempts.map((attempt) => mapLiveAnalysisAttemptToSidecar(attempt, detailIndex)).filter(Boolean)),
+    diagnostics: Object.freeze(sidecarDiagnostics),
+    runtimeArtifactGapCount: runtimeArtifactGaps.length,
+    retryForensicCount: retryForensics.length,
+    summaryDriftCount: summaryDrift.length,
+    evidenceIndex: Object.freeze(stringArray(analysis.evidenceIndex))
+  });
+}
+
+function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
+  if (!isObject(attempt)) return null;
+  const operatorRunRef = stringField(attempt, "operatorRunRef");
+  if (!operatorRunRef) return null;
+  const operatorRunPath = fileRefToPath(operatorRunRef);
+  const graphFunctionName = stringOrNull(attempt, "graphFunctionName");
+  const manifest = operatorRunPath ? readOpRunManifest(operatorRunPath) : null;
+  const edgeAssurance = operatorRunPath
+    ? readEdgeAssuranceOverlay(operatorRunPath, graphFunctionName ?? "", manifest)
+    : null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_attempt",
+    attemptOrdinal: numberField(attempt, "attemptOrdinal") ?? 0,
+    operatorRunRef,
+    operatorRunPath,
+    graphFunctionName,
+    graphVectorRef: stringOrNull(attempt, "graphVectorRef"),
+    targetAssetType: stringOrNull(attempt, "targetAssetType"),
+    traversalClass: liveAnalysisStageClass(stringField(attempt, "traversalClass")),
+    workerElapsedMs: numberOrNull(attempt, "workerElapsedMs"),
+    edgeWindowElapsedMs: numberOrNull(attempt, "edgeWindowElapsedMs"),
+    deterministicElapsedMs: numberOrNull(attempt, "deterministicElapsedMs"),
+    fpEvaluateStatus: stringOrNull(attempt, "fpEvaluateStatus"),
+    postflightStatus: stringOrNull(attempt, "postflightStatus"),
+    executionEvidenceStatus: stringOrNull(attempt, "executionEvidenceStatus"),
+    executionEvidenceReportCount: numberField(attempt, "executionEvidenceReportCount") ?? 0,
+    residualPressureRefCount: numberField(attempt, "residualPressureRefCount") ?? 0,
+    residualPressureTransition: stringOrNull(attempt, "residualPressureTransition"),
+    closureDisposition: stringOrNull(attempt, "closureDisposition"),
+    selectedNextActionRef: stringOrNull(attempt, "selectedNextActionRef"),
+    predecessorAttemptRef: stringOrNull(attempt, "predecessorAttemptRef"),
+    blockingReasonCodes: Object.freeze(stringArray(attempt.blockingReasonCodes)),
+    productFilesWritten: Object.freeze(stringArray(attempt.productFilesWritten)),
+    productFilesReplayed: Object.freeze(stringArray(attempt.productFilesReplayed)),
+    requirementObligationCount: numberOrNull(attempt, "requirementObligationCount"),
+    productLineageCount: numberField(attempt, "productLineageCount") ?? 0,
+    promptContextBytes: numberField(attempt, "promptContextBytes") ?? 0,
+    handoffBytes: numberField(attempt, "handoffBytes") ?? 0,
+    stdoutBytes: numberField(attempt, "stdoutBytes") ?? 0,
+    eventBytes: numberField(attempt, "eventBytes") ?? 0,
+    workerStatus: stringOrNull(attempt, "workerStatus"),
+    detail: Object.freeze({
+      kind: "sidecar_live_analysis_run_detail",
+      edgeAssurance,
+      assurance: operatorRunPath ? readLiveAnalysisAssuranceSummary(operatorRunPath) : null,
+      runtimeGaps: Object.freeze(detailIndex.runtimeGapsByRun.get(operatorRunRef) ?? []),
+      diagnostics: Object.freeze(detailIndex.diagnosticsByRun.get(operatorRunRef) ?? []),
+      retryForensics: Object.freeze(detailIndex.retryForensicsByRun.get(operatorRunRef) ?? []),
+      stageCoverage: Object.freeze(detailIndex.stageCoverageByRun.get(operatorRunRef) ?? []),
+      cliTranscript: operatorRunPath ? readLiveAnalysisCliTranscript(operatorRunPath) : emptyLiveAnalysisCliTranscript()
+    })
+  });
+}
+
+function mapLiveAnalysisDiagnosticToSidecar(diagnostic) {
+  if (!isObject(diagnostic)) return null;
+  const code = stringField(diagnostic, "code");
+  if (!code) return null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_diagnostic",
+    code,
+    severity: liveAnalysisDiagnosticSeverity(stringField(diagnostic, "severity")),
+    detail: stringField(diagnostic, "detail"),
+    evidenceRefs: Object.freeze(stringArray(diagnostic.evidenceRefs)),
+    operatorRunRef: stringOrNull(diagnostic, "operatorRunRef"),
+    edgeName: stringOrNull(diagnostic, "edgeName"),
+    policyRef: stringOrNull(diagnostic, "policyRef")
+  });
+}
+
+function mapLiveAnalysisRuntimeGapToSidecar(gap) {
+  if (!isObject(gap)) return null;
+  const artifact = stringField(gap, "artifact");
+  if (!artifact) return null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_runtime_gap",
+    artifact,
+    status: liveAnalysisRuntimeGapStatus(stringField(gap, "status")),
+    detail: stringOrNull(gap, "detail")
+  });
+}
+
+function mapLiveAnalysisRetryForensicToSidecar(retry) {
+  if (!isObject(retry)) return null;
+  const edgeName = stringField(retry, "edgeName");
+  if (!edgeName) return null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_retry_forensic",
+    edgeName,
+    predecessorAttemptRef: stringOrNull(retry, "predecessorAttemptRef"),
+    workerSecondsBefore: numberOrNull(retry, "workerSecondsBefore"),
+    blockingReasonCodes: Object.freeze(stringArray(retry.blockingReasonCodes)),
+    changedFiles: Object.freeze(stringArray(retry.changedFiles)),
+    productFilesObserved: Object.freeze(stringArray(retry.productFilesObserved)),
+    productFilesMaterialized: Object.freeze(stringArray(retry.productFilesMaterialized)),
+    productFilesReplayed: Object.freeze(stringArray(retry.productFilesReplayed)),
+    lineageStatus: liveAnalysisLineageStatus(stringField(retry, "lineageStatus")),
+    outsideWorkspaceReadCount: numberField(retry, "outsideWorkspaceReadCount") ?? 0,
+    schemaViolationCount: numberField(retry, "schemaViolationCount") ?? 0,
+    likelyCauseClass: liveAnalysisRetryCauseClass(stringField(retry, "likelyCauseClass"))
+  });
+}
+
+function mapLiveAnalysisStageCoverageToSidecar(stage) {
+  if (!isObject(stage)) return null;
+  const test35StageRef = stringField(stage, "test35StageRef");
+  const expectedEdgeName = stringField(stage, "expectedEdgeName");
+  const expectedTargetAssetType = stringField(stage, "expectedTargetAssetType");
+  if (!test35StageRef || !expectedEdgeName || !expectedTargetAssetType) return null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_stage_coverage",
+    test35StageRef,
+    expectedEdgeName,
+    expectedTargetAssetType,
+    mappedEdgeName: stringOrNull(stage, "mappedEdgeName"),
+    mappedTargetAssetType: stringOrNull(stage, "mappedTargetAssetType"),
+    stageClass: liveAnalysisStageClass(stringField(stage, "stageClass"))
+  });
+}
+
+function readLiveAnalysisAssuranceSummary(operatorRunPath) {
+  const payload = readJsonFile(join(operatorRunPath, "assurance_satisfaction.json"));
+  if (!isObject(payload)) return null;
+  const ledgers = Array.isArray(payload.ledgers) ? payload.ledgers : [];
+  return Object.freeze({
+    kind: "sidecar_live_analysis_assurance_summary",
+    status: stringOrNull(payload, "status"),
+    satisfiedDimensions: Object.freeze(stringArray(payload.satisfiedDimensions)),
+    missingRequiredDimensions: Object.freeze(stringArray(payload.missingRequiredDimensions)),
+    gapReasonCount: Array.isArray(payload.gapReasons) ? payload.gapReasons.length : 0,
+    blockingReasonCount: Array.isArray(payload.blockingReasons) ? payload.blockingReasons.length : 0,
+    ledgers: Object.freeze(ledgers.map(mapLiveAnalysisAssuranceLedgerToSidecar).filter(Boolean))
+  });
+}
+
+function emptyLiveAnalysisCliTranscript() {
+  return Object.freeze({
+    kind: "sidecar_live_analysis_cli_transcript",
+    sourceKind: "missing",
+    sourcePath: null,
+    byteCount: 0,
+    lineCount: 0,
+    lines: Object.freeze([])
+  });
+}
+
+function readLiveAnalysisCliTranscript(operatorRunPath) {
+  const candidates = [
+    {
+      sourceKind: "terminal_transcript",
+      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "terminal.transcript")
+    },
+    {
+      sourceKind: "worker_stdout",
+      path: join(operatorRunPath, "worker_stdout.log")
+    },
+    {
+      sourceKind: "final_output",
+      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "final_output.txt")
+    }
+  ];
+  const candidate = candidates.find((entry) => existsSync(entry.path));
+  if (!candidate) return emptyLiveAnalysisCliTranscript();
+  let raw;
+  let byteCount = 0;
+  try {
+    raw = readFileSync(candidate.path, "utf8");
+    byteCount = statSync(candidate.path).size;
+  } catch {
+    return emptyLiveAnalysisCliTranscript();
+  }
+  const sourceLines = raw.split(/\r?\n/);
+  const lineCount = raw.endsWith("\n") ? Math.max(0, sourceLines.length - 1) : sourceLines.length;
+  const lines = sourceLines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line, index }) => line.length > 0 || index < lineCount)
+    .map(({ line, index }) => mapLiveAnalysisTranscriptLine(line, index));
+  return Object.freeze({
+    kind: "sidecar_live_analysis_cli_transcript",
+    sourceKind: candidate.sourceKind,
+    sourcePath: candidate.path,
+    byteCount,
+    lineCount,
+    lines: Object.freeze(lines)
+  });
+}
+
+function mapLiveAnalysisTranscriptLine(line, index) {
+  const cleanLine = stripAnsi(line);
+  const fallback = (label, tone = "default") => Object.freeze({
+    kind: "sidecar_live_analysis_transcript_line",
+    index,
+    eventType: "raw",
+    role: null,
+    label,
+    text: cleanLine,
+    tone
+  });
+  const trimmed = cleanLine.trim();
+  if (!trimmed.startsWith("{")) {
+    return fallback(trimmed.includes("__ABG_PTY_EXIT") ? "PTY exit" : "terminal");
+  }
+  let payload;
+  try {
+    payload = JSON.parse(trimmed);
+  } catch {
+    return fallback("terminal");
+  }
+  const eventType = stringField(payload, "type") || "event";
+  if (eventType === "system") {
+    return transcriptLine(index, eventType, null, "system init", [
+      `cwd: ${stringField(payload, "cwd") || "unknown"}`,
+      `model: ${stringField(payload, "model") || "unknown"}`,
+      `session: ${stringField(payload, "session_id") || "unknown"}`
+    ].join("\n"), "default");
+  }
+  if (eventType === "rate_limit_event") {
+    const info = isObject(payload.rate_limit_info) ? payload.rate_limit_info : {};
+    return transcriptLine(index, eventType, null, "rate limit", JSON.stringify(info, null, 2), "pending");
+  }
+  if (eventType === "assistant") {
+    const message = isObject(payload.message) ? payload.message : {};
+    return transcriptLine(
+      index,
+      eventType,
+      "assistant",
+      "assistant",
+      transcriptMessageContent(message),
+      "active"
+    );
+  }
+  if (eventType === "user") {
+    const message = isObject(payload.message) ? payload.message : {};
+    return transcriptLine(
+      index,
+      eventType,
+      "user",
+      "tool result",
+      transcriptMessageContent(message),
+      "default"
+    );
+  }
+  if (eventType === "result") {
+    return transcriptLine(
+      index,
+      eventType,
+      null,
+      stringField(payload, "subtype") || "result",
+      stringField(payload, "result") || JSON.stringify(payload, null, 2),
+      payload.is_error === true ? "blocked" : "active"
+    );
+  }
+  return transcriptLine(index, eventType, null, eventType, JSON.stringify(payload, null, 2), "default");
+}
+
+function transcriptLine(index, eventType, role, label, text, tone) {
+  return Object.freeze({
+    kind: "sidecar_live_analysis_transcript_line",
+    index,
+    eventType,
+    role,
+    label,
+    text,
+    tone
+  });
+}
+
+function transcriptMessageContent(message) {
+  const content = Array.isArray(message?.content) ? message.content : [];
+  if (content.length === 0) return JSON.stringify(message, null, 2);
+  const rendered = content.map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (!isObject(entry)) return JSON.stringify(entry);
+    const type = stringField(entry, "type");
+    if (type === "text") return stringField(entry, "text");
+    if (type === "thinking") return "[thinking omitted]";
+    if (type === "tool_use") {
+      const name = stringField(entry, "name") || "tool";
+      const input = entry.input === undefined ? "" : `\n${JSON.stringify(entry.input, null, 2)}`;
+      return `Tool call: ${name}${input}`;
+    }
+    if (type === "tool_result") {
+      const toolUseId = stringField(entry, "tool_use_id");
+      const result = typeof entry.content === "string"
+        ? entry.content
+        : JSON.stringify(entry.content ?? entry, null, 2);
+      return `${toolUseId ? `Tool result: ${toolUseId}\n` : ""}${result}`;
+    }
+    return JSON.stringify(entry, null, 2);
+  });
+  return rendered.filter((part) => typeof part === "string" && part.length > 0).join("\n\n");
+}
+
+function stripAnsi(value) {
+  return value
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b[()#][0-9A-Za-z]/g, "");
+}
+
+function mapLiveAnalysisAssuranceLedgerToSidecar(ledger) {
+  if (!isObject(ledger)) return null;
+  const dimension = stringField(ledger, "dimension");
+  if (!dimension) return null;
+  return Object.freeze({
+    kind: "sidecar_live_analysis_assurance_ledger",
+    dimension,
+    verdict: stringField(ledger, "verdict") || "unknown",
+    required: booleanOrNull(ledger.required) ?? true,
+    evidenceRefCount: stringArray(ledger.evidenceRefs).length,
+    carryForwardObligationRefCount: stringArray(ledger.carryForwardObligationRefs).length,
+    reasonCount: Array.isArray(ledger.reasons) ? ledger.reasons.length : 0
+  });
+}
+
+function groupByOperatorRunRef(items, mapper) {
+  const grouped = new Map();
+  for (const item of items) {
+    if (!isObject(item)) continue;
+    const operatorRunRef = stringField(item, "operatorRunRef");
+    if (!operatorRunRef) continue;
+    const mapped = mapper(item);
+    if (!mapped) continue;
+    appendMapValue(grouped, operatorRunRef, mapped);
+  }
+  return grouped;
+}
+
+function groupByAttemptRef(items, mapper) {
+  const grouped = new Map();
+  for (const item of items) {
+    if (!isObject(item)) continue;
+    const attemptRef = stringField(item, "attemptRef");
+    if (!attemptRef) continue;
+    const mapped = mapper(item);
+    if (!mapped) continue;
+    appendMapValue(grouped, attemptRef, mapped);
+  }
+  return grouped;
+}
+
+function groupMappedByKey(items, keyFn) {
+  const grouped = new Map();
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key) continue;
+    appendMapValue(grouped, key, item);
+  }
+  return grouped;
+}
+
+function groupStageCoverageByOperatorRun(stages) {
+  const grouped = new Map();
+  for (const stage of stages) {
+    if (!isObject(stage)) continue;
+    const mapped = mapLiveAnalysisStageCoverageToSidecar(stage);
+    if (!mapped) continue;
+    for (const ref of stringArray(stage.operatorRunRefs)) {
+      appendMapValue(grouped, ref, mapped);
+    }
+  }
+  return grouped;
+}
+
+function appendMapValue(map, key, value) {
+  const existing = map.get(key);
+  if (existing) {
+    existing.push(value);
+  } else {
+    map.set(key, [value]);
+  }
+}
+
+function fileRefToPath(ref) {
+  if (typeof ref !== "string" || !ref.startsWith("file://")) return ref || null;
+  try {
+    return decodeURIComponent(new URL(ref).pathname);
+  } catch {
+    return ref.slice("file://".length) || null;
+  }
+}
+
+function liveAnalysisInspectedKind(value) {
+  return value === "run-archive" || value === "operator-run" ? value : "workspace";
+}
+
+function liveAnalysisProfile(value) {
+  return value === "hello_world" || value === "data_mapper" ? value : "generic";
+}
+
+function liveAnalysisDiagnosticSeverity(value) {
+  return value === "error" || value === "warn" ? value : "info";
+}
+
+function liveAnalysisProductiveSignal(value) {
+  return value === "progressing" ||
+    value === "stalled_with_io" ||
+    value === "stalled_no_io" ||
+    value === "completed" ||
+    value === "aborted_or_killed"
+    ? value
+    : "unknown";
+}
+
+function liveAnalysisStageClass(value) {
+  return value === "constructive" ||
+    value === "projection" ||
+    value === "rollup" ||
+    value === "missing" ||
+    value === "unmapped"
+    ? value
+    : "unmapped";
+}
+
+function liveAnalysisRuntimeGapStatus(value) {
+  return value === "malformed" || value === "incomplete" ? value : "missing";
+}
+
+function liveAnalysisRetryCauseClass(value) {
+  return value === "prompt_schema_gap" ||
+    value === "framework_carrier_parser_drift" ||
+    value === "worker_policy_violation" ||
+    value === "target_carrier_admission_missing" ||
+    value === "deterministic_evaluator_bug" ||
+    value === "harness_bug" ||
+    value === "runtime_bug" ||
+    value === "tenant_source_defect"
+    ? value
+    : "unknown";
+}
+
+function liveAnalysisLineageStatus(value) {
+  return value === "present" || value === "absent" ? value : "unknown";
+}
+
+function liveAnalysisBlockingReason(value) {
+  if (typeof value === "string") return value;
+  if (isObject(value)) {
+    return stringField(value, "code") || stringField(value, "kind") || null;
+  }
+  return null;
 }
 
 function mapSdlcCatalogToSidecar(payload, installRoot) {

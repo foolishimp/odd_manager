@@ -1,6 +1,6 @@
 export type SidecarProcessViewId = 'active_work' | 'blocked_waiting' | 'ready_handoff';
 
-export type SidecarProcessMapId = 'process_flow' | 'builder_governance' | 'runtime_evidence';
+export type SidecarProcessMapId = 'process_flow' | 'builder_governance' | 'runtime_evidence' | 'live_view';
 
 export type SidecarProcessTone = 'active' | 'blocked' | 'converged' | 'pending';
 
@@ -108,6 +108,10 @@ export interface SidecarProcessProjection {
   // T-026: per-leaf overlay projected from `.ai-workspace/runtime/odd_sdlc/operator-runs/<oprun>/`.
   // Each entry keyed by leaf graph function name; absent when no op-run is selected.
   leafOverlays?: SidecarLeafOverlay[];
+  // T-161: read-only FD run analysis projection from `odd-sdlc-ts analyze-run`.
+  // This is an admitted analysis read model over operator-run archives; the UX
+  // renders it but does not inspect the filesystem directly.
+  liveAnalysis?: SidecarLiveAnalysisProjection | null;
   // T-026: variant identifier for the process flow map, selected by the sidecar reducer.
   // The carrier itself is variant-agnostic; this field records which variant the consumer is rendering.
   // Absent on initial fetch; set when the user picks a variant from the tab strip.
@@ -311,6 +315,250 @@ export interface SidecarLeafOverlay {
 }
 
 // ---------------------------------------------------------------------------
+// T-161 live analysis — compact read model over `sdlc_fd_run_analysis`.
+// The backend maps the installed odd_sdlc analysis payload into this stable
+// Sidecar contract so the Process Navigator can render live run detail without
+// re-declaring the upstream analyzer's full internal type surface.
+// ---------------------------------------------------------------------------
+
+export type SidecarLiveAnalysisInspectedKind = 'workspace' | 'run-archive' | 'operator-run';
+
+export type SidecarLiveAnalysisProfile = 'hello_world' | 'data_mapper' | 'generic';
+
+export type SidecarLiveAnalysisDiagnosticSeverity = 'info' | 'warn' | 'error';
+
+export type SidecarLiveAnalysisProductiveSignal =
+  | 'progressing'
+  | 'stalled_with_io'
+  | 'stalled_no_io'
+  | 'completed'
+  | 'aborted_or_killed'
+  | 'unknown';
+
+export type SidecarLiveAnalysisStageClass =
+  | 'constructive'
+  | 'projection'
+  | 'rollup'
+  | 'missing'
+  | 'unmapped';
+
+export type SidecarLiveAnalysisRuntimeGapStatus = 'missing' | 'malformed' | 'incomplete';
+
+export type SidecarLiveAnalysisRetryCauseClass =
+  | 'prompt_schema_gap'
+  | 'framework_carrier_parser_drift'
+  | 'worker_policy_violation'
+  | 'target_carrier_admission_missing'
+  | 'deterministic_evaluator_bug'
+  | 'harness_bug'
+  | 'runtime_bug'
+  | 'tenant_source_defect'
+  | 'unknown';
+
+export type SidecarLiveAnalysisLineageStatus = 'present' | 'absent' | 'unknown';
+
+export type SidecarLiveAnalysisTranscriptSourceKind =
+  | 'terminal_transcript'
+  | 'worker_stdout'
+  | 'final_output'
+  | 'missing';
+
+export type SidecarLiveAnalysisTranscriptTone =
+  | 'default'
+  | 'active'
+  | 'pending'
+  | 'blocked';
+
+export interface SidecarLiveAnalysisByteSummary {
+  totalBytes: number;
+  promptContextBytes: number;
+  handoffBytes: number;
+  stdoutBytes: number;
+  runtimeEventBytes: number;
+}
+
+export interface SidecarLiveAnalysisTelemetry {
+  inspectedRoot: string;
+  inspectedKind: SidecarLiveAnalysisInspectedKind;
+  scenarioName: string | null;
+  profile: SidecarLiveAnalysisProfile;
+  operatorRunCount: number;
+  graphEdgeSequence: string[];
+  sameEdgeRetryCount: number;
+  blockedAttemptCount: number;
+  repairAttemptCount: number;
+  abortedAttemptCount: number;
+  finalClosureDisposition: string | null;
+  totalWallClockMs: number | null;
+  totalWorkerElapsedMs: number;
+  archiveBytes: SidecarLiveAnalysisByteSummary;
+  productFileCount: number;
+  requirementObligationCount: number;
+  productFileLineageCount: number;
+}
+
+export interface SidecarLiveAnalysisLiveness {
+  activeOperatorRunRef: string | null;
+  activeOperatorRunPath: string | null;
+  activeEdgeRef: string | null;
+  activeGraphVectorRef: string | null;
+  activeTargetAssetType: string | null;
+  workerPid: number | null;
+  processAlive: boolean | null;
+  lastEventAtMs: number | null;
+  lastStdoutAtMs: number | null;
+  heartbeatAgeMs: number | null;
+  maxNoOutputGapMs: number | null;
+  archiveGrowthBytesPerMinute: number | null;
+  productiveSignal: SidecarLiveAnalysisProductiveSignal;
+  lastBlockingReason: string | null;
+}
+
+export interface SidecarLiveAnalysisAttempt {
+  kind: 'sidecar_live_analysis_attempt';
+  attemptOrdinal: number;
+  operatorRunRef: string;
+  operatorRunPath: string | null;
+  graphFunctionName: string | null;
+  graphVectorRef: string | null;
+  targetAssetType: string | null;
+  traversalClass: SidecarLiveAnalysisStageClass;
+  workerElapsedMs: number | null;
+  edgeWindowElapsedMs: number | null;
+  deterministicElapsedMs: number | null;
+  fpEvaluateStatus: string | null;
+  postflightStatus: string | null;
+  executionEvidenceStatus: string | null;
+  executionEvidenceReportCount: number;
+  residualPressureRefCount: number;
+  residualPressureTransition: string | null;
+  closureDisposition: string | null;
+  selectedNextActionRef: string | null;
+  predecessorAttemptRef: string | null;
+  blockingReasonCodes: string[];
+  productFilesWritten: string[];
+  productFilesReplayed: string[];
+  requirementObligationCount: number | null;
+  productLineageCount: number;
+  promptContextBytes: number;
+  handoffBytes: number;
+  stdoutBytes: number;
+  eventBytes: number;
+  workerStatus: string | null;
+  detail: SidecarLiveAnalysisRunDetail;
+}
+
+export interface SidecarLiveAnalysisDiagnostic {
+  kind: 'sidecar_live_analysis_diagnostic';
+  code: string;
+  severity: SidecarLiveAnalysisDiagnosticSeverity;
+  detail: string;
+  evidenceRefs: string[];
+  operatorRunRef: string | null;
+  edgeName: string | null;
+  policyRef: string | null;
+}
+
+export interface SidecarLiveAnalysisRuntimeGap {
+  kind: 'sidecar_live_analysis_runtime_gap';
+  artifact: string;
+  status: SidecarLiveAnalysisRuntimeGapStatus;
+  detail: string | null;
+}
+
+export interface SidecarLiveAnalysisRetryForensic {
+  kind: 'sidecar_live_analysis_retry_forensic';
+  edgeName: string;
+  predecessorAttemptRef: string | null;
+  workerSecondsBefore: number | null;
+  blockingReasonCodes: string[];
+  changedFiles: string[];
+  productFilesObserved: string[];
+  productFilesMaterialized: string[];
+  productFilesReplayed: string[];
+  lineageStatus: SidecarLiveAnalysisLineageStatus;
+  outsideWorkspaceReadCount: number;
+  schemaViolationCount: number;
+  likelyCauseClass: SidecarLiveAnalysisRetryCauseClass;
+}
+
+export interface SidecarLiveAnalysisStageCoverage {
+  kind: 'sidecar_live_analysis_stage_coverage';
+  test35StageRef: string;
+  expectedEdgeName: string;
+  expectedTargetAssetType: string;
+  mappedEdgeName: string | null;
+  mappedTargetAssetType: string | null;
+  stageClass: SidecarLiveAnalysisStageClass;
+}
+
+export interface SidecarLiveAnalysisAssuranceLedgerSummary {
+  kind: 'sidecar_live_analysis_assurance_ledger';
+  dimension: string;
+  verdict: string;
+  required: boolean;
+  evidenceRefCount: number;
+  carryForwardObligationRefCount: number;
+  reasonCount: number;
+}
+
+export interface SidecarLiveAnalysisAssuranceSummary {
+  kind: 'sidecar_live_analysis_assurance_summary';
+  status: string | null;
+  satisfiedDimensions: string[];
+  missingRequiredDimensions: string[];
+  gapReasonCount: number;
+  blockingReasonCount: number;
+  ledgers: SidecarLiveAnalysisAssuranceLedgerSummary[];
+}
+
+export interface SidecarLiveAnalysisTranscriptLine {
+  kind: 'sidecar_live_analysis_transcript_line';
+  index: number;
+  eventType: string;
+  role: string | null;
+  label: string;
+  text: string;
+  tone: SidecarLiveAnalysisTranscriptTone;
+}
+
+export interface SidecarLiveAnalysisCliTranscript {
+  kind: 'sidecar_live_analysis_cli_transcript';
+  sourceKind: SidecarLiveAnalysisTranscriptSourceKind;
+  sourcePath: string | null;
+  byteCount: number;
+  lineCount: number;
+  lines: SidecarLiveAnalysisTranscriptLine[];
+}
+
+export interface SidecarLiveAnalysisRunDetail {
+  kind: 'sidecar_live_analysis_run_detail';
+  edgeAssurance: SidecarEdgeAssuranceOverlay | null;
+  assurance: SidecarLiveAnalysisAssuranceSummary | null;
+  runtimeGaps: SidecarLiveAnalysisRuntimeGap[];
+  diagnostics: SidecarLiveAnalysisDiagnostic[];
+  retryForensics: SidecarLiveAnalysisRetryForensic[];
+  stageCoverage: SidecarLiveAnalysisStageCoverage[];
+  cliTranscript: SidecarLiveAnalysisCliTranscript;
+}
+
+export interface SidecarLiveAnalysisProjection {
+  kind: 'sidecar_live_analysis_projection';
+  sourceKind: 'sdlc_fd_run_analysis';
+  version: number;
+  generatedAt: string;
+  readOnly: true;
+  telemetry: SidecarLiveAnalysisTelemetry;
+  liveness: SidecarLiveAnalysisLiveness;
+  attempts: SidecarLiveAnalysisAttempt[];
+  diagnostics: SidecarLiveAnalysisDiagnostic[];
+  runtimeArtifactGapCount: number;
+  retryForensicCount: number;
+  summaryDriftCount: number;
+  evidenceIndex: string[];
+}
+
+// ---------------------------------------------------------------------------
 // T-022: TracedCalloutEvidence per supervised actor invocation.
 // Maps onto the `result.json` shape published by abiogenesis 3.5.0-rc.1
 // universal traced call-out substrate (T-108 / T-109 / T-110 / T-111).
@@ -500,6 +748,79 @@ const FLOW_VARIANT_IDS: readonly SidecarProcessFlowVariantId[] = [
   'v4',
 ];
 
+const LIVE_ANALYSIS_INSPECTED_KINDS: readonly SidecarLiveAnalysisInspectedKind[] = [
+  'workspace',
+  'run-archive',
+  'operator-run',
+];
+
+const LIVE_ANALYSIS_PROFILES: readonly SidecarLiveAnalysisProfile[] = [
+  'hello_world',
+  'data_mapper',
+  'generic',
+];
+
+const LIVE_ANALYSIS_DIAGNOSTIC_SEVERITIES: readonly SidecarLiveAnalysisDiagnosticSeverity[] = [
+  'info',
+  'warn',
+  'error',
+];
+
+const LIVE_ANALYSIS_PRODUCTIVE_SIGNALS: readonly SidecarLiveAnalysisProductiveSignal[] = [
+  'progressing',
+  'stalled_with_io',
+  'stalled_no_io',
+  'completed',
+  'aborted_or_killed',
+  'unknown',
+];
+
+const LIVE_ANALYSIS_STAGE_CLASSES: readonly SidecarLiveAnalysisStageClass[] = [
+  'constructive',
+  'projection',
+  'rollup',
+  'missing',
+  'unmapped',
+];
+
+const LIVE_ANALYSIS_RUNTIME_GAP_STATUSES: readonly SidecarLiveAnalysisRuntimeGapStatus[] = [
+  'missing',
+  'malformed',
+  'incomplete',
+];
+
+const LIVE_ANALYSIS_RETRY_CAUSE_CLASSES: readonly SidecarLiveAnalysisRetryCauseClass[] = [
+  'prompt_schema_gap',
+  'framework_carrier_parser_drift',
+  'worker_policy_violation',
+  'target_carrier_admission_missing',
+  'deterministic_evaluator_bug',
+  'harness_bug',
+  'runtime_bug',
+  'tenant_source_defect',
+  'unknown',
+];
+
+const LIVE_ANALYSIS_LINEAGE_STATUSES: readonly SidecarLiveAnalysisLineageStatus[] = [
+  'present',
+  'absent',
+  'unknown',
+];
+
+const LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS: readonly SidecarLiveAnalysisTranscriptSourceKind[] = [
+  'terminal_transcript',
+  'worker_stdout',
+  'final_output',
+  'missing',
+];
+
+const LIVE_ANALYSIS_TRANSCRIPT_TONES: readonly SidecarLiveAnalysisTranscriptTone[] = [
+  'default',
+  'active',
+  'pending',
+  'blocked',
+];
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -677,6 +998,270 @@ export function isSidecarLeafOverlay(value: unknown): value is SidecarLeafOverla
   return true;
 }
 
+export function isSidecarLiveAnalysisByteSummary(
+  value: unknown,
+): value is SidecarLiveAnalysisByteSummary {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.totalBytes === 'number' &&
+    typeof value.promptContextBytes === 'number' &&
+    typeof value.handoffBytes === 'number' &&
+    typeof value.stdoutBytes === 'number' &&
+    typeof value.runtimeEventBytes === 'number'
+  );
+}
+
+export function isSidecarLiveAnalysisTelemetry(
+  value: unknown,
+): value is SidecarLiveAnalysisTelemetry {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.inspectedRoot === 'string' &&
+    isOneOf(value.inspectedKind, LIVE_ANALYSIS_INSPECTED_KINDS) &&
+    isNullableString(value.scenarioName) &&
+    isOneOf(value.profile, LIVE_ANALYSIS_PROFILES) &&
+    typeof value.operatorRunCount === 'number' &&
+    isStringArray(value.graphEdgeSequence) &&
+    typeof value.sameEdgeRetryCount === 'number' &&
+    typeof value.blockedAttemptCount === 'number' &&
+    typeof value.repairAttemptCount === 'number' &&
+    typeof value.abortedAttemptCount === 'number' &&
+    isNullableString(value.finalClosureDisposition) &&
+    isNullableNumber(value.totalWallClockMs) &&
+    typeof value.totalWorkerElapsedMs === 'number' &&
+    isSidecarLiveAnalysisByteSummary(value.archiveBytes) &&
+    typeof value.productFileCount === 'number' &&
+    typeof value.requirementObligationCount === 'number' &&
+    typeof value.productFileLineageCount === 'number'
+  );
+}
+
+export function isSidecarLiveAnalysisLiveness(
+  value: unknown,
+): value is SidecarLiveAnalysisLiveness {
+  if (!isObject(value)) return false;
+  return (
+    isNullableString(value.activeOperatorRunRef) &&
+    isNullableString(value.activeOperatorRunPath) &&
+    isNullableString(value.activeEdgeRef) &&
+    isNullableString(value.activeGraphVectorRef) &&
+    isNullableString(value.activeTargetAssetType) &&
+    isNullableNumber(value.workerPid) &&
+    isNullableBoolean(value.processAlive) &&
+    isNullableNumber(value.lastEventAtMs) &&
+    isNullableNumber(value.lastStdoutAtMs) &&
+    isNullableNumber(value.heartbeatAgeMs) &&
+    isNullableNumber(value.maxNoOutputGapMs) &&
+    isNullableNumber(value.archiveGrowthBytesPerMinute) &&
+    isOneOf(value.productiveSignal, LIVE_ANALYSIS_PRODUCTIVE_SIGNALS) &&
+    isNullableString(value.lastBlockingReason)
+  );
+}
+
+export function isSidecarLiveAnalysisRuntimeGap(
+  value: unknown,
+): value is SidecarLiveAnalysisRuntimeGap {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_runtime_gap' &&
+    typeof value.artifact === 'string' &&
+    isOneOf(value.status, LIVE_ANALYSIS_RUNTIME_GAP_STATUSES) &&
+    isNullableString(value.detail)
+  );
+}
+
+export function isSidecarLiveAnalysisRetryForensic(
+  value: unknown,
+): value is SidecarLiveAnalysisRetryForensic {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_retry_forensic' &&
+    typeof value.edgeName === 'string' &&
+    isNullableString(value.predecessorAttemptRef) &&
+    isNullableNumber(value.workerSecondsBefore) &&
+    isStringArray(value.blockingReasonCodes) &&
+    isStringArray(value.changedFiles) &&
+    isStringArray(value.productFilesObserved) &&
+    isStringArray(value.productFilesMaterialized) &&
+    isStringArray(value.productFilesReplayed) &&
+    isOneOf(value.lineageStatus, LIVE_ANALYSIS_LINEAGE_STATUSES) &&
+    typeof value.outsideWorkspaceReadCount === 'number' &&
+    typeof value.schemaViolationCount === 'number' &&
+    isOneOf(value.likelyCauseClass, LIVE_ANALYSIS_RETRY_CAUSE_CLASSES)
+  );
+}
+
+export function isSidecarLiveAnalysisStageCoverage(
+  value: unknown,
+): value is SidecarLiveAnalysisStageCoverage {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_stage_coverage' &&
+    typeof value.test35StageRef === 'string' &&
+    typeof value.expectedEdgeName === 'string' &&
+    typeof value.expectedTargetAssetType === 'string' &&
+    isNullableString(value.mappedEdgeName) &&
+    isNullableString(value.mappedTargetAssetType) &&
+    isOneOf(value.stageClass, LIVE_ANALYSIS_STAGE_CLASSES)
+  );
+}
+
+export function isSidecarLiveAnalysisAssuranceLedgerSummary(
+  value: unknown,
+): value is SidecarLiveAnalysisAssuranceLedgerSummary {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_assurance_ledger' &&
+    typeof value.dimension === 'string' &&
+    typeof value.verdict === 'string' &&
+    typeof value.required === 'boolean' &&
+    typeof value.evidenceRefCount === 'number' &&
+    typeof value.carryForwardObligationRefCount === 'number' &&
+    typeof value.reasonCount === 'number'
+  );
+}
+
+export function isSidecarLiveAnalysisAssuranceSummary(
+  value: unknown,
+): value is SidecarLiveAnalysisAssuranceSummary {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_assurance_summary' &&
+    isNullableString(value.status) &&
+    isStringArray(value.satisfiedDimensions) &&
+    isStringArray(value.missingRequiredDimensions) &&
+    typeof value.gapReasonCount === 'number' &&
+    typeof value.blockingReasonCount === 'number' &&
+    Array.isArray(value.ledgers) &&
+    value.ledgers.every(isSidecarLiveAnalysisAssuranceLedgerSummary)
+  );
+}
+
+export function isSidecarLiveAnalysisTranscriptLine(
+  value: unknown,
+): value is SidecarLiveAnalysisTranscriptLine {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_transcript_line' &&
+    typeof value.index === 'number' &&
+    typeof value.eventType === 'string' &&
+    isNullableString(value.role) &&
+    typeof value.label === 'string' &&
+    typeof value.text === 'string' &&
+    isOneOf(value.tone, LIVE_ANALYSIS_TRANSCRIPT_TONES)
+  );
+}
+
+export function isSidecarLiveAnalysisCliTranscript(
+  value: unknown,
+): value is SidecarLiveAnalysisCliTranscript {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_cli_transcript' &&
+    isOneOf(value.sourceKind, LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS) &&
+    isNullableString(value.sourcePath) &&
+    typeof value.byteCount === 'number' &&
+    typeof value.lineCount === 'number' &&
+    Array.isArray(value.lines) &&
+    value.lines.every(isSidecarLiveAnalysisTranscriptLine)
+  );
+}
+
+export function isSidecarLiveAnalysisRunDetail(
+  value: unknown,
+): value is SidecarLiveAnalysisRunDetail {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_run_detail' &&
+    (value.edgeAssurance === null || isSidecarEdgeAssuranceOverlay(value.edgeAssurance)) &&
+    (value.assurance === null || isSidecarLiveAnalysisAssuranceSummary(value.assurance)) &&
+    Array.isArray(value.runtimeGaps) &&
+    value.runtimeGaps.every(isSidecarLiveAnalysisRuntimeGap) &&
+    Array.isArray(value.diagnostics) &&
+    value.diagnostics.every(isSidecarLiveAnalysisDiagnostic) &&
+    Array.isArray(value.retryForensics) &&
+    value.retryForensics.every(isSidecarLiveAnalysisRetryForensic) &&
+    Array.isArray(value.stageCoverage) &&
+    value.stageCoverage.every(isSidecarLiveAnalysisStageCoverage) &&
+    isSidecarLiveAnalysisCliTranscript(value.cliTranscript)
+  );
+}
+
+export function isSidecarLiveAnalysisAttempt(
+  value: unknown,
+): value is SidecarLiveAnalysisAttempt {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_attempt' &&
+    typeof value.attemptOrdinal === 'number' &&
+    typeof value.operatorRunRef === 'string' &&
+    isNullableString(value.operatorRunPath) &&
+    isNullableString(value.graphFunctionName) &&
+    isNullableString(value.graphVectorRef) &&
+    isNullableString(value.targetAssetType) &&
+    isOneOf(value.traversalClass, LIVE_ANALYSIS_STAGE_CLASSES) &&
+    isNullableNumber(value.workerElapsedMs) &&
+    isNullableNumber(value.edgeWindowElapsedMs) &&
+    isNullableNumber(value.deterministicElapsedMs) &&
+    isNullableString(value.fpEvaluateStatus) &&
+    isNullableString(value.postflightStatus) &&
+    isNullableString(value.executionEvidenceStatus) &&
+    typeof value.executionEvidenceReportCount === 'number' &&
+    typeof value.residualPressureRefCount === 'number' &&
+    isNullableString(value.residualPressureTransition) &&
+    isNullableString(value.closureDisposition) &&
+    isNullableString(value.selectedNextActionRef) &&
+    isNullableString(value.predecessorAttemptRef) &&
+    isStringArray(value.blockingReasonCodes) &&
+    isStringArray(value.productFilesWritten) &&
+    isStringArray(value.productFilesReplayed) &&
+    isNullableNumber(value.requirementObligationCount) &&
+    typeof value.productLineageCount === 'number' &&
+    typeof value.promptContextBytes === 'number' &&
+    typeof value.handoffBytes === 'number' &&
+    typeof value.stdoutBytes === 'number' &&
+    typeof value.eventBytes === 'number' &&
+    isNullableString(value.workerStatus) &&
+    isSidecarLiveAnalysisRunDetail(value.detail)
+  );
+}
+
+export function isSidecarLiveAnalysisDiagnostic(
+  value: unknown,
+): value is SidecarLiveAnalysisDiagnostic {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_diagnostic' &&
+    typeof value.code === 'string' &&
+    isOneOf(value.severity, LIVE_ANALYSIS_DIAGNOSTIC_SEVERITIES) &&
+    typeof value.detail === 'string' &&
+    isStringArray(value.evidenceRefs) &&
+    isNullableString(value.operatorRunRef) &&
+    isNullableString(value.edgeName) &&
+    isNullableString(value.policyRef)
+  );
+}
+
+export function isSidecarLiveAnalysisProjection(
+  value: unknown,
+): value is SidecarLiveAnalysisProjection {
+  if (!isObject(value)) return false;
+  if (value.kind !== 'sidecar_live_analysis_projection') return false;
+  if (value.sourceKind !== 'sdlc_fd_run_analysis') return false;
+  if (typeof value.version !== 'number') return false;
+  if (typeof value.generatedAt !== 'string') return false;
+  if (value.readOnly !== true) return false;
+  if (!isSidecarLiveAnalysisTelemetry(value.telemetry)) return false;
+  if (!isSidecarLiveAnalysisLiveness(value.liveness)) return false;
+  if (!Array.isArray(value.attempts) || !value.attempts.every(isSidecarLiveAnalysisAttempt)) return false;
+  if (!Array.isArray(value.diagnostics) || !value.diagnostics.every(isSidecarLiveAnalysisDiagnostic)) return false;
+  if (typeof value.runtimeArtifactGapCount !== 'number') return false;
+  if (typeof value.retryForensicCount !== 'number') return false;
+  if (typeof value.summaryDriftCount !== 'number') return false;
+  if (!isStringArray(value.evidenceIndex)) return false;
+  return true;
+}
+
 export function isSidecarLeafEvaluator(value: unknown): value is SidecarLeafEvaluator {
   if (!isObject(value)) return false;
   return (
@@ -831,6 +1416,12 @@ export function isSidecarProcessProjection(
     if (!Array.isArray(value.leafOverlays)) return false;
     if (!value.leafOverlays.every(isSidecarLeafOverlay)) return false;
   }
+  if (
+    value.liveAnalysis !== undefined &&
+    value.liveAnalysis !== null &&
+    !isSidecarLiveAnalysisProjection(value.liveAnalysis)
+  )
+    return false;
   if (
     value.activeProcessFlowVariant !== undefined &&
     !isSidecarProcessFlowVariantId(value.activeProcessFlowVariant)

@@ -372,6 +372,8 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'ui/set-info-pinned', pinned: true },
     { type: 'process/select-view', view: 'blocked_waiting' },
     { type: 'process/select-record', id: 'process-record-1' },
+    { type: 'process/set-live-transcript-collapsed', collapsed: true },
+    { type: 'process/set-graph-mode', mode: 'compressed' },
     { type: 'session/select', id: 'sess-1' },
   ]).state;
   const profile = module.sidecarLayoutProfileFromState(persistedState, contextKey);
@@ -385,6 +387,8 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.infoPinned, true);
   assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
+  assert.equal(result.state.ui.liveTranscriptCollapsed, true);
+  assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
 });
 
@@ -457,7 +461,10 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
   assert.match(styles, /\.markdown-viewer__table-wrap\s*\{[^}]*width:\s*min\(100%,\s*100cqw\);[^}]*max-width:\s*100cqw;[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.markdown-viewer table\s*\{[^}]*table-layout:\s*fixed;/s);
+  assert.match(styles, /\.markdown-viewer table\s*\{[^}]*font-size:\s*0\.74rem;[^}]*line-height:\s*1\.25;/s);
   assert.match(styles, /\.markdown-viewer th,\s*\.markdown-viewer td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(styles, /\.markdown-viewer th,\s*\.markdown-viewer td\s*\{[^}]*padding:\s*0\.3rem\s+0\.4rem;/s);
+  assert.match(styles, /\.markdown-viewer td \.markdown-viewer__inline-code\s*\{[^}]*padding:\s*0\.015rem\s+0\.18rem;[^}]*line-height:\s*1\.15;/s);
   assert.match(styles, /\.markdown-viewer__mermaid\s*\{[^}]*width:\s*fit-content;[^}]*max-width:\s*100%;/s);
   assert.match(styles, /\.markdown-viewer__mermaid svg\s*\{[^}]*margin:\s*0;/s);
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*background:\s*var\(--code-bg\)\s*!important;/s);
@@ -594,12 +601,16 @@ test('process navigator opens as an object viewer tab and keeps view selection i
     { type: 'process/select-record', id: 'process-record-1' },
     { type: 'process/select-view', view: 'ready_handoff' },
     { type: 'process/select-record', id: 'process-record-2' },
+    { type: 'process/set-live-transcript-collapsed', collapsed: true },
+    { type: 'process/set-graph-mode', mode: 'compressed' },
   ]);
   assert.deepEqual(result.commands, []);
   assert.equal(result.state.selection.kind, 'process');
   assert.equal(result.state.selection.id, 'navigator');
   assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
+  assert.equal(result.state.ui.liveTranscriptCollapsed, true);
+  assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.deepEqual(
     result.state.ui.viewerWorkspace.tabs.map((tab) => [tab.id, tab.kind, tab.objectId]),
     [['process:navigator', 'process', 'navigator']],
@@ -856,7 +867,8 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="P"[\s\S]*label="Project"/);
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="O"[\s\S]*label="Selection"/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
-  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N0"[\s\S]*label="Open Process Navigator N0"/);
+  assert.doesNotMatch(railSource, /symbol="N0"/);
+  assert.doesNotMatch(railSource, /Open Process Navigator N0/);
   assert.ok(
     railSource.indexOf('label="Open Process Navigator"') < railSource.indexOf("label={state.ui.shellCollapsed ? 'Restore shell workspace' : 'Minimize shell workspace'}"),
     'Process Navigator is the first right-rail command',
@@ -895,30 +907,74 @@ test('process navigator source is right-rail selected and object-viewer hosted',
     source.indexOf('function ProcessNavigatorSimplePanel'),
     source.indexOf('function ProcessNavigatorPanel'),
   );
+  const liveMapTabIndex = processPanelSource.indexOf("onClick={() => dispatch({ type: 'process/select-map', map: 'live_view' })}");
+  const mapLoopIndex = processPanelSource.indexOf('{projection.maps.map((map) => {');
 
-  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator-simple'/);
-  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N0"[\s\S]*label="Open Process Navigator N0"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
+  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N"[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
+  assert.doesNotMatch(railSource, /symbol="N0"/);
+  assert.doesNotMatch(railSource, /navigator-simple/);
   assert.match(railSource, /type: 'ui\/toggle-workspace', workspace: 'info', collapsed: true/);
   assert.match(source, /state\.ui\.infoPinned\) return;/);
   assert.match(source, /type: 'ui\/set-info-pinned'/);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-main-area\s*\{[^}]*grid-template-columns:\s*min\(var\(--sidecar-explorer-width,\s*24rem\),\s*42%\)\s+minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-flyout\s*\{[^}]*position:\s*relative;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
   assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-canvas\s*\{[^}]*grid-column:\s*2;/s);
-  assert.match(source, /if \(tab\.objectId === 'navigator-simple'\) \{[\s\S]*<ProcessNavigatorSimplePanel state=\{state\} dispatch=\{dispatch\} \/>/);
-  assert.match(source, /return tab\.objectId === 'navigator' \? 'Process Navigator N0' : 'Process Navigator';/);
+  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*return <ProcessNavigatorSimplePanel state=\{state\} dispatch=\{dispatch\} \/>;/);
+  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*return 'Process Navigator';/);
+  assert.doesNotMatch(source, /Process Navigator N0|Use N0/);
   assert.match(simpleProcessPanelSource, /Graph Overlays/);
   assert.match(simpleProcessPanelSource, /Graph Functions/);
   assert.match(simpleProcessPanelSource, /Leaf Assets/);
+  assert.match(simpleProcessPanelSource, /Live View/);
+  assert.match(simpleProcessPanelSource, /useState<ProcessNavigatorSimpleTab>\('live'\)/);
+  assert.match(simpleProcessPanelSource, /\(\[\s*\['live', 'Live View', liveAttemptCount\]/);
+  assert.match(simpleProcessPanelSource, /projection\.liveAnalysis/);
+  assert.match(simpleProcessPanelSource, /<ProcessLiveViewPanel[\s\S]*analysis=\{projection\.liveAnalysis \?\? null\}/);
+  assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\.workspaceRoot \?\? null;/);
+  assert.match(simpleProcessPanelSource, /window\.setInterval\(\(\) => \{[\s\S]*type: 'load\/request'[\s\S]*reason: 'action_completed'[\s\S]*\}, 30000\)/);
+  assert.match(simpleProcessPanelSource, /onRefresh=\{requestLiveRefresh\}/);
+  assert.match(simpleProcessPanelSource, /refreshing=\{state\.loading && state\.activeLoadRoot === liveRefreshRoot\}/);
+  assert.match(simpleProcessPanelSource, /liveTranscriptCollapsed=\{state\.ui\.liveTranscriptCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-transcript-collapsed/);
   assert.match(simpleProcessPanelSource, /traversalOverlays/);
   assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
   assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
+  assert.match(simpleProcessPanelSource, /ProcessCompressedNavigator/);
+  assert.match(simpleProcessPanelSource, /buildProcessRailModel/);
+  assert.match(simpleProcessPanelSource, /graphMode=\{state\.ui\.activeProcessGraphMode\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-graph-mode/);
+  assert.match(simpleProcessPanelSource, /aria-expanded=\{graphMode === 'expanded'\}/);
+  assert.match(simpleProcessPanelSource, /graphMode === 'compressed' \? \([\s\S]*<ProcessCompressedNavigator[\s\S]*\) : \([\s\S]*<ProcessGraphMap/);
+  assert.match(simpleProcessPanelSource, /dispatch\(\{ type: 'process\/select-record', id \}\)/);
+  assert.doesNotMatch(simpleProcessPanelSource, /operate-nav/);
   assert.match(simpleProcessPanelSource, /buildSimpleOverlayGraph/);
   assert.match(simpleProcessPanelSource, /buildSimpleFunctionGraph/);
   assert.match(simpleProcessPanelSource, /buildSimpleAssetGraph/);
-  assert.match(simpleProcessPanelSource, /Use N0 for the legacy process maps/);
+  assert.doesNotMatch(simpleProcessPanelSource, /Use N0 for the legacy process maps/);
   assert.match(simpleProcessPanelSource, /processAssetRelationships/);
   assert.doesNotMatch(processPanelSource, /Observed SDLC Surfaces|Recent Failures|Recent Activity|Tests \/ Qualification/);
   assert.match(processPanelSource, /ProcessGraphMap/);
+  assert.match(processPanelSource, /Live View/);
+  assert.match(processPanelSource, /ProcessLiveViewPanel/);
+  assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
+  assert.match(processPanelSource, /formatLiveRefreshTime\(analysis\.generatedAt\)/);
+  assert.match(processPanelSource, /last refresh/);
+  assert.match(processPanelSource, /sidecar-live-view__refresh-button/);
+  assert.match(processPanelSource, /force refresh/);
+  assert.match(processPanelSource, /LIVE_ASSURANCE_LEDGER_DESCRIPTIONS/);
+  assert.match(processPanelSource, /Checks that declared product files were produced with valid paths, roles, and file evidence\./);
+  assert.match(processPanelSource, /Rejects placeholder, stub, constant-success, identity-only, or trace-only output\./);
+  assert.match(processPanelSource, /Checks prior retry obligations were closed, carried forward, or repriced\./);
+  assert.match(processPanelSource, /sidecar-live-view__ledger-info/);
+  assert.match(processPanelSource, /sidecar-live-view__ledger-description/);
+  assert.ok(liveMapTabIndex !== -1 && mapLoopIndex !== -1 && liveMapTabIndex < mapLoopIndex);
+  assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
+  assert.match(processPanelSource, /sidecar-live-view__collapsible-header/);
+  assert.match(processPanelSource, /aria-expanded=\{!collapsed\}/);
+  assert.match(processPanelSource, /onCollapsedChange\(!collapsed\)/);
+  assert.match(processPanelSource, /aria-label="Scrollable CLI interaction log"/);
+  assert.match(processPanelSource, /process\/select-map', map: 'live_view'/);
+  assert.match(processPanelSource, /projection\.liveAnalysis/);
   assert.match(processPanelSource, /aria-label="Process maps"/);
   assert.match(processPanelSource, /type: 'process\/select-map'/);
   assert.match(processPanelSource, /<line[\s\S]*className=\{`sidecar-process-map__edge/);
@@ -929,9 +985,31 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-process-navigator\s*\{/);
   assert.match(styles, /\.sidecar-process-layout\s*\{[^}]*grid-template-columns:\s*minmax\(18rem,\s*0\.82fr\)\s+minmax\(0,\s*1\.28fr\);/s);
   assert.match(styles, /\.sidecar-process-map-stack\s*,\s*\.sidecar-process-navigator__views\s*\{/s);
+  assert.match(styles, /\.sidecar-live-view\s*\{/);
+  assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.sidecar-live-view__attempt\s*>\s*button\s*\{[^}]*min-height:\s*6\.6rem;/s);
+  assert.match(styles, /\.sidecar-live-view__detail--transcript\s*\{[^}]*order:\s*99;/s);
+  assert.match(styles, /\.sidecar-live-view__refresh-button\s*\{[^}]*font:\s*inherit;[^}]*text-align:\s*left;/s);
+  assert.match(styles, /\.sidecar-live-view__refresh-button:hover:not\(:disabled\),\s*\.sidecar-live-view__refresh-button:focus-visible\s*\{/s);
+  assert.match(styles, /\.sidecar-live-view__ledger-head\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.28rem;/s);
+  assert.match(styles, /\.sidecar-live-view__ledger-info\s*\{[^}]*border-radius:\s*999px;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__ledger-description\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*overflow-wrap:\s*anywhere;/s);
+  assert.match(styles, /\.sidecar-live-view__collapsible-header\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
+  assert.match(styles, /\.sidecar-live-view__transcript\s*\{[^}]*overflow:\s*auto;/s);
+  assert.match(styles, /\.sidecar-live-view__transcript\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
   assert.match(styles, /\.sidecar-process-simple\s*\{/);
-  assert.match(styles, /\.sidecar-process-simple__tabs\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /\.sidecar-process-simple__tabs,\s*\.sidecar-process-maps\.process-tab-grid,\s*\.sidecar-process-views\.process-tab-grid\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.28rem;/s);
+  assert.match(styles, /\.sidecar-process-simple__tab\.process-tab,\s*\.sidecar-process-map-tab\.process-tab,\s*\.sidecar-process-view\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*min-height:\s*1\.55rem;[^}]*padding:\s*0\.2rem\s+0\.44rem;/s);
+  assert.match(styles, /\.sidecar-process-map-tab\.process-tab p,\s*\.sidecar-process-view\.process-tab p\s*\{[^}]*display:\s*none;/s);
   assert.match(styles, /\.sidecar-process-simple__graph\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);/s);
+  assert.match(styles, /\.sidecar-process-simple__graph--compressed\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(styles, /\.sidecar-process-simple__mode-toggle\s*\{[^}]*width:\s*1\.85rem;[^}]*height:\s*1\.85rem;/s);
+  assert.match(styles, /\.sidecar-process-compressed\s*\{[^}]*display:\s*grid;[^}]*border-bottom:/s);
+  assert.match(styles, /\.sidecar-process-simple__graph--compressed\s+\.sidecar-process-compressed\s*\{[^}]*border-bottom:\s*0;/s);
+  assert.match(styles, /\.sidecar-process-compressed__lane\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.sidecar-process-compressed__stop\s*\{[^}]*border-radius:\s*var\(--sidecar-radius-sm\);/s);
+  assert.match(styles, /\.sidecar-process-compressed__connector\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(styles, /\.sidecar-process-simple__live\s*\{[^}]*min-height:\s*clamp\(22rem,\s*46vh,\s*36rem\);/s);
   assert.match(styles, /\.sidecar-process-simple__graph\s+\.sidecar-process-map__viewport\s*\{/);
   assert.match(styles, /\.sidecar-process-overlay-card\s*,\s*\.sidecar-process-function-card\s*,\s*\.sidecar-process-asset-card\s*\{/);
   assert.match(styles, /\.sidecar-process-overlay-card\.is-selected,\s*\.sidecar-process-function-card\.is-selected,\s*\.sidecar-process-asset-card\.is-selected\s*\{/);
@@ -1165,4 +1243,183 @@ test('sidecar split targeting markup exposes empty groups and compact action fee
     sidecarBlock,
     /\.sidecar-action-result\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
   );
+});
+
+test('Sidecar Project Favourites owns outside-project picking while Browse stays project-local', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const projectsStart = source.indexOf("if (surface === 'projects') {");
+  const historyStart = source.indexOf("if (surface === 'history')", projectsStart);
+  const browseStart = source.indexOf("if (surface === 'browse') {");
+  const browseEnd = source.indexOf('return null;', browseStart);
+  assert.notEqual(projectsStart, -1);
+  assert.notEqual(historyStart, -1);
+  assert.notEqual(browseStart, -1);
+  assert.notEqual(browseEnd, -1);
+  const projectsSource = source.slice(projectsStart, historyStart);
+  const browseSource = source.slice(browseStart, browseEnd);
+  assert.match(projectsSource, /<Pane title="Project Browser"/);
+  assert.match(projectsSource, /const projectBrowserTabStrip = \(/);
+  assert.match(projectsSource, /titleAddon=\{projectBrowserTabStrip\}/);
+  assert.match(projectsSource, /role="tablist" aria-label="Project Browser views"/);
+  assert.match(projectsSource, /sidecar-project-browser__tabs sidecar-project-browser__tabs--header/);
+  assert.match(projectsSource, /label: 'Favourite'/);
+  assert.match(projectsSource, /label: 'Recent'/);
+  assert.match(projectsSource, /label: 'Browse'/);
+  assert.doesNotMatch(projectsSource, /label: 'Pick'/);
+  assert.match(projectsSource, /aria-label="Recent folders"/);
+  assert.match(projectsSource, /aria-label="Browse Project Favourite"/);
+  assert.match(projectsSource, /<FolderPathBreadcrumb/);
+  assert.doesNotMatch(projectsSource, /Navigate to parent folder/);
+  assert.doesNotMatch(projectsSource, /browse\/navigate-up/);
+  assert.match(source, /function FolderPathBreadcrumb/);
+  assert.match(source, /type: 'browse\/navigate-to', path/);
+  assert.match(projectsSource, /\[U\]/);
+  assert.match(projectsSource, /className="sidecar-project-picker__workspace-button"/);
+  assert.match(projectsSource, /title=\{`Open workspace \$\{entry\.absolutePath\}`\}/);
+  assert.match(projectsSource, />\s*wspace\s*<\/button>/);
+  assert.doesNotMatch(projectsSource, />\s*\(w\)\s*<\/button>/);
+  assert.doesNotMatch(projectsSource, /<Pill kind="odd-type">workspace<\/Pill>/);
+  assert.match(source, /const selectProjectBrowserTab = \(tab: ProjectBrowserTab\)/);
+  assert.match(source, /type: 'browse\/scope-set', scope: 'cross-project'/);
+  assert.match(projectsSource, /className="sidecar-row__actions"/);
+  assert.match(browseSource, /<Pane title="Browse"/);
+  assert.doesNotMatch(browseSource, /cross-project/);
+  assert.doesNotMatch(browseSource, /Project Favourites/);
+
+  const sidecarBlock = readSidecarCssBlock();
+  assert.match(sidecarBlock, /\.sidecar-pane__title-row\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*flex:\s*1\s+1\s+auto;/s);
+  assert.match(sidecarBlock, /\.sidecar-pane__title-addon\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*0;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser--tabbed\s*\{[^}]*gap:\s*0\.12rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.18rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s*\{[^}]*gap:\s*0\.12rem;[^}]*padding:\s*0\.06rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.5rem;[^}]*font-size:\s*0\.68rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-row__actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.18rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-tree-control--compact\s*\{[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(sidecarBlock, /\.sidecar-project-picker__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+  assert.match(sidecarBlock, /\.sidecar-project-picker__breadcrumb\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-picker__segment\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-picker__meta\s*\{[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*normal;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-picker__workspace-button\s*\{[^}]*min-width:\s*1\.35rem;[^}]*white-space:\s*nowrap;/s);
+});
+
+test('project-favourite browse starts outside the current Project root', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'browse/scope-set', scope: 'cross-project' },
+  ]);
+  assert.deepEqual(result.commands, [
+    { type: 'browse.path', path: '/workspace', scope: 'cross-project' },
+  ]);
+  assert.equal(result.state.ui.browse.scope, 'cross-project');
+  assert.equal(result.state.ui.browse.loading, true);
+});
+
+test('browse navigate-up replay emits browse.path Cmd to parent and clears loading on result', async () => {
+  const module = await loadStateModule();
+  const seeded = {
+    ...baseState(module),
+    ui: {
+      ...baseState(module).ui,
+      browse: {
+        ...module.INITIAL_SIDECAR_BROWSE_STATE,
+        scope: 'cross-project',
+        currentPath: '/workspace/odd_manager/build_tenants',
+        parent: '/workspace/odd_manager',
+        entries: [],
+        truncated: false,
+        loading: false,
+      },
+    },
+  };
+  const messages = [
+    { type: 'browse/navigate-up' },
+    {
+      type: 'browse/loaded',
+      result: {
+        path: '/workspace/odd_manager',
+        parent: '/workspace',
+        entries: [
+          { name: 'build_tenants', absolutePath: '/workspace/odd_manager/build_tenants', kind: 'directory', hasWorkspace: false },
+        ],
+        truncated: false,
+      },
+    },
+  ];
+  const result = module.replaySidecarMessages(seeded, messages);
+  assert.deepEqual(result.commands, [
+    { type: 'browse.path', path: '/workspace/odd_manager', scope: 'cross-project' },
+  ]);
+  assert.equal(result.state.ui.browse.currentPath, '/workspace/odd_manager');
+  assert.equal(result.state.ui.browse.parent, '/workspace');
+  assert.equal(result.state.ui.browse.loading, false);
+  assert.equal(result.state.ui.browse.entries.length, 1);
+});
+
+test('project browser breadcrumb navigate-to replay can jump directly to an ancestor folder', async () => {
+  const module = await loadStateModule();
+  const seeded = {
+    ...baseState(module),
+    ui: {
+      ...baseState(module).ui,
+      browse: {
+        ...module.INITIAL_SIDECAR_BROWSE_STATE,
+        scope: 'cross-project',
+        currentPath: '/workspace/odd_manager/build_tenants/typescript/test_env/test_runs',
+        parent: '/workspace/odd_manager/build_tenants/typescript/test_env',
+        entries: [],
+        truncated: false,
+        loading: false,
+      },
+    },
+  };
+  const result = module.replaySidecarMessages(seeded, [
+    { type: 'browse/navigate-to', path: '/workspace/odd_manager' },
+  ]);
+  assert.deepEqual(result.commands, [
+    { type: 'browse.path', path: '/workspace/odd_manager', scope: 'cross-project' },
+  ]);
+  assert.equal(result.state.ui.browse.loading, true);
+});
+
+test('browse favourite-folder replay emits projects.register Cmd and absorbs returned projects list', async () => {
+  const module = await loadStateModule();
+  const newProject = {
+    id: 'demo_project',
+    root: '/workspace/demo_project',
+    odd_type: 'odd_sdlc',
+    has_ai_workspace: true,
+    has_genesis: false,
+    installed_packages: [],
+    build_tenants: [],
+  };
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'browse/favourite-folder', path: '/workspace/demo_project' },
+    {
+      type: 'browse/favourite-succeeded',
+      project: newProject,
+      projects: [...baseState(module).projects, newProject],
+    },
+  ]);
+  assert.deepEqual(result.commands, [
+    { type: 'projects.register', path: '/workspace/demo_project' },
+  ]);
+  assert.equal(result.state.ui.browse.favouriteError, null);
+  assert.equal(result.state.projects.length, baseState(module).projects.length + 1);
+  assert.equal(result.state.projects[result.state.projects.length - 1].id, 'demo_project');
+});
+
+test('projects unfavourite replay emits projects.unregister Cmd and prunes projects list on success', async () => {
+  const module = await loadStateModule();
+  const remainingProjects = baseState(module).projects.filter((project) => project.id !== 'data_mapper');
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'projects/unfavourite', projectId: 'data_mapper' },
+    { type: 'projects/unfavourite-succeeded', projectId: 'data_mapper', projects: remainingProjects },
+  ]);
+  assert.deepEqual(result.commands, [
+    { type: 'projects.unregister', projectId: 'data_mapper' },
+  ]);
+  assert.equal(result.state.ui.browse.unfavouriteError, null);
+  assert.equal(result.state.projects.length, remainingProjects.length);
+  assert.equal(result.state.projects.find((project) => project.id === 'data_mapper'), undefined);
 });

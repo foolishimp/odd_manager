@@ -133,6 +133,160 @@ function fixtureLeafOverlay() {
   });
 }
 
+function fixtureLiveAnalysis() {
+  return Object.freeze({
+    kind: 'sidecar_live_analysis_projection',
+    sourceKind: 'sdlc_fd_run_analysis',
+    version: 1,
+    generatedAt: '2026-05-18T12:00:00.000Z',
+    readOnly: true,
+    telemetry: Object.freeze({
+      inspectedRoot: '/fixture/workspace',
+      inspectedKind: 'workspace',
+      scenarioName: 'fixture-workspace',
+      profile: 'generic',
+      operatorRunCount: 1,
+      graphEdgeSequence: ['derive_intent_surface'],
+      sameEdgeRetryCount: 0,
+      blockedAttemptCount: 0,
+      repairAttemptCount: 0,
+      abortedAttemptCount: 0,
+      finalClosureDisposition: 'close',
+      totalWallClockMs: 1000,
+      totalWorkerElapsedMs: 900,
+      archiveBytes: Object.freeze({
+        totalBytes: 2048,
+        promptContextBytes: 300,
+        handoffBytes: 200,
+        stdoutBytes: 100,
+        runtimeEventBytes: 80,
+      }),
+      productFileCount: 1,
+      requirementObligationCount: 2,
+      productFileLineageCount: 2,
+    }),
+    liveness: Object.freeze({
+      activeOperatorRunRef: 'file:///fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1',
+      activeOperatorRunPath: '/fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1',
+      activeEdgeRef: 'derive_intent_surface',
+      activeGraphVectorRef: 'derive_intent_surface',
+      activeTargetAssetType: 'intent_surface',
+      workerPid: 123,
+      processAlive: false,
+      lastEventAtMs: 100,
+      lastStdoutAtMs: 120,
+      heartbeatAgeMs: null,
+      maxNoOutputGapMs: 40,
+      archiveGrowthBytesPerMinute: 0,
+      productiveSignal: 'completed',
+      lastBlockingReason: null,
+    }),
+    attempts: [
+      Object.freeze({
+        kind: 'sidecar_live_analysis_attempt',
+        attemptOrdinal: 0,
+        operatorRunRef: 'file:///fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1',
+        operatorRunPath: '/fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1',
+        graphFunctionName: 'derive_intent_surface',
+        graphVectorRef: 'derive_intent_surface',
+        targetAssetType: 'intent_surface',
+        traversalClass: 'constructive',
+        workerElapsedMs: 900,
+        edgeWindowElapsedMs: 1000,
+        deterministicElapsedMs: 100,
+        fpEvaluateStatus: 'passed',
+        postflightStatus: 'passed',
+        executionEvidenceStatus: null,
+        executionEvidenceReportCount: 0,
+        residualPressureRefCount: 0,
+        residualPressureTransition: 'cleared',
+        closureDisposition: 'close',
+        selectedNextActionRef: null,
+        predecessorAttemptRef: null,
+        blockingReasonCodes: [],
+        productFilesWritten: ['specification/INTENT.md'],
+        productFilesReplayed: [],
+        requirementObligationCount: 2,
+        productLineageCount: 2,
+        promptContextBytes: 300,
+        handoffBytes: 200,
+        stdoutBytes: 100,
+        eventBytes: 80,
+        workerStatus: 'worker_invoked',
+        detail: Object.freeze({
+          kind: 'sidecar_live_analysis_run_detail',
+          edgeAssurance: null,
+          assurance: Object.freeze({
+            kind: 'sidecar_live_analysis_assurance_summary',
+            status: 'close_allowed',
+            satisfiedDimensions: ['semantic_convergence', 'requirement_fulfillment'],
+            missingRequiredDimensions: [],
+            gapReasonCount: 0,
+            blockingReasonCount: 0,
+            ledgers: [
+              Object.freeze({
+                kind: 'sidecar_live_analysis_assurance_ledger',
+                dimension: 'requirement_fulfillment',
+                verdict: 'satisfied',
+                required: true,
+                evidenceRefCount: 2,
+                carryForwardObligationRefCount: 0,
+                reasonCount: 0,
+              }),
+            ],
+          }),
+          runtimeGaps: [],
+          diagnostics: [],
+          retryForensics: [],
+          stageCoverage: [
+            Object.freeze({
+              kind: 'sidecar_live_analysis_stage_coverage',
+              test35StageRef: 'test35://stage/intent',
+              expectedEdgeName: 'derive_intent_surface',
+              expectedTargetAssetType: 'intent_surface',
+              mappedEdgeName: 'derive_intent_surface',
+              mappedTargetAssetType: 'intent_surface',
+              stageClass: 'constructive',
+            }),
+          ],
+          cliTranscript: Object.freeze({
+            kind: 'sidecar_live_analysis_cli_transcript',
+            sourceKind: 'terminal_transcript',
+            sourcePath: '/fixture/archive/terminal.transcript',
+            byteCount: 42,
+            lineCount: 2,
+            lines: [
+              Object.freeze({
+                kind: 'sidecar_live_analysis_transcript_line',
+                index: 0,
+                eventType: 'assistant',
+                role: 'assistant',
+                label: 'assistant',
+                text: 'Tool call: Read',
+                tone: 'active',
+              }),
+              Object.freeze({
+                kind: 'sidecar_live_analysis_transcript_line',
+                index: 1,
+                eventType: 'result',
+                role: null,
+                label: 'success',
+                text: 'completed',
+                tone: 'active',
+              }),
+            ],
+          }),
+        }),
+      }),
+    ],
+    diagnostics: [],
+    runtimeArtifactGapCount: 0,
+    retryForensicCount: 0,
+    summaryDriftCount: 0,
+    evidenceIndex: ['file:///fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1'],
+  });
+}
+
 function fixtureProjection() {
   return Object.freeze({
     kind: 'sidecar_process_projection',
@@ -151,6 +305,7 @@ function fixtureProjection() {
     maps: [],
     catalog: fixtureCatalog(),
     leafOverlays: [fixtureLeafOverlay()],
+    liveAnalysis: fixtureLiveAnalysis(),
   });
 }
 
@@ -175,6 +330,35 @@ test('process/select-variant reduces ui.activeProcessFlowVariant deterministical
   assert.equal(stateV1.ui.activeProcessView, initial.ui.activeProcessView);
   assert.equal(stateV1.ui.activeProcessMap, initial.ui.activeProcessMap);
   assert.equal(stateV1.ui.activeLeafName, initial.ui.activeLeafName);
+});
+
+test('process/select-map admits the Live View tab through reducer state only', async () => {
+  const module = await loadStateModule();
+  const selected = module.updateSidecarState(module.INITIAL_SIDECAR_STATE, {
+    type: 'process/select-map',
+    map: 'live_view',
+  });
+  assert.equal(selected.ui.activeProcessMap, 'live_view');
+  assert.equal(selected.pendingCommands.length, 0);
+});
+
+test('process/set-graph-mode toggles the graph between full and compressed representations', async () => {
+  const module = await loadStateModule();
+  const initial = module.INITIAL_SIDECAR_STATE;
+  assert.equal(initial.ui.activeProcessGraphMode, 'expanded');
+
+  const compressed = module.updateSidecarState(initial, {
+    type: 'process/set-graph-mode',
+    mode: 'compressed',
+  });
+  assert.equal(compressed.ui.activeProcessGraphMode, 'compressed');
+
+  const expanded = module.updateSidecarState(compressed, {
+    type: 'process/set-graph-mode',
+    mode: 'expanded',
+  });
+  assert.equal(expanded.ui.activeProcessGraphMode, 'expanded');
+  assert.equal(expanded.pendingCommands.length, 0);
 });
 
 test('process/select-leaf reduces ui.activeLeafName, including null clear', async () => {
@@ -219,6 +403,9 @@ test('load/done admits SidecarProcessProjection with catalog + leafOverlays + tr
   assert.equal(loaded.process.catalog.leaves.length, 1);
   assert.equal(loaded.process.catalog.leaves[0].catalog, 'bootstrap');
   assert.equal(loaded.process.leafOverlays.length, 1);
+  assert.equal(loaded.process.liveAnalysis.kind, 'sidecar_live_analysis_projection');
+  assert.equal(loaded.process.liveAnalysis.telemetry.operatorRunCount, 1);
+  assert.equal(loaded.process.liveAnalysis.attempts[0].graphFunctionName, 'derive_intent_surface');
   const overlay = loaded.process.leafOverlays[0];
   assert.equal(overlay.leafName, 'derive_intent_surface');
   assert.equal(overlay.latestStatus, 'fd_postflight_passed');

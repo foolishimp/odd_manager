@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import {
   loadSidecarProcessProjection,
   SIDECAR_PROCESS_CONTRACT_NAME,
@@ -31,7 +32,7 @@ function installedTempWorkspace() {
   return root;
 }
 
-function installFakeOddSdlcCli(root, queryPayload, catalogPayload = null) {
+function installFakeOddSdlcCli(root, queryPayload, catalogPayload = null, analysisPayload = null) {
   const cliPath = join(root, 'fake-odd-sdlc-cli.mjs');
   writeFileSync(
     cliPath,
@@ -44,8 +45,10 @@ function installFakeOddSdlcCli(root, queryPayload, catalogPayload = null) {
         functions: [],
         libraryFunctions: [],
       })};`,
+      `const analysisPayload = ${JSON.stringify(analysisPayload)};`,
       "if (command === 'query-domain') { console.log(JSON.stringify({ payload: queryPayload })); process.exit(0); }",
       "if (command === 'catalog') { console.log(JSON.stringify({ payload: catalogPayload })); process.exit(0); }",
+      "if (command === 'analyze-run' && analysisPayload) { console.log(JSON.stringify(analysisPayload)); process.exit(0); }",
       "console.error(`unsupported command ${command}`);",
       'process.exit(1);',
       '',
@@ -99,6 +102,142 @@ function tracedResult(overrides = {}) {
     toolCallEvents: [],
     terminalSessionId: 'pty-fixture',
     ...overrides,
+  };
+}
+
+function analysisPayload(overrides = {}) {
+  const {
+    operatorRunRef = 'file:///fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T010000Z_pid1',
+    ...rest
+  } = overrides;
+  return {
+    kind: 'sdlc_fd_run_analysis',
+    version: 1,
+    inspectedRoot: '/fixture/workspace',
+    inspectedKind: 'workspace',
+    profile: 'generic',
+    readOnly: true,
+    currentStateTelemetrySummary: {
+      inspectedRoot: '/fixture/workspace',
+      inspectedKind: 'workspace',
+      scenarioName: 'fixture-workspace',
+      profile: 'generic',
+      operatorRunCount: 2,
+      graphEdgeSequence: ['derive_intent_surface', 'derive_design_surface'],
+      sameEdgeRetryCount: 1,
+      blockedAttemptCount: 1,
+      repairAttemptCount: 0,
+      yieldedAttemptCount: 0,
+      abortedAttemptCount: 0,
+      finalClosureDisposition: 'retry',
+      totalWallClockMs: 1234,
+      totalWorkerElapsedMs: 1100,
+      unattributedElapsedMs: 134,
+      archiveBytes: {
+        totalBytes: 4096,
+        promptContextBytes: 512,
+        handoffBytes: 256,
+        stdoutBytes: 128,
+        runtimeEventBytes: 64,
+      },
+      productFileCount: 1,
+      requirementObligationCount: 3,
+      productFileLineageCount: 2,
+    },
+    edgeTraversal: [
+      {
+        attemptOrdinal: 0,
+        operatorRunRef,
+        graphFunctionName: 'derive_intent_surface',
+        graphVectorRef: 'derive_intent_surface',
+        targetAssetType: 'intent_surface',
+        traversalClass: 'constructive',
+        workerElapsedMs: 500,
+        edgeWindowElapsedMs: 550,
+        deterministicElapsedMs: 50,
+        fpEvaluateStatus: 'passed',
+        postflightStatus: 'passed',
+        executionEvidenceStatus: null,
+        executionEvidenceReportCount: 0,
+        residualPressureRefCount: 0,
+        residualPressureTransition: 'cleared',
+        closureDisposition: 'close',
+        selectedNextActionRef: null,
+        predecessorAttemptRef: null,
+        blockingReasonCodes: [],
+        productFilesWritten: ['specification/INTENT.md'],
+        productFilesReplayed: [],
+        requirementObligationCount: 3,
+        productLineageCount: 2,
+        promptContextBytes: 512,
+        handoffBytes: 256,
+        stdoutBytes: 128,
+        eventBytes: 64,
+        workerStatus: 'worker_invoked',
+      },
+    ],
+    activeRunLiveness: {
+      activeOperatorRunRef: operatorRunRef,
+      activeEdgeRef: 'derive_intent_surface',
+      activeGraphVectorRef: 'derive_intent_surface',
+      activeTargetAssetType: 'intent_surface',
+      workerPid: 123,
+      processAlive: false,
+      lastEventAtMs: 100,
+      lastStdoutAtMs: 120,
+      heartbeatAgeMs: null,
+      maxNoOutputGapMs: 50,
+      archiveGrowthBytesPerMinute: 0,
+      productiveSignal: 'completed',
+      lastBlockingReason: null,
+    },
+    runtimeArtifactGaps: [{
+      operatorRunRef,
+      artifact: 'worker_run.json',
+      status: 'missing',
+      detail: null,
+    }],
+    diagnostics: [
+      {
+        kind: 'sdlc_fd_run_analysis_diagnostic',
+        code: 'runtime_artifact_missing',
+        severity: 'warn',
+        detail: 'worker_run.json missing',
+        evidenceRefs: [operatorRunRef],
+        operatorRunRef,
+        edgeName: 'derive_intent_surface',
+        policyRef: null,
+      },
+    ],
+    bloatAndSlopeAnalysis: {},
+    retryForensics: [{
+      edgeName: 'derive_intent_surface',
+      attemptRef: operatorRunRef,
+      predecessorAttemptRef: null,
+      workerSecondsBefore: null,
+      blockingReasonCodes: ['worker_authority_read_outside_workspace'],
+      changedFiles: [],
+      productFilesObserved: [],
+      productFilesMaterialized: [],
+      productFilesReplayed: [],
+      lineageStatus: 'unknown',
+      outsideWorkspaceReadCount: 1,
+      schemaViolationCount: 0,
+      likelyCauseClass: 'worker_policy_violation',
+    }],
+    conceptualStageCoverage: [{
+      kind: 'sdlc_fd_run_analysis_conceptual_stage_coverage',
+      test35StageRef: 'test35://stage/intent',
+      expectedEdgeName: 'derive_intent_surface',
+      expectedTargetAssetType: 'intent_surface',
+      mappedEdgeName: 'derive_intent_surface',
+      mappedTargetAssetType: 'intent_surface',
+      stageClass: 'constructive',
+      operatorRunRefs: [operatorRunRef],
+    }],
+    summaryDrift: { drifts: [{ field: 'operatorRunCount' }] },
+    evidenceIndex: [operatorRunRef],
+    ...rest,
   };
 }
 
@@ -368,6 +507,71 @@ test('per-edge outcome decoration uses the latest traced invocation and trace ar
   assert.equal(decorated.latestOutcome, 'exited');
   assert.equal(decorated.executorProfile, 'local-spawn');
   assert.equal(decorated.traceArchiveRoot, join(latestPath, 'worker_process_events.jsonl.trace'));
+});
+
+test('T-161 analyze-run output projects as Process Navigator Live View read model', () => {
+  const root = installedTempWorkspace();
+  const opRunPath = writeOpRun(
+    root,
+    '20260518T010000Z_pid1',
+    'derive_intent_surface',
+    tracedResult({ sessionId: 'live-analysis-fixture' }),
+  );
+  writeFileSync(
+    join(opRunPath, 'worker_process_events.jsonl.trace', 'terminal.transcript'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-model', session_id: 'fixture-session' }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'specification/INTENT.md' } }],
+        },
+      }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'completed' }),
+      '',
+    ].join('\n'),
+  );
+  const operatorRunRef = pathToFileURL(opRunPath).href;
+  installFakeOddSdlcCli(
+    root,
+    {
+      kind: 'sdlc_query_domain_projection',
+      contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+      contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+      graphFunctions: [],
+    },
+    null,
+    analysisPayload({ operatorRunRef }),
+  );
+
+  const projection = loadSidecarProcessProjection(root);
+  assert.equal(projection.supported, true);
+  assert.equal(projection.liveAnalysis.kind, 'sidecar_live_analysis_projection');
+  assert.equal(projection.liveAnalysis.sourceKind, 'sdlc_fd_run_analysis');
+  assert.equal(projection.liveAnalysis.readOnly, true);
+  assert.equal(projection.liveAnalysis.telemetry.operatorRunCount, 2);
+  assert.equal(projection.liveAnalysis.telemetry.sameEdgeRetryCount, 1);
+  assert.equal(projection.liveAnalysis.liveness.productiveSignal, 'completed');
+  assert.equal(
+    projection.liveAnalysis.liveness.activeOperatorRunPath,
+    opRunPath,
+  );
+  assert.equal(projection.liveAnalysis.attempts.length, 1);
+  assert.equal(projection.liveAnalysis.attempts[0].graphFunctionName, 'derive_intent_surface');
+  assert.equal(projection.liveAnalysis.attempts[0].operatorRunPath, opRunPath);
+  assert.equal(projection.liveAnalysis.attempts[0].detail.kind, 'sidecar_live_analysis_run_detail');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.runtimeGaps[0].artifact, 'worker_run.json');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.diagnostics[0].code, 'runtime_artifact_missing');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.retryForensics[0].likelyCauseClass, 'worker_policy_violation');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.stageCoverage[0].test35StageRef, 'test35://stage/intent');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.sourceKind, 'terminal_transcript');
+  assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.lineCount, 3);
+  assert.match(projection.liveAnalysis.attempts[0].detail.cliTranscript.lines[1].text, /Tool call: Read/);
+  assert.equal(projection.liveAnalysis.diagnostics[0].kind, 'sidecar_live_analysis_diagnostic');
+  assert.equal(projection.liveAnalysis.runtimeArtifactGapCount, 1);
+  assert.equal(projection.liveAnalysis.retryForensicCount, 1);
+  assert.equal(projection.liveAnalysis.summaryDriftCount, 1);
 });
 
 test('T-164 edge assurance carriers are projected without treating postflight as closure authority', () => {
