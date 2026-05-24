@@ -133,6 +133,39 @@ function fixtureLeafOverlay() {
   });
 }
 
+function fixtureCliTranscript({ id, label, role, sourcePath, text }) {
+  return Object.freeze({
+    kind: 'sidecar_live_analysis_cli_transcript',
+    id,
+    label,
+    role,
+    sourceKind: 'terminal_transcript',
+    sourcePath,
+    byteCount: 42,
+    lineCount: 2,
+    lines: [
+      Object.freeze({
+        kind: 'sidecar_live_analysis_transcript_line',
+        index: 0,
+        eventType: 'assistant',
+        role: 'assistant',
+        label: 'assistant',
+        text: 'Tool call: Read',
+        tone: 'active',
+      }),
+      Object.freeze({
+        kind: 'sidecar_live_analysis_transcript_line',
+        index: 1,
+        eventType: 'result',
+        role: null,
+        label: 'success',
+        text,
+        tone: 'active',
+      }),
+    ],
+  });
+}
+
 function fixtureLiveAnalysis() {
   return Object.freeze({
     kind: 'sidecar_live_analysis_projection',
@@ -249,33 +282,29 @@ function fixtureLiveAnalysis() {
               stageClass: 'constructive',
             }),
           ],
-          cliTranscript: Object.freeze({
-            kind: 'sidecar_live_analysis_cli_transcript',
-            sourceKind: 'terminal_transcript',
+          cliTranscript: fixtureCliTranscript({
+            id: 'cli:/fixture/archive/terminal.transcript',
+            label: 'Transform CLI',
+            role: 'transform',
             sourcePath: '/fixture/archive/terminal.transcript',
-            byteCount: 42,
-            lineCount: 2,
-            lines: [
-              Object.freeze({
-                kind: 'sidecar_live_analysis_transcript_line',
-                index: 0,
-                eventType: 'assistant',
-                role: 'assistant',
-                label: 'assistant',
-                text: 'Tool call: Read',
-                tone: 'active',
-              }),
-              Object.freeze({
-                kind: 'sidecar_live_analysis_transcript_line',
-                index: 1,
-                eventType: 'result',
-                role: null,
-                label: 'success',
-                text: 'completed',
-                tone: 'active',
-              }),
-            ],
+            text: 'completed',
           }),
+          cliTranscripts: Object.freeze([
+            fixtureCliTranscript({
+              id: 'cli:/fixture/archive/terminal.transcript',
+              label: 'Transform CLI',
+              role: 'transform',
+              sourcePath: '/fixture/archive/terminal.transcript',
+              text: 'completed',
+            }),
+            fixtureCliTranscript({
+              id: 'cli:/fixture/archive/fp_evaluate_process_events.jsonl.trace/terminal.transcript',
+              label: 'Evaluator CLI',
+              role: 'evaluate',
+              sourcePath: '/fixture/archive/fp_evaluate_process_events.jsonl.trace/terminal.transcript',
+              text: 'evaluation admitted',
+            }),
+          ]),
         }),
       }),
     ],

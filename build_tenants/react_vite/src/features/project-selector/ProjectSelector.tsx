@@ -8,6 +8,7 @@ import {
   setActiveProject,
   unregisterProject,
 } from "../../lib/collaboration";
+import { projectDisplayNameFromRoot } from "../../lib/projectDisplay";
 import type { WorkspaceScanResult } from "../../lib/collaboration";
 import type { ProjectRecord, ProjectSurfaceDiagnostic } from "../../contracts/project";
 
@@ -24,8 +25,7 @@ type SelectorTab = "projects" | "browse" | "manual";
 type BrowseMode = "folders" | "scan";
 
 function workspaceNameFromPath(path: string) {
-  const parts = path.split("/").filter(Boolean);
-  return parts.at(-1) ?? path;
+  return projectDisplayNameFromRoot(path);
 }
 
 function projectLabel(project: ProjectRecord) {

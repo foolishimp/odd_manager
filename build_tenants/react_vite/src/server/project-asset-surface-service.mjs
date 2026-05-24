@@ -53,6 +53,23 @@ function projectIdFromRoot(root) {
   return `${base}-${hash}`;
 }
 
+function projectDisplayNameFromRoot(root) {
+  const parts = resolve(root).split('/').filter(Boolean);
+  const sandboxName = sandboxWorkspaceDisplayName(parts);
+  if (sandboxName) return sandboxName;
+  return basename(root) || 'project';
+}
+
+function sandboxWorkspaceDisplayName(parts) {
+  const leaf = parts.at(-1);
+  const runFolder = parts.at(-2);
+  const browserFolder = parts.at(-3);
+  if (leaf !== 'workspace' || !runFolder || !browserFolder) return null;
+  const match = runFolder.match(/(?:^|_)pid([A-Za-z0-9]+)$/);
+  if (!match) return null;
+  return `${browserFolder}.pid${match[1]}.workspace`;
+}
+
 function detectOddType(installedPackages) {
   if (installedPackages.includes('odd_sdlc')) return 'odd_sdlc';
   if (installedPackages.includes('odd_world_model')) return 'odd_world_model';
@@ -76,10 +93,11 @@ function normalizeRegistryRecord(value) {
   const root = typeof value.root === 'string' && value.root.trim() ? resolve(value.root) : null;
   if (!root) return null;
   const observedAt = nowIso();
+  const fallbackLabel = projectDisplayNameFromRoot(root);
   return {
     id: typeof value.id === 'string' && value.id.trim() ? value.id.trim() : projectIdFromRoot(root),
     root,
-    label: typeof value.label === 'string' && value.label.trim() ? value.label.trim() : basename(root),
+    label: typeof value.label === 'string' && value.label.trim() ? value.label.trim() : fallbackLabel,
     tags: Array.isArray(value.tags) ? value.tags.filter((tag) => typeof tag === 'string' && tag.trim()) : [],
     registered_at: typeof value.registered_at === 'string' && value.registered_at.trim() ? value.registered_at : observedAt,
     updated_at: typeof value.updated_at === 'string' && value.updated_at.trim() ? value.updated_at : observedAt,
@@ -132,6 +150,9 @@ function writeRegistry(managerWorkspaceRoot, registry) {
 
 function describeProjectAt(name, root, registryEntry = null, activeProjectRoot = null) {
   const path = resolve(root);
+  const displayName = projectDisplayNameFromRoot(path);
+  const registryLabel = registryEntry?.label ?? name;
+  const visibleName = registryLabel && registryLabel !== 'workspace' ? registryLabel : displayName;
   const hasAiWorkspace = isDirectory(join(path, '.ai-workspace'));
   const genesisPath = join(path, '.genesis');
   const hasGenesis = isDirectory(genesisPath);
@@ -140,7 +161,7 @@ function describeProjectAt(name, root, registryEntry = null, activeProjectRoot =
     .filter((n) => n !== 'common' && n !== 'TENANT_REGISTRY.md');
   return {
     id: registryEntry?.id ?? projectIdFromRoot(path),
-    name: registryEntry?.label ?? name,
+    name: visibleName,
     root: path,
     odd_type: detectOddType(installedPackages),
     has_ai_workspace: hasAiWorkspace,

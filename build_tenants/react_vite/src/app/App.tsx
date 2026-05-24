@@ -7,6 +7,7 @@ import {
   pagesForWorkspaceProfile,
   subtitleForWorkspaceProfile,
 } from "../lib/presentation";
+import { projectDisplayNameFromRoot } from "../lib/projectDisplay";
 import type {
   CommandName,
   GraphNodeView,
@@ -211,7 +212,7 @@ export function App() {
 
   const workspaceProfile = world?.workspace_profile ?? null;
   const visiblePages = pagesForWorkspaceProfile(workspaceProfile);
-  const shellTitle = projectNameFromRoot(workspaceRoot);
+  const shellTitle = projectDisplayNameFromRoot(workspaceRoot);
   const shellSubtitle = `${subtitleForWorkspaceProfile(workspaceProfile)} ${workspaceRoot}`;
 
   return (
@@ -258,11 +259,6 @@ export function App() {
       />
     </AppShell>
   );
-}
-
-function projectNameFromRoot(workspaceRoot: string) {
-  const trimmed = workspaceRoot.trim().replace(/\/+$/, "");
-  return trimmed.split("/").filter(Boolean).at(-1) ?? "Project";
 }
 
 function ensureGraphSelection(world: ManagerWorld, current: string) {

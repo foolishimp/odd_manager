@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 export const SIDECAR_PROCESS_CONTRACT_NAME = "odd_sdlc.query-domain";
 export const SIDECAR_PROCESS_CONTRACT_VERSION = "ts-v1";
@@ -114,6 +114,13 @@ const SUPPORTED_TS_EVENT_KINDS = new Set([
 
 const SIDECAR_PROCESS_MAX_EVENT_LOG_BYTES = 1024 * 1024;
 const SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS = 1200;
+const LIVE_ANALYSIS_MAX_ATTEMPTS = 24;
+const LIVE_ANALYSIS_MAX_DIAGNOSTICS = 240;
+const LIVE_ANALYSIS_MAX_RUNTIME_GAPS = 360;
+const LIVE_ANALYSIS_MAX_RETRY_FORENSICS = 240;
+const LIVE_ANALYSIS_MAX_STAGE_COVERAGE = 360;
+const LIVE_ANALYSIS_MAX_EVIDENCE_REFS = 240;
+const LIVE_ANALYSIS_MAX_GRAPH_EDGE_SEQUENCE = 240;
 
 export function loadSidecarProcessProjection(workspaceRoot) {
   const root = String(workspaceRoot ?? "").trim();
@@ -296,12 +303,30 @@ function mapLiveAnalysisToSidecar(analysis) {
   const summaryDrift = isObject(analysis.summaryDrift) && Array.isArray(analysis.summaryDrift.drifts)
     ? analysis.summaryDrift.drifts
     : [];
-  const sidecarDiagnostics = diagnostics.map(mapLiveAnalysisDiagnosticToSidecar).filter(Boolean);
+  const activeOperatorRunRef = stringOrNull(liveness, "activeOperatorRunRef");
+  const projectedAttempts = selectLiveAnalysisAttempts(attempts, activeOperatorRunRef, LIVE_ANALYSIS_MAX_ATTEMPTS);
+  const projectedAttemptRefs = new Set(projectedAttempts.map((attempt) => stringField(attempt, "operatorRunRef")).filter(Boolean));
+  const projectedDiagnostics = selectLiveAnalysisRowsByRef(
+    diagnostics,
+    projectedAttemptRefs,
+    "operatorRunRef",
+    LIVE_ANALYSIS_MAX_DIAGNOSTICS,
+    true
+  );
+  const sidecarDiagnostics = projectedDiagnostics.map(mapLiveAnalysisDiagnosticToSidecar).filter(Boolean);
   const detailIndex = Object.freeze({
-    runtimeGapsByRun: groupByOperatorRunRef(runtimeArtifactGaps, mapLiveAnalysisRuntimeGapToSidecar),
+    runtimeGapsByRun: groupByOperatorRunRef(
+      selectLiveAnalysisRowsByRef(runtimeArtifactGaps, projectedAttemptRefs, "operatorRunRef", LIVE_ANALYSIS_MAX_RUNTIME_GAPS),
+      mapLiveAnalysisRuntimeGapToSidecar
+    ),
     diagnosticsByRun: groupMappedByKey(sidecarDiagnostics, (diagnostic) => diagnostic.operatorRunRef),
-    retryForensicsByRun: groupByAttemptRef(retryForensics, mapLiveAnalysisRetryForensicToSidecar),
-    stageCoverageByRun: groupStageCoverageByOperatorRun(conceptualStageCoverage)
+    retryForensicsByRun: groupByAttemptRef(
+      selectLiveAnalysisRowsByRef(retryForensics, projectedAttemptRefs, "attemptRef", LIVE_ANALYSIS_MAX_RETRY_FORENSICS),
+      mapLiveAnalysisRetryForensicToSidecar
+    ),
+    stageCoverageByRun: groupStageCoverageByOperatorRun(
+      selectLiveAnalysisStageCoverage(conceptualStageCoverage, projectedAttemptRefs, LIVE_ANALYSIS_MAX_STAGE_COVERAGE)
+    )
   });
   return Object.freeze({
     kind: "sidecar_live_analysis_projection",
@@ -315,7 +340,7 @@ function mapLiveAnalysisToSidecar(analysis) {
       scenarioName: stringOrNull(telemetry, "scenarioName"),
       profile: liveAnalysisProfile(stringField(telemetry, "profile")),
       operatorRunCount: numberField(telemetry, "operatorRunCount") ?? attempts.length,
-      graphEdgeSequence: Object.freeze(stringArray(telemetry.graphEdgeSequence)),
+      graphEdgeSequence: Object.freeze(stringArray(telemetry.graphEdgeSequence).slice(-LIVE_ANALYSIS_MAX_GRAPH_EDGE_SEQUENCE)),
       sameEdgeRetryCount: numberField(telemetry, "sameEdgeRetryCount") ?? 0,
       blockedAttemptCount: numberField(telemetry, "blockedAttemptCount") ?? 0,
       repairAttemptCount: numberField(telemetry, "repairAttemptCount") ?? 0,
@@ -335,8 +360,8 @@ function mapLiveAnalysisToSidecar(analysis) {
       productFileLineageCount: numberField(telemetry, "productFileLineageCount") ?? 0
     }),
     liveness: Object.freeze({
-      activeOperatorRunRef: stringOrNull(liveness, "activeOperatorRunRef"),
-      activeOperatorRunPath: fileRefToPath(stringOrNull(liveness, "activeOperatorRunRef")),
+      activeOperatorRunRef,
+      activeOperatorRunPath: fileRefToPath(activeOperatorRunRef),
       activeEdgeRef: stringOrNull(liveness, "activeEdgeRef"),
       activeGraphVectorRef: stringOrNull(liveness, "activeGraphVectorRef"),
       activeTargetAssetType: stringOrNull(liveness, "activeTargetAssetType"),
@@ -350,13 +375,42 @@ function mapLiveAnalysisToSidecar(analysis) {
       productiveSignal: liveAnalysisProductiveSignal(stringField(liveness, "productiveSignal")),
       lastBlockingReason: liveAnalysisBlockingReason(liveness.lastBlockingReason)
     }),
-    attempts: Object.freeze(attempts.map((attempt) => mapLiveAnalysisAttemptToSidecar(attempt, detailIndex)).filter(Boolean)),
+    attempts: Object.freeze(projectedAttempts.map((attempt) => mapLiveAnalysisAttemptToSidecar(attempt, detailIndex)).filter(Boolean)),
     diagnostics: Object.freeze(sidecarDiagnostics),
     runtimeArtifactGapCount: runtimeArtifactGaps.length,
     retryForensicCount: retryForensics.length,
     summaryDriftCount: summaryDrift.length,
-    evidenceIndex: Object.freeze(stringArray(analysis.evidenceIndex))
+    evidenceIndex: Object.freeze(stringArray(analysis.evidenceIndex).slice(-LIVE_ANALYSIS_MAX_EVIDENCE_REFS))
   });
+}
+
+function selectLiveAnalysisAttempts(attempts, activeOperatorRunRef, maxAttempts) {
+  const validAttempts = attempts.filter(isObject);
+  if (validAttempts.length <= maxAttempts) return validAttempts;
+  const recentAttempts = validAttempts.slice(-maxAttempts);
+  if (!activeOperatorRunRef || recentAttempts.some((attempt) => stringField(attempt, "operatorRunRef") === activeOperatorRunRef)) {
+    return recentAttempts;
+  }
+  const activeAttempt = validAttempts.find((attempt) => stringField(attempt, "operatorRunRef") === activeOperatorRunRef);
+  if (!activeAttempt) return recentAttempts;
+  return [activeAttempt, ...recentAttempts.slice(1)];
+}
+
+function selectLiveAnalysisRowsByRef(items, selectedRefs, refKey, maxRows, includeGlobal = false) {
+  const projected = items.filter((item) => {
+    if (!isObject(item)) return false;
+    const ref = stringField(item, refKey);
+    return ref ? selectedRefs.has(ref) : includeGlobal;
+  });
+  return projected.slice(-maxRows);
+}
+
+function selectLiveAnalysisStageCoverage(stages, selectedRefs, maxRows) {
+  const projected = stages.filter((stage) => {
+    if (!isObject(stage)) return false;
+    return stringArray(stage.operatorRunRefs).some((ref) => selectedRefs.has(ref));
+  });
+  return projected.slice(-maxRows);
 }
 
 function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
@@ -365,6 +419,10 @@ function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
   if (!operatorRunRef) return null;
   const operatorRunPath = fileRefToPath(operatorRunRef);
   const graphFunctionName = stringOrNull(attempt, "graphFunctionName");
+  const targetAssetType = stringOrNull(attempt, "targetAssetType");
+  const cliTranscripts = operatorRunPath
+    ? readLiveAnalysisCliTranscripts(operatorRunPath, { graphFunctionName, targetAssetType })
+    : Object.freeze([emptyLiveAnalysisCliTranscript()]);
   const manifest = operatorRunPath ? readOpRunManifest(operatorRunPath) : null;
   const edgeAssurance = operatorRunPath
     ? readEdgeAssuranceOverlay(operatorRunPath, graphFunctionName ?? "", manifest)
@@ -376,7 +434,7 @@ function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
     operatorRunPath,
     graphFunctionName,
     graphVectorRef: stringOrNull(attempt, "graphVectorRef"),
-    targetAssetType: stringOrNull(attempt, "targetAssetType"),
+    targetAssetType,
     traversalClass: liveAnalysisStageClass(stringField(attempt, "traversalClass")),
     workerElapsedMs: numberOrNull(attempt, "workerElapsedMs"),
     edgeWindowElapsedMs: numberOrNull(attempt, "edgeWindowElapsedMs"),
@@ -408,7 +466,8 @@ function mapLiveAnalysisAttemptToSidecar(attempt, detailIndex) {
       diagnostics: Object.freeze(detailIndex.diagnosticsByRun.get(operatorRunRef) ?? []),
       retryForensics: Object.freeze(detailIndex.retryForensicsByRun.get(operatorRunRef) ?? []),
       stageCoverage: Object.freeze(detailIndex.stageCoverageByRun.get(operatorRunRef) ?? []),
-      cliTranscript: operatorRunPath ? readLiveAnalysisCliTranscript(operatorRunPath) : emptyLiveAnalysisCliTranscript(),
+      cliTranscript: cliTranscripts[0] ?? emptyLiveAnalysisCliTranscript(),
+      cliTranscripts,
       events: operatorRunPath ? readLiveAnalysisEventTickets(operatorRunPath) : Object.freeze([])
     })
   });
@@ -495,9 +554,12 @@ function readLiveAnalysisAssuranceSummary(operatorRunPath) {
   });
 }
 
-function emptyLiveAnalysisCliTranscript() {
+function emptyLiveAnalysisCliTranscript(overrides = {}) {
   return Object.freeze({
     kind: "sidecar_live_analysis_cli_transcript",
+    id: stringField(overrides, "id") || "cli:missing",
+    label: stringField(overrides, "label") || "No CLI transcript",
+    role: stringField(overrides, "role") || "missing",
     sourceKind: "missing",
     sourcePath: null,
     byteCount: 0,
@@ -506,45 +568,284 @@ function emptyLiveAnalysisCliTranscript() {
   });
 }
 
-function readLiveAnalysisCliTranscript(operatorRunPath) {
-  const candidates = [
+function readLiveAnalysisCliTranscript(operatorRunPath, context = {}) {
+  const transcripts = readLiveAnalysisCliTranscripts(operatorRunPath, context);
+  return transcripts[0] ?? emptyLiveAnalysisCliTranscript();
+}
+
+function readLiveAnalysisCliTranscripts(operatorRunPath, context = {}) {
+  const candidates = discoverLiveAnalysisCliTranscriptCandidates(operatorRunPath, context);
+  const transcripts = candidates
+    .map((candidate) => readLiveAnalysisCliTranscriptCandidate(candidate))
+    .filter((transcript) => transcript.sourceKind !== "missing");
+  return Object.freeze(transcripts.length ? transcripts : [emptyLiveAnalysisCliTranscript()]);
+}
+
+function discoverLiveAnalysisCliTranscriptCandidates(operatorRunPath, context = {}) {
+  const candidates = [];
+  const seen = new Set();
+  const addCandidate = (candidate) => {
+    const sourcePath = typeof candidate?.path === "string" ? candidate.path : "";
+    if (!sourcePath || seen.has(sourcePath)) return;
+    try {
+      if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) return;
+    } catch {
+      return;
+    }
+    seen.add(sourcePath);
+    const basePath = typeof candidate.basePath === "string" ? candidate.basePath : operatorRunPath;
+    candidates.push(Object.freeze({
+      sourceKind: candidate.sourceKind,
+      path: sourcePath,
+      role: candidate.role || inferCliTranscriptRole(basePath, sourcePath),
+      label: candidate.label || cliTranscriptLabel(
+        candidate.role || inferCliTranscriptRole(basePath, sourcePath),
+        candidate.sourceKind,
+        basePath,
+        sourcePath
+      )
+    }));
+  };
+
+  for (const ref of readDeclaredTerminalTranscriptRefs(operatorRunPath)) {
+    addCandidate({
+      sourceKind: "terminal_transcript",
+      path: ref,
+      role: "transform",
+      label: "Transform CLI"
+    });
+  }
+
+  scanLiveAnalysisCliTranscriptFiles(operatorRunPath).forEach(addCandidate);
+  discoverRelatedLiveAnalysisCliTranscriptCandidates(operatorRunPath, context).forEach(addCandidate);
+
+  if (candidates.some((candidate) => candidate.sourceKind === "terminal_transcript")) {
+    return Object.freeze(
+      candidates
+        .filter((candidate) => candidate.sourceKind === "terminal_transcript")
+        .slice(0, LIVE_ANALYSIS_MAX_TRANSCRIPT_CANDIDATES)
+    );
+  }
+
+  const fallbackCandidates = [
     {
       sourceKind: "terminal_transcript",
-      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "terminal.transcript")
+      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "terminal.transcript"),
+      role: "transform",
+      label: "Transform CLI"
     },
     {
       sourceKind: "worker_stdout",
-      path: join(operatorRunPath, "worker_stdout.log")
+      path: join(operatorRunPath, "worker_stdout.log"),
+      role: "transform",
+      label: "Transform stdout"
     },
     {
       sourceKind: "final_output",
-      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "final_output.txt")
+      path: join(operatorRunPath, "worker_process_events.jsonl.trace", "final_output.txt"),
+      role: "transform",
+      label: "Transform final output"
     }
   ];
-  const candidate = candidates.find((entry) => existsSync(entry.path));
-  if (!candidate) return emptyLiveAnalysisCliTranscript();
+  fallbackCandidates.forEach(addCandidate);
+  return Object.freeze(candidates.slice(0, LIVE_ANALYSIS_MAX_TRANSCRIPT_CANDIDATES));
+}
+
+function discoverRelatedLiveAnalysisCliTranscriptCandidates(operatorRunPath, context = {}) {
+  const matchContext = normalizeLiveAnalysisCliContext(context);
+  if (!matchContext.graphFunctionName && !matchContext.targetAssetType) return [];
+  const operatorRunsRoot = dirname(operatorRunPath);
+  let entries;
+  try {
+    entries = readdirSync(operatorRunsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const found = [];
+  const runEntries = entries
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .slice(-LIVE_ANALYSIS_MAX_RELATED_TRANSCRIPT_RUNS);
+  for (const entry of runEntries) {
+    const runPath = join(operatorRunsRoot, entry.name);
+    if (runPath === operatorRunPath) continue;
+    if (!operatorRunMatchesCliContext(readOpRunManifest(runPath), matchContext)) continue;
+    const relatedCandidates = scanLiveAnalysisCliTranscriptFiles(runPath)
+      .filter(isRelatedStageCliCandidate)
+      .map((candidate) => Object.freeze({ ...candidate, basePath: runPath }));
+    for (const candidate of relatedCandidates) {
+      found.push(candidate);
+      if (found.length >= LIVE_ANALYSIS_MAX_TRANSCRIPT_CANDIDATES) return found;
+    }
+  }
+  return found;
+}
+
+function normalizeLiveAnalysisCliContext(context) {
+  return Object.freeze({
+    graphFunctionName: stringOrNull(context, "graphFunctionName"),
+    targetAssetType: stringOrNull(context, "targetAssetType")
+  });
+}
+
+function operatorRunMatchesCliContext(manifest, context) {
+  if (!isObject(manifest)) return false;
+  const graphFunctionName = stringOrNull(context, "graphFunctionName");
+  const targetAssetType = stringOrNull(context, "targetAssetType");
+  const manifestGraphNames = new Set([
+    stringOrNull(manifest, "graphFunctionName"),
+    stringOrNull(manifest, "edgeName")
+  ].filter(Boolean));
+  if (graphFunctionName && manifestGraphNames.has(graphFunctionName)) return true;
+  if (targetAssetType && stringOrNull(manifest, "targetAssetType") === targetAssetType) return true;
+  return false;
+}
+
+function isRelatedStageCliCandidate(candidate) {
+  const role = stringField(candidate, "role");
+  return role === "evaluate" || role === "consequence" || role === "human_callout";
+}
+
+function readDeclaredTerminalTranscriptRefs(operatorRunPath) {
+  const refs = [];
+  for (const filename of ["worker_process_summary.json", "worker_run.json"]) {
+    const payload = readJsonFile(join(operatorRunPath, filename));
+    const ref = pathFromArchiveRef(stringField(payload, "terminalTranscriptRef"));
+    if (ref) refs.push(ref);
+    const traceRoot = pathFromArchiveRef(stringField(payload, "traceRoot"));
+    if (traceRoot) refs.push(join(traceRoot, "terminal.transcript"));
+  }
+  refs.push(join(operatorRunPath, "worker_process_events.jsonl.trace", "terminal.transcript"));
+  return uniqueInOrder(refs);
+}
+
+function scanLiveAnalysisCliTranscriptFiles(operatorRunPath) {
+  const found = [];
+  let visited = 0;
+  const walk = (currentPath, depth) => {
+    if (depth > LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_DEPTH || visited > LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_ENTRIES) return;
+    let entries;
+    try {
+      entries = readdirSync(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (visited > LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_ENTRIES) return;
+      const entryPath = join(currentPath, entry.name);
+      visited += 1;
+      if (entry.isDirectory()) {
+        walk(entryPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const sourceKind = liveAnalysisCliSourceKindForPath(entryPath);
+      if (!sourceKind) continue;
+      const role = inferCliTranscriptRole(operatorRunPath, entryPath);
+      found.push(Object.freeze({
+        sourceKind,
+        path: entryPath,
+        role,
+        label: cliTranscriptLabel(role, sourceKind, operatorRunPath, entryPath)
+      }));
+    }
+  };
+  walk(operatorRunPath, 0);
+  return found;
+}
+
+function liveAnalysisCliSourceKindForPath(path) {
+  const normalized = String(path || "").replace(/\\/g, "/");
+  if (normalized.endsWith("/terminal_session/screenlog.0")) return "terminal_screenlog";
+  if (normalized.endsWith("/terminal.transcript") || normalized.endsWith(".transcript")) return "terminal_transcript";
+  if (normalized.endsWith("/stdout.raw") || normalized.endsWith("_stdout.log")) return "worker_stdout";
+  if (normalized.endsWith("/stderr.raw") || normalized.endsWith("_stderr.log")) return "worker_stderr";
+  if (normalized.endsWith("/final_output.txt")) return "final_output";
+  return null;
+}
+
+function inferCliTranscriptRole(operatorRunPath, path) {
+  const rel = relative(operatorRunPath, path).replace(/\\/g, "/").toLowerCase();
+  if (rel.includes("evaluate") || rel.includes("evaluator")) return "evaluate";
+  if (rel.includes("consequence")) return "consequence";
+  if (rel.includes("human_callout") || rel.includes("human-callout")) return "human_callout";
+  if (rel.includes("transform") || rel.startsWith("worker_") || rel.startsWith("worker_process")) return "transform";
+  return "worker";
+}
+
+function cliTranscriptLabel(role, sourceKind, operatorRunPath, path) {
+  const roleLabel = {
+    transform: "Transform",
+    evaluate: "Evaluator",
+    consequence: "Consequence",
+    human_callout: "Human callout",
+    worker: "Worker"
+  }[role] || "Worker";
+  if (sourceKind === "terminal_transcript" || sourceKind === "terminal_screenlog") return `${roleLabel} CLI`;
+  if (sourceKind === "worker_stdout") return `${roleLabel} stdout`;
+  if (sourceKind === "worker_stderr") return `${roleLabel} stderr`;
+  if (sourceKind === "final_output") return `${roleLabel} final output`;
+  const rel = relative(operatorRunPath, path).replace(/\\/g, "/");
+  return `${roleLabel} ${rel.split("/").pop() || "transcript"}`;
+}
+
+function pathFromArchiveRef(ref) {
+  if (typeof ref !== "string" || !ref.trim()) return null;
+  return ref.startsWith("file://") ? fileRefToPath(ref) : ref;
+}
+
+function readLiveAnalysisCliTranscriptCandidate(candidate) {
   let raw;
   let byteCount = 0;
   try {
-    raw = readFileSync(candidate.path, "utf8");
     byteCount = statSync(candidate.path).size;
+    raw = byteCount > LIVE_ANALYSIS_MAX_TRANSCRIPT_BYTES
+      ? readFileHead(candidate.path, LIVE_ANALYSIS_MAX_TRANSCRIPT_BYTES)
+      : readFileSync(candidate.path, "utf8");
   } catch {
     return emptyLiveAnalysisCliTranscript();
   }
+  const byteLimited = byteCount > LIVE_ANALYSIS_MAX_TRANSCRIPT_BYTES;
+  if (byteLimited && !/\r?\n$/.test(raw)) {
+    raw = dropPartialTrailingLine(raw);
+  }
   const sourceLines = raw.split(/\r?\n/);
   const lineCount = raw.endsWith("\n") ? Math.max(0, sourceLines.length - 1) : sourceLines.length;
-  const lines = sourceLines
+  const projectedRows = sourceLines
     .map((line, index) => ({ line, index }))
-    .filter(({ line, index }) => line.length > 0 || index < lineCount)
+    .filter(({ line, index }) => line.length > 0 || index < lineCount);
+  const projectedLines = projectedRows
+    .slice(0, LIVE_ANALYSIS_MAX_TRANSCRIPT_LINES)
     .map(({ line, index }) => mapLiveAnalysisTranscriptLine(line, index));
+  if (byteLimited || projectedRows.length > LIVE_ANALYSIS_MAX_TRANSCRIPT_LINES) {
+    projectedLines.push(transcriptLine(
+      projectedLines.length,
+      "transcript_truncated",
+      null,
+      "archive truncated",
+      [
+        `${projectedLines.length} transcript lines are projected in Live View.`,
+        `${formatLiveBytes(byteCount)} remain available in the source archive.`
+      ].join("\n"),
+      "pending"
+    ));
+  }
   return Object.freeze({
     kind: "sidecar_live_analysis_cli_transcript",
+    id: cliTranscriptId(candidate),
+    label: candidate.label,
+    role: candidate.role,
     sourceKind: candidate.sourceKind,
     sourcePath: candidate.path,
     byteCount,
     lineCount,
-    lines: Object.freeze(lines)
+    lines: Object.freeze(projectedLines)
   });
+}
+
+function cliTranscriptId(candidate) {
+  const raw = String(candidate?.path || candidate?.label || "missing");
+  return `cli:${raw.replace(/[^A-Za-z0-9_.:/-]+/g, "-")}`;
 }
 
 function mapLiveAnalysisTranscriptLine(line, index) {
@@ -622,7 +923,7 @@ function transcriptLine(index, eventType, role, label, text, tone) {
     eventType,
     role,
     label,
-    text,
+    text: truncateLiveEventPreview(String(text ?? ""), LIVE_ANALYSIS_MAX_TRANSCRIPT_LINE_CHARS),
     tone
   });
 }
@@ -696,6 +997,17 @@ const LIVE_ANALYSIS_MAX_WORKER_EVENTS = 120;
 const LIVE_ANALYSIS_EVENT_PREVIEW_BYTES = 2600;
 const LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES = 8 * 1024 * 1024;
 const LIVE_ANALYSIS_MAX_EVENT_STREAM_BYTES = 4 * 1024 * 1024;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_BYTES = 512 * 1024;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_LINES = 600;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_LINE_CHARS = 6000;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_CANDIDATES = 12;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_DEPTH = 5;
+const LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_ENTRIES = 600;
+const LIVE_ANALYSIS_MAX_RELATED_TRANSCRIPT_RUNS = 120;
+const LIVE_ANALYSIS_MAX_MANIFEST_PARSE_BYTES = 2 * 1024 * 1024;
+const LIVE_ANALYSIS_MANIFEST_HEAD_BYTES = 256 * 1024;
+const LIVE_ANALYSIS_MAX_TRACE_RESULT_PARSE_BYTES = 256 * 1024;
+const LIVE_ANALYSIS_TRACE_RESULT_HEAD_BYTES = 256 * 1024;
 
 function readLiveAnalysisEventTickets(operatorRunPath) {
   const rows = [];
@@ -1507,7 +1819,68 @@ function loadLeafOverlaysForLatestOpRun(root) {
 function readOpRunManifest(opRunPath) {
   const manifestPath = join(opRunPath, "handoff_manifest.json");
   if (!existsSync(manifestPath)) return null;
-  return readJsonFile(manifestPath);
+  const read = readBoundedJsonFile(manifestPath, LIVE_ANALYSIS_MAX_MANIFEST_PARSE_BYTES);
+  if (isObject(read.payload)) return read.payload;
+  if (!read.skipped) return null;
+  return readOpRunManifestHeader(manifestPath);
+}
+
+function readOpRunManifestHeader(manifestPath) {
+  let head = "";
+  try {
+    head = readFileHead(manifestPath, LIVE_ANALYSIS_MANIFEST_HEAD_BYTES);
+  } catch {
+    return null;
+  }
+  const kind = readJsonHeaderString(head, "kind");
+  const edgeName = readJsonHeaderString(head, "edgeName");
+  const graphFunctionName = readJsonHeaderString(head, "graphFunctionName");
+  if (kind !== "sdlc_worker_handoff_manifest" && !edgeName && !graphFunctionName) return null;
+  return Object.freeze({
+    kind: kind || "sdlc_worker_handoff_manifest",
+    graphFunctionName,
+    edgeName: edgeName || graphFunctionName,
+    vectorIndex: readJsonHeaderNumber(head, "vectorIndex"),
+    targetAssetType: readJsonHeaderString(head, "targetAssetType"),
+    edgeAssuranceContractRef: readJsonHeaderString(head, "edgeAssuranceContractRef"),
+    edgeAssuranceContractDigest: readJsonHeaderString(head, "edgeAssuranceContractDigest")
+  });
+}
+
+function readJsonHeaderString(text, key) {
+  const match = text.match(new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`));
+  if (!match) return "";
+  try {
+    return JSON.parse(`"${match[1]}"`);
+  } catch {
+    return match[1];
+  }
+}
+
+function readJsonHeaderNumber(text, key) {
+  const match = text.match(new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)`));
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function readJsonHeaderBoolean(text, key) {
+  const match = text.match(new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*(true|false)`));
+  return match ? match[1] === "true" : null;
+}
+
+function readNestedJsonHeaderString(text, objectKey, key) {
+  const match = text.match(new RegExp(`"${escapeRegExp(objectKey)}"\\s*:\\s*\\{[\\s\\S]{0,4000}?"${escapeRegExp(key)}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`));
+  if (!match) return "";
+  try {
+    return JSON.parse(`"${match[1]}"`);
+  } catch {
+    return match[1];
+  }
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildLeafOverlay(group) {
@@ -1712,7 +2085,7 @@ function readEdgeAssuranceOverlay(opRunPath, leafName, manifest) {
 }
 
 function admitTracedEvidenceFromResult(resultPath, archiveRoot) {
-  const json = readJsonFile(resultPath);
+  const json = readTracedResult(resultPath);
   if (!json || typeof json !== "object") return null;
   const outcomeKind = stringField(json?.outcome, "kind");
   const executorProfile = stringField(json, "executorProfile");
@@ -1783,6 +2156,46 @@ function admitTracedEvidenceFromResult(resultPath, archiveRoot) {
       typeof json?.terminalSessionId === "string" ? json.terminalSessionId : null,
     traceArchiveRoot: archiveRoot,
     traceArchivePaths
+  });
+}
+
+function readTracedResult(resultPath) {
+  const read = readBoundedJsonFile(resultPath, LIVE_ANALYSIS_MAX_TRACE_RESULT_PARSE_BYTES);
+  if (isObject(read.payload)) return read.payload;
+  if (!read.skipped) return null;
+  return readTracedResultHeader(resultPath);
+}
+
+function readTracedResultHeader(resultPath) {
+  let head = "";
+  try {
+    head = readFileHead(resultPath, LIVE_ANALYSIS_TRACE_RESULT_HEAD_BYTES);
+  } catch {
+    return null;
+  }
+  const outcomeKind = readNestedJsonHeaderString(head, "outcome", "kind");
+  const executorProfile = readJsonHeaderString(head, "executorProfile");
+  const streamModel = readJsonHeaderString(head, "streamModel");
+  const parser = readJsonHeaderString(head, "parser");
+  if (!outcomeKind || !executorProfile || !streamModel || !parser) return null;
+  return Object.freeze({
+    kind: readJsonHeaderString(head, "kind") || "traced_process_result",
+    sessionId: readJsonHeaderString(head, "sessionId"),
+    executorProfile,
+    terminalSessionId: readJsonHeaderString(head, "terminalSessionId"),
+    streamModel,
+    outcome: Object.freeze({
+      kind: outcomeKind,
+      detail: readNestedJsonHeaderString(head, "outcome", "detail") || null
+    }),
+    parser,
+    status: readJsonHeaderNumber(head, "status"),
+    signal: readJsonHeaderString(head, "signal") || null,
+    timedOut: readJsonHeaderBoolean(head, "timedOut") === true,
+    inactivityTimedOut: readJsonHeaderBoolean(head, "inactivityTimedOut") === true,
+    structuredEventCount: readJsonHeaderNumber(head, "structuredEventCount") ?? 0,
+    apiRetryCount: readJsonHeaderNumber(head, "apiRetryCount") ?? 0,
+    toolCallCount: readJsonHeaderNumber(head, "toolCallCount") ?? 0
   });
 }
 
@@ -1935,7 +2348,7 @@ function readRuntimeEvents(path, options = {}) {
   const byteLimited = maxBytes !== null && byteSize > maxBytes;
   let text = byteLimited ? readFileHead(path, maxBytes) : readFileSync(path, "utf8");
   if (byteLimited && !/\r?\n$/.test(text)) {
-    text = text.replace(/[^\r\n]*$/, "");
+    text = dropPartialTrailingLine(text);
   }
   let truncated = byteLimited;
   const lines = text.split(/\r?\n/);
@@ -1968,6 +2381,13 @@ function readFileHead(path, maxBytes) {
   } finally {
     closeSync(fd);
   }
+}
+
+function dropPartialTrailingLine(value) {
+  const lastLf = value.lastIndexOf("\n");
+  const lastCr = value.lastIndexOf("\r");
+  const lastBreak = Math.max(lastLf, lastCr);
+  return lastBreak >= 0 ? value.slice(0, lastBreak + 1) : "";
 }
 
 function fileSizeBytes(path) {

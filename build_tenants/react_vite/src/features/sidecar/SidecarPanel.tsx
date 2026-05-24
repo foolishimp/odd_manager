@@ -24,6 +24,7 @@
 // the same root.
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -107,6 +108,7 @@ const SIDECAR_BACKEND = (typeof window !== 'undefined' && (window as { __SIDECAR
 const SIDECAR_LAYOUT_STORAGE_PREFIX = 'oman-sidecar-layout:';
 const SIDECAR_PINNED_FOLDERS_STORAGE_PREFIX = 'oman-sidecar-pinned-folders:';
 const SIDECAR_PATH_HISTORY_STORAGE_KEY = 'oman-sidecar-path-history';
+const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500;
 
 type NavigatorSortMode = 'time' | 'alpha';
 type ProjectBrowserTab = 'favourites' | 'recent' | 'pick';
@@ -136,6 +138,7 @@ interface NavigatorFolderLoad {
   loading: boolean;
   error: string | null;
   truncated: boolean;
+  loadedAt: number | null;
 }
 
 function apiQuery(projectRoot?: string | null, extra: Record<string, string> = {}) {
@@ -1389,6 +1392,7 @@ function asNavigatorFolderLoad(value: unknown): NavigatorFolderLoad {
     loading: false,
     error: null,
     truncated: payload.truncated === true,
+    loadedAt: null,
   };
 }
 
@@ -1687,6 +1691,10 @@ function SelectionFlyout({
   const [projectBrowserTab, setProjectBrowserTab] = useState<ProjectBrowserTab>('favourites');
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
+  const selectedProjectRootPath = state.selection.kind === 'project'
+    ? state.projects.find((project) => project.id === state.selection.id)?.root ?? null
+    : null;
+  const normalizedSelectedProjectRootPath = selectedProjectRootPath ? normalizePinnedPath(selectedProjectRootPath) : null;
 
   const patchGroup = useCallback((key: string, patch: Partial<NavigatorGroupState>) => {
     setGroupStates((current) => updateNavigatorGroup(current, key, patch));
@@ -1700,11 +1708,12 @@ function SelectionFlyout({
         truncated: current[path]?.truncated ?? false,
         loading: true,
         error: null,
+        loadedAt: current[path]?.loadedAt ?? null,
       },
     }));
     try {
       const payload = await fetchJson(`/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1&includeHidden=1&maxEntries=0`);
-      const load = asNavigatorFolderLoad(payload);
+      const load = { ...asNavigatorFolderLoad(payload), loadedAt: Date.now() };
       setFolderLoads((current) => ({ ...current, [path]: load }));
     } catch (err) {
       setFolderLoads((current) => ({
@@ -1714,6 +1723,7 @@ function SelectionFlyout({
           truncated: false,
           loading: false,
           error: err instanceof Error ? err.message : String(err),
+          loadedAt: current[path]?.loadedAt ?? null,
         },
       }));
     }
@@ -1722,7 +1732,7 @@ function SelectionFlyout({
   const handleFolderToggle = useCallback((key: string, path: string, collapsed: boolean) => {
     const nextCollapsed = !collapsed;
     patchGroup(key, { collapsed: nextCollapsed });
-    if (!nextCollapsed && (!folderLoads[path] || folderLoads[path].error)) {
+    if (!nextCollapsed && !folderLoads[path]?.loading) {
       void loadFolder(path);
     }
   }, [folderLoads, loadFolder, patchGroup]);
@@ -1746,11 +1756,13 @@ function SelectionFlyout({
 
   const toggleProjectBrowse = (root: string) => {
     const normalizedRoot = normalizePinnedPath(root);
+    const currentlyExpanded = expandedProjectRoots[normalizedRoot] ?? (normalizedRoot === normalizedSelectedProjectRootPath);
+    const nextExpanded = !currentlyExpanded;
     setExpandedProjectRoots((current) => ({
       ...current,
-      [normalizedRoot]: !current[normalizedRoot],
+      [normalizedRoot]: nextExpanded,
     }));
-    if (!folderLoads[normalizedRoot]) {
+    if (nextExpanded && !folderLoads[normalizedRoot]?.loading) {
       void loadFolder(normalizedRoot);
     }
   };
@@ -1768,6 +1780,25 @@ function SelectionFlyout({
       onSort={(sort) => setNavigatorSort((current) => ({ ...current, sort }))}
       onReverse={() => setNavigatorSort((current) => ({ ...current, reverse: !current.reverse }))}
     />
+  );
+  const folderRefreshAction = (path: string | null, label: string) => {
+    if (!path) return null;
+    const normalizedPath = normalizePinnedPath(path);
+    const load = folderLoads[normalizedPath] ?? null;
+    return (
+      <FolderRefreshButton
+        label={label}
+        loading={load?.loading === true}
+        loadedAt={load?.loadedAt ?? null}
+        onRefresh={() => void loadFolder(normalizedPath)}
+      />
+    );
+  };
+  const actionsWithRefresh = (refreshAction: ReactNode) => (
+    <>
+      {refreshAction}
+      {headerActions}
+    </>
   );
 
   useEffect(() => {
@@ -1787,22 +1818,22 @@ function SelectionFlyout({
 
   useEffect(() => {
     if (surface !== 'projects') return;
-    const selectedProjectRoot = state.selection.kind === 'project'
-      ? state.projects.find((project) => project.id === state.selection.id)?.root ?? null
-      : null;
-    const normalizedSelectedProjectRoot = selectedProjectRoot ? normalizePinnedPath(selectedProjectRoot) : null;
     const roots = state.projects
       .map((project) => normalizePinnedPath(project.root))
-      .filter((root) => root && ((expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRoot)) === true));
+      .filter((root) => root && ((expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath)) === true));
     for (const root of roots) {
       if (!folderLoads[root]) void loadFolder(root);
     }
-  }, [expandedProjectRoots, folderLoads, loadFolder, state.projects, state.selection, surface]);
+  }, [expandedProjectRoots, folderLoads, loadFolder, normalizedSelectedProjectRootPath, state.projects, surface]);
 
   if (activePinnedFolderPath && projectRoot) {
     const displayPath = folderDisplayPath(activePinnedFolderPath, projectRoot);
     return (
-      <Pane title={displayPath} count={folderLoads[activePinnedFolderPath]?.entries.length ?? 0} actions={headerActions}>
+      <Pane
+        title={displayPath}
+        count={folderLoads[activePinnedFolderPath]?.entries.length ?? 0}
+        actions={actionsWithRefresh(folderRefreshAction(activePinnedFolderPath, displayPath))}
+      >
         {sortToolbar}
         <div className="sidecar-folder-tree">
           <FolderTreeNode
@@ -1815,7 +1846,6 @@ function SelectionFlyout({
             defaultCollapsed={false}
             onPatchGroup={patchGroup}
             onToggle={handleFolderToggle}
-            onLoad={loadFolder}
             onSurfaceSelect={onSurfaceSelect}
             pathSource="pinned_folder"
             pinnedFolders={pinnedFolders}
@@ -1831,7 +1861,11 @@ function SelectionFlyout({
   if (builtInFolderPath && projectRoot) {
     const displayPath = folderDisplayPath(builtInFolderPath, projectRoot);
     return (
-      <Pane title={infoSurfaceTitle(surface)} count={folderLoads[builtInFolderPath]?.entries.length ?? infoSurfaceCount(surface, state)} actions={headerActions}>
+      <Pane
+        title={infoSurfaceTitle(surface)}
+        count={folderLoads[builtInFolderPath]?.entries.length ?? infoSurfaceCount(surface, state)}
+        actions={actionsWithRefresh(folderRefreshAction(builtInFolderPath, displayPath))}
+      >
         {sortToolbar}
         <div className="sidecar-folder-tree">
           <FolderTreeNode
@@ -1844,7 +1878,6 @@ function SelectionFlyout({
             defaultCollapsed={false}
             onPatchGroup={patchGroup}
             onToggle={handleFolderToggle}
-            onLoad={loadFolder}
             onSurfaceSelect={onSurfaceSelect}
             pathSource="pinned_folder"
             pinnedFolders={pinnedFolders}
@@ -1873,6 +1906,24 @@ function SelectionFlyout({
       { id: 'recent', label: 'Recent', count: projectFavouriteCandidates.length },
       { id: 'pick', label: 'Browse', count: browseState.entries.length },
     ];
+    const firstExpandedProjectRoot = state.projects
+      .map((project) => normalizePinnedPath(project.root))
+      .find((root) => expandedProjectRoots[root] === true) ?? null;
+    const projectBrowserRefreshRoot = projectBrowserTab === 'favourites'
+      ? normalizedSelectedProjectRootPath ?? firstExpandedProjectRoot
+      : null;
+    const projectBrowserRefreshAction = projectBrowserTab === 'pick'
+      ? (
+        <FolderRefreshButton
+          label={browseState.currentPath ?? 'current folder'}
+          loading={browseState.loading}
+          disabled={!browseState.currentPath}
+          onRefresh={() => {
+            if (browseState.currentPath) dispatch({ type: 'browse/navigate-to', path: browseState.currentPath });
+          }}
+        />
+      )
+      : folderRefreshAction(projectBrowserRefreshRoot, 'Project Browser root');
     const projectBrowserTabStrip = (
       <div className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header" role="tablist" aria-label="Project Browser views">
         {projectBrowserTabs.map((tab) => (
@@ -1891,7 +1942,12 @@ function SelectionFlyout({
       </div>
     );
     return (
-      <Pane title="Project Browser" count={state.projects.length} actions={headerActions} titleAddon={projectBrowserTabStrip}>
+      <Pane
+        title="Project Browser"
+        count={state.projects.length}
+        actions={actionsWithRefresh(projectBrowserRefreshAction)}
+        titleAddon={projectBrowserTabStrip}
+      >
         <div className="sidecar-project-browser sidecar-project-browser--tabbed">
           {projectBrowserTab === 'favourites' ? (
             <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Favourite">
@@ -1957,7 +2013,6 @@ function SelectionFlyout({
                           defaultCollapsed={false}
                           onPatchGroup={patchGroup}
                           onToggle={handleFolderToggle}
-                          onLoad={loadFolder}
                           onSurfaceSelect={onSurfaceSelect}
                           pathSource="browse"
                           pinnedFolders={[]}
@@ -2091,7 +2146,11 @@ function SelectionFlyout({
   if (surface === 'browse') {
     const browseCount = projectRootPath ? folderLoads[projectRootPath]?.entries.length ?? 0 : 0;
     return (
-      <Pane title="Browse" count={browseCount} actions={headerActions}>
+      <Pane
+        title="Browse"
+        count={browseCount}
+        actions={actionsWithRefresh(folderRefreshAction(projectRootPath, 'Browse root'))}
+      >
         {sortToolbar}
         <form className="sidecar-pin-form" onSubmit={handlePinSubmit}>
           <input
@@ -2119,7 +2178,6 @@ function SelectionFlyout({
               defaultCollapsed={false}
               onPatchGroup={patchGroup}
               onToggle={handleFolderToggle}
-              onLoad={loadFolder}
               onSurfaceSelect={onSurfaceSelect}
               pathSource="browse"
               pinnedFolders={pinnedFolders}
@@ -2218,6 +2276,39 @@ function NavigatorSortToolbar({ sort, onSort, onReverse }: {
   );
 }
 
+function FolderRefreshButton({ label, loading = false, disabled = false, loadedAt = null, onRefresh }: {
+  label: string;
+  loading?: boolean;
+  disabled?: boolean;
+  loadedAt?: number | null;
+  onRefresh: () => void;
+}) {
+  const effectiveDisabled = disabled || loading;
+  const loadedAtDetail = loadedAt ? `; last read ${formatFolderLoadedAt(loadedAt)}` : '';
+  const actionLabel = loading ? `Refreshing ${label}` : `Refresh ${label}`;
+  return (
+    <button
+      type="button"
+      className="sidecar-tree-control sidecar-tree-control--refresh"
+      onClick={onRefresh}
+      disabled={effectiveDisabled}
+      aria-label={actionLabel}
+      title={`${actionLabel}${loadedAtDetail}`}
+    >
+      <span aria-hidden="true">{loading ? '...' : '↻'}</span>
+    </button>
+  );
+}
+
+function formatFolderLoadedAt(value: number) {
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - value) / 1000));
+  if (ageSeconds < 5) return 'just now';
+  if (ageSeconds < 60) return `${ageSeconds}s ago`;
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) return `${ageMinutes}m ago`;
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function NavigatorTreeGroup({ label, count, group, onToggle, extraControls, children }: PropsWithChildrenLike<{
   label: string;
   count: number;
@@ -2296,7 +2387,7 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
   );
 }
 
-function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onLoad, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, canOpenProject = false, onProjectRootOpen }: {
+function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, canOpenProject = false, onProjectRootOpen }: {
   path: string;
   label: string;
   depth: number;
@@ -2306,7 +2397,6 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
   defaultCollapsed?: boolean;
   onPatchGroup: (key: string, patch: Partial<NavigatorGroupState>) => void;
   onToggle: (key: string, path: string, collapsed: boolean) => void;
-  onLoad: (path: string) => void;
   onSurfaceSelect: (relativePath: string, absolutePath: string, source: SidecarPathHistorySource) => void;
   pathSource: SidecarPathHistorySource;
   pinnedFolders: string[];
@@ -2398,7 +2488,6 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
               folderLoads={folderLoads}
               onPatchGroup={onPatchGroup}
               onToggle={onToggle}
-              onLoad={onLoad}
               onSurfaceSelect={onSurfaceSelect}
               pathSource={pathSource}
               pinnedFolders={pinnedFolders}
@@ -2962,10 +3051,16 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
             onOpenTracePath={openTracePath}
             onRefresh={requestLiveRefresh}
             refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
+            liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
+            onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
             liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
             onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
             liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
             onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
+            liveGapRowCollapsed={state.ui.liveGapRowCollapsed}
+            onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
+            liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
+            onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
           />
         </section>
       ) : (
@@ -4160,10 +4255,16 @@ function ProcessNavigatorPanel({ state, dispatch }: {
               onOpenTracePath={openTracePath}
               onRefresh={requestLiveRefresh}
               refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
+              liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
+              onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
               liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
               onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
               liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
               onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
+              liveGapRowCollapsed={state.ui.liveGapRowCollapsed}
+              onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
+              liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
+              onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
             />
           ) : activeMap ? (
             activeMap.id === 'process_flow' && projection.catalog ? (
@@ -4973,6 +5074,8 @@ type SidecarLiveAnalysis = NonNullable<SidecarProcessProjection['liveAnalysis']>
 type SidecarLiveAnalysisAttempt = SidecarLiveAnalysis['attempts'][number];
 type SidecarLiveAnalysisDiagnostic = SidecarLiveAnalysis['diagnostics'][number];
 type SidecarLiveAnalysisEvent = SidecarLiveAnalysisAttempt['detail']['events'][number];
+type SidecarLiveAnalysisCliTranscript = SidecarLiveAnalysisAttempt['detail']['cliTranscript'];
+type SidecarLiveAnalysisCliTranscriptInput = Partial<SidecarLiveAnalysisCliTranscript> | null | undefined;
 type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
@@ -5021,15 +5124,74 @@ function liveAssuranceLedgerDescription(dimension: string) {
   };
 }
 
-function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing, liveTranscriptCollapsed, onLiveTranscriptCollapsedChange, liveDetailRowCollapsed, onLiveDetailRowCollapsedChange }: {
+function ProcessLiveRowGroup({ widgetNames, ariaLabel, collapsed, onCollapsedChange, meta, children, className }: {
+  widgetNames: readonly string[];
+  ariaLabel: string;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  meta: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const rowLabel = widgetNames.join(' / ');
+  return (
+    <section className={`sidecar-live-view__detail-row-group${collapsed ? ' is-collapsed' : ''}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
+      <button
+        type="button"
+        className="sidecar-live-view__row-collapse-toggle"
+        onClick={() => onCollapsedChange(!collapsed)}
+        aria-expanded={!collapsed}
+        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${rowLabel} row`}
+        title={`${collapsed ? 'Expand' : 'Collapse'} ${rowLabel} row`}
+      >
+        <span className="panel__eyebrow sidecar-live-view__row-label">
+          {widgetNames.map((widgetName, index) => (
+            <Fragment key={widgetName}>
+              {index > 0 ? <span className="sidecar-live-view__row-label-separator" aria-hidden="true"> / </span> : null}
+              <span className="sidecar-live-view__row-label-item">{widgetName}</span>
+            </Fragment>
+          ))}
+        </span>
+        <span className="sidecar-live-view__row-collapse-meta">
+          {meta}
+          <span className="sidecar-live-view__row-collapse-symbol" aria-hidden="true">{collapsed ? '⊞' : '⊟'}</span>
+        </span>
+      </button>
+      {!collapsed ? children : null}
+    </section>
+  );
+}
+
+function ProcessLiveViewPanel({
+  analysis,
+  onOpenTracePath,
+  onRefresh,
+  refreshing,
+  liveActiveRunRowCollapsed,
+  onLiveActiveRunRowCollapsedChange,
+  liveTranscriptCollapsed,
+  onLiveTranscriptCollapsedChange,
+  liveDetailRowCollapsed,
+  onLiveDetailRowCollapsedChange,
+  liveGapRowCollapsed,
+  onLiveGapRowCollapsedChange,
+  liveEventViewerCollapsed,
+  onLiveEventViewerCollapsedChange,
+}: {
   analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
   onOpenTracePath: (absolutePath: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  liveActiveRunRowCollapsed: boolean;
+  onLiveActiveRunRowCollapsedChange: (collapsed: boolean) => void;
   liveTranscriptCollapsed: boolean;
   onLiveTranscriptCollapsedChange: (collapsed: boolean) => void;
   liveDetailRowCollapsed: boolean;
   onLiveDetailRowCollapsedChange: (collapsed: boolean) => void;
+  liveGapRowCollapsed: boolean;
+  onLiveGapRowCollapsedChange: (collapsed: boolean) => void;
+  liveEventViewerCollapsed: boolean;
+  onLiveEventViewerCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [selectedAttemptRef, setSelectedAttemptRef] = useState<string | null>(null);
   if (!analysis) {
@@ -5044,6 +5206,12 @@ function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing
     attempts.find((attempt) => activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef) ??
     latestAttempt;
   const visibleDiagnostics = analysis.diagnostics.slice(0, 6);
+  const activeRunTone = liveAnalysisTone(liveness.productiveSignal);
+  const diagnosticsTone = analysis.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    ? 'blocked'
+    : analysis.diagnostics.length > 0
+      ? 'pending'
+      : 'active';
 
   return (
     <div className="sidecar-live-view" aria-label="Live analyze-run view">
@@ -5129,56 +5297,66 @@ function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing
         )}
       </ol>
 
+      <ProcessLiveRowGroup
+        widgetNames={['Active Run', 'Diagnostics']}
+        ariaLabel="active run and diagnostics row"
+        collapsed={liveActiveRunRowCollapsed}
+        onCollapsedChange={onLiveActiveRunRowCollapsedChange}
+        meta={(
+          <>
+            <span className={`status-chip ${activeRunTone}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
+            <span className={`status-chip ${diagnosticsTone}`}>{analysis.diagnostics.length} diagnostics</span>
+          </>
+        )}
+      >
+        <div className="sidecar-live-view__details">
+          <section className="sidecar-live-view__detail">
+            <div className="requirements-explorer__section-heading">
+              <span className="panel__eyebrow">Active Run</span>
+              <span className={`status-chip ${activeRunTone}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
+            </div>
+            <MetaGrid items={[
+              ['Active edge', liveness.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? '—'],
+              ['Graph vector', liveness.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? '—'],
+              ['Target', liveness.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? '—'],
+              ['Worker pid', liveness.workerPid === null ? '—' : String(liveness.workerPid)],
+              ['No-output gap', liveness.maxNoOutputGapMs === null ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
+              ['Archive growth/min', liveness.archiveGrowthBytesPerMinute === null ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
+              ['Last blocking reason', liveness.lastBlockingReason ?? '—'],
+            ]} />
+          </section>
+
+          <section className="sidecar-live-view__detail">
+            <div className="requirements-explorer__section-heading">
+              <span className="panel__eyebrow">Diagnostics</span>
+              <span className={`status-chip ${diagnosticsTone}`}>
+                {analysis.diagnostics.length}
+              </span>
+            </div>
+            {visibleDiagnostics.length ? (
+              <ul className="sidecar-live-view__diagnostics">
+                {visibleDiagnostics.map((diagnostic) => (
+                  <LiveAnalysisDiagnosticRow key={`${diagnostic.code}:${diagnostic.detail}`} diagnostic={diagnostic} onOpenTracePath={onOpenTracePath} />
+                ))}
+              </ul>
+            ) : (
+              <div className="sidecar-body-text">No analyze-run diagnostics were reported.</div>
+            )}
+          </section>
+        </div>
+      </ProcessLiveRowGroup>
+
       {selectedAttempt ? (
         <ProcessLiveRunDetail
           attempt={selectedAttempt}
           detailRowCollapsed={liveDetailRowCollapsed}
           onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
-          onOpenTracePath={onOpenTracePath}
-        />
-      ) : null}
-
-      <div className="sidecar-live-view__details">
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Active Run</span>
-            <span className={`status-chip ${liveAnalysisTone(liveness.productiveSignal)}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
-          </div>
-          <MetaGrid items={[
-            ['Active edge', liveness.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? '—'],
-            ['Graph vector', liveness.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? '—'],
-            ['Target', liveness.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? '—'],
-            ['Worker pid', liveness.workerPid === null ? '—' : String(liveness.workerPid)],
-            ['No-output gap', liveness.maxNoOutputGapMs === null ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
-            ['Archive growth/min', liveness.archiveGrowthBytesPerMinute === null ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
-            ['Last blocking reason', liveness.lastBlockingReason ?? '—'],
-          ]} />
-        </section>
-
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Diagnostics</span>
-            <span className={`status-chip ${analysis.diagnostics.some((d) => d.severity === 'error') ? 'blocked' : analysis.diagnostics.length > 0 ? 'pending' : 'active'}`}>
-              {analysis.diagnostics.length}
-            </span>
-          </div>
-          {visibleDiagnostics.length ? (
-            <ul className="sidecar-live-view__diagnostics">
-              {visibleDiagnostics.map((diagnostic) => (
-                <LiveAnalysisDiagnosticRow key={`${diagnostic.code}:${diagnostic.detail}`} diagnostic={diagnostic} onOpenTracePath={onOpenTracePath} />
-              ))}
-            </ul>
-          ) : (
-            <div className="sidecar-body-text">No analyze-run diagnostics were reported.</div>
-          )}
-        </section>
-      </div>
-
-      {selectedAttempt ? (
-        <ProcessLiveCliTranscriptWidget
-          transcript={selectedAttempt.detail.cliTranscript}
-          collapsed={liveTranscriptCollapsed}
-          onCollapsedChange={onLiveTranscriptCollapsedChange}
+          gapRowCollapsed={liveGapRowCollapsed}
+          onGapRowCollapsedChange={onLiveGapRowCollapsedChange}
+          eventViewerCollapsed={liveEventViewerCollapsed}
+          onEventViewerCollapsedChange={onLiveEventViewerCollapsedChange}
+          transcriptCollapsed={liveTranscriptCollapsed}
+          onTranscriptCollapsedChange={onLiveTranscriptCollapsedChange}
           onOpenTracePath={onOpenTracePath}
         />
       ) : null}
@@ -5186,10 +5364,27 @@ function ProcessLiveViewPanel({ analysis, onOpenTracePath, onRefresh, refreshing
   );
 }
 
-function ProcessLiveRunDetail({ attempt, detailRowCollapsed, onDetailRowCollapsedChange, onOpenTracePath }: {
+function ProcessLiveRunDetail({
+  attempt,
+  detailRowCollapsed,
+  onDetailRowCollapsedChange,
+  gapRowCollapsed,
+  onGapRowCollapsedChange,
+  eventViewerCollapsed,
+  onEventViewerCollapsedChange,
+  transcriptCollapsed,
+  onTranscriptCollapsedChange,
+  onOpenTracePath,
+}: {
   attempt: SidecarLiveAnalysisAttempt;
   detailRowCollapsed: boolean;
   onDetailRowCollapsedChange: (collapsed: boolean) => void;
+  gapRowCollapsed: boolean;
+  onGapRowCollapsedChange: (collapsed: boolean) => void;
+  eventViewerCollapsed: boolean;
+  onEventViewerCollapsedChange: (collapsed: boolean) => void;
+  transcriptCollapsed: boolean;
+  onTranscriptCollapsedChange: (collapsed: boolean) => void;
   onOpenTracePath: (absolutePath: string) => void;
 }) {
   const edge = attempt.detail.edgeAssurance;
@@ -5229,26 +5424,21 @@ function ProcessLiveRunDetail({ attempt, detailRowCollapsed, onDetailRowCollapse
         </div>
       </header>
 
-      <section className={`sidecar-live-view__detail-row-group${detailRowCollapsed ? ' is-collapsed' : ''}`} aria-label="Ledger and assurance row">
-        <button
-          type="button"
-          className="sidecar-live-view__row-collapse-toggle"
-          onClick={() => onDetailRowCollapsedChange(!detailRowCollapsed)}
-          aria-expanded={!detailRowCollapsed}
-          aria-label={`${detailRowCollapsed ? 'Expand' : 'Collapse'} ledger and assurance row`}
-          title={`${detailRowCollapsed ? 'Expand' : 'Collapse'} ledger and assurance row`}
-        >
-          <span className="panel__eyebrow">Ledger / Assurance Row</span>
-          <span className="sidecar-live-view__row-collapse-meta">
+      <ProcessLiveRowGroup
+        widgetNames={['Ledger State', 'Assurance Ledgers']}
+        ariaLabel="ledger state and assurance row"
+        collapsed={detailRowCollapsed}
+        onCollapsedChange={onDetailRowCollapsedChange}
+        meta={(
+          <>
             <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
             <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
               {assurance?.status ?? 'missing'}
             </span>
-            <span className="sidecar-live-view__row-collapse-symbol" aria-hidden="true">{detailRowCollapsed ? '⊞' : '⊟'}</span>
-          </span>
-        </button>
-        {!detailRowCollapsed ? (
-          <div className="sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary">
+          </>
+        )}
+      >
+        <div className="sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary">
             <section className="sidecar-live-view__detail">
               <div className="requirements-explorer__section-heading">
                 <span className="panel__eyebrow">Ledger State</span>
@@ -5317,11 +5507,24 @@ function ProcessLiveRunDetail({ attempt, detailRowCollapsed, onDetailRowCollapse
                 <div className="sidecar-body-text">No assurance ledger fold was archived for this run.</div>
               )}
             </section>
-          </div>
-        ) : null}
-      </section>
+        </div>
+      </ProcessLiveRowGroup>
 
-      <div className="sidecar-live-view__detail-grid">
+      <ProcessLiveRowGroup
+        widgetNames={['Gap Analysis', 'Requirement / Stage State']}
+        ariaLabel="gap analysis and requirement state row"
+        collapsed={gapRowCollapsed}
+        onCollapsedChange={onGapRowCollapsedChange}
+        meta={(
+          <>
+            <span className={`status-chip ${gapCount > 0 ? 'blocked' : 'active'}`}>{gapCount} gaps</span>
+            <span className={`status-chip ${outstanding && outstanding > 0 ? 'blocked' : counts ? 'active' : 'pending'}`}>
+              {counts ? `${counts.fulfilled}/${counts.expected}` : attempt.requirementObligationCount ?? '—'}
+            </span>
+          </>
+        )}
+      >
+        <div className="sidecar-live-view__detail-grid">
         <section className="sidecar-live-view__detail">
           <div className="requirements-explorer__section-heading">
             <span className="panel__eyebrow">Gap Analysis</span>
@@ -5359,15 +5562,30 @@ function ProcessLiveRunDetail({ attempt, detailRowCollapsed, onDetailRowCollapse
             </ul>
           ) : null}
         </section>
-      </div>
+        </div>
+      </ProcessLiveRowGroup>
 
-      <ProcessLiveEventViewer attempt={attempt} onOpenTracePath={onOpenTracePath} />
+      <ProcessLiveEventViewer
+        attempt={attempt}
+        collapsed={eventViewerCollapsed}
+        onCollapsedChange={onEventViewerCollapsedChange}
+        onOpenTracePath={onOpenTracePath}
+      />
+
+      <ProcessLiveCliTranscriptWidget
+        transcripts={attempt.detail.cliTranscripts?.length ? attempt.detail.cliTranscripts : [attempt.detail.cliTranscript]}
+        collapsed={transcriptCollapsed}
+        onCollapsedChange={onTranscriptCollapsedChange}
+        onOpenTracePath={onOpenTracePath}
+      />
     </section>
   );
 }
 
-function ProcessLiveEventViewer({ attempt, onOpenTracePath }: {
+function ProcessLiveEventViewer({ attempt, collapsed, onCollapsedChange, onOpenTracePath }: {
   attempt: SidecarLiveAnalysisAttempt;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
   onOpenTracePath: (absolutePath: string) => void;
 }) {
   const [sourceFilter, setSourceFilter] = useState<SidecarLiveAnalysisEventSourceFilter>('all');
@@ -5427,74 +5645,85 @@ function ProcessLiveEventViewer({ attempt, onOpenTracePath }: {
   };
 
   return (
-    <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__event-viewer" aria-label="Stage event viewer">
-      <div className="requirements-explorer__section-heading">
-        <div>
-          <span className="panel__eyebrow">Event Viewer</span>
+    <ProcessLiveRowGroup
+      widgetNames={['Event Viewer']}
+      ariaLabel="event viewer row"
+      collapsed={collapsed}
+      onCollapsedChange={onCollapsedChange}
+      className="sidecar-live-view__detail-row-group--wide"
+      meta={(
+        <>
+          <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
+          <span className="status-chip default">{sourceFilter.replace(/_/g, ' ')}</span>
+        </>
+      )}
+    >
+      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__event-viewer" aria-label="Stage event viewer">
+        <div className="requirements-explorer__section-heading sidecar-live-view__event-heading">
           <p className="sidecar-live-view__event-scope">
             Filtered to {attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'selected stage'} · {attempt.targetAssetType ?? attempt.traversalClass}
           </p>
+          <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
         </div>
-        <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
-      </div>
 
-      <div className="sidecar-live-view__event-filters" role="tablist" aria-label="Event source filters">
-        {sourceFilters.map((filter) => (
-          <button
-            key={filter.id}
-            type="button"
-            className={`process-tab sidecar-live-view__event-filter${sourceFilter === filter.id ? ' is-selected' : ''}`}
-            onClick={() => setSourceFilter(filter.id)}
-            aria-selected={sourceFilter === filter.id}
-            role="tab"
-          >
-            <span>{filter.label}</span>
-            <span className="status-chip default">{filter.count}</span>
-          </button>
-        ))}
+        <div className="sidecar-live-view__event-filters" role="tablist" aria-label="Event source filters">
+          {sourceFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={`process-tab sidecar-live-view__event-filter${sourceFilter === filter.id ? ' is-selected' : ''}`}
+              onClick={() => setSourceFilter(filter.id)}
+              aria-selected={sourceFilter === filter.id}
+              role="tab"
+            >
+              <span>{filter.label}</span>
+              <span className="status-chip default">{filter.count}</span>
+            </button>
+          ))}
+          {visibleEvents.length ? (
+            <div className="sidecar-live-view__event-row-actions" aria-label="Event row visibility">
+              <button
+                type="button"
+                className="status-chip default sidecar-live-view__event-row-toggle"
+                onClick={() => setVisibleEventsCollapsed(true)}
+                aria-label="Collapse all event rows"
+                title="Collapse all event rows"
+              >
+                <span aria-hidden="true">⊟</span>
+              </button>
+              <button
+                type="button"
+                className="status-chip default sidecar-live-view__event-row-toggle"
+                onClick={() => setVisibleEventsCollapsed(false)}
+                aria-label="Expand all event rows"
+                title="Expand all event rows"
+              >
+                <span aria-hidden="true">⊞</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         {visibleEvents.length ? (
-          <div className="sidecar-live-view__event-row-actions" aria-label="Event row visibility">
-            <button
-              type="button"
-              className="status-chip default sidecar-live-view__event-row-toggle"
-              onClick={() => setVisibleEventsCollapsed(true)}
-              aria-label="Collapse all event rows"
-              title="Collapse all event rows"
-            >
-              <span aria-hidden="true">⊟</span>
-            </button>
-            <button
-              type="button"
-              className="status-chip default sidecar-live-view__event-row-toggle"
-              onClick={() => setVisibleEventsCollapsed(false)}
-              aria-label="Expand all event rows"
-              title="Expand all event rows"
-            >
-              <span aria-hidden="true">⊞</span>
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      {visibleEvents.length ? (
-        <ol className="sidecar-live-view__event-list" aria-label="Scrollable stage event tickets">
-          {visibleEvents.map((event) => {
-            const key = liveAnalysisEventKey(event);
-            return (
-              <ProcessLiveEventTicket
-                key={key}
-                event={event}
-                collapsed={collapsedEventKeys.has(key)}
-                onCollapsedChange={(collapsed) => setEventCollapsed(key, collapsed)}
-                onOpenTracePath={onOpenTracePath}
-              />
-            );
-          })}
-        </ol>
-      ) : (
-        <div className="sidecar-body-text">No archived events matched this selected stage filter.</div>
-      )}
-    </section>
+          <ol className="sidecar-live-view__event-list" aria-label="Scrollable stage event tickets">
+            {visibleEvents.map((event) => {
+              const key = liveAnalysisEventKey(event);
+              return (
+                <ProcessLiveEventTicket
+                  key={key}
+                  event={event}
+                  collapsed={collapsedEventKeys.has(key)}
+                  onCollapsedChange={(collapsed) => setEventCollapsed(key, collapsed)}
+                  onOpenTracePath={onOpenTracePath}
+                />
+              );
+            })}
+          </ol>
+        ) : (
+          <div className="sidecar-body-text">No archived events matched this selected stage filter.</div>
+        )}
+      </section>
+    </ProcessLiveRowGroup>
   );
 }
 
@@ -5579,31 +5808,70 @@ function ProcessLiveEventTicket({ event, collapsed, onCollapsedChange, onOpenTra
   );
 }
 
-function ProcessLiveCliTranscriptWidget({ transcript, collapsed, onCollapsedChange, onOpenTracePath }: {
-  transcript: SidecarLiveAnalysisAttempt['detail']['cliTranscript'];
+function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedChange, onOpenTracePath }: {
+  transcripts: SidecarLiveAnalysisCliTranscriptInput[];
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onOpenTracePath: (absolutePath: string) => void;
 }) {
+  const normalizedTranscripts = useMemo(
+    () => transcripts.map(normalizeLiveAnalysisCliTranscript).filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript)),
+    [transcripts],
+  );
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(normalizedTranscripts[0]?.id ?? null);
+  const transcript = normalizedTranscripts.find((candidate) => candidate.id === selectedTranscriptId) ?? normalizedTranscripts[0];
+
+  useEffect(() => {
+    if (!transcript) {
+      if (selectedTranscriptId !== null) setSelectedTranscriptId(null);
+      return;
+    }
+    if (!selectedTranscriptId || !normalizedTranscripts.some((candidate) => candidate.id === selectedTranscriptId)) {
+      setSelectedTranscriptId(transcript.id);
+    }
+  }, [selectedTranscriptId, transcript, normalizedTranscripts]);
+
+  if (!transcript) return null;
+
   return (
-    <section className={`sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript sidecar-live-view__detail--collapsible${collapsed ? ' is-collapsed' : ''}`} aria-label="CLI transcript">
-      <button
-        type="button"
-        className="sidecar-live-view__collapsible-header"
-        onClick={() => onCollapsedChange(!collapsed)}
-        aria-expanded={!collapsed}
-      >
-        <span className="panel__eyebrow">CLI Transcript</span>
-        <span className="sidecar-live-view__collapsible-meta">
+    <ProcessLiveRowGroup
+      widgetNames={['CLI Transcript']}
+      ariaLabel="CLI transcript row"
+      collapsed={collapsed}
+      onCollapsedChange={onCollapsedChange}
+      className="sidecar-live-view__detail-row-group--wide sidecar-live-view__detail-row-group--transcript"
+      meta={(
+        <>
           <span className={`status-chip ${transcript.sourceKind === 'missing' ? 'default' : 'active'}`}>
-            {transcript.lineCount}
+            {transcript.lineCount} lines
           </span>
-          <span className="sidecar-live-view__collapsible-chevron" aria-hidden="true">{collapsed ? '>' : 'v'}</span>
-        </span>
-      </button>
-      {!collapsed ? (
-        <div className="sidecar-live-view__collapsible-body">
+          <span className="status-chip default">{normalizedTranscripts.length} CLI</span>
+          <span className="status-chip default">{transcript.sourceKind.replace(/_/g, ' ')}</span>
+        </>
+      )}
+    >
+      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript" aria-label="CLI transcript">
+        <div className="sidecar-live-view__transcript-body-wrap">
           <div className="sidecar-live-view__transcript-toolbar">
+            {normalizedTranscripts.length > 1 ? (
+              <label className="sidecar-live-view__transcript-selector">
+                <span>CLI</span>
+                <select
+                  value={transcript.id}
+                  onChange={(event) => setSelectedTranscriptId(event.target.value)}
+                  aria-label="Select CLI transcript"
+                >
+                  {normalizedTranscripts.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span>{transcript.label}</span>
+            )}
+            <span>{transcript.role.replace(/_/g, ' ')}</span>
             <span>{transcript.sourceKind.replace(/_/g, ' ')}</span>
             <span>{formatBytes(transcript.byteCount)}</span>
             {transcript.sourcePath ? (
@@ -5631,9 +5899,63 @@ function ProcessLiveCliTranscriptWidget({ transcript, collapsed, onCollapsedChan
             <div className="sidecar-body-text">No CLI transcript was archived for this run.</div>
           )}
         </div>
-      ) : null}
-    </section>
+      </section>
+    </ProcessLiveRowGroup>
   );
+}
+
+function normalizeLiveAnalysisCliTranscript(transcript: SidecarLiveAnalysisCliTranscriptInput): SidecarLiveAnalysisCliTranscript | null {
+  if (!transcript || transcript.kind !== 'sidecar_live_analysis_cli_transcript') return null;
+  const sourceKind = isLiveAnalysisTranscriptSourceKind(transcript.sourceKind) ? transcript.sourceKind : 'missing';
+  const sourcePath = typeof transcript.sourcePath === 'string' ? transcript.sourcePath : null;
+  const role = typeof transcript.role === 'string' && transcript.role.trim()
+    ? transcript.role
+    : sourceKind === 'missing'
+      ? 'missing'
+      : 'transform';
+  const label = typeof transcript.label === 'string' && transcript.label.trim()
+    ? transcript.label
+    : defaultLiveCliTranscriptLabel(role, sourceKind);
+  const id = typeof transcript.id === 'string' && transcript.id.trim()
+    ? transcript.id
+    : `cli:${sourcePath ?? label}`;
+  return {
+    kind: 'sidecar_live_analysis_cli_transcript',
+    id,
+    label,
+    role,
+    sourceKind,
+    sourcePath,
+    byteCount: typeof transcript.byteCount === 'number' && Number.isFinite(transcript.byteCount) ? transcript.byteCount : 0,
+    lineCount: typeof transcript.lineCount === 'number' && Number.isFinite(transcript.lineCount) ? transcript.lineCount : 0,
+    lines: Array.isArray(transcript.lines) ? transcript.lines : [],
+  };
+}
+
+function isLiveAnalysisTranscriptSourceKind(value: unknown): value is SidecarLiveAnalysisCliTranscript['sourceKind'] {
+  return value === 'terminal_transcript'
+    || value === 'terminal_screenlog'
+    || value === 'worker_stdout'
+    || value === 'worker_stderr'
+    || value === 'final_output'
+    || value === 'missing';
+}
+
+function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnalysisCliTranscript['sourceKind']) {
+  const roleLabel = role === 'evaluate'
+    ? 'Evaluator'
+    : role === 'consequence'
+      ? 'Consequence'
+      : role === 'human_callout'
+        ? 'Human callout'
+        : role === 'missing'
+          ? 'No'
+          : 'Transform';
+  if (sourceKind === 'worker_stdout') return `${roleLabel} stdout`;
+  if (sourceKind === 'worker_stderr') return `${roleLabel} stderr`;
+  if (sourceKind === 'final_output') return `${roleLabel} final output`;
+  if (sourceKind === 'missing') return 'No CLI transcript';
+  return `${roleLabel} CLI`;
 }
 
 function LiveAnalysisRunGapList({ attempt, edge }: {
@@ -6037,6 +6359,16 @@ function refToAbsolutePath(ref: string | null) {
   }
 }
 
+function isTailFollowSurfacePath(relativePath: string) {
+  const normalized = relativePath.replace(/\\/g, '/').toLowerCase();
+  const filename = normalized.split('/').pop() ?? normalized;
+  return (
+    filename === 'terminal.transcript' ||
+    filename === 'screenlog.0' ||
+    filename.endsWith('.transcript')
+  );
+}
+
 function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispatch }: {
   projectRoot: string | null;
   tabId: string;
@@ -6047,6 +6379,7 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
   const [surface, setSurface] = useState<SurfaceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const tailFollowSurface = isTailFollowSurfacePath(relativePath);
 
   useEffect(() => {
     if (!projectRoot) {
@@ -6055,26 +6388,36 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
-    void fetchJson(`/api/surface?${params.toString()}`)
-      .then((payload) => {
-        if (!cancelled) setSurface(payload as SurfaceData);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setSurface(null);
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    let refreshTimer: number | null = null;
+    const loadSurface = (showLoading: boolean) => {
+      if (showLoading) setLoading(true);
+      const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
+      void fetchJson(`/api/surface?${params.toString()}`)
+        .then((payload) => {
+          if (!cancelled) {
+            setSurface(payload as SurfaceData);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setSurface(null);
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        })
+        .finally(() => {
+          if (!cancelled && showLoading) setLoading(false);
+        });
+    };
+    loadSurface(true);
+    if (tailFollowSurface && typeof window !== 'undefined') {
+      refreshTimer = window.setInterval(() => loadSurface(false), SIDECAR_TAIL_FOLLOW_REFRESH_MS);
+    }
     return () => {
       cancelled = true;
+      if (refreshTimer !== null) window.clearInterval(refreshTimer);
     };
-  }, [projectRoot, relativePath]);
+  }, [projectRoot, relativePath, tailFollowSurface]);
 
   if (loading) {
     return <div className="sidecar-inspector__empty">Loading {relativePath}.</div>;
@@ -6093,6 +6436,8 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
           descriptor={descriptor}
           content={surface.content}
           state={viewerState}
+          scrollMode="outer"
+          followAppends={tailFollowSurface}
           onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
           onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
           onReset={() => dispatch({ type: 'document/reset', tabId })}

@@ -359,7 +359,9 @@ export type SidecarLiveAnalysisLineageStatus = 'present' | 'absent' | 'unknown';
 
 export type SidecarLiveAnalysisTranscriptSourceKind =
   | 'terminal_transcript'
+  | 'terminal_screenlog'
   | 'worker_stdout'
+  | 'worker_stderr'
   | 'final_output'
   | 'missing';
 
@@ -535,6 +537,9 @@ export interface SidecarLiveAnalysisTranscriptLine {
 
 export interface SidecarLiveAnalysisCliTranscript {
   kind: 'sidecar_live_analysis_cli_transcript';
+  id: string;
+  label: string;
+  role: string;
   sourceKind: SidecarLiveAnalysisTranscriptSourceKind;
   sourcePath: string | null;
   byteCount: number;
@@ -573,6 +578,7 @@ export interface SidecarLiveAnalysisRunDetail {
   retryForensics: SidecarLiveAnalysisRetryForensic[];
   stageCoverage: SidecarLiveAnalysisStageCoverage[];
   cliTranscript: SidecarLiveAnalysisCliTranscript;
+  cliTranscripts: SidecarLiveAnalysisCliTranscript[];
   events: SidecarLiveAnalysisEvent[];
 }
 
@@ -843,7 +849,9 @@ const LIVE_ANALYSIS_LINEAGE_STATUSES: readonly SidecarLiveAnalysisLineageStatus[
 
 const LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS: readonly SidecarLiveAnalysisTranscriptSourceKind[] = [
   'terminal_transcript',
+  'terminal_screenlog',
   'worker_stdout',
+  'worker_stderr',
   'final_output',
   'missing',
 ];
@@ -1205,6 +1213,9 @@ export function isSidecarLiveAnalysisCliTranscript(
   if (!isObject(value)) return false;
   return (
     value.kind === 'sidecar_live_analysis_cli_transcript' &&
+    typeof value.id === 'string' &&
+    typeof value.label === 'string' &&
+    typeof value.role === 'string' &&
     isOneOf(value.sourceKind, LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS) &&
     isNullableString(value.sourcePath) &&
     typeof value.byteCount === 'number' &&
@@ -1264,6 +1275,8 @@ export function isSidecarLiveAnalysisRunDetail(
     Array.isArray(value.stageCoverage) &&
     value.stageCoverage.every(isSidecarLiveAnalysisStageCoverage) &&
     isSidecarLiveAnalysisCliTranscript(value.cliTranscript) &&
+    Array.isArray(value.cliTranscripts) &&
+    value.cliTranscripts.every(isSidecarLiveAnalysisCliTranscript) &&
     Array.isArray(value.events) &&
     value.events.every(isSidecarLiveAnalysisEvent)
   );

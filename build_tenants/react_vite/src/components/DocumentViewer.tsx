@@ -7,6 +7,7 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
 export type DocumentViewerFormat = "markdown" | "code" | "text";
 export type DocumentViewerFitMode = "none" | "width";
+export type DocumentViewerScrollMode = "internal" | "outer";
 
 export interface DocumentViewerState {
   zoom: number;
@@ -100,6 +101,8 @@ export function DocumentViewer({
   descriptor,
   content,
   state = DOCUMENT_VIEWER_DEFAULT_STATE,
+  scrollMode = "internal",
+  followAppends = false,
   onZoomIn,
   onZoomOut,
   onReset,
@@ -108,6 +111,8 @@ export function DocumentViewer({
   descriptor: DocumentDescriptor;
   content: string;
   state?: DocumentViewerState;
+  scrollMode?: DocumentViewerScrollMode;
+  followAppends?: boolean;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onReset?: () => void;
@@ -121,10 +126,13 @@ export function DocumentViewer({
     pointerId: number;
     startX: number;
     startY: number;
+    xScroller: HTMLElement;
+    yScroller: HTMLElement;
     scrollLeft: number;
     scrollTop: number;
   } | null>(null);
   const zoomAnchorRef = useRef<{ x: number; y: number; centerX: number; centerY: number } | null>(null);
+  const viewerClassName = `document-viewer${scrollMode === "outer" ? " document-viewer--outer-scroll" : ""}`;
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -165,6 +173,16 @@ export function DocumentViewer({
     zoomAnchorRef.current = null;
   }, [zoom]);
 
+  useLayoutEffect(() => {
+    if (!followAppends) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const scrollParent = nearestScrollableParent(viewport);
+    const yScroller = scrollParent ?? (canScrollAxis(viewport, "y") ? viewport : null);
+    if (!yScroller) return;
+    yScroller.scrollTop = yScroller.scrollHeight;
+  }, [descriptor.id, content, followAppends, zoom]);
+
   function preserveViewportCenterForZoom() {
     const viewport = viewportRef.current;
     const content = contentRef.current;
@@ -194,21 +212,27 @@ export function DocumentViewer({
 
   function beginPan(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !viewportRef.current) return;
+    const viewport = viewportRef.current;
+    const scrollParent = nearestScrollableParent(viewport);
+    const xScroller = canScrollAxis(viewport, "x") ? viewport : scrollParent ?? viewport;
+    const yScroller = canScrollAxis(viewport, "y") ? viewport : scrollParent ?? viewport;
     panRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      scrollLeft: viewportRef.current.scrollLeft,
-      scrollTop: viewportRef.current.scrollTop,
+      xScroller,
+      yScroller,
+      scrollLeft: xScroller.scrollLeft,
+      scrollTop: yScroller.scrollTop,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function movePan(event: PointerEvent<HTMLDivElement>) {
     const pan = panRef.current;
-    if (!pan || pan.pointerId !== event.pointerId || !viewportRef.current) return;
-    viewportRef.current.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
-    viewportRef.current.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    pan.xScroller.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
+    pan.yScroller.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
   }
 
   function endPan(event: PointerEvent<HTMLDivElement>) {
@@ -227,7 +251,7 @@ export function DocumentViewer({
   }
 
   return (
-    <section className="document-viewer" aria-label={`Document viewer ${descriptor.displayName}`}>
+    <section className={viewerClassName} aria-label={`Document viewer ${descriptor.displayName}`}>
       {hasControls ? (
         <div className="document-viewer__toolbar" aria-label="Document toolbar">
           <div className="document-viewer__path" title={descriptor.relativePath}>
@@ -290,6 +314,9 @@ function nearestScrollableParent(element: HTMLElement) {
 }
 
 function canScrollAxis(element: HTMLElement, axis: "x" | "y") {
+  const style = window.getComputedStyle(element);
+  const overflow = axis === "x" ? style.overflowX : style.overflowY;
+  if (!/(auto|scroll)/.test(overflow)) return false;
   return axis === "x"
     ? element.scrollWidth > element.clientWidth
     : element.scrollHeight > element.clientHeight;

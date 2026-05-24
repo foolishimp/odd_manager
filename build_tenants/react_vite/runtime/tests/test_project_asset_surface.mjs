@@ -101,6 +101,22 @@ test('setActive can register a root and mark it active', () => {
   }
 });
 
+test('sandbox workspace roots display browser folder plus pid instead of generic workspace', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const sandboxRoot = mkdtempSync(join(tmpdir(), 'odd-manager-sandbox-'));
+  const projectRoot = join(sandboxRoot, 'scenario_t164_rust_hello_service_lite_live', '20260520T091815799Z_pid60808', 'workspace');
+  try {
+    mkdirSync(join(projectRoot, '.ai-workspace'), { recursive: true });
+    const surface = createProjectSurface(managerRoot);
+    const registered = surface.register(projectRoot, { setActive: true, label: 'workspace' });
+    assert.equal(registered.name, 'scenario_t164_rust_hello_service_lite_live.pid60808.workspace');
+    assert.equal(surface.list()[0].name, 'scenario_t164_rust_hello_service_lite_live.pid60808.workspace');
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(sandboxRoot, { recursive: true, force: true });
+  }
+});
+
 test('discoverProjects still scans candidate roots without registering them', () => {
   const discoveryRoot = mkdtempSync(join(tmpdir(), 'odd-manager-discovery-'));
   try {

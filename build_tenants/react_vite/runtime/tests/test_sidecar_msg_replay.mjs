@@ -372,8 +372,11 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'ui/set-info-pinned', pinned: true },
     { type: 'process/select-view', view: 'blocked_waiting' },
     { type: 'process/select-record', id: 'process-record-1' },
+    { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
     { type: 'process/set-live-detail-row-collapsed', collapsed: true },
+    { type: 'process/set-live-gap-row-collapsed', collapsed: true },
+    { type: 'process/set-live-event-viewer-collapsed', collapsed: true },
     { type: 'process/set-graph-mode', mode: 'compressed' },
     { type: 'session/select', id: 'sess-1' },
   ]).state;
@@ -388,8 +391,11 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.infoPinned, true);
   assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
+  assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
   assert.equal(result.state.ui.liveDetailRowCollapsed, true);
+  assert.equal(result.state.ui.liveGapRowCollapsed, true);
+  assert.equal(result.state.ui.liveEventViewerCollapsed, true);
   assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
 });
@@ -430,8 +436,13 @@ test('document viewer zoom state is scoped to surface tabs and persists in layou
 
 test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning', () => {
   const source = readFileSync(documentViewerPath, 'utf-8');
+  const sidecarSource = readFileSync(sidecarPanelPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
 
+  assert.match(source, /export type DocumentViewerScrollMode = "internal" \| "outer"/);
+  assert.match(source, /scrollMode = "internal"/);
+  assert.match(source, /followAppends = false/);
+  assert.match(source, /document-viewer--outer-scroll/);
   assert.match(source, /securityLevel:\s*"strict"/);
   assert.match(source, /flowchart:\s*\{\s*htmlLabels:\s*false\s*\}/);
   assert.match(source, /stableHash\(`\$\{descriptorId\}:\$\{blockIndex\}:\$\{source\}`\)/);
@@ -447,8 +458,14 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /dangerouslySetInnerHTML=\{\{\s*__html:\s*html\s*\}\}/);
   assert.match(source, /onPointerDown=\{beginPan\}/);
   assert.match(source, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(source, /xScroller:\s*HTMLElement/);
+  assert.match(source, /yScroller:\s*HTMLElement/);
+  assert.match(source, /pan\.xScroller\.scrollLeft/);
+  assert.match(source, /pan\.yScroller\.scrollTop/);
   assert.match(source, /onWheel=\{handleWheel\}/);
   assert.match(source, /nearestScrollableParent\(viewport\)/);
+  assert.match(source, /window\.getComputedStyle\(element\)/);
+  assert.match(source, /yScroller\.scrollTop = yScroller\.scrollHeight/);
   assert.match(source, /viewport\.clientWidth \/ zoom/);
   assert.match(source, /--document-viewer-layout-width/);
   assert.match(source, /content\.offsetWidth \* \(zoom - 1\)/);
@@ -459,6 +476,16 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /className="markdown-viewer__table-wrap"/);
   assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*overflow:\s*auto;[^}]*cursor:\s*grab;[^}]*touch-action:\s*pan-x\s+pan-y;/s);
   assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*container-type:\s*inline-size;/s);
+  assert.match(styles, /\.document-viewer--outer-scroll\s*\{[^}]*grid-template-rows:\s*auto\s+auto;[^}]*align-content:\s*start;/s);
+  assert.match(styles, /\.document-viewer--outer-scroll\s+\.document-viewer__viewport\s*\{[^}]*overflow:\s*visible;/s);
+  assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
+  assert.match(sidecarSource, /const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500/);
+  assert.match(sidecarSource, /function isTailFollowSurfacePath/);
+  assert.match(sidecarSource, /filename === 'terminal\.transcript'/);
+  assert.match(sidecarSource, /filename === 'screenlog\.0'/);
+  assert.match(sidecarSource, /filename\.endsWith\('\.transcript'\)/);
+  assert.match(sidecarSource, /window\.setInterval\(\(\) => loadSurface\(false\), SIDECAR_TAIL_FOLLOW_REFRESH_MS\)/);
+  assert.match(sidecarSource, /followAppends=\{tailFollowSurface\}/);
   assert.match(styles, /\.document-viewer__content\s*\{[^}]*width:\s*var\(--document-viewer-layout-width,\s*100%\);[^}]*max-width:\s*var\(--document-viewer-layout-width,\s*100%\);/s);
   assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
   assert.match(styles, /\.markdown-viewer__table-wrap\s*\{[^}]*width:\s*min\(100%,\s*100cqw\);[^}]*max-width:\s*100cqw;[^}]*overflow-x:\s*auto;/s);
@@ -603,8 +630,11 @@ test('process navigator opens as an object viewer tab and keeps view selection i
     { type: 'process/select-record', id: 'process-record-1' },
     { type: 'process/select-view', view: 'ready_handoff' },
     { type: 'process/select-record', id: 'process-record-2' },
+    { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
     { type: 'process/set-live-detail-row-collapsed', collapsed: true },
+    { type: 'process/set-live-gap-row-collapsed', collapsed: true },
+    { type: 'process/set-live-event-viewer-collapsed', collapsed: true },
     { type: 'process/set-graph-mode', mode: 'compressed' },
   ]);
   assert.deepEqual(result.commands, []);
@@ -612,8 +642,11 @@ test('process navigator opens as an object viewer tab and keeps view selection i
   assert.equal(result.state.selection.id, 'navigator');
   assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
+  assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
   assert.equal(result.state.ui.liveDetailRowCollapsed, true);
+  assert.equal(result.state.ui.liveGapRowCollapsed, true);
+  assert.equal(result.state.ui.liveEventViewerCollapsed, true);
   assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.deepEqual(
     result.state.ui.viewerWorkspace.tabs.map((tab) => [tab.id, tab.kind, tab.objectId]),
@@ -938,10 +971,16 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /window\.setInterval\(\(\) => \{[\s\S]*type: 'load\/request'[\s\S]*reason: 'action_completed'[\s\S]*\}, 30000\)/);
   assert.match(simpleProcessPanelSource, /onRefresh=\{requestLiveRefresh\}/);
   assert.match(simpleProcessPanelSource, /refreshing=\{state\.loading && state\.activeLoadRoot === liveRefreshRoot\}/);
+  assert.match(simpleProcessPanelSource, /liveActiveRunRowCollapsed=\{state\.ui\.liveActiveRunRowCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-active-run-row-collapsed/);
   assert.match(simpleProcessPanelSource, /liveTranscriptCollapsed=\{state\.ui\.liveTranscriptCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-transcript-collapsed/);
   assert.match(simpleProcessPanelSource, /liveDetailRowCollapsed=\{state\.ui\.liveDetailRowCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-detail-row-collapsed/);
+  assert.match(simpleProcessPanelSource, /liveGapRowCollapsed=\{state\.ui\.liveGapRowCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-gap-row-collapsed/);
+  assert.match(simpleProcessPanelSource, /liveEventViewerCollapsed=\{state\.ui\.liveEventViewerCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-event-viewer-collapsed/);
   assert.match(simpleProcessPanelSource, /traversalOverlays/);
   assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
   assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
@@ -963,8 +1002,36 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /Live View/);
   assert.match(processPanelSource, /ProcessLiveViewPanel/);
   assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
+  assert.match(processPanelSource, /ProcessLiveRowGroup/);
+  assert.match(processPanelSource, /widgetNames=\{\['Active Run', 'Diagnostics'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['Ledger State', 'Assurance Ledgers'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['Gap Analysis', 'Requirement \/ Stage State'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['Event Viewer'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['CLI Transcript'\]\}/);
+  assert.match(processPanelSource, /cliTranscripts\?\.length \? attempt\.detail\.cliTranscripts : \[attempt\.detail\.cliTranscript\]/);
+  assert.match(processPanelSource, /function normalizeLiveAnalysisCliTranscript/);
+  assert.match(processPanelSource, /const role = typeof transcript\.role === 'string' && transcript\.role\.trim\(\)[\s\S]*: 'transform';/);
+  assert.match(processPanelSource, /function defaultLiveCliTranscriptLabel/);
+  assert.match(processPanelSource, /selectedTranscriptId/);
+  assert.match(processPanelSource, /aria-label="Select CLI transcript"/);
+  assert.ok(
+    processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}") <
+      processPanelSource.indexOf('<ProcessLiveRunDetail'),
+    'Active Run / Diagnostics row must stay ahead of selected-run detail widgets',
+  );
+  assert.ok(
+    processPanelSource.indexOf('<ProcessLiveEventViewer') <
+      processPanelSource.indexOf('<ProcessLiveCliTranscriptWidget'),
+    'CLI Transcript must be the final selected-run detail widget, after Event Viewer',
+  );
   assert.match(processPanelSource, /detailRowCollapsed=\{liveDetailRowCollapsed\}/);
   assert.match(processPanelSource, /onDetailRowCollapsedChange=\{onLiveDetailRowCollapsedChange\}/);
+  assert.match(processPanelSource, /gapRowCollapsed=\{liveGapRowCollapsed\}/);
+  assert.match(processPanelSource, /onGapRowCollapsedChange=\{onLiveGapRowCollapsedChange\}/);
+  assert.match(processPanelSource, /eventViewerCollapsed=\{liveEventViewerCollapsed\}/);
+  assert.match(processPanelSource, /onEventViewerCollapsedChange=\{onLiveEventViewerCollapsedChange\}/);
+  assert.match(processPanelSource, /transcriptCollapsed=\{liveTranscriptCollapsed\}/);
+  assert.match(processPanelSource, /onTranscriptCollapsedChange=\{onLiveTranscriptCollapsedChange\}/);
   assert.match(processPanelSource, /formatLiveRefreshTime\(analysis\.generatedAt\)/);
   assert.match(processPanelSource, /last refresh/);
   assert.match(processPanelSource, /sidecar-live-view__refresh-button/);
@@ -985,15 +1052,16 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /collapsed=\{collapsedEventKeys\.has\(key\)\}/);
   assert.match(processPanelSource, /onCollapsedChange=\{\(collapsed\) => setEventCollapsed\(key, collapsed\)\}/);
   assert.match(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Show' : 'Hide'\} \$\{event\.title\} details`\}/);
-  assert.match(processPanelSource, /aria-label=\{`\$\{detailRowCollapsed \? 'Expand' : 'Collapse'\} ledger and assurance row`\}/);
+  assert.match(processPanelSource, /ariaLabel="ledger state and assurance row"/);
+  assert.match(processPanelSource, /ariaLabel="gap analysis and requirement state row"/);
+  assert.match(processPanelSource, /ariaLabel="event viewer row"/);
+  assert.match(processPanelSource, /ariaLabel="CLI transcript row"/);
   assert.match(processPanelSource, /sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary/);
   assert.match(processPanelSource, /aria-label="Scrollable stage event tickets"/);
   assert.match(processPanelSource, /Raw event payload/);
   assert.ok(liveMapTabIndex !== -1 && mapLoopIndex !== -1 && liveMapTabIndex < mapLoopIndex);
   assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
-  assert.match(processPanelSource, /sidecar-live-view__collapsible-header/);
-  assert.match(processPanelSource, /aria-expanded=\{!collapsed\}/);
-  assert.match(processPanelSource, /onCollapsedChange\(!collapsed\)/);
+  assert.match(processPanelSource, /sidecar-live-view__detail-row-group--transcript/);
   assert.match(processPanelSource, /aria-label="Scrollable CLI interaction log"/);
   assert.match(processPanelSource, /process\/select-map', map: 'live_view'/);
   assert.match(processPanelSource, /projection\.liveAnalysis/);
@@ -1010,7 +1078,7 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view\s*\{/);
   assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__attempt\s*>\s*button\s*\{[^}]*min-height:\s*6\.6rem;/s);
-  assert.match(styles, /\.sidecar-live-view__detail--transcript\s*\{[^}]*order:\s*99;/s);
+  assert.match(styles, /\.sidecar-live-view__detail-row-group--transcript\s*\{[^}]*order:\s*99;/s);
   assert.match(styles, /\.sidecar-live-view__refresh-button\s*\{[^}]*font:\s*inherit;[^}]*text-align:\s*left;/s);
   assert.match(styles, /\.sidecar-live-view__refresh-button:hover:not\(:disabled\),\s*\.sidecar-live-view__refresh-button:focus-visible\s*\{/s);
   assert.match(styles, /\.sidecar-live-view__ledger-head\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.28rem;/s);
@@ -1021,7 +1089,10 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*width:\s*auto;[^}]*min-width:\s*max-content;[^}]*min-height:\s*1\.45rem;[^}]*padding:\s*0\.16rem\s+0\.42rem;/s);
   assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*>\s*span:first-child\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.5rem;/s);
+  assert.match(styles, /\.sidecar-live-view__detail-row-group--wide\s*\{[^}]*width:\s*100%;/s);
   assert.match(styles, /\.sidecar-live-view__row-collapse-toggle\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*1\.9rem;/s);
+  assert.match(styles, /\.sidecar-live-view__row-label\s*\{[^}]*display:\s*inline-flex;[^}]*white-space:\s*nowrap;/s);
+  assert.match(styles, /\.sidecar-live-view__row-label-item\s*\{[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(styles, /\.sidecar-live-view__row-collapse-symbol\s*\{[^}]*display:\s*inline-grid;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__event-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
   assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip,\s*\.sidecar-live-view__event-toggle\.status-chip\s*\{[^}]*min-height:\s*1\.45rem;[^}]*font-family:\s*var\(--font-mono\);/s);
@@ -1032,7 +1103,9 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__event-ticket\s*\{[^}]*display:\s*grid;[^}]*border:/s);
   assert.match(styles, /\.sidecar-live-view__event-fields\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
   assert.match(styles, /\.sidecar-live-view__event-raw\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
-  assert.match(styles, /\.sidecar-live-view__collapsible-header\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
+  assert.match(styles, /\.sidecar-live-view__transcript-body-wrap\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.58rem;/s);
+  assert.match(styles, /\.sidecar-live-view__transcript-selector\s*\{[^}]*display:\s*inline-flex;[^}]*max-width:\s*100%;/s);
+  assert.match(styles, /\.sidecar-live-view__transcript-selector\s+select\s*\{[^}]*min-width:\s*8rem;[^}]*border-radius:\s*var\(--sidecar-radius-xs\);/s);
   assert.match(styles, /\.sidecar-live-view__transcript\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__transcript\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
   assert.match(styles, /\.sidecar-process-simple\s*\{/);
@@ -1295,7 +1368,19 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.notEqual(browseEnd, -1);
   const projectsSource = source.slice(projectsStart, historyStart);
   const browseSource = source.slice(browseStart, browseEnd);
-  assert.match(projectsSource, /<Pane title="Project Browser"/);
+  const folderTreeSource = source.slice(
+    source.indexOf('function FolderTreeNode'),
+    source.indexOf('function SurfaceInspector'),
+  );
+  assert.match(source, /const load = \{ \.\.\.asNavigatorFolderLoad\(payload\), loadedAt: Date\.now\(\) \};/);
+  assert.match(source, /if \(!nextCollapsed && !folderLoads\[path\]\?\.loading\) \{[\s\S]*?void loadFolder\(path\);/);
+  assert.match(source, /if \(nextExpanded && !folderLoads\[normalizedRoot\]\?\.loading\) \{[\s\S]*?void loadFolder\(normalizedRoot\);/);
+  assert.doesNotMatch(source, /!nextCollapsed && \(!folderLoads\[path\] \|\| folderLoads\[path\]\.error\)/);
+  assert.match(source, /function FolderRefreshButton/);
+  assert.doesNotMatch(folderTreeSource, /<FolderRefreshButton/);
+  assert.doesNotMatch(projectsSource, /<FolderRefreshButton[\s\S]*?label=\{project\.name \|\| project\.id\}/);
+  assert.match(projectsSource, /<Pane\s+title="Project Browser"/);
+  assert.match(projectsSource, /actions=\{actionsWithRefresh\(projectBrowserRefreshAction\)\}/);
   assert.match(projectsSource, /const projectBrowserTabStrip = \(/);
   assert.match(projectsSource, /titleAddon=\{projectBrowserTabStrip\}/);
   assert.match(projectsSource, /role="tablist" aria-label="Project Browser views"/);
@@ -1320,7 +1405,11 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(source, /const selectProjectBrowserTab = \(tab: ProjectBrowserTab\)/);
   assert.match(source, /type: 'browse\/scope-set', scope: 'cross-project'/);
   assert.match(projectsSource, /className="sidecar-row__actions"/);
-  assert.match(browseSource, /<Pane title="Browse"/);
+  assert.match(projectsSource, /label=\{browseState\.currentPath \?\? 'current folder'\}/);
+  assert.match(projectsSource, /disabled=\{!browseState\.currentPath\}/);
+  assert.match(projectsSource, /dispatch\(\{ type: 'browse\/navigate-to', path: browseState\.currentPath \}\)/);
+  assert.match(browseSource, /<Pane\s+title="Browse"/);
+  assert.match(browseSource, /actions=\{actionsWithRefresh\(folderRefreshAction\(projectRootPath, 'Browse root'\)\)\}/);
   assert.doesNotMatch(browseSource, /cross-project/);
   assert.doesNotMatch(browseSource, /Project Favourites/);
 
@@ -1334,6 +1423,7 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;/s);
   assert.match(sidecarBlock, /\.sidecar-row__actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.18rem;/s);
   assert.match(sidecarBlock, /\.sidecar-tree-control--compact\s*\{[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(sidecarBlock, /\.sidecar-tree-control--refresh\s*\{[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__breadcrumb\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__segment\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);

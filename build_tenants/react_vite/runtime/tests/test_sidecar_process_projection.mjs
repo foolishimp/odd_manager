@@ -46,11 +46,13 @@ function installFakeOddSdlcCli(root, queryPayload, catalogPayload = null, analys
         libraryFunctions: [],
       })};`,
       `const analysisPayload = ${JSON.stringify(analysisPayload)};`,
-      "if (command === 'query-domain') { console.log(JSON.stringify({ payload: queryPayload })); process.exit(0); }",
-      "if (command === 'catalog') { console.log(JSON.stringify({ payload: catalogPayload })); process.exit(0); }",
-      "if (command === 'analyze-run' && analysisPayload) { console.log(JSON.stringify(analysisPayload)); process.exit(0); }",
+      "if (command === 'query-domain') { process.stdout.write(`${JSON.stringify({ payload: queryPayload })}\\n`); }",
+      "else if (command === 'catalog') { process.stdout.write(`${JSON.stringify({ payload: catalogPayload })}\\n`); }",
+      "else if (command === 'analyze-run' && analysisPayload) { process.stdout.write(`${JSON.stringify(analysisPayload)}\\n`); }",
+      "else {",
       "console.error(`unsupported command ${command}`);",
       'process.exit(1);',
+      "}",
       '',
     ].join('\n'),
   );
@@ -590,6 +592,22 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
       '',
     ].join('\n'),
   );
+  const evaluatorRunPath = writeOpRun(
+    root,
+    '20260518T010001Z_pid1',
+    'derive_intent_surface',
+    tracedResult({ sessionId: 'live-analysis-evaluator-fixture' }),
+    { manifest: { targetAssetType: 'intent_surface' } },
+  );
+  mkdirSync(join(evaluatorRunPath, 'fp_evaluate_process_events.jsonl.trace'), { recursive: true });
+  writeFileSync(
+    join(evaluatorRunPath, 'fp_evaluate_process_events.jsonl.trace', 'terminal.transcript'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-evaluator', session_id: 'fixture-evaluator-session' }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'evaluation admitted' }),
+      '',
+    ].join('\n'),
+  );
   installFakeOddSdlcCli(
     root,
     {
@@ -622,9 +640,17 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   assert.equal(projection.liveAnalysis.attempts[0].detail.diagnostics[0].code, 'runtime_artifact_missing');
   assert.equal(projection.liveAnalysis.attempts[0].detail.retryForensics[0].likelyCauseClass, 'worker_policy_violation');
   assert.equal(projection.liveAnalysis.attempts[0].detail.stageCoverage[0].test35StageRef, 'test35://stage/intent');
-  assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.sourceKind, 'terminal_transcript');
-  assert.equal(projection.liveAnalysis.attempts[0].detail.cliTranscript.lineCount, 3);
-  assert.match(projection.liveAnalysis.attempts[0].detail.cliTranscript.lines[1].text, /Tool call: Read/);
+  const runDetail = projection.liveAnalysis.attempts[0].detail;
+  assert.equal(runDetail.cliTranscript.sourceKind, 'terminal_transcript');
+  assert.equal(runDetail.cliTranscript.lineCount, 3);
+  assert.equal(runDetail.cliTranscript.id, runDetail.cliTranscripts[0].id);
+  assert.equal(runDetail.cliTranscripts.length, 2);
+  assert.equal(runDetail.cliTranscripts[0].label, 'Transform CLI');
+  assert.match(runDetail.cliTranscripts[0].lines[1].text, /Tool call: Read/);
+  assert.equal(runDetail.cliTranscripts[1].role, 'evaluate');
+  assert.equal(runDetail.cliTranscripts[1].label, 'Evaluator CLI');
+  assert.match(runDetail.cliTranscripts[1].sourcePath, /20260518T010001Z_pid1/);
+  assert.match(runDetail.cliTranscripts[1].lines[1].text, /evaluation admitted/);
   assert.ok(
     projection.liveAnalysis.attempts[0].detail.events.length >= 4,
     'event viewer should project artifact, runtime, and worker tickets for the selected stage',
@@ -680,6 +706,130 @@ test('Live View event projection defers oversized archive JSON instead of parsin
   assert.ok(event.rawPreview.length < 2600, 'raw preview should remain bounded');
   assert.ok(event.detailRows.some((row) => row.label === 'Archive size'));
   assert.ok(event.detailRows.some((row) => row.label === 'Parse limit'));
+});
+
+test('Live View analysis projection keeps the active run and recent attempts bounded', () => {
+  const root = installedTempWorkspace();
+  const refs = Array.from(
+    { length: 40 },
+    (_, index) => `file:///fixture/workspace/.ai-workspace/runtime/odd_sdlc/operator-runs/20260518T03${String(index).padStart(2, '0')}00Z_pid${index}`,
+  );
+  const edgeTraversal = refs.map((operatorRunRef, index) => ({
+    attemptOrdinal: index,
+    operatorRunRef,
+    graphFunctionName: `derive_fixture_${index}`,
+    graphVectorRef: `derive_fixture_${index}`,
+    targetAssetType: 'fixture_surface',
+    traversalClass: 'constructive',
+    workerElapsedMs: index,
+    edgeWindowElapsedMs: index,
+    deterministicElapsedMs: null,
+    fpEvaluateStatus: 'passed',
+    postflightStatus: 'passed',
+    executionEvidenceStatus: null,
+    executionEvidenceReportCount: 0,
+    residualPressureRefCount: 0,
+    residualPressureTransition: 'cleared',
+    closureDisposition: 'close',
+    selectedNextActionRef: null,
+    predecessorAttemptRef: null,
+    blockingReasonCodes: [],
+    productFilesWritten: [],
+    productFilesReplayed: [],
+    requirementObligationCount: 1,
+    productLineageCount: 1,
+    promptContextBytes: 0,
+    handoffBytes: 0,
+    stdoutBytes: 0,
+    eventBytes: 0,
+    workerStatus: 'worker_invoked',
+  }));
+  installFakeOddSdlcCli(
+    root,
+    {
+      kind: 'sdlc_query_domain_projection',
+      contractName: SIDECAR_PROCESS_CONTRACT_NAME,
+      contractVersion: SIDECAR_PROCESS_CONTRACT_VERSION,
+      graphFunctions: [],
+    },
+    null,
+    analysisPayload({
+      operatorRunRef: refs[0],
+      currentStateTelemetrySummary: {
+        inspectedRoot: '/fixture/workspace',
+        inspectedKind: 'workspace',
+        scenarioName: 'fixture-workspace',
+        profile: 'generic',
+        operatorRunCount: refs.length,
+        graphEdgeSequence: edgeTraversal.map((attempt) => attempt.graphFunctionName),
+        sameEdgeRetryCount: 0,
+        blockedAttemptCount: 0,
+        repairAttemptCount: 0,
+        abortedAttemptCount: 0,
+        finalClosureDisposition: 'close',
+        totalWallClockMs: 1000,
+        totalWorkerElapsedMs: 1000,
+        archiveBytes: {},
+        productFileCount: 0,
+        requirementObligationCount: 0,
+        productFileLineageCount: 0,
+      },
+      edgeTraversal,
+      diagnostics: refs.map((operatorRunRef, index) => ({
+        kind: 'sdlc_fd_run_analysis_diagnostic',
+        code: `diagnostic_${index}`,
+        severity: 'info',
+        detail: 'fixture diagnostic',
+        evidenceRefs: [operatorRunRef],
+        operatorRunRef,
+        edgeName: `derive_fixture_${index}`,
+        policyRef: null,
+      })),
+      runtimeArtifactGaps: refs.map((operatorRunRef, index) => ({
+        operatorRunRef,
+        artifact: `artifact_${index}.json`,
+        status: 'missing',
+        detail: null,
+      })),
+      retryForensics: refs.map((attemptRef, index) => ({
+        edgeName: `derive_fixture_${index}`,
+        attemptRef,
+        predecessorAttemptRef: null,
+        workerSecondsBefore: null,
+        blockingReasonCodes: [],
+        changedFiles: [],
+        productFilesObserved: [],
+        productFilesMaterialized: [],
+        productFilesReplayed: [],
+        lineageStatus: 'unknown',
+        outsideWorkspaceReadCount: 0,
+        schemaViolationCount: 0,
+        likelyCauseClass: 'unknown',
+      })),
+      conceptualStageCoverage: refs.map((operatorRunRef, index) => ({
+        kind: 'sdlc_fd_run_analysis_conceptual_stage_coverage',
+        test35StageRef: `test35://stage/${index}`,
+        expectedEdgeName: `derive_fixture_${index}`,
+        expectedTargetAssetType: 'fixture_surface',
+        mappedEdgeName: `derive_fixture_${index}`,
+        mappedTargetAssetType: 'fixture_surface',
+        stageClass: 'constructive',
+        operatorRunRefs: [operatorRunRef],
+      })),
+    }),
+  );
+
+  const projection = loadSidecarProcessProjection(root);
+  assert.equal(projection.supported, true);
+  assert.equal(projection.liveAnalysis.telemetry.operatorRunCount, 40);
+  assert.equal(projection.liveAnalysis.attempts.length, 24);
+  assert.equal(projection.liveAnalysis.attempts[0].operatorRunRef, refs[0]);
+  assert.equal(projection.liveAnalysis.attempts.at(-1).operatorRunRef, refs.at(-1));
+  assert.equal(projection.liveAnalysis.attempts[0].detail.diagnostics[0].code, 'diagnostic_0');
+  assert.equal(projection.liveAnalysis.attempts.at(-1).detail.runtimeGaps[0].artifact, 'artifact_39.json');
+  assert.equal(projection.liveAnalysis.diagnostics.every((diagnostic) => (
+    diagnostic.operatorRunRef === refs[0] || projection.liveAnalysis.attempts.some((attempt) => attempt.operatorRunRef === diagnostic.operatorRunRef)
+  )), true);
 });
 
 test('T-164 edge assurance carriers are projected without treating postflight as closure authority', () => {

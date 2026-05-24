@@ -171,8 +171,11 @@ export interface SidecarLayoutProfile {
     activeProcessView: SidecarProcessViewId;
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
+    liveActiveRunRowCollapsed: boolean;
     liveTranscriptCollapsed: boolean;
     liveDetailRowCollapsed: boolean;
+    liveGapRowCollapsed: boolean;
+    liveEventViewerCollapsed: boolean;
     activeProcessGraphMode: SidecarProcessGraphMode;
     // T-026: variant selection over the process flow map. V0 is canonical;
     // V1/V2/V4 are §13A scaffolds. Persisted across sessions via the layout
@@ -252,8 +255,11 @@ export interface SidecarState {
     activeProcessView: SidecarProcessViewId;
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
+    liveActiveRunRowCollapsed: boolean;
     liveTranscriptCollapsed: boolean;
     liveDetailRowCollapsed: boolean;
+    liveGapRowCollapsed: boolean;
+    liveEventViewerCollapsed: boolean;
     activeProcessGraphMode: SidecarProcessGraphMode;
     activeProcessFlowVariant: SidecarProcessFlowVariantId;
     activeLeafName: string | null;
@@ -307,8 +313,11 @@ export type SidecarMsg =
   | { type: 'process/select-view'; view: SidecarProcessViewId }
   | { type: 'process/select-map'; map: SidecarProcessMapId }
   | { type: 'process/select-record'; id: string | null }
+  | { type: 'process/set-live-active-run-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-transcript-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-detail-row-collapsed'; collapsed: boolean }
+  | { type: 'process/set-live-gap-row-collapsed'; collapsed: boolean }
+  | { type: 'process/set-live-event-viewer-collapsed'; collapsed: boolean }
   | { type: 'process/set-graph-mode'; mode: SidecarProcessGraphMode }
   | { type: 'process/select-variant'; variant: SidecarProcessFlowVariantId }
   | { type: 'process/select-leaf'; leafName: string | null }
@@ -405,8 +414,11 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
     activeProcessView: 'active_work',
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
+    liveActiveRunRowCollapsed: false,
     liveTranscriptCollapsed: false,
     liveDetailRowCollapsed: false,
+    liveGapRowCollapsed: false,
+    liveEventViewerCollapsed: false,
     activeProcessGraphMode: 'expanded',
     activeProcessFlowVariant: 'v1',
     activeLeafName: null,
@@ -1159,8 +1171,11 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         activeProcessView: isProcessView(ui.activeProcessView) ? ui.activeProcessView : 'active_work',
         activeProcessMap: isProcessMap(ui.activeProcessMap) ? ui.activeProcessMap : 'process_flow',
         activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
+        liveActiveRunRowCollapsed: ui.liveActiveRunRowCollapsed === true,
         liveTranscriptCollapsed: ui.liveTranscriptCollapsed === true,
         liveDetailRowCollapsed: ui.liveDetailRowCollapsed === true,
+        liveGapRowCollapsed: ui.liveGapRowCollapsed === true,
+        liveEventViewerCollapsed: ui.liveEventViewerCollapsed === true,
         activeProcessGraphMode: isProcessGraphMode(ui.activeProcessGraphMode) ? ui.activeProcessGraphMode : 'expanded',
         activeProcessFlowVariant: isProcessFlowVariant(ui.activeProcessFlowVariant)
           ? (ui.activeProcessFlowVariant as SidecarProcessFlowVariantId)
@@ -1197,8 +1212,11 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       activeProcessView: state.ui.activeProcessView,
       activeProcessMap: state.ui.activeProcessMap,
       activeProcessRecordId: state.ui.activeProcessRecordId,
+      liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed,
       liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed,
       liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed,
+      liveGapRowCollapsed: state.ui.liveGapRowCollapsed,
+      liveEventViewerCollapsed: state.ui.liveEventViewerCollapsed,
       activeProcessGraphMode: state.ui.activeProcessGraphMode,
       activeProcessFlowVariant: state.ui.activeProcessFlowVariant,
       activeLeafName: state.ui.activeLeafName,
@@ -1224,8 +1242,11 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
     activeProcessView: 'active_work',
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
+    liveActiveRunRowCollapsed: false,
     liveTranscriptCollapsed: false,
     liveDetailRowCollapsed: false,
+    liveGapRowCollapsed: false,
+    liveEventViewerCollapsed: false,
     activeProcessGraphMode: 'expanded',
     activeProcessFlowVariant: 'v1',
     activeLeafName: null,
@@ -1262,8 +1283,11 @@ function normalizeLoadedState(state: SidecarState) {
     secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, normalizedActiveSessionId) ?? secondarySessionId,
     ui: {
       ...state.ui,
+      liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed === true,
       liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed === true,
       liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed === true,
+      liveGapRowCollapsed: state.ui.liveGapRowCollapsed === true,
+      liveEventViewerCollapsed: state.ui.liveEventViewerCollapsed === true,
       activeProcessGraphMode: isProcessGraphMode(state.ui.activeProcessGraphMode) ? state.ui.activeProcessGraphMode : 'expanded',
       shellLayout: terminalWorkspace.split,
       workbenchLayout,
@@ -1428,6 +1452,14 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeProcessRecordId: msg.id,
         },
       };
+    case 'process/set-live-active-run-row-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveActiveRunRowCollapsed: msg.collapsed,
+        },
+      };
     case 'process/set-live-transcript-collapsed':
       return {
         ...state,
@@ -1442,6 +1474,22 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           liveDetailRowCollapsed: msg.collapsed,
+        },
+      };
+    case 'process/set-live-gap-row-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveGapRowCollapsed: msg.collapsed,
+        },
+      };
+    case 'process/set-live-event-viewer-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveEventViewerCollapsed: msg.collapsed,
         },
       };
     case 'process/set-graph-mode':
@@ -1568,8 +1616,11 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeProcessView: validation.profile.ui.activeProcessView,
           activeProcessMap: validation.profile.ui.activeProcessMap,
           activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
+          liveActiveRunRowCollapsed: validation.profile.ui.liveActiveRunRowCollapsed,
           liveTranscriptCollapsed: validation.profile.ui.liveTranscriptCollapsed,
           liveDetailRowCollapsed: validation.profile.ui.liveDetailRowCollapsed,
+          liveGapRowCollapsed: validation.profile.ui.liveGapRowCollapsed,
+          liveEventViewerCollapsed: validation.profile.ui.liveEventViewerCollapsed,
           activeProcessGraphMode: validation.profile.ui.activeProcessGraphMode,
           workbenchLayout: validation.profile.ui.workbenchLayout,
           viewerWorkspace: validation.profile.ui.viewerWorkspace,
