@@ -1007,13 +1007,15 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /widgetNames=\{\['Ledger State', 'Assurance Ledgers'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Gap Analysis', 'Requirement \/ Stage State'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Event Viewer'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['CLI Transcript'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['Stage Processes', 'Transcript Surfaces'\]\}/);
+  assert.match(processPanelSource, /stageProcesses=\{attempt\.detail\.stageProcesses \?\? \[\]\}/);
   assert.match(processPanelSource, /cliTranscripts\?\.length \? attempt\.detail\.cliTranscripts : \[attempt\.detail\.cliTranscript\]/);
   assert.match(processPanelSource, /function normalizeLiveAnalysisCliTranscript/);
+  assert.match(processPanelSource, /function normalizeLiveAnalysisStageProcess/);
   assert.match(processPanelSource, /const role = typeof transcript\.role === 'string' && transcript\.role\.trim\(\)[\s\S]*: 'transform';/);
   assert.match(processPanelSource, /function defaultLiveCliTranscriptLabel/);
   assert.match(processPanelSource, /selectedTranscriptId/);
-  assert.match(processPanelSource, /aria-label="Select CLI transcript"/);
+  assert.match(processPanelSource, /aria-label="Select transcript surface"/);
   assert.ok(
     processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}") <
       processPanelSource.indexOf('<ProcessLiveRunDetail'),
@@ -1022,7 +1024,7 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.ok(
     processPanelSource.indexOf('<ProcessLiveEventViewer') <
       processPanelSource.indexOf('<ProcessLiveCliTranscriptWidget'),
-    'CLI Transcript must be the final selected-run detail widget, after Event Viewer',
+    'Transcript Surfaces must be the final selected-run detail widget, after Event Viewer',
   );
   assert.match(processPanelSource, /detailRowCollapsed=\{liveDetailRowCollapsed\}/);
   assert.match(processPanelSource, /onDetailRowCollapsedChange=\{onLiveDetailRowCollapsedChange\}/);
@@ -1055,14 +1057,14 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /ariaLabel="ledger state and assurance row"/);
   assert.match(processPanelSource, /ariaLabel="gap analysis and requirement state row"/);
   assert.match(processPanelSource, /ariaLabel="event viewer row"/);
-  assert.match(processPanelSource, /ariaLabel="CLI transcript row"/);
+  assert.match(processPanelSource, /ariaLabel="stage process transcript surfaces row"/);
   assert.match(processPanelSource, /sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary/);
   assert.match(processPanelSource, /aria-label="Scrollable stage event tickets"/);
   assert.match(processPanelSource, /Raw event payload/);
   assert.ok(liveMapTabIndex !== -1 && mapLoopIndex !== -1 && liveMapTabIndex < mapLoopIndex);
   assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
   assert.match(processPanelSource, /sidecar-live-view__detail-row-group--transcript/);
-  assert.match(processPanelSource, /aria-label="Scrollable CLI interaction log"/);
+  assert.match(processPanelSource, /aria-label="Scrollable transcript surface"/);
   assert.match(processPanelSource, /process\/select-map', map: 'live_view'/);
   assert.match(processPanelSource, /projection\.liveAnalysis/);
   assert.match(processPanelSource, /aria-label="Process maps"/);

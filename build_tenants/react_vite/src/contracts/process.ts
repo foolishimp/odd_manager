@@ -360,10 +360,22 @@ export type SidecarLiveAnalysisLineageStatus = 'present' | 'absent' | 'unknown';
 export type SidecarLiveAnalysisTranscriptSourceKind =
   | 'terminal_transcript'
   | 'terminal_screenlog'
+  | 'process_events'
+  | 'trace_events'
   | 'worker_stdout'
   | 'worker_stderr'
+  | 'last_message'
   | 'final_output'
+  | 'run_summary'
   | 'missing';
+
+export type SidecarLiveAnalysisStageProcessKind =
+  | 'transform_worker'
+  | 'design_depth_evaluator'
+  | 'review_grade_evaluator'
+  | 'evaluator'
+  | 'worker'
+  | 'unknown';
 
 export type SidecarLiveAnalysisTranscriptTone =
   | 'default'
@@ -547,6 +559,18 @@ export interface SidecarLiveAnalysisCliTranscript {
   lines: SidecarLiveAnalysisTranscriptLine[];
 }
 
+export interface SidecarLiveAnalysisStageProcess {
+  kind: 'sidecar_live_analysis_stage_process';
+  id: string;
+  label: string;
+  stageKind: SidecarLiveAnalysisStageProcessKind;
+  role: string;
+  operatorRunPath: string | null;
+  processStartedPath: string | null;
+  processEventsPath: string | null;
+  transcriptSurfaces: SidecarLiveAnalysisCliTranscript[];
+}
+
 export interface SidecarLiveAnalysisEventDetailRow {
   kind: 'sidecar_live_analysis_event_detail_row';
   label: string;
@@ -579,6 +603,7 @@ export interface SidecarLiveAnalysisRunDetail {
   stageCoverage: SidecarLiveAnalysisStageCoverage[];
   cliTranscript: SidecarLiveAnalysisCliTranscript;
   cliTranscripts: SidecarLiveAnalysisCliTranscript[];
+  stageProcesses?: SidecarLiveAnalysisStageProcess[];
   events: SidecarLiveAnalysisEvent[];
 }
 
@@ -850,10 +875,23 @@ const LIVE_ANALYSIS_LINEAGE_STATUSES: readonly SidecarLiveAnalysisLineageStatus[
 const LIVE_ANALYSIS_TRANSCRIPT_SOURCE_KINDS: readonly SidecarLiveAnalysisTranscriptSourceKind[] = [
   'terminal_transcript',
   'terminal_screenlog',
+  'process_events',
+  'trace_events',
   'worker_stdout',
   'worker_stderr',
+  'last_message',
   'final_output',
+  'run_summary',
   'missing',
+];
+
+const LIVE_ANALYSIS_STAGE_PROCESS_KINDS: readonly SidecarLiveAnalysisStageProcessKind[] = [
+  'transform_worker',
+  'design_depth_evaluator',
+  'review_grade_evaluator',
+  'evaluator',
+  'worker',
+  'unknown',
 ];
 
 const LIVE_ANALYSIS_TRANSCRIPT_TONES: readonly SidecarLiveAnalysisTranscriptTone[] = [
@@ -1225,6 +1263,24 @@ export function isSidecarLiveAnalysisCliTranscript(
   );
 }
 
+export function isSidecarLiveAnalysisStageProcess(
+  value: unknown,
+): value is SidecarLiveAnalysisStageProcess {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_live_analysis_stage_process' &&
+    typeof value.id === 'string' &&
+    typeof value.label === 'string' &&
+    isOneOf(value.stageKind, LIVE_ANALYSIS_STAGE_PROCESS_KINDS) &&
+    typeof value.role === 'string' &&
+    isNullableString(value.operatorRunPath) &&
+    isNullableString(value.processStartedPath) &&
+    isNullableString(value.processEventsPath) &&
+    Array.isArray(value.transcriptSurfaces) &&
+    value.transcriptSurfaces.every(isSidecarLiveAnalysisCliTranscript)
+  );
+}
+
 export function isSidecarLiveAnalysisEventDetailRow(
   value: unknown,
 ): value is SidecarLiveAnalysisEventDetailRow {
@@ -1277,6 +1333,10 @@ export function isSidecarLiveAnalysisRunDetail(
     isSidecarLiveAnalysisCliTranscript(value.cliTranscript) &&
     Array.isArray(value.cliTranscripts) &&
     value.cliTranscripts.every(isSidecarLiveAnalysisCliTranscript) &&
+    (
+      value.stageProcesses === undefined ||
+      (Array.isArray(value.stageProcesses) && value.stageProcesses.every(isSidecarLiveAnalysisStageProcess))
+    ) &&
     Array.isArray(value.events) &&
     value.events.every(isSidecarLiveAnalysisEvent)
   );

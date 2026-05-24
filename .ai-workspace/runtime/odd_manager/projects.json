@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/scenario_t164_rust_hello_service_lite_live/20260524T094654279Z_pid68379/workspace",
+  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260524T120601348Z_pid92203/workspace",
   "projects": [
     {
       "id": "odd_world_model-6f55d0a5",
@@ -51,28 +51,12 @@
       "updated_at": "2026-05-17T11:34:03.568Z"
     },
     {
-      "id": "data_mapper.test83.Ts.cl-1deb40ce",
-      "root": "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test83.Ts.cl",
-      "label": "data_mapper.test83.Ts.cl",
-      "tags": [],
-      "registered_at": "2026-05-20T00:54:25.268Z",
-      "updated_at": "2026-05-20T00:54:25.268Z"
-    },
-    {
       "id": "scenario_t164_rust_hello_service_lite_live-0860451a",
       "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/scenario_t164_rust_hello_service_lite_live",
       "label": "scenario_t164_rust_hello_service_lite_live",
       "tags": [],
       "registered_at": "2026-05-20T13:21:40.074Z",
       "updated_at": "2026-05-20T13:21:40.074Z"
-    },
-    {
-      "id": "workspace-2280cfd6",
-      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t171_data_mapper_lifecycle_live/20260520T175739666Z_pid55628/workspace",
-      "label": "workspace",
-      "tags": [],
-      "registered_at": "2026-05-21T00:07:15.360Z",
-      "updated_at": "2026-05-21T00:07:15.360Z"
     },
     {
       "id": "data_mapper.test84.TS.cl-2f8a8bcf",

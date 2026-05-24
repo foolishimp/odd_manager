@@ -5076,6 +5076,8 @@ type SidecarLiveAnalysisDiagnostic = SidecarLiveAnalysis['diagnostics'][number];
 type SidecarLiveAnalysisEvent = SidecarLiveAnalysisAttempt['detail']['events'][number];
 type SidecarLiveAnalysisCliTranscript = SidecarLiveAnalysisAttempt['detail']['cliTranscript'];
 type SidecarLiveAnalysisCliTranscriptInput = Partial<SidecarLiveAnalysisCliTranscript> | null | undefined;
+type SidecarLiveAnalysisStageProcess = NonNullable<SidecarLiveAnalysisAttempt['detail']['stageProcesses']>[number];
+type SidecarLiveAnalysisStageProcessInput = Partial<SidecarLiveAnalysisStageProcess> | null | undefined;
 type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
@@ -5573,6 +5575,7 @@ function ProcessLiveRunDetail({
       />
 
       <ProcessLiveCliTranscriptWidget
+        stageProcesses={attempt.detail.stageProcesses ?? []}
         transcripts={attempt.detail.cliTranscripts?.length ? attempt.detail.cliTranscripts : [attempt.detail.cliTranscript]}
         collapsed={transcriptCollapsed}
         onCollapsedChange={onTranscriptCollapsedChange}
@@ -5808,16 +5811,50 @@ function ProcessLiveEventTicket({ event, collapsed, onCollapsedChange, onOpenTra
   );
 }
 
-function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedChange, onOpenTracePath }: {
+function ProcessLiveCliTranscriptWidget({ stageProcesses = [], transcripts, collapsed, onCollapsedChange, onOpenTracePath }: {
+  stageProcesses?: SidecarLiveAnalysisStageProcessInput[];
   transcripts: SidecarLiveAnalysisCliTranscriptInput[];
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onOpenTracePath: (absolutePath: string) => void;
 }) {
-  const normalizedTranscripts = useMemo(
-    () => transcripts.map(normalizeLiveAnalysisCliTranscript).filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript)),
-    [transcripts],
-  );
+  const transcriptModel = useMemo(() => {
+    const normalizedStageProcesses = stageProcesses
+      .map(normalizeLiveAnalysisStageProcess)
+      .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process));
+    const fallbackTranscripts = transcripts
+      .map(normalizeLiveAnalysisCliTranscript)
+      .filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript));
+    const seen = new Set<string>();
+    const processGroups = normalizedStageProcesses.map((process) => {
+      const surfaces = process.transcriptSurfaces.filter((surface) => {
+        if (seen.has(surface.id)) return false;
+        seen.add(surface.id);
+        return true;
+      });
+      return { id: process.id, label: process.label, surfaces };
+    });
+    const ungroupedSurfaces = fallbackTranscripts.filter((surface) => {
+      if (seen.has(surface.id)) return false;
+      seen.add(surface.id);
+      return true;
+    });
+    const groups = [
+      ...processGroups,
+      ...(ungroupedSurfaces.length || !processGroups.length
+        ? [{ id: 'ungrouped-transcript-surfaces', label: 'Unattributed transcript surfaces', surfaces: ungroupedSurfaces }]
+        : []),
+    ].filter((group) => group.surfaces.length || group.id !== 'ungrouped-transcript-surfaces');
+    const groupedSurfaces = groups.flatMap((group) => group.surfaces);
+    return {
+      stageProcesses: normalizedStageProcesses,
+      groups,
+      transcripts: groupedSurfaces.length ? groupedSurfaces : fallbackTranscripts,
+    };
+  }, [stageProcesses, transcripts]);
+  const normalizedStageProcesses = transcriptModel.stageProcesses;
+  const normalizedTranscripts = transcriptModel.transcripts;
+  const transcriptGroups = transcriptModel.groups;
   const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(normalizedTranscripts[0]?.id ?? null);
   const transcript = normalizedTranscripts.find((candidate) => candidate.id === selectedTranscriptId) ?? normalizedTranscripts[0];
 
@@ -5835,8 +5872,8 @@ function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedCha
 
   return (
     <ProcessLiveRowGroup
-      widgetNames={['CLI Transcript']}
-      ariaLabel="CLI transcript row"
+      widgetNames={['Stage Processes', 'Transcript Surfaces']}
+      ariaLabel="stage process transcript surfaces row"
       collapsed={collapsed}
       onCollapsedChange={onCollapsedChange}
       className="sidecar-live-view__detail-row-group--wide sidecar-live-view__detail-row-group--transcript"
@@ -5845,27 +5882,40 @@ function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedCha
           <span className={`status-chip ${transcript.sourceKind === 'missing' ? 'default' : 'active'}`}>
             {transcript.lineCount} lines
           </span>
-          <span className="status-chip default">{normalizedTranscripts.length} CLI</span>
+          <span className="status-chip default">{normalizedStageProcesses.length} {normalizedStageProcesses.length === 1 ? 'stage process' : 'stage processes'}</span>
+          <span className="status-chip default">{normalizedTranscripts.length} {normalizedTranscripts.length === 1 ? 'surface' : 'surfaces'}</span>
           <span className="status-chip default">{transcript.sourceKind.replace(/_/g, ' ')}</span>
         </>
       )}
     >
-      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript" aria-label="CLI transcript">
+      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript" aria-label="Stage process transcript surfaces">
         <div className="sidecar-live-view__transcript-body-wrap">
           <div className="sidecar-live-view__transcript-toolbar">
             {normalizedTranscripts.length > 1 ? (
               <label className="sidecar-live-view__transcript-selector">
-                <span>CLI</span>
+                <span>Surface</span>
                 <select
                   value={transcript.id}
                   onChange={(event) => setSelectedTranscriptId(event.target.value)}
-                  aria-label="Select CLI transcript"
+                  aria-label="Select transcript surface"
                 >
-                  {normalizedTranscripts.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.label}
-                    </option>
-                  ))}
+                  {transcriptGroups.length ? (
+                    transcriptGroups.map((group) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {group.surfaces.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  ) : (
+                    normalizedTranscripts.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.label}
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
             ) : (
@@ -5881,7 +5931,7 @@ function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedCha
             ) : null}
           </div>
           {transcript.lines.length ? (
-            <ol className="sidecar-live-view__transcript" aria-label="Scrollable CLI interaction log">
+            <ol className="sidecar-live-view__transcript" aria-label="Scrollable transcript surface">
               {transcript.lines.map((line) => (
                 <li key={`${line.index}:${line.eventType}`} className={`sidecar-live-view__transcript-line sidecar-live-view__transcript-line--${line.tone}`}>
                   <span className="sidecar-live-view__transcript-index">{line.index + 1}</span>
@@ -5896,7 +5946,7 @@ function ProcessLiveCliTranscriptWidget({ transcripts, collapsed, onCollapsedCha
               ))}
             </ol>
           ) : (
-            <div className="sidecar-body-text">No CLI transcript was archived for this run.</div>
+            <div className="sidecar-body-text">No transcript surface was archived for this run.</div>
           )}
         </div>
       </section>
@@ -5932,13 +5982,69 @@ function normalizeLiveAnalysisCliTranscript(transcript: SidecarLiveAnalysisCliTr
   };
 }
 
+function normalizeLiveAnalysisStageProcess(stageProcess: SidecarLiveAnalysisStageProcessInput): SidecarLiveAnalysisStageProcess | null {
+  if (!stageProcess || stageProcess.kind !== 'sidecar_live_analysis_stage_process') return null;
+  const stageKind = isLiveAnalysisStageProcessKind(stageProcess.stageKind) ? stageProcess.stageKind : 'unknown';
+  const label = typeof stageProcess.label === 'string' && stageProcess.label.trim()
+    ? stageProcess.label
+    : defaultLiveAnalysisStageProcessLabel(stageKind);
+  const id = typeof stageProcess.id === 'string' && stageProcess.id.trim()
+    ? stageProcess.id
+    : `stage-process:${label}`;
+  const role = typeof stageProcess.role === 'string' && stageProcess.role.trim()
+    ? stageProcess.role
+    : stageKind.includes('evaluator')
+      ? 'evaluate'
+      : stageKind.includes('worker')
+        ? 'transform'
+        : 'worker';
+  const transcriptSurfaces = Array.isArray(stageProcess.transcriptSurfaces)
+    ? stageProcess.transcriptSurfaces
+      .map(normalizeLiveAnalysisCliTranscript)
+      .filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript))
+    : [];
+  return {
+    kind: 'sidecar_live_analysis_stage_process',
+    id,
+    label,
+    stageKind,
+    role,
+    operatorRunPath: typeof stageProcess.operatorRunPath === 'string' ? stageProcess.operatorRunPath : null,
+    processStartedPath: typeof stageProcess.processStartedPath === 'string' ? stageProcess.processStartedPath : null,
+    processEventsPath: typeof stageProcess.processEventsPath === 'string' ? stageProcess.processEventsPath : null,
+    transcriptSurfaces,
+  };
+}
+
 function isLiveAnalysisTranscriptSourceKind(value: unknown): value is SidecarLiveAnalysisCliTranscript['sourceKind'] {
   return value === 'terminal_transcript'
     || value === 'terminal_screenlog'
+    || value === 'process_events'
+    || value === 'trace_events'
     || value === 'worker_stdout'
     || value === 'worker_stderr'
+    || value === 'last_message'
     || value === 'final_output'
+    || value === 'run_summary'
     || value === 'missing';
+}
+
+function isLiveAnalysisStageProcessKind(value: unknown): value is SidecarLiveAnalysisStageProcess['stageKind'] {
+  return value === 'transform_worker'
+    || value === 'design_depth_evaluator'
+    || value === 'review_grade_evaluator'
+    || value === 'evaluator'
+    || value === 'worker'
+    || value === 'unknown';
+}
+
+function defaultLiveAnalysisStageProcessLabel(stageKind: SidecarLiveAnalysisStageProcess['stageKind']) {
+  if (stageKind === 'transform_worker') return 'transform.C/F_P worker';
+  if (stageKind === 'design_depth_evaluator') return 'evaluate.C/F_P design depth';
+  if (stageKind === 'review_grade_evaluator') return 'evaluate.C/F_P review grade';
+  if (stageKind === 'evaluator') return 'evaluate.C/F_P evaluator';
+  if (stageKind === 'worker') return 'worker process';
+  return 'stage process';
 }
 
 function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnalysisCliTranscript['sourceKind']) {
@@ -5951,12 +6057,16 @@ function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnal
         : role === 'missing'
           ? 'No'
           : 'Transform';
+  if (sourceKind === 'process_events') return `${roleLabel} process events`;
+  if (sourceKind === 'trace_events') return `${roleLabel} trace events`;
   if (sourceKind === 'worker_stdout') return `${roleLabel} stdout`;
   if (sourceKind === 'worker_stderr') return `${roleLabel} stderr`;
+  if (sourceKind === 'last_message') return `${roleLabel} last message`;
   if (sourceKind === 'final_output') return `${roleLabel} final output`;
-  if (sourceKind === 'missing') return 'No CLI transcript';
+  if (sourceKind === 'run_summary') return `${roleLabel} run summary`;
+  if (sourceKind === 'missing') return 'No transcript surface';
   if (sourceKind === 'terminal_screenlog') return `${roleLabel} screen log`;
-  return `${roleLabel} CLI`;
+  return `${roleLabel} terminal transcript`;
 }
 
 function LiveAnalysisRunGapList({ attempt, edge }: {

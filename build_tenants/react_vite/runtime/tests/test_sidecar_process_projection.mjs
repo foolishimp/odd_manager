@@ -76,6 +76,11 @@ function writeOpRun(root, name, leafName, result, options = {}) {
     edgeName: leafName,
     ...options.manifest,
   });
+  writeJsonFile(join(opRunPath, 'worker_process_started.json'), {
+    kind: 'actor_process_started',
+    edge: leafName,
+    pid: 101,
+  });
   writeFileSync(join(opRunPath, 'worker_process_events.jsonl'), '');
   if (options.postflight) writeJsonFile(join(opRunPath, 'postflight.json'), { ok: true });
   if (options.fpEvaluate) writeJsonFile(join(opRunPath, 'fp_evaluate_result.json'), { ok: true });
@@ -600,6 +605,52 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
       '',
     ].join('\n'),
   );
+  writeFileSync(join(opRunPath, 'worker_stdout.log'), ['worker stdout line', ''].join('\n'));
+  writeFileSync(join(opRunPath, 'worker_stderr.log'), ['worker stderr line', ''].join('\n'));
+  writeFileSync(join(opRunPath, 'worker_last_message.txt'), ['worker final message', ''].join('\n'));
+  writeFileSync(join(opRunPath, 'worker_process_events.jsonl.trace', 'final_output.txt'), ['worker final output', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'worker_process_started_context.json'), {
+    kind: 'sdlc_worker_process_started_context',
+  });
+  writeJsonFile(join(opRunPath, 'design_depth_fp_evaluator_process_started.json'), {
+    kind: 'actor_process_started',
+    detail: 'design depth evaluator process started',
+    pid: 202,
+  });
+  writeFileSync(
+    join(opRunPath, 'design_depth_fp_evaluator_process_events.jsonl'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-design-evaluator', session_id: 'fixture-design-evaluator-session' }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'design depth admitted' }),
+      '',
+    ].join('\n'),
+  );
+  mkdirSync(join(opRunPath, 'design_depth_fp_evaluator_process_events.jsonl.trace'), { recursive: true });
+  writeFileSync(
+    join(opRunPath, 'design_depth_fp_evaluator_process_events.jsonl.trace', 'terminal.transcript'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-design-evaluator', session_id: 'fixture-design-evaluator-session' }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'design depth admitted' }),
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(join(opRunPath, 'design_depth_fp_evaluator_stdout.log'), ['design depth stdout', ''].join('\n'));
+  writeFileSync(join(opRunPath, 'design_depth_fp_evaluator_last_message.txt'), ['design depth final message', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'review_grade_edge_fulfillment_process_started.json'), {
+    kind: 'actor_process_started',
+    detail: 'review grade evaluator process started',
+    pid: 303,
+  });
+  writeFileSync(
+    join(opRunPath, 'review_grade_edge_fulfillment_process_events.jsonl'),
+    [
+      JSON.stringify({ type: 'system', cwd: root, model: 'fixture-review-evaluator', session_id: 'fixture-review-evaluator-session' }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'review grade admitted' }),
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_stdout.log'), ['review grade stdout', ''].join('\n'));
+  writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_last_message.txt'), ['review grade final message', ''].join('\n'));
   const evaluatorRunPath = writeOpRun(
     root,
     '20260518T010001Z_pid1',
@@ -652,16 +703,36 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   assert.equal(runDetail.cliTranscript.sourceKind, 'terminal_transcript');
   assert.equal(runDetail.cliTranscript.lineCount, 3);
   assert.equal(runDetail.cliTranscript.id, runDetail.cliTranscripts[0].id);
-  assert.equal(runDetail.cliTranscripts.length, 3);
-  assert.equal(runDetail.cliTranscripts[0].label, 'Transform CLI');
+  assert.equal(runDetail.stageProcesses.length, 3);
+  assert.deepEqual(
+    runDetail.stageProcesses.map((process) => process.stageKind),
+    ['transform_worker', 'design_depth_evaluator', 'review_grade_evaluator'],
+  );
+  assert.equal(runDetail.stageProcesses[0].label, 'transform.C/F_P worker');
+  assert.equal(runDetail.stageProcesses[0].processStartedPath, join(opRunPath, 'worker_process_started.json'));
+  assert.equal(runDetail.stageProcesses[0].processEventsPath, join(opRunPath, 'worker_process_events.jsonl'));
+  assert.equal(runDetail.stageProcesses[0].transcriptSurfaces.length, 6);
+  assert.equal(runDetail.stageProcesses[0].transcriptSurfaces[0].label, 'transform.C/F_P worker terminal transcript');
+  assert.equal(runDetail.stageProcesses[1].label, 'evaluate.C/F_P design depth');
+  assert.equal(runDetail.stageProcesses[1].processStartedPath, join(opRunPath, 'design_depth_fp_evaluator_process_started.json'));
+  assert.deepEqual(
+    runDetail.stageProcesses[1].transcriptSurfaces.map((surface) => surface.sourceKind),
+    ['terminal_transcript', 'worker_stdout', 'last_message'],
+  );
+  assert.equal(runDetail.stageProcesses[2].label, 'evaluate.C/F_P review grade');
+  assert.deepEqual(
+    runDetail.stageProcesses[2].transcriptSurfaces.map((surface) => surface.sourceKind),
+    ['worker_stdout', 'last_message'],
+  );
+  assert.equal(runDetail.cliTranscripts.length, 11);
+  assert.equal(runDetail.cliTranscripts[0].label, 'transform.C/F_P worker terminal transcript');
   assert.match(runDetail.cliTranscripts[0].lines[1].text, /Tool call: Read/);
   assert.equal(runDetail.cliTranscripts[1].sourceKind, 'terminal_screenlog');
-  assert.equal(runDetail.cliTranscripts[1].label, 'Transform screen log');
+  assert.equal(runDetail.cliTranscripts[1].label, 'transform.C/F_P worker screen log');
   assert.match(runDetail.cliTranscripts[1].lines[0].text, /fixture raw screen line/);
-  assert.equal(runDetail.cliTranscripts[2].role, 'evaluate');
-  assert.equal(runDetail.cliTranscripts[2].label, 'Evaluator CLI');
-  assert.match(runDetail.cliTranscripts[2].sourcePath, /20260518T010001Z_pid1/);
-  assert.match(runDetail.cliTranscripts[2].lines[1].text, /evaluation admitted/);
+  assert.equal(runDetail.cliTranscripts[6].role, 'evaluate');
+  assert.equal(runDetail.cliTranscripts[6].label, 'evaluate.C/F_P design depth terminal transcript');
+  assert.match(runDetail.cliTranscripts[6].lines[1].text, /design depth admitted/);
   assert.ok(
     projection.liveAnalysis.attempts[0].detail.events.length >= 4,
     'event viewer should project artifact, runtime, and worker tickets for the selected stage',
