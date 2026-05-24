@@ -592,6 +592,14 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
       '',
     ].join('\n'),
   );
+  mkdirSync(join(opRunPath, 'worker_process_events.jsonl.trace', 'terminal_session'), { recursive: true });
+  writeFileSync(
+    join(opRunPath, 'worker_process_events.jsonl.trace', 'terminal_session', 'screenlog.0'),
+    [
+      'fixture raw screen line',
+      '',
+    ].join('\n'),
+  );
   const evaluatorRunPath = writeOpRun(
     root,
     '20260518T010001Z_pid1',
@@ -644,13 +652,16 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   assert.equal(runDetail.cliTranscript.sourceKind, 'terminal_transcript');
   assert.equal(runDetail.cliTranscript.lineCount, 3);
   assert.equal(runDetail.cliTranscript.id, runDetail.cliTranscripts[0].id);
-  assert.equal(runDetail.cliTranscripts.length, 2);
+  assert.equal(runDetail.cliTranscripts.length, 3);
   assert.equal(runDetail.cliTranscripts[0].label, 'Transform CLI');
   assert.match(runDetail.cliTranscripts[0].lines[1].text, /Tool call: Read/);
-  assert.equal(runDetail.cliTranscripts[1].role, 'evaluate');
-  assert.equal(runDetail.cliTranscripts[1].label, 'Evaluator CLI');
-  assert.match(runDetail.cliTranscripts[1].sourcePath, /20260518T010001Z_pid1/);
-  assert.match(runDetail.cliTranscripts[1].lines[1].text, /evaluation admitted/);
+  assert.equal(runDetail.cliTranscripts[1].sourceKind, 'terminal_screenlog');
+  assert.equal(runDetail.cliTranscripts[1].label, 'Transform screen log');
+  assert.match(runDetail.cliTranscripts[1].lines[0].text, /fixture raw screen line/);
+  assert.equal(runDetail.cliTranscripts[2].role, 'evaluate');
+  assert.equal(runDetail.cliTranscripts[2].label, 'Evaluator CLI');
+  assert.match(runDetail.cliTranscripts[2].sourcePath, /20260518T010001Z_pid1/);
+  assert.match(runDetail.cliTranscripts[2].lines[1].text, /evaluation admitted/);
   assert.ok(
     projection.liveAnalysis.attempts[0].detail.events.length >= 4,
     'event viewer should project artifact, runtime, and worker tickets for the selected stage',

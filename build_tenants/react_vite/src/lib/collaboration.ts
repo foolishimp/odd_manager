@@ -240,12 +240,16 @@ export async function unregisterProject(
 
 export async function setActiveProject(
   idOrRoot: string,
+  options: { registerIfMissing?: boolean } = {},
 ): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
   const result = await expectJson<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
     await fetch("/api/projects/active", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(idOrRoot.startsWith("/") ? { root: idOrRoot } : { id: idOrRoot }),
+      body: JSON.stringify({
+        ...(idOrRoot.startsWith("/") ? { root: idOrRoot } : { id: idOrRoot }),
+        ...(options.registerIfMissing === undefined ? {} : { registerIfMissing: options.registerIfMissing }),
+      }),
     }),
   );
   emitProjectRegistryChanged("active", { project: result.project, projects: result.projects });

@@ -1661,7 +1661,7 @@ const server = createServer(async (request, response) => {
         return;
       }
       try {
-        const project = projectSurface.setActive(identity);
+        const project = projectSurface.setActive(identity, { registerIfMissing: parsed.registerIfMissing !== false });
         writeJson(response, 200, { ok: true, project, projects: projectSurface.list(), diagnostic: projectSurface.diagnostic() });
       } catch (caught) {
         writeJson(response, 400, { ok: false, error: caught instanceof Error ? caught.message : String(caught) });

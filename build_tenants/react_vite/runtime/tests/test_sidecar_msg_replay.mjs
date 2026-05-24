@@ -526,7 +526,7 @@ test('sidecar project selection promotes one active Project root across shell an
   const routeSource = readFileSync(workspaceRoutePath, 'utf-8');
   assert.match(source, /const currentProjectRoot = state\.activeLoadRoot \?\? state\.context\?\.project\.root \?\? projectRoot \?\? null;/);
   assert.match(source, /await setActiveProject\(project\.id\)/);
-  assert.match(source, /await setActiveProject\(root\)/);
+  assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
   assert.match(routeSource, /<SidecarPanel[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onContextChange=\{\(ctx\) => \{/);
   assert.match(routeSource, /if \(ctx\.project\.root !== workspaceRoot\) \{[\s\S]*onProjectRootChange\(ctx\.project\.root\);/);
   assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
@@ -1400,6 +1400,7 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(projectsSource, /className="sidecar-project-picker__workspace-button"/);
   assert.match(projectsSource, /title=\{`Open workspace \$\{entry\.absolutePath\}`\}/);
   assert.match(projectsSource, />\s*wspace\s*<\/button>/);
+  assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
   assert.doesNotMatch(projectsSource, />\s*\(w\)\s*<\/button>/);
   assert.doesNotMatch(projectsSource, /<Pill kind="odd-type">workspace<\/Pill>/);
   assert.match(source, /const selectProjectBrowserTab = \(tab: ProjectBrowserTab\)/);

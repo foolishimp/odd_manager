@@ -759,7 +759,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
 
   const handleProjectRootOpen = async (root: string) => {
     try {
-      const result = await setActiveProject(root);
+      const result = await setActiveProject(root, { registerIfMissing: false });
       pendingProjectContextRoot.current = result.project.root;
       dispatch({ type: 'load/request', projectRoot: result.project.root, reason: 'project_selected' });
     } catch (caught) {
@@ -5955,6 +5955,7 @@ function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnal
   if (sourceKind === 'worker_stderr') return `${roleLabel} stderr`;
   if (sourceKind === 'final_output') return `${roleLabel} final output`;
   if (sourceKind === 'missing') return 'No CLI transcript';
+  if (sourceKind === 'terminal_screenlog') return `${roleLabel} screen log`;
   return `${roleLabel} CLI`;
 }
 

@@ -619,10 +619,10 @@ function discoverLiveAnalysisCliTranscriptCandidates(operatorRunPath, context = 
   scanLiveAnalysisCliTranscriptFiles(operatorRunPath).forEach(addCandidate);
   discoverRelatedLiveAnalysisCliTranscriptCandidates(operatorRunPath, context).forEach(addCandidate);
 
-  if (candidates.some((candidate) => candidate.sourceKind === "terminal_transcript")) {
+  if (candidates.some(isTerminalCliSurfaceCandidate)) {
     return Object.freeze(
       candidates
-        .filter((candidate) => candidate.sourceKind === "terminal_transcript")
+        .filter(isTerminalCliSurfaceCandidate)
         .slice(0, LIVE_ANALYSIS_MAX_TRANSCRIPT_CANDIDATES)
     );
   }
@@ -706,6 +706,10 @@ function isRelatedStageCliCandidate(candidate) {
   return role === "evaluate" || role === "consequence" || role === "human_callout";
 }
 
+function isTerminalCliSurfaceCandidate(candidate) {
+  return candidate?.sourceKind === "terminal_transcript" || candidate?.sourceKind === "terminal_screenlog";
+}
+
 function readDeclaredTerminalTranscriptRefs(operatorRunPath) {
   const refs = [];
   for (const filename of ["worker_process_summary.json", "worker_run.json"]) {
@@ -781,7 +785,8 @@ function cliTranscriptLabel(role, sourceKind, operatorRunPath, path) {
     human_callout: "Human callout",
     worker: "Worker"
   }[role] || "Worker";
-  if (sourceKind === "terminal_transcript" || sourceKind === "terminal_screenlog") return `${roleLabel} CLI`;
+  if (sourceKind === "terminal_transcript") return `${roleLabel} CLI`;
+  if (sourceKind === "terminal_screenlog") return `${roleLabel} screen log`;
   if (sourceKind === "worker_stdout") return `${roleLabel} stdout`;
   if (sourceKind === "worker_stderr") return `${roleLabel} stderr`;
   if (sourceKind === "final_output") return `${roleLabel} final output`;

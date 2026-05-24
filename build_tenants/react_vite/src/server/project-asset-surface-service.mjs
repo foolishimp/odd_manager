@@ -277,13 +277,24 @@ function unregisterProject(managerWorkspaceRoot, identity) {
   };
 }
 
-function setActiveProject(managerWorkspaceRoot, identityOrRoot) {
+function setActiveProject(managerWorkspaceRoot, identityOrRoot, options = {}) {
   let registry = readRegistry(managerWorkspaceRoot);
   let record = findRegistryRecord(registry, identityOrRoot);
   if (!record && typeof identityOrRoot === 'string' && identityOrRoot.trim().startsWith('/')) {
-    registerProject(managerWorkspaceRoot, identityOrRoot);
+    const root = resolve(identityOrRoot);
+    if (!isDirectory(root)) {
+      throw new Error(`Project root is not a directory: ${identityOrRoot}`);
+    }
+    if (options.registerIfMissing === false) {
+      const nextRegistry = writeRegistry(managerWorkspaceRoot, {
+        ...registry,
+        active_project_root: root,
+      });
+      return describeProjectAt(projectDisplayNameFromRoot(root), root, null, nextRegistry.active_project_root);
+    }
+    registerProject(managerWorkspaceRoot, root);
     registry = readRegistry(managerWorkspaceRoot);
-    record = findRegistryRecord(registry, identityOrRoot);
+    record = findRegistryRecord(registry, root);
   }
   if (!record) {
     throw new Error(`Project is not registered: ${identityOrRoot}`);
@@ -331,8 +342,8 @@ export function createProjectSurface(managerWorkspaceRoot = DEFAULT_MANAGER_WORK
       invalidate();
       return result;
     },
-    setActive(identityOrRoot) {
-      const record = setActiveProject(managerWorkspaceRoot, identityOrRoot);
+    setActive(identityOrRoot, activeOptions = {}) {
+      const record = setActiveProject(managerWorkspaceRoot, identityOrRoot, activeOptions);
       invalidate();
       return record;
     },
