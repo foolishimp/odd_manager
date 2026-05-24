@@ -2,6 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-04-27
+**Repriced**: 2026-05-25 - single Node/screen terminal source of truth
 **Tenant**: `react_vite`
 **Closes tickets**: B-005, B-010
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
@@ -22,35 +23,28 @@ not wired into the public API path. B-005 and B-010 re-enter this design point.
 
 ## Decision
 
-The sidecar supports two named substrates:
+The sidecar supports one terminal substrate:
 
 | Substrate | Name | Survival | Attach Model | Resize Claim |
 |---|---|---:|---|---|
-| GNU `screen` | `screen` | yes, when executable and runnable | replay/poll `screenlog.0`, input via `screen -X stuff` | no native resize guarantee |
-| Node child process pipes | `pipe` | no | direct stdout/stderr stream, stdin pipe | no native resize guarantee |
+| GNU `screen` | `node-screen-pty` | yes, when executable and runnable | replay/poll `screenlog.0`, input via `screen -X stuff` | no native resize guarantee |
 
-The default backplane is `auto`: use `screen` when the runtime can actually
-launch and observe a detached screen session; otherwise fall back to `pipe` and
-report the reduced capability in diagnostics.
+The product no longer carries a Python PTY bridge or a pipe compatibility
+fallback. If GNU `screen` is unavailable, OddTerm fails closed and reports the
+missing terminal substrate.
 
-Operators may force behavior with `OMAN_SESSION_BACKPLANE`:
-
-- `screen` or `survivable`: fail closed if screen is unavailable
-- `pipe`, `process`, `child_process`, or `transient`: use the non-survivable
-  pipe substrate
-- unset or `auto`: prefer screen, fall back to pipe
-
-User-facing and proof-facing language must call this a **session console** or
-**session backplane** unless a future implementation adopts a real pty library
-such as `node-pty` and proves native terminal semantics.
+User-facing and proof-facing language calls this an OddTerm session backed by
+the Node GNU `screen` adapter. Native resize remains explicitly unclaimed until
+a future terminal library proves that behavior.
 
 ---
 
 ## Consequences
 
 The product can truthfully support restart-survivable sessions in environments
-where `screen` is runnable, while remaining usable in restricted environments
-where detached terminal daemons are blocked.
+where `screen` is runnable. Restricted environments without GNU `screen` must
+install or expose that substrate rather than silently dropping to a weaker
+terminal model.
 
 The xterm.js UI is still appropriate as a terminal emulator surface, but the
 current substrate does not claim full pty parity. Resize is accepted as a
@@ -63,10 +57,9 @@ for this ADR.
 
 Required proof surfaces:
 
-- `test_session_pty.mjs`: pipe-backed spawn, transcript, kill, and WebSocket
-  attach/input/replay/reattach/kill
 - `test_session_pty_screen.mjs`: screen-backed spawn and rehydrate, skipped
   with explicit diagnostics when screen cannot run
+- `test_oddterm_node_screen.mjs`: OddTerm browser-session backend uses the
+  same Node/screen substrate and streams appended `screenlog.0` output
 - API `/api/sessions` diagnostics: selected runtime capability is reported to
   consumers
-

@@ -448,7 +448,7 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /stableHash\(`\$\{descriptorId\}:\$\{blockIndex\}:\$\{source\}`\)/);
   assert.doesNotMatch(source, /Math\.random/);
   assert.doesNotMatch(source, /import\(["']shiki["']\)/);
-  for (const language of ['python', 'typescript', 'tsx', 'javascript', 'jsx', 'json', 'yaml', 'java', 'scala', 'rust', 'markdown']) {
+  for (const language of ['typescript', 'tsx', 'javascript', 'jsx', 'json', 'yaml', 'java', 'scala', 'rust', 'markdown']) {
     assert.match(source, new RegExp(`${language}: \\(\\) => import\\("@shikijs/langs/${language}"\\)`));
   }
   assert.match(source, /"github-light":\s*\(\) => import\("@shikijs\/themes\/github-light"\)/);

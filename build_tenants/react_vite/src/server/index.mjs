@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
@@ -20,6 +19,11 @@ import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
+import {
+  composeManagerWorld,
+  readManagerSurface,
+  runManagerCommand,
+} from "./manager-world-service.mjs";
 import {
   spawnSession,
   killSession,
@@ -67,8 +71,6 @@ import {
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(serverDir, "../../../../");
 const appsRoot = resolve(serverDir, "../../../../../");
-const helperScript = resolve(serverDir, "../../runtime/odd_manager_world.py");
-const pythonBinary = process.env.OMAN_PYTHON ?? "python";
 const port = Number(process.env.OMAN_API_PORT ?? 4173);
 const sessionServiceBaseUrl = normalizeBaseUrl(process.env.OMAN_ODD_SDLC_SERVICE_URL ?? null);
 
@@ -854,41 +856,6 @@ function readBody(request) {
   });
 }
 
-function runHelper(args) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(pythonBinary, [helperScript, ...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || `helper exited with code ${code}`));
-        return;
-      }
-      try {
-        resolvePromise(JSON.parse(stdout));
-      } catch (caught) {
-        reject(
-          new Error(
-            caught instanceof Error
-              ? `failed to parse helper output: ${caught.message}`
-              : "failed to parse helper output",
-          ),
-        );
-      }
-    });
-  });
-}
-
 const server = createServer(async (request, response) => {
   if (!request.url) {
     writeJson(response, 400, { error: "missing request url" });
@@ -960,7 +927,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/world") {
       const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
       writeJson(response, 200, {
-        ...(await runHelper(["world", "--workspace", workspaceRoot])),
+        ...composeManagerWorld(workspaceRoot),
         workspace_profile: profileWorkspace(workspaceRoot),
       });
       return;
@@ -979,17 +946,7 @@ const server = createServer(async (request, response) => {
         writeJson(response, 400, { error: "surface requests require relativePath" });
         return;
       }
-      writeJson(
-        response,
-        200,
-        await runHelper([
-          "surface",
-          "--workspace",
-          workspaceRoot,
-          "--relative-path",
-          relativePath,
-        ]),
-      );
+      writeJson(response, 200, readManagerSurface(workspaceRoot, relativePath));
       return;
     }
 
@@ -1001,11 +958,8 @@ const server = createServer(async (request, response) => {
         writeJson(response, 400, { error: `unsupported command: ${command}` });
         return;
       }
-      const args = ["command", command, "--workspace", workspaceRoot];
-      if (command === "start" && body.auto) {
-        args.push("--auto");
-      }
-      writeJson(response, 200, await runHelper(args));
+      const result = await runManagerCommand(workspaceRoot, command, { auto: body.auto });
+      writeJson(response, result.ok ? 200 : 501, result);
       return;
     }
 

@@ -1,21 +1,25 @@
 # runtime
 
-`runtime/odd_manager_world.py` is the tenant-local composition helper for the
-React/Vite carrier.
+The React/Vite tenant runtime is Node-owned. Projection logic lives in
+`src/server/manager-world-service.mjs`; runtime adapters in this folder are
+Node entrypoints for auxiliary local tools.
 
 It does not replace ABG runtime authority and it does not move domain ownership
 into the UI tenant. Its job is narrower:
 
-- bootstrap imports for the managed workspace, `odd_manager`, and `odd_method`
-- replay ABG event truth into runtime aggregates
-- call the `odd_method` query library for read-only domain overlays
+- read specification, runtime, and record surfaces from the managed workspace
+- project ABG event truth into runtime aggregates when event surfaces exist
 - derive manager-local graph and workorder projections for the UI
 
-Supported commands:
+Manager world API commands:
 
-- `world`
-- `surface --relative-path <path>`
-- `command gaps|iterate|start [--auto]`
+- `/api/world`
+- `/api/surface?relativePath=<path>`
+- `/api/commands/run` for local `gaps` projection
+
+Traversal commands are not implemented through a tenant-local compatibility
+helper. Execution belongs behind the configured domain/runtime service
+boundary.
 
 Additional local runtime entrypoints:
 

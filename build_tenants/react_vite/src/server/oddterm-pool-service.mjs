@@ -1,15 +1,14 @@
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { createInterface } from "node:readline";
-import { dirname, resolve, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   appendConversationEntry,
@@ -28,9 +27,9 @@ import {
   sessionParticipantId,
 } from "./oddchat-room-service.mjs";
 
-const serverDir = dirname(fileURLToPath(import.meta.url));
-const oddtermServicePath = resolve(serverDir, "../../runtime/oddterm_service.py");
 const workspaceStores = new Map();
+const SCREEN_POLL_INTERVAL_MS = 100;
+const SCREEN_LIVENESS_INTERVAL_MS = 1000;
 
 function isPidAlive(pid) {
   const parsed = Number(pid);
@@ -64,6 +63,132 @@ function sessionMetaPath(workspaceRoot, sessionId) {
   return join(sessionRoot(workspaceRoot, sessionId), "meta.json");
 }
 
+function sessionTranscriptPath(workspaceRoot, sessionId) {
+  return join(sessionRoot(workspaceRoot, sessionId), "screenlog.0");
+}
+
+function screenSessionName(sessionId) {
+  return `oddterm_${String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "_").replace(/-/g, "")}`;
+}
+
+function parseScreenSessions(text) {
+  const sessions = [];
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const match = line.match(/^\s+(\d+)\.([^\s]+)\s+\((Attached|Detached)\)/);
+    if (match) {
+      sessions.push({
+        pid: Number(match[1]),
+        id: match[2],
+        state: match[3].toLowerCase(),
+      });
+    }
+  }
+  return sessions;
+}
+
+function listScreenSessions() {
+  const result = spawnSync("screen", ["-ls"], { encoding: "utf8" });
+  if (result.error?.code === "ENOENT") {
+    return [];
+  }
+  return parseScreenSessions(`${result.stdout || ""}${result.stderr || ""}`);
+}
+
+let screenAvailableCache = null;
+
+export function isOddTermScreenAvailable() {
+  if (screenAvailableCache !== null) {
+    return screenAvailableCache;
+  }
+  const probe = spawnSync("screen", ["-ls"], { encoding: "utf8" });
+  if (probe.error?.code === "ENOENT") {
+    screenAvailableCache = false;
+    return screenAvailableCache;
+  }
+  const probeId = `oddterm_probe_${process.pid}_${Math.random().toString(16).slice(2, 8)}`;
+  spawnSync("screen", ["-dmS", probeId, "/bin/sh", "-c", "sleep 2"], { encoding: "utf8" });
+  spawnSync("/bin/sh", ["-c", "sleep 0.2"], { encoding: "utf8" });
+  const live = listScreenSessions().some((entry) => entry.id === probeId);
+  if (live) {
+    spawnSync("screen", ["-S", probeId, "-X", "quit"], { encoding: "utf8" });
+  }
+  screenAvailableCache = live;
+  return screenAvailableCache;
+}
+
+function screenSessionEntry(session) {
+  if (!session.screenSessionId) {
+    return null;
+  }
+  return listScreenSessions().find((entry) => entry.id === session.screenSessionId) ?? null;
+}
+
+function isScreenSessionLive(session) {
+  return Boolean(screenSessionEntry(session));
+}
+
+function resolveShell() {
+  if (existsSync("/bin/zsh")) {
+    return {
+      command: "/bin/zsh",
+      args: ["-f", "-i"],
+      label: "/bin/zsh -f -i",
+    };
+  }
+  return {
+    command: "/bin/bash",
+    args: ["--noprofile", "--norc", "-i"],
+    label: "/bin/bash --noprofile --norc -i",
+  };
+}
+
+function screenEnv(session) {
+  return {
+    ...process.env,
+    ODDTERM_SESSION_ID: session.id,
+    TERM: "xterm-256color",
+    COLORTERM: process.env.COLORTERM || "truecolor",
+    CLICOLOR: "1",
+    CLICOLOR_FORCE: process.env.CLICOLOR_FORCE || "1",
+    FORCE_COLOR: process.env.FORCE_COLOR || "1",
+    HISTFILE: process.env.HISTFILE || "/tmp/oddterm_zsh_history",
+    PYENV_DISABLE_REHASH: "1",
+  };
+}
+
+function normalizeScreenInput(data) {
+  return String(data ?? "").replace(/\n/g, "\r");
+}
+
+function sendToScreen(session, data) {
+  if (!session.screenSessionId) {
+    return {
+      ok: false,
+      error: "terminal screen session is unavailable",
+    };
+  }
+  const result = spawnSync("screen", ["-S", session.screenSessionId, "-p", "0", "-X", "stuff", normalizeScreenInput(data)], {
+    encoding: "utf8",
+  });
+  if (result.status === 0) {
+    return {
+      ok: true,
+      bytes: Buffer.byteLength(String(data ?? "")),
+    };
+  }
+  return {
+    ok: false,
+    error: result.stderr || result.stdout || `screen exit ${result.status}`,
+  };
+}
+
+function quitScreen(session) {
+  if (!session.screenSessionId) {
+    return;
+  }
+  spawnSync("screen", ["-S", session.screenSessionId, "-X", "quit"], { encoding: "utf8" });
+}
+
 function serializeSession(session) {
   return {
     id: session.id,
@@ -74,6 +199,8 @@ function serializeSession(session) {
     shell: session.shell,
     pid: session.pid,
     backend: session.backend,
+    screenSessionId: session.screenSessionId,
+    transcriptPath: session.transcriptPath,
     createdAt: session.createdAt,
     lastOutputAt: session.lastOutputAt,
     attachedTrainId: session.attachedTrainId,
@@ -93,6 +220,7 @@ function persistSessionMeta(session) {
         ...serializeSession(session),
         exitCode: session.exitCode,
         signal: session.signal,
+        screenLogOffset: session.screenLogOffset,
       },
       null,
       2,
@@ -125,15 +253,28 @@ function restoreSessionsFromDisk(store) {
       continue;
     }
 
+    const screenSessionId = meta.screenSessionId || screenSessionName(sessionId);
+    const transcriptPath = meta.transcriptPath || sessionTranscriptPath(store.workspaceRoot, sessionId);
+    const screenBacked = meta.backend === "node-screen-pty" || Boolean(meta.screenSessionId);
+    const live = screenBacked && isOddTermScreenAvailable() && listScreenSessions().some((entry) => entry.id === screenSessionId);
     const session = {
       id: sessionId,
       workspaceRoot: store.workspaceRoot,
       label: meta.label || sessionId,
       archived: Boolean(meta.archived),
-      status: meta.status === "error" ? "error" : "closed",
+      status: live ? "live" : meta.status === "error" ? "error" : "closed",
       shell: meta.shell ?? null,
-      pid: null,
+      pid: live ? (listScreenSessions().find((entry) => entry.id === screenSessionId)?.pid ?? null) : null,
       backend: meta.backend ?? null,
+      screenSessionId,
+      transcriptPath,
+      screenLogOffset: Number.isFinite(meta.screenLogOffset)
+        ? meta.screenLogOffset
+        : existsSync(transcriptPath)
+          ? statSync(transcriptPath).size
+          : 0,
+      pollTimer: null,
+      lastLivenessCheckAt: 0,
       attachedTrainId: meta.attachedTrainId ?? null,
       attachedStationId: meta.attachedStationId ?? null,
       attachedEdgeId: meta.attachedEdgeId ?? null,
@@ -145,8 +286,6 @@ function restoreSessionsFromDisk(store) {
       clients: new Set(),
       metaPath,
       historyBytes: 0,
-      processRef: null,
-      stdout: null,
       pendingRoomMirror: null,
     };
     if (session.archived) {
@@ -163,6 +302,9 @@ function restoreSessionsFromDisk(store) {
     });
     session.historyBytes = loadConversationHistoryStats(store.workspaceRoot, session.conversationHistoryId).historyBytes;
     store.sessions.set(sessionId, session);
+    if (session.status === "live") {
+      startScreenMonitor(session);
+    }
     if (!store.activeSessionId) {
       store.activeSessionId = sessionId;
     }
@@ -211,55 +353,196 @@ function reconcileSessionLiveness(store) {
     if (session.status !== "live") {
       continue;
     }
-    if (!Number.isInteger(session.pid) || Number(session.pid) <= 0) {
+    if (session.backend === "node-screen-pty" && isScreenSessionLive(session)) {
+      const entry = screenSessionEntry(session);
+      session.pid = entry?.pid ?? session.pid;
       continue;
     }
-    if (isPidAlive(session.pid)) {
+    if (session.backend !== "node-screen-pty" && Number.isInteger(session.pid) && Number(session.pid) > 0 && isPidAlive(session.pid)) {
       continue;
     }
-    session.status = "closed";
-    session.exitCode ??= 0;
-    session.signal ??= null;
-    updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
-      label: session.label,
-      state: session.status,
-      shell: session.shell,
-      pid: session.pid,
-      backend: session.backend,
-      lastOutputAt: session.lastOutputAt,
-      selectedTrainId: session.attachedTrainId,
-      stationId: session.attachedStationId,
-      edgeId: session.attachedEdgeId,
-    });
-    persistSessionMeta(session);
+    markScreenSessionClosed(session, session.exitCode ?? 0, session.signal ?? null);
   }
-}
-
-function createPosixService(workspaceRoot) {
-  return spawn("python3", [oddtermServicePath, "--workspace-root", workspaceRoot], {
-    cwd: workspaceRoot,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PYTHONDONTWRITEBYTECODE: "1",
-    },
-  });
-}
-
-function createWindowsFallback(workspaceRoot) {
-  return spawn("powershell.exe", [], {
-    cwd: workspaceRoot,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-    },
-  });
 }
 
 function broadcast(session, payload) {
   for (const socket of session.clients) {
     sendJson(socket, payload);
   }
+}
+
+function ingestScreenTranscript(session) {
+  if (!session.transcriptPath || !existsSync(session.transcriptPath)) {
+    return;
+  }
+  let currentSize;
+  try {
+    currentSize = statSync(session.transcriptPath).size;
+  } catch {
+    return;
+  }
+  if (currentSize < session.screenLogOffset) {
+    session.screenLogOffset = 0;
+  }
+  if (currentSize <= session.screenLogOffset) {
+    return;
+  }
+  try {
+    const content = readFileSync(session.transcriptPath);
+    const chunk = content.subarray(session.screenLogOffset, currentSize).toString("utf8");
+    session.screenLogOffset = currentSize;
+    if (!chunk) {
+      return;
+    }
+    const payload = { type: "data", data: chunk };
+    recordTerminalPayload(session, payload);
+    persistSessionMeta(session);
+    broadcast(session, payload);
+  } catch {
+    // Best-effort stream read; the next poll can recover from the last offset.
+  }
+}
+
+function markScreenSessionClosed(session, exitCode = 0, signal = null) {
+  if (session.status !== "live") {
+    return;
+  }
+  ingestScreenTranscript(session);
+  session.status = "closed";
+  session.exitCode = exitCode;
+  session.signal = signal;
+  if (session.pollTimer) {
+    clearInterval(session.pollTimer);
+    session.pollTimer = null;
+  }
+  const payload = { type: "exit", exitCode, signal };
+  recordTerminalPayload(session, payload);
+  persistSessionMeta(session);
+  broadcast(session, payload);
+}
+
+function startScreenMonitor(session) {
+  if (session.pollTimer) {
+    clearInterval(session.pollTimer);
+  }
+  session.pollTimer = setInterval(() => {
+    if (session.status !== "live") {
+      clearInterval(session.pollTimer);
+      session.pollTimer = null;
+      return;
+    }
+    ingestScreenTranscript(session);
+    const now = Date.now();
+    if (now - session.lastLivenessCheckAt < SCREEN_LIVENESS_INTERVAL_MS) {
+      return;
+    }
+    session.lastLivenessCheckAt = now;
+    if (!isScreenSessionLive(session)) {
+      markScreenSessionClosed(session, 0, null);
+    }
+  }, SCREEN_POLL_INTERVAL_MS);
+  if (typeof session.pollTimer.unref === "function") {
+    session.pollTimer.unref();
+  }
+}
+
+function startScreenBackend(session) {
+  if (!isOddTermScreenAvailable()) {
+    const payload = {
+      type: "error",
+      message: "GNU screen is required for oddterm Node PTY sessions and is not available",
+    };
+    session.status = "error";
+    session.backend = "node-screen-pty-unavailable";
+    recordTerminalPayload(session, payload);
+    persistSessionMeta(session);
+    broadcast(session, payload);
+    return;
+  }
+
+  const shell = resolveShell();
+  session.shell = shell.label;
+  session.backend = "node-screen-pty";
+  session.screenSessionId = session.screenSessionId || screenSessionName(session.id);
+  session.transcriptPath = session.transcriptPath || sessionTranscriptPath(session.workspaceRoot, session.id);
+  mkdirSync(sessionRoot(session.workspaceRoot, session.id), { recursive: true });
+  writeFileSync(session.transcriptPath, "", "utf8");
+  writeFileSync(join(sessionRoot(session.workspaceRoot, session.id), "screenrc"), "deflog on\nlogfile flush 0\n", "utf8");
+  session.screenLogOffset = 0;
+
+  const screenArgs = [
+    "-c",
+    "screenrc",
+    "-dmS",
+    session.screenSessionId,
+    "/bin/sh",
+    "-lc",
+    'cd "$1" || exit 1; shift; exec "$@"',
+    "oddterm-screen",
+    session.workspaceRoot,
+    shell.command,
+    ...shell.args,
+  ];
+  const result = spawnSync("screen", screenArgs, {
+    cwd: sessionRoot(session.workspaceRoot, session.id),
+    env: screenEnv(session),
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    const payload = {
+      type: "error",
+      message: `screen spawn failed: ${result.stderr || result.stdout || `exit ${result.status}`}`,
+    };
+    session.status = "error";
+    recordTerminalPayload(session, payload);
+    persistSessionMeta(session);
+    broadcast(session, payload);
+    return;
+  }
+
+  const entry = screenSessionEntry(session);
+  session.pid = entry?.pid ?? null;
+  const ready = {
+    type: "ready",
+    workspaceRoot: session.workspaceRoot,
+    shell: session.shell,
+    pid: session.pid ?? 0,
+    backend: session.backend,
+  };
+  updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
+    label: session.label,
+    shell: session.shell,
+    pid: session.pid,
+    backend: session.backend,
+    state: session.status,
+    selectedTrainId: session.attachedTrainId,
+    stationId: session.attachedStationId,
+    edgeId: session.attachedEdgeId,
+  });
+  persistSessionMeta(session);
+  broadcast(session, ready);
+  startScreenMonitor(session);
+}
+
+function writeGTermBackend(session, payload) {
+  if (session.backend !== "node-screen-pty") {
+    return {
+      ok: false,
+      error: "oddterm backend is unavailable",
+    };
+  }
+  if (payload?.type === "input" && typeof payload.data === "string") {
+    return sendToScreen(session, payload.data);
+  }
+  if (payload?.type === "resize") {
+    return { ok: true, ignored: true };
+  }
+  if (payload?.type === "close") {
+    quitScreen(session);
+    markScreenSessionClosed(session, 0, null);
+    return { ok: true };
+  }
+  return { ok: true, ignored: true };
 }
 
 function normalizeMirrorLine(line) {
@@ -556,8 +839,11 @@ function createSession(workspaceRoot, options = {}) {
     clients: new Set(),
     metaPath: sessionMetaPath(store.workspaceRoot, sessionId),
     historyBytes: 0,
-    processRef: process.platform === "win32" ? createWindowsFallback(store.workspaceRoot) : createPosixService(store.workspaceRoot),
-    stdout: null,
+    screenSessionId: screenSessionName(sessionId),
+    transcriptPath: sessionTranscriptPath(store.workspaceRoot, sessionId),
+    screenLogOffset: 0,
+    pollTimer: null,
+    lastLivenessCheckAt: 0,
     pendingRoomMirror: null,
   };
 
@@ -574,94 +860,10 @@ function createSession(workspaceRoot, options = {}) {
     },
   });
 
-  const stdout = createInterface({ input: session.processRef.stdout });
-  session.stdout = stdout;
-
-  stdout.on("line", (line) => {
-    let payload;
-    try {
-      payload = JSON.parse(line);
-    } catch {
-      payload = { type: "data", data: `${line}\n` };
-    }
-
-    if (payload.type === "ready") {
-      session.shell = typeof payload.shell === "string" ? payload.shell : null;
-      session.pid = typeof payload.pid === "number" ? payload.pid : null;
-      session.backend = typeof payload.backend === "string" ? payload.backend : null;
-      updateConversationMetadata(session.workspaceRoot, session.conversationHistoryId, {
-        label: session.label,
-        shell: session.shell,
-        pid: session.pid,
-        backend: session.backend,
-        state: session.status,
-        selectedTrainId: session.attachedTrainId,
-        stationId: session.attachedStationId,
-        edgeId: session.attachedEdgeId,
-      });
-      persistSessionMeta(session);
-      broadcast(session, payload);
-      return;
-    }
-
-    if (payload.type === "data") {
-      recordTerminalPayload(session, payload);
-      persistSessionMeta(session);
-      broadcast(session, payload);
-      return;
-    }
-
-    if (payload.type === "exit") {
-      session.status = "closed";
-      session.exitCode = payload.exitCode;
-      session.signal = payload.signal;
-      recordTerminalPayload(session, payload);
-      persistSessionMeta(session);
-      broadcast(session, payload);
-      return;
-    }
-
-    if (payload.type === "error") {
-      session.status = "error";
-      recordTerminalPayload(session, payload);
-      persistSessionMeta(session);
-      broadcast(session, payload);
-    }
-  });
-
-  session.processRef.stderr?.on("data", (data) => {
-    const text = data.toString();
-    if (!text.trim()) {
-      return;
-    }
-    const payload = { type: "error", message: text.trim() };
-    session.status = "error";
-    recordTerminalPayload(session, payload);
-    persistSessionMeta(session);
-    broadcast(session, payload);
-  });
-
-  session.processRef.on("close", (exitCode, signal) => {
-    session.status = "closed";
-    session.exitCode = exitCode;
-    session.signal = signal;
-    persistSessionMeta(session);
-  });
-
-  session.processRef.on("error", (error) => {
-    const payload = {
-      type: "error",
-      message: error instanceof Error ? error.message : String(error),
-    };
-    session.status = "error";
-    recordTerminalPayload(session, payload);
-    persistSessionMeta(session);
-    broadcast(session, payload);
-  });
-
   store.sessions.set(sessionId, session);
   setActiveSession(store, sessionId);
   persistSessionMeta(session);
+  startScreenBackend(session);
   appendLiveRoomMessageIfPossible(store.workspaceRoot, {
     roomId: "workspace",
     senderId: sessionParticipantId(session.id),
@@ -742,12 +944,11 @@ function attachSocketToSession(session, socket) {
       return;
     }
 
-    try {
-      session.processRef.stdin?.write(`${JSON.stringify(payload)}\n`);
-    } catch {
+    const result = writeGTermBackend(session, payload);
+    if (!result.ok) {
       sendJson(socket, {
         type: "error",
-        message: "oddterm backend stdin is unavailable",
+        message: result.error || "oddterm backend stdin is unavailable",
       });
     }
   });
@@ -812,22 +1013,17 @@ export function closeGTermSession(workspaceRoot, sessionId) {
     throw new Error("terminal session not found");
   }
 
-  if (session.status === "live" && session.processRef && !session.processRef.killed) {
-    try {
-      session.processRef.stdin?.write(`${JSON.stringify({ type: "close" })}\n`);
-    } catch {
-      // Ignore backend close failures and fall through to kill.
-    }
-    try {
-      session.processRef.kill();
-    } catch {
-      // Best-effort close.
-    }
+  if (session.status === "live") {
+    writeGTermBackend(session, { type: "close" });
   }
 
   session.status = "closed";
   session.archived = true;
   session.exitCode ??= 0;
+  if (session.pollTimer) {
+    clearInterval(session.pollTimer);
+    session.pollTimer = null;
+  }
   updateConversationMetadata(store.workspaceRoot, session.conversationHistoryId, {
     label: session.label,
     state: "archived",
@@ -973,7 +1169,10 @@ export function sendGTermSessionInput(workspaceRoot, sessionId, data) {
   const submitText = payloadText.slice(bodyText.length);
 
   if (bodyText) {
-    session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: bodyText })}\n`);
+    const result = writeGTermBackend(session, { type: "input", data: bodyText });
+    if (!result.ok) {
+      throw new Error(result.error || "oddterm backend stdin is unavailable");
+    }
   }
 
   if (submitText) {
@@ -981,11 +1180,7 @@ export function sendGTermSessionInput(workspaceRoot, sessionId, data) {
       if (session.status !== "live") {
         return;
       }
-      try {
-        session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: submitText })}\n`);
-      } catch {
-        // Best effort submit.
-      }
+      writeGTermBackend(session, { type: "input", data: submitText });
     }, 40);
   }
 
@@ -1037,7 +1232,10 @@ export function sendGTermSessionRoomInput(
   };
 
   if (bodyText) {
-    session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: bodyText })}\n`);
+    const result = writeGTermBackend(session, { type: "input", data: bodyText });
+    if (!result.ok) {
+      throw new Error(result.error || "oddterm backend stdin is unavailable");
+    }
   }
 
   if (submitText) {
@@ -1045,11 +1243,7 @@ export function sendGTermSessionRoomInput(
       if (session.status !== "live") {
         return;
       }
-      try {
-        session.processRef.stdin?.write(`${JSON.stringify({ type: "input", data: submitText })}\n`);
-      } catch {
-        // Best effort submit.
-      }
+      writeGTermBackend(session, { type: "input", data: submitText });
     }, 40);
   }
 

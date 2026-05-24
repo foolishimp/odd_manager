@@ -1,5 +1,5 @@
-// T-020 — smoke test for session-pty-service. Spawns a real /bin/echo
-// child, captures transcript, asserts record persistence + exit.
+// T-020 — smoke test for the Node/screen session service. Spawns real screen
+// sessions, captures transcript, asserts record persistence and websocket IO.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,6 +16,7 @@ import {
   listLiveSessionIds,
   mountSessionWebSocket,
 } from '../../src/server/session-pty-service.mjs';
+import { isScreenAvailable } from '../../src/server/session-pty-screen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureRoot = resolve(here, '_fixture_session_pty');
@@ -29,24 +30,26 @@ function teardown() {
   if (existsSync(fixtureRoot)) rmSync(fixtureRoot, { recursive: true, force: true });
 }
 
-test('spawnSession creates a child and persists a record + transcript', async () => {
+const screenSkip = isScreenAvailable() ? false : 'GNU screen executable not available in this environment';
+
+test('spawnSession creates a screen session and persists a record + transcript', { skip: screenSkip }, async () => {
   setup();
+  let sessionId;
   try {
     const result = spawnSession(fixtureRoot, {
-      backplane: 'pipe',
       agentType: 'shell',
-      command: '/bin/echo',
-      args: ['hello-from-T-020'],
+      command: '/bin/sh',
+      args: ['-c', 'printf "hello-from-T-020\\n"; sleep 2'],
       contextAtSpawn: { project: 'test', workspace: 'react_vite', odd_type: 'odd_sdlc' },
     });
     assert.equal(result.ok, true, `spawn failed: ${result.error}`);
+    sessionId = result.id;
     assert.ok(result.id.startsWith('sess-'));
     assert.equal(result.status, 'running');
     assert.equal(result.context_at_spawn.project, 'test');
-    assert.ok(listLiveSessionIds().includes(result.id));
+    assert.ok(listLiveSessionIds(fixtureRoot).includes(result.id));
 
-    // Wait for the echo to produce output and exit.
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 1500));
 
     const transcript = readTranscript(fixtureRoot, result.id);
     assert.match(transcript, /hello-from-T-020/);
@@ -54,41 +57,47 @@ test('spawnSession creates a child and persists a record + transcript', async ()
     const recordPath = join(fixtureRoot, '.ai-workspace/runtime/sessions', `${result.id}.json`);
     const record = JSON.parse(readFileSync(recordPath, 'utf-8'));
     assert.equal(record.id, result.id);
-    assert.ok(['stopped', 'running'].includes(record.status));
+    assert.equal(record.backplane, 'screen');
   } finally {
+    if (sessionId) killSession(fixtureRoot, sessionId);
     teardown();
   }
 });
 
-test('killSession terminates a long-running child', async () => {
+test('killSession terminates a long-running screen session', { skip: screenSkip }, async () => {
   setup();
+  let sessionId;
   try {
     const result = spawnSession(fixtureRoot, {
-      backplane: 'pipe',
       command: '/bin/sh',
-      args: ['-c', 'while true; do sleep 1; done'],
+      args: ['-c', 'sleep 10'],
     });
     assert.equal(result.ok, true);
+    sessionId = result.id;
     const killed = killSession(fixtureRoot, result.id);
     assert.equal(killed.ok, true);
     await new Promise((r) => setTimeout(r, 200));
-    assert.equal(listLiveSessionIds().includes(result.id), false, 'session removed from live map');
+    assert.equal(listLiveSessionIds(fixtureRoot).includes(result.id), false, 'session removed from live screen list');
   } finally {
+    if (sessionId) killSession(fixtureRoot, sessionId);
     teardown();
   }
 });
 
-test('demo: spawn echo + replay transcript', async () => {
+test('demo: spawn echo + replay transcript', { skip: screenSkip }, async () => {
   setup();
+  let id;
   try {
-    const r = spawnSession(fixtureRoot, { backplane: 'pipe', command: '/bin/echo', args: ['demo line'] });
-    await new Promise((res) => setTimeout(res, 200));
+    const r = spawnSession(fixtureRoot, { command: '/bin/sh', args: ['-c', 'printf "demo line\\n"; sleep 1'] });
+    id = r.id;
+    await new Promise((res) => setTimeout(res, 1500));
     /* eslint-disable no-console */
     console.log('\n=== T-020 spawn demo ===');
     console.log(`spawned: ${r.id}`);
     console.log(`transcript: ${JSON.stringify(readTranscript(fixtureRoot, r.id))}`);
     /* eslint-enable no-console */
   } finally {
+    if (id) killSession(fixtureRoot, id);
     teardown();
   }
 });
@@ -131,7 +140,7 @@ function waitForMessage(ws, predicate) {
   });
 }
 
-test('mounted WebSocket supports spawn, attach, input, replay, reattach, and kill', async () => {
+test('mounted WebSocket supports spawn, attach, input, replay, reattach, and kill', { skip: screenSkip }, async () => {
   setup();
   const server = createServer();
   const wss = mountSessionWebSocket(server);
@@ -139,9 +148,8 @@ test('mounted WebSocket supports spawn, attach, input, replay, reattach, and kil
   try {
     const port = await waitForServerListen(server);
     const result = spawnSession(fixtureRoot, {
-      backplane: 'pipe',
       command: '/bin/sh',
-      args: ['-c', 'while IFS= read -r line; do printf "echo:%s\\n" "$line"; done'],
+      args: ['-i'],
     });
     assert.equal(result.ok, true, result.error);
     sessionId = result.id;
@@ -151,7 +159,7 @@ test('mounted WebSocket supports spawn, attach, input, replay, reattach, and kil
     const replayPromise = waitForMessage(ws, (msg) => msg.type === 'replay');
     await waitForWsOpen(ws);
     await replayPromise;
-    ws.send(JSON.stringify({ type: 'input', data: 'hello\n' }));
+    ws.send(JSON.stringify({ type: 'input', data: "printf 'echo:hello\\n'\n" }));
     const output = await waitForMessage(ws, (msg) => msg.type === 'output' && String(msg.data).includes('echo:hello'));
     assert.match(output.data, /echo:hello/);
     ws.close();

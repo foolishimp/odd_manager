@@ -9,9 +9,9 @@
     "mcp:irc": "node runtime/odd_manager_irc_mcp.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test:runtime": "python -m unittest discover -s runtime/tests -p 'test_*.py'",
+    "test:runtime": "npm run test:runtime:node",
     "test:runtime:node": "node --test runtime/tests/test_*.mjs",
-    "test:sidecar-wave": "npm run test:runtime:node && npm run test:runtime",
+    "test:sidecar-wave": "npm run test:runtime:node",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report tests/artifacts/playwright-report"

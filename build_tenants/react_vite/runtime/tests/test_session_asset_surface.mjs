@@ -36,7 +36,7 @@ function setupFixture() {
     agent_type: 'codex',
     cwd: '/Users/jim/src/apps/odd_sdlc',
     status: 'detached',
-    context_at_spawn: { project: 'odd_sdlc', workspace: 'python' },
+    context_at_spawn: { project: 'odd_sdlc', workspace: 'typescript' },
   }, null, 2));
   writeFileSync(join(fixtureRegistry, 'sess-3.json'), JSON.stringify({
     id: 'sess-3',

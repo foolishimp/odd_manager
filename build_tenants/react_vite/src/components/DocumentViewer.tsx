@@ -30,7 +30,6 @@ export const DOCUMENT_VIEWER_DEFAULT_STATE: DocumentViewerState = {
 const DOCUMENT_ZOOM_MIN = 0.5;
 const DOCUMENT_ZOOM_MAX = 2.5;
 const CODE_LANGUAGE_BY_EXTENSION: Record<string, string> = {
-  ".py": "python",
   ".ts": "typescript",
   ".tsx": "tsx",
   ".js": "javascript",
@@ -51,14 +50,12 @@ const CODE_FENCE_LANGUAGE_ALIASES: Record<string, string> = {
   jsx: "jsx",
   ts: "typescript",
   tsx: "tsx",
-  py: "python",
   yml: "yaml",
   rs: "rust",
 };
 
 const createFocusedHighlighter = createBundledHighlighter({
   langs: {
-    python: () => import("@shikijs/langs/python"),
     typescript: () => import("@shikijs/langs/typescript"),
     tsx: () => import("@shikijs/langs/tsx"),
     javascript: () => import("@shikijs/langs/javascript"),

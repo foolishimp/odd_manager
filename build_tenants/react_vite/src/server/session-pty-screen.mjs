@@ -136,11 +136,13 @@ export function spawnScreenSession(projectRoot, { agentType = 'shell', cwd, comm
   const sessionDir = sessionDirectory(projectRoot, id);
   mkdirSync(sessionDir, { recursive: true });
   writeFileSync(screenTranscriptPath(projectRoot, id), '');
+  writeFileSync(join(sessionDir, 'screenrc'), 'deflog on\nlogfile flush 0\n');
 
-  // screen -L writes screenlog.0 in its own cwd. Start screen from a
+  // screen writes screenlog.0 in its own cwd. Start screen from a
   // per-session directory, then exec the requested command from sessionCwd.
   const screenArgs = [
-    '-L',
+    '-c',
+    'screenrc',
     '-dmS',
     id,
     '/bin/sh',
@@ -192,7 +194,7 @@ export function sendToScreenSession(id, data) {
   if (!isScreenAvailable()) {
     return actionResult(false, { error: 'screen backplane unavailable: screen executable not found' });
   }
-  const out = spawnSync('screen', ['-S', id, '-X', 'stuff', data], { encoding: 'utf-8' });
+  const out = spawnSync('screen', ['-S', id, '-p', '0', '-X', 'stuff', String(data ?? '').replace(/\n/g, '\r')], { encoding: 'utf-8' });
   return out.status === 0
     ? actionResult(true, { id, bytes: Buffer.byteLength(data) })
     : actionResult(false, { error: out.stderr || `screen exit ${out.status}` });

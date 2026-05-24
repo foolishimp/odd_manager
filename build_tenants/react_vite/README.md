@@ -7,14 +7,14 @@ language while shifting the product semantics to the forward-looking
 `odd_manager` domain:
 
 - ABG remains runtime truth and aggregate authority
-- `odd_method` remains the read-only query overlay source
+- manager-owned Node projections compose the read-only workspace world
 - `odd_manager` owns the composed supervisory surface
 
 Local entry points:
 
 - `src/server/index.mjs` exposes the manager-local API surface
-- `runtime/odd_manager_world.py` composes ABG runtime projections with
-  `odd_method` query overlays
+- `src/server/manager-world-service.mjs` composes specification, runtime, and
+  record surfaces into the manager world projection
 - `src/app/App.tsx` owns client state and page routing
 - `src/routes/WorkspaceRoute.tsx` owns page composition
 

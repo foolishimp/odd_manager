@@ -392,10 +392,10 @@ test('legacy non-TypeScript process event shape is explicitly unsupported', () =
     join(root, '.ai-workspace/events/events.jsonl'),
     `${JSON.stringify({
       kind: 'graph_call_opened',
-      basisId: 'execution_basis:{"moduleName":"odd_sdlc_python"}',
-      resolvedRuntimeRef: 'runtime://abiogenesis/python',
-      graphCallId: 'graph-call:python',
-      graphFunctionId: 'graph-function:odd_sdlc:Fg_legacy_python',
+      basisId: 'execution_basis:{"moduleName":"odd_sdlc_legacy"}',
+      resolvedRuntimeRef: 'runtime://abiogenesis/legacy',
+      graphCallId: 'graph-call:legacy',
+      graphFunctionId: 'graph-function:odd_sdlc:Fg_legacy',
     })}\n`,
   );
 
