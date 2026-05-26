@@ -369,6 +369,7 @@ export const MarkdownDocumentContent = memo(function MarkdownDocumentContent({ d
 
 function CodeBlock({ source, language, blockKey }: { source: string; language: string; blockKey?: string }) {
   const normalizedLanguage = normalizeCodeLanguage(language);
+  const compact = isCompactMarkdownCodeBlock(source, normalizedLanguage);
   const appTheme = useDocumentTheme();
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -399,13 +400,20 @@ function CodeBlock({ source, language, blockKey }: { source: string; language: s
   }, [appTheme, blockKey, normalizedLanguage, source]);
 
   if (html && !failed) {
-    return <div className="document-viewer__highlight" dangerouslySetInnerHTML={{ __html: html }} />;
+    return <div className={`document-viewer__highlight${compact ? " is-compact" : ""}`} dangerouslySetInnerHTML={{ __html: html }} />;
   }
   return (
-    <pre className="markdown-viewer__code-block">
+    <pre className={`markdown-viewer__code-block${compact ? " is-compact" : ""}`}>
       <code className={normalizedLanguage ? `language-${normalizedLanguage}` : undefined}>{source}</code>
     </pre>
   );
+}
+
+function isCompactMarkdownCodeBlock(source: string, language: string | null) {
+  if (language && language !== "text") return false;
+  const trimmed = source.trim();
+  if (!trimmed || trimmed.includes("\n")) return false;
+  return trimmed.length <= 96;
 }
 
 function useDocumentTheme() {

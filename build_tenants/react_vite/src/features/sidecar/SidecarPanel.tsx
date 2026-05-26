@@ -40,6 +40,7 @@ import {
   type PropsWithChildren,
   type ReactNode,
   type RefObject,
+  type WheelEvent,
 } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
@@ -65,7 +66,7 @@ import {
   setActiveProject,
   unregisterProject,
 } from '../../lib/collaboration';
-import type { SurfaceData } from '../../lib/types';
+import type { SurfaceData, SurfaceEntry } from '../../lib/types';
 import {
   INITIAL_SIDECAR_STATE,
   SIDECAR_EXPLORER_PROVIDERS,
@@ -1412,6 +1413,14 @@ function infoSurfaceCount(surface: SidecarExplorerProviderId, state: SidecarStat
   return state.tickets.length;
 }
 
+function scrollHorizontalOverflowOnWheel(event: WheelEvent<HTMLDivElement>) {
+  const target = event.currentTarget;
+  if (target.scrollWidth <= target.clientWidth) return;
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  target.scrollLeft += event.deltaY;
+  event.preventDefault();
+}
+
 function RailButton({ label, shortLabel, count, selected, onClick }: {
   label: string;
   shortLabel: string;
@@ -1925,7 +1934,12 @@ function SelectionFlyout({
       )
       : folderRefreshAction(projectBrowserRefreshRoot, 'Project Browser root');
     const projectBrowserTabStrip = (
-      <div className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header" role="tablist" aria-label="Project Browser views">
+      <div
+        className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header"
+        role="tablist"
+        aria-label="Project Browser views"
+        onWheel={scrollHorizontalOverflowOnWheel}
+      >
         {projectBrowserTabs.map((tab) => (
           <button
             key={tab.id}
@@ -2595,8 +2609,8 @@ function ContextRailCommand({ symbol, label, value, detail, active = false, onCl
 function Pane({ title, count, extraCount, actions, titleAddon, children }: PropsWithChildrenLike<{ title: string; count: number; extraCount?: number; actions?: ReactNode; titleAddon?: ReactNode }>) {
   return (
     <section className="sidecar-pane">
-      <div className="sidecar-pane__header">
-        <div className="sidecar-pane__title-row">
+      <div className={`sidecar-pane__header${titleAddon ? ' sidecar-pane__header--with-title-addon' : ''}`}>
+        <div className={`sidecar-pane__title-row${titleAddon ? ' sidecar-pane__title-row--with-addon' : ''}`}>
           <h3>
             <span className="sidecar-pane__title">{title}</span>
             <span className="sidecar-pane__title-count">({count})</span>
@@ -2835,10 +2849,35 @@ function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onTransi
             onReplySubmit={onReplySubmit}
           />
         ) : (
-          <div className="sidecar-inspector__empty">Select an item from the flyout.</div>
+          <EmptyViewerPane
+            canClose={workspace.split !== 'single' && group.id !== 'main'}
+            onClose={() => dispatch({ type: 'viewer/close-group', groupId: group.id })}
+          />
         )}
       </div>
     </section>
+  );
+}
+
+function EmptyViewerPane({ canClose, onClose }: {
+  canClose: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div className={`sidecar-inspector__empty sidecar-viewer-empty-pane${canClose ? ' can-close' : ''}`}>
+      {canClose ? (
+        <button
+          type="button"
+          className="sidecar-viewer-empty-pane__close"
+          aria-label="Close empty viewer pane"
+          title="Close empty viewer pane"
+          onClick={onClose}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      ) : null}
+      <span>No viewer tab is open.</span>
+    </div>
   );
 }
 
@@ -2946,7 +2985,8 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   const graphTabCount = traversalOverlays.length;
   const assetRelationships = catalog ? processAssetRelationships(catalog) : [];
   const functionItems = catalog ? processFunctionItems(catalog) : [];
-  const liveAttemptCount = projection.liveAnalysis?.attempts.length ?? 0;
+  const workspaceRun = projection.workspaceRun ?? null;
+  const liveAttemptCount = workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0;
   const selectedOverlay = traversalOverlays.find((overlay) => overlay.overlayRef === selectedOverlayRef) ?? traversalOverlays[0] ?? null;
   const selectedFunction = functionItems.find((item) => item.id === selectedFunctionId) ?? functionItems[0] ?? null;
   const selectedAsset = assetRelationships.find((asset) => asset.name === selectedAssetName) ?? assetRelationships[0] ?? null;
@@ -3019,6 +3059,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
           <Pill kind="default">{graphTabCount} overlays</Pill>
           <Pill kind="default">{catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0} functions</Pill>
           <Pill kind="default">{assetRelationships.length} assets</Pill>
+          {workspaceRun ? <Pill kind={workspaceRun.activeFeedbackLoopCount > 0 ? 'active' : 'default'}>{workspaceRun.stageProcessCount} stage processes</Pill> : null}
           {projection.liveAnalysis && <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>{projection.liveAnalysis.telemetry.operatorRunCount} analyze runs</Pill>}
         </div>
       </div>
@@ -3048,6 +3089,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         <section className="sidecar-process-simple__live sidecar-process-map" aria-label="Live View">
           <ProcessLiveViewPanel
             analysis={projection.liveAnalysis ?? null}
+            workspaceRun={workspaceRun}
             onOpenTracePath={openTracePath}
             onRefresh={requestLiveRefresh}
             refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
@@ -3061,6 +3103,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
             onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
             liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
             onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
+            onLiveAllCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-all-collapsed', collapsed })}
           />
         </section>
       ) : (
@@ -4157,6 +4200,7 @@ function ProcessNavigatorPanel({ state, dispatch }: {
     : projection.maps.find((map) => map.id === state.ui.activeProcessMap)
       ?? projection.maps[0]
       ?? null;
+  const workspaceRun = projection.workspaceRun ?? null;
   const activeRecordIds = records.map((record) => record.id);
   const openTracePath = (absolutePath: string) => {
     const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
@@ -4207,6 +4251,11 @@ function ProcessNavigatorPanel({ state, dispatch }: {
               {projection.liveAnalysis.telemetry.operatorRunCount} analyze runs
             </Pill>
           )}
+          {workspaceRun ? (
+            <Pill kind={workspaceRun.activeFeedbackLoopCount > 0 ? 'active' : 'default'}>
+              {workspaceRun.stageProcessCount} stage processes
+            </Pill>
+          ) : null}
         </div>
       </div>
 
@@ -4222,9 +4271,9 @@ function ProcessNavigatorPanel({ state, dispatch }: {
           >
             <div className="process-tab__meta">
               <strong>Live View</strong>
-              <span className={`status-chip ${liveViewActive ? 'active' : 'default'}`}>{projection.liveAnalysis?.attempts.length ?? 0}</span>
+              <span className={`status-chip ${liveViewActive ? 'active' : 'default'}`}>{workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0}</span>
             </div>
-            <p>Analyze-run timeline and active runtime liveness.</p>
+            <p>Traversal timeline, stage CLIs, and active runtime liveness.</p>
           </button>
           {projection.maps.map((map) => {
             const selected = activeMap?.id === map.id;
@@ -4252,6 +4301,7 @@ function ProcessNavigatorPanel({ state, dispatch }: {
           {liveViewActive ? (
             <ProcessLiveViewPanel
               analysis={projection.liveAnalysis ?? null}
+              workspaceRun={workspaceRun}
               onOpenTracePath={openTracePath}
               onRefresh={requestLiveRefresh}
               refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
@@ -4265,6 +4315,7 @@ function ProcessNavigatorPanel({ state, dispatch }: {
               onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
               liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
               onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
+              onLiveAllCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-all-collapsed', collapsed })}
             />
           ) : activeMap ? (
             activeMap.id === 'process_flow' && projection.catalog ? (
@@ -5079,6 +5130,8 @@ type SidecarLiveAnalysisCliTranscriptInput = Partial<SidecarLiveAnalysisCliTrans
 type SidecarLiveAnalysisStageProcess = NonNullable<SidecarLiveAnalysisAttempt['detail']['stageProcesses']>[number];
 type SidecarLiveAnalysisStageProcessInput = Partial<SidecarLiveAnalysisStageProcess> | null | undefined;
 type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
+type SidecarSdlcWorkspaceRun = NonNullable<SidecarProcessProjection['workspaceRun']>;
+type SidecarSdlcOperatorRun = SidecarSdlcWorkspaceRun['operatorRuns'][number];
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
   materialization: {
@@ -5166,6 +5219,7 @@ function ProcessLiveRowGroup({ widgetNames, ariaLabel, collapsed, onCollapsedCha
 
 function ProcessLiveViewPanel({
   analysis,
+  workspaceRun,
   onOpenTracePath,
   onRefresh,
   refreshing,
@@ -5179,8 +5233,10 @@ function ProcessLiveViewPanel({
   onLiveGapRowCollapsedChange,
   liveEventViewerCollapsed,
   onLiveEventViewerCollapsedChange,
+  onLiveAllCollapsedChange,
 }: {
   analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
+  workspaceRun: SidecarProcessProjection['workspaceRun'] | null | undefined;
   onOpenTracePath: (absolutePath: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
@@ -5194,24 +5250,28 @@ function ProcessLiveViewPanel({
   onLiveGapRowCollapsedChange: (collapsed: boolean) => void;
   liveEventViewerCollapsed: boolean;
   onLiveEventViewerCollapsedChange: (collapsed: boolean) => void;
+  onLiveAllCollapsedChange: (collapsed: boolean) => void;
 }) {
   const [selectedAttemptRef, setSelectedAttemptRef] = useState<string | null>(null);
-  if (!analysis) {
-    return <div className="sidecar-inspector__empty">No analyze-run projection is available for this Project.</div>;
+  if (!analysis && !workspaceRun) {
+    return <div className="sidecar-inspector__empty">No live odd_sdlc runtime projection is available for this Project.</div>;
   }
-  const attempts = analysis.attempts;
-  const liveness = analysis.liveness;
-  const activeAttemptRef = liveness.activeOperatorRunRef;
+  const attempts = analysis?.attempts ?? [];
+  const liveness = analysis?.liveness ?? null;
+  const activeAttemptRef = liveness?.activeOperatorRunRef ?? null;
   const latestAttempt = attempts[attempts.length - 1] ?? null;
   const selectedAttempt =
     attempts.find((attempt) => attempt.operatorRunRef === selectedAttemptRef) ??
     attempts.find((attempt) => activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef) ??
     latestAttempt;
-  const visibleDiagnostics = analysis.diagnostics.slice(0, 6);
-  const activeRunTone = liveAnalysisTone(liveness.productiveSignal);
-  const diagnosticsTone = analysis.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  const selectedOperatorRun = selectedAttempt
+    ? findWorkspaceOperatorRunForAttempt(workspaceRun ?? null, selectedAttempt)
+    : workspaceRun?.operatorRuns.at(-1) ?? null;
+  const visibleDiagnostics = analysis?.diagnostics.slice(0, 6) ?? [];
+  const activeRunTone = liveness ? liveAnalysisTone(liveness.productiveSignal) : workspaceRun?.activeFeedbackLoopCount ? 'active' : 'pending';
+  const diagnosticsTone = (analysis?.diagnostics ?? []).some((diagnostic) => diagnostic.severity === 'error')
     ? 'blocked'
-    : analysis.diagnostics.length > 0
+    : (analysis?.diagnostics.length ?? 0) > 0
       ? 'pending'
       : 'active';
 
@@ -5220,12 +5280,14 @@ function ProcessLiveViewPanel({
       <header className="sidecar-live-view__header">
         <div>
           <span className="panel__eyebrow">Live View</span>
-          <h3>{analysis.telemetry.scenarioName ?? 'analyze-run projection'}</h3>
-          <p>{analysis.telemetry.inspectedKind} · {analysis.telemetry.profile} · {analysis.telemetry.inspectedRoot}</p>
+          <h3>{analysis?.telemetry.scenarioName ?? 'odd_sdlc runtime projection'}</h3>
+          <p>{analysis ? `${analysis.telemetry.inspectedKind} · ${analysis.telemetry.profile} · ${analysis.telemetry.inspectedRoot}` : workspaceRun?.workspaceRoot ?? 'workspace runtime'}</p>
         </div>
         <div className="sidecar-live-view__actions">
-          <Pill kind={liveAnalysisTone(liveness.productiveSignal)}>{liveness.productiveSignal.replace(/_/g, ' ')}</Pill>
-          {liveness.activeOperatorRunPath ? (
+          <Pill kind={liveness ? liveAnalysisTone(liveness.productiveSignal) : workspaceRun?.activeFeedbackLoopCount ? 'active' : 'pending'}>
+            {liveness ? liveness.productiveSignal.replace(/_/g, ' ') : workspaceRun?.activeFeedbackLoopCount ? 'feedback loop' : 'runtime artifacts'}
+          </Pill>
+          {liveness?.activeOperatorRunPath ? (
             <button
               type="button"
               className="status-chip active"
@@ -5234,32 +5296,64 @@ function ProcessLiveViewPanel({
               Active archive
             </button>
           ) : null}
+          <div className="sidecar-live-view__global-row-actions" aria-label="Process Navigator row visibility">
+            <button
+              type="button"
+              className="status-chip default sidecar-live-view__global-row-toggle"
+              onClick={() => onLiveAllCollapsedChange(true)}
+              aria-label="Collapse all Process Navigator rows"
+              title="Collapse all Process Navigator rows"
+            >
+              <span aria-hidden="true">⊟</span>
+            </button>
+            <button
+              type="button"
+              className="status-chip default sidecar-live-view__global-row-toggle"
+              onClick={() => onLiveAllCollapsedChange(false)}
+              aria-label="Expand all Process Navigator rows"
+              title="Expand all Process Navigator rows"
+            >
+              <span aria-hidden="true">⊞</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="sidecar-live-view__stats" aria-label="Analyze-run summary">
         <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-          <strong>{analysis.telemetry.operatorRunCount}</strong>
+          <strong>{workspaceRun?.operatorRunCount ?? analysis?.telemetry.operatorRunCount ?? 0}</strong>
           <small>operator runs</small>
         </span>
+        {workspaceRun ? (
+          <>
+            <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
+              <strong>{workspaceRun.stageProcessCount}</strong>
+              <small>stage processes</small>
+            </span>
+            <span className="sidecar-process-map-stat">
+              <strong>{workspaceRun.transcriptSurfaceCount}</strong>
+              <small>transcript surfaces</small>
+            </span>
+          </>
+        ) : null}
         <span className="sidecar-process-map-stat sidecar-process-map-stat--blocked">
-          <strong>{analysis.telemetry.sameEdgeRetryCount + analysis.telemetry.blockedAttemptCount}</strong>
-          <small>retry/block</small>
+          <strong>{workspaceRun?.activeFeedbackLoopCount ?? ((analysis?.telemetry.sameEdgeRetryCount ?? 0) + (analysis?.telemetry.blockedAttemptCount ?? 0))}</strong>
+          <small>feedback loops</small>
         </span>
         <span className="sidecar-process-map-stat sidecar-process-map-stat--converged">
-          <strong>{formatDurationMs(analysis.telemetry.totalWorkerElapsedMs)}</strong>
+          <strong>{analysis ? formatDurationMs(analysis.telemetry.totalWorkerElapsedMs) : '—'}</strong>
           <small>worker time</small>
         </span>
         <span className="sidecar-process-map-stat">
-          <strong>{formatBytes(analysis.telemetry.archiveBytes.totalBytes)}</strong>
+          <strong>{analysis ? formatBytes(analysis.telemetry.archiveBytes.totalBytes) : '—'}</strong>
           <small>archive</small>
         </span>
         <span className="sidecar-process-map-stat">
-          <strong>{analysis.telemetry.finalClosureDisposition ?? 'open'}</strong>
+          <strong>{analysis?.telemetry.finalClosureDisposition ?? `${workspaceRun?.closeCount ?? 0} close`}</strong>
           <small>final disposition</small>
         </span>
         <span className="sidecar-process-map-stat">
-          <strong title={analysis.generatedAt}>{formatLiveRefreshTime(analysis.generatedAt)}</strong>
+          <strong title={analysis?.generatedAt ?? ''}>{analysis ? formatLiveRefreshTime(analysis.generatedAt) : '—'}</strong>
           <small>last refresh</small>
         </span>
         <button
@@ -5275,9 +5369,13 @@ function ProcessLiveViewPanel({
 
       <ol className="sidecar-live-view__timeline" aria-label="Analyze-run attempts">
         {attempts.length ? attempts.map((attempt) => {
-          const tone = liveAttemptTone(attempt);
+          const operatorRun = findWorkspaceOperatorRunForAttempt(workspaceRun ?? null, attempt);
+          const tone = liveAttemptTone(attempt, operatorRun);
           const active = activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef;
           const canOpen = Boolean(attempt.operatorRunPath);
+          const dispositionLabel = operatorRun?.activeFeedbackLoop
+            ? 'feedback loop'
+            : operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open';
           return (
             <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
               <button
@@ -5288,9 +5386,9 @@ function ProcessLiveViewPanel({
                 title={attempt.operatorRunPath ?? attempt.operatorRunRef}
               >
                 <span className="sidecar-live-view__attempt-index">{attempt.attemptOrdinal + 1}</span>
-                <strong>{attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</strong>
-                <small>{attempt.targetAssetType ?? attempt.traversalClass}</small>
-                <span className={`status-chip ${tone}`}>{attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open'}</span>
+                <strong>{operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</strong>
+                <small>{operatorRun?.edge?.targetAssetType ?? attempt.targetAssetType ?? attempt.traversalClass}</small>
+                <span className={`status-chip ${tone}`}>{dispositionLabel}</span>
               </button>
             </li>
           );
@@ -5306,8 +5404,8 @@ function ProcessLiveViewPanel({
         onCollapsedChange={onLiveActiveRunRowCollapsedChange}
         meta={(
           <>
-            <span className={`status-chip ${activeRunTone}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
-            <span className={`status-chip ${diagnosticsTone}`}>{analysis.diagnostics.length} diagnostics</span>
+            <span className={`status-chip ${activeRunTone}`}>{liveness?.processAlive === true ? 'alive' : liveness?.processAlive === false ? 'not alive' : 'unknown'}</span>
+            <span className={`status-chip ${diagnosticsTone}`}>{analysis?.diagnostics.length ?? 0} diagnostics</span>
           </>
         )}
       >
@@ -5315,16 +5413,16 @@ function ProcessLiveViewPanel({
           <section className="sidecar-live-view__detail">
             <div className="requirements-explorer__section-heading">
               <span className="panel__eyebrow">Active Run</span>
-              <span className={`status-chip ${activeRunTone}`}>{liveness.processAlive === true ? 'alive' : liveness.processAlive === false ? 'not alive' : 'unknown'}</span>
+              <span className={`status-chip ${activeRunTone}`}>{liveness?.processAlive === true ? 'alive' : liveness?.processAlive === false ? 'not alive' : 'unknown'}</span>
             </div>
             <MetaGrid items={[
-              ['Active edge', liveness.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? '—'],
-              ['Graph vector', liveness.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? '—'],
-              ['Target', liveness.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? '—'],
-              ['Worker pid', liveness.workerPid === null ? '—' : String(liveness.workerPid)],
-              ['No-output gap', liveness.maxNoOutputGapMs === null ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
-              ['Archive growth/min', liveness.archiveGrowthBytesPerMinute === null ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
-              ['Last blocking reason', liveness.lastBlockingReason ?? '—'],
+              ['Active edge', liveness?.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? selectedOperatorRun?.edge?.edgeName ?? '—'],
+              ['Graph vector', liveness?.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? selectedOperatorRun?.nextActionProjection?.nextGraphVectorRef ?? '—'],
+              ['Target', liveness?.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? selectedOperatorRun?.edge?.targetAssetType ?? '—'],
+              ['Worker pid', liveness?.workerPid === null || liveness?.workerPid === undefined ? '—' : String(liveness.workerPid)],
+              ['No-output gap', liveness?.maxNoOutputGapMs === null || liveness?.maxNoOutputGapMs === undefined ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
+              ['Archive growth/min', liveness?.archiveGrowthBytesPerMinute === null || liveness?.archiveGrowthBytesPerMinute === undefined ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
+              ['Last blocking reason', liveness?.lastBlockingReason ?? selectedOperatorRun?.blockingReasons[0]?.code ?? '—'],
             ]} />
           </section>
 
@@ -5332,7 +5430,7 @@ function ProcessLiveViewPanel({
             <div className="requirements-explorer__section-heading">
               <span className="panel__eyebrow">Diagnostics</span>
               <span className={`status-chip ${diagnosticsTone}`}>
-                {analysis.diagnostics.length}
+                {analysis?.diagnostics.length ?? 0}
               </span>
             </div>
             {visibleDiagnostics.length ? (
@@ -5351,6 +5449,7 @@ function ProcessLiveViewPanel({
       {selectedAttempt ? (
         <ProcessLiveRunDetail
           attempt={selectedAttempt}
+          operatorRun={selectedOperatorRun}
           detailRowCollapsed={liveDetailRowCollapsed}
           onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
           gapRowCollapsed={liveGapRowCollapsed}
@@ -5368,6 +5467,7 @@ function ProcessLiveViewPanel({
 
 function ProcessLiveRunDetail({
   attempt,
+  operatorRun,
   detailRowCollapsed,
   onDetailRowCollapsedChange,
   gapRowCollapsed,
@@ -5379,6 +5479,7 @@ function ProcessLiveRunDetail({
   onOpenTracePath,
 }: {
   attempt: SidecarLiveAnalysisAttempt;
+  operatorRun: SidecarSdlcOperatorRun | null;
   detailRowCollapsed: boolean;
   onDetailRowCollapsedChange: (collapsed: boolean) => void;
   gapRowCollapsed: boolean;
@@ -5391,6 +5492,12 @@ function ProcessLiveRunDetail({
 }) {
   const edge = attempt.detail.edgeAssurance;
   const assurance = attempt.detail.assurance;
+  const transformStage = operatorRun?.stages.find((stage) => stage.stageKind === 'transform') ?? null;
+  const postflightStage = operatorRun?.stages.find((stage) => stage.stageKind === 'system_postflight') ?? null;
+  const evaluatorStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_review_grade') ?? null;
+  const closure = operatorRun?.closureDecision ?? null;
+  const nextAction = operatorRun?.nextActionProjection ?? null;
+  const activeFeedbackLoop = Boolean(operatorRun?.activeFeedbackLoop);
   const counts = edge?.counts ?? null;
   const outstanding =
     counts === null
@@ -5403,21 +5510,29 @@ function ProcessLiveRunDetail({
     (edge?.gapPressureRefs.length ?? 0) +
     (edge?.edgeResidualPressureRefs.length ?? 0);
   const ledgerTone =
-    edge?.closeReady === true
+    activeFeedbackLoop
+      ? 'active'
+      : edge?.closeReady === true
       ? 'active'
       : edge?.carrierState === 'absent' || gapCount > 0
         ? 'blocked'
         : 'pending';
+  const closureLabel = activeFeedbackLoop
+    ? 'retry feedback loop'
+    : closure?.disposition ?? edge?.closureDisposition ?? attempt.closureDisposition ?? 'open';
   return (
     <section className="sidecar-live-view__run-detail" aria-label="Selected analyze-run detail">
       <header className="sidecar-live-view__run-header">
         <div>
           <span className="panel__eyebrow">Selected Run</span>
-          <h4>{attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</h4>
-          <p>{attempt.operatorRunPath ?? attempt.operatorRunRef}</p>
+          <h4>{operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</h4>
+          <p>{operatorRun?.operatorRunPath ?? attempt.operatorRunPath ?? attempt.operatorRunRef}</p>
         </div>
         <div className="sidecar-live-view__actions">
-          <span className={`status-chip ${ledgerTone}`}>{edge?.closureDisposition ?? attempt.closureDisposition ?? 'open'}</span>
+          <span className={`status-chip ${ledgerTone}`}>{closureLabel}</span>
+          {operatorRun ? (
+            <span className="status-chip default">{operatorRun.stages.reduce((total, stage) => total + stage.processInvocations.length, 0)} stage CLIs</span>
+          ) : null}
           {attempt.operatorRunPath ? (
             <button type="button" className="status-chip default" onClick={() => onOpenTracePath(attempt.operatorRunPath as string)}>
               Open archive
@@ -5461,6 +5576,13 @@ function ProcessLiveRunDetail({
                 </span>
               </div>
               <MetaGrid items={[
+                ['Edge name', operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? '—'],
+                ['Worker status', transformStage?.status ?? attempt.workerStatus ?? '—'],
+                ['Postflight status', postflightStage?.status ?? attempt.postflightStatus ?? '—'],
+                ['Evaluator review', evaluatorStage?.status ?? attempt.fpEvaluateStatus ?? '—'],
+                ['Closure', closureLabel],
+                ['Next lawful action', nextAction?.nextActionBasisKind ?? edge?.nextActionBasisKind ?? attempt.selectedNextActionRef ?? '—'],
+                ['Chooses next traversal', nextAction ? formatLiveBoolean(nextAction.choosesNextTraversal) : '—'],
                 ['Edge converged', formatLiveBoolean(edge?.edgeConverged)],
                 ['Carry converged', formatLiveBoolean(edge?.carryConverged)],
                 ['Fulfillment', formatLiveBoolean(edge?.fulfillmentConverged)],
@@ -5468,7 +5590,7 @@ function ProcessLiveRunDetail({
                 ['Target cert', formatLiveBoolean(edge?.targetCertificationPassed)],
                 ['F_D recheck', formatLiveBoolean(edge?.fdRecheckPassed)],
                 ['Target carrier', edge?.targetAssetType ?? attempt.targetAssetType ?? '—'],
-                ['Next action', edge?.nextGraphVectorRef ?? attempt.selectedNextActionRef ?? '—'],
+                ['Next graph vector', nextAction?.nextGraphVectorRef ?? edge?.nextGraphVectorRef ?? '—'],
               ]} />
             </section>
 
@@ -5532,7 +5654,7 @@ function ProcessLiveRunDetail({
             <span className="panel__eyebrow">Gap Analysis</span>
             <span className={`status-chip ${gapCount > 0 ? 'blocked' : 'active'}`}>{gapCount}</span>
           </div>
-          <LiveAnalysisRunGapList attempt={attempt} edge={edge} />
+          <LiveAnalysisRunGapList attempt={attempt} edge={edge} operatorRun={operatorRun} />
         </section>
 
         <section className="sidecar-live-view__detail">
@@ -5745,32 +5867,32 @@ function ProcessLiveEventTicket({ event, collapsed, onCollapsedChange, onOpenTra
   return (
     <li className={`sidecar-live-view__event-ticket sidecar-live-view__event-ticket--${event.tone}${collapsed ? ' is-collapsed' : ''}`}>
       <header className="sidecar-live-view__event-ticket-header">
-        <div className="sidecar-live-view__event-ticket-title">
-          <span className="sidecar-live-view__event-index">{event.index + 1}</span>
-          <div>
-            <strong>{event.title}</strong>
-            <small>{event.eventType} · {event.sourceKind.replace(/_/g, ' ')}</small>
+        <button
+          type="button"
+          className="sidecar-live-view__event-ticket-toggle"
+          onClick={() => onCollapsedChange(!collapsed)}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${event.title} details`}
+          title={`${collapsed ? 'Expand' : 'Collapse'} ${event.title} details`}
+        >
+          <div className="sidecar-live-view__event-ticket-title">
+            <span className="sidecar-live-view__event-index">{event.index + 1}</span>
+            <div>
+              <strong>{event.title}</strong>
+              <small>{event.eventType} · {event.sourceKind.replace(/_/g, ' ')}</small>
+            </div>
           </div>
-        </div>
-        <div className="sidecar-live-view__event-ticket-actions">
-          {eventTime !== null ? <span className="status-chip default">{formatDurationMs(eventTime)}</span> : null}
-          <span className={`status-chip ${event.tone}`}>{event.tone}</span>
-          <button
-            type="button"
-            className="status-chip default sidecar-live-view__event-toggle"
-            onClick={() => onCollapsedChange(!collapsed)}
-            aria-expanded={!collapsed}
-            aria-label={`${collapsed ? 'Show' : 'Hide'} ${event.title} details`}
-          >
-            <span>{collapsed ? 'show' : 'hide'}</span>
+          <div className="sidecar-live-view__event-ticket-actions">
+            {eventTime !== null ? <span className="status-chip default">{formatDurationMs(eventTime)}</span> : null}
+            <span className={`status-chip ${event.tone}`}>{event.tone}</span>
             <span className="sidecar-live-view__collapsible-chevron" aria-hidden="true">{collapsed ? '>' : 'v'}</span>
+          </div>
+        </button>
+        {sourcePath ? (
+          <button type="button" className="status-chip default sidecar-live-view__event-source" onClick={() => onOpenTracePath(sourcePath)}>
+            Source
           </button>
-          {sourcePath ? (
-            <button type="button" className="status-chip default" onClick={() => onOpenTracePath(sourcePath)}>
-              Open source
-            </button>
-          ) : null}
-        </div>
+        ) : null}
       </header>
       {!collapsed ? (
         <div className="sidecar-live-view__event-ticket-body">
@@ -6069,11 +6191,23 @@ function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnal
   return `${roleLabel} terminal transcript`;
 }
 
-function LiveAnalysisRunGapList({ attempt, edge }: {
+function LiveAnalysisRunGapList({ attempt, edge, operatorRun }: {
   attempt: SidecarLiveAnalysisAttempt;
   edge: SidecarLiveAnalysisAttempt['detail']['edgeAssurance'];
+  operatorRun: SidecarSdlcOperatorRun | null;
 }) {
   const rows = [
+    ...(operatorRun?.blockingReasons ?? []).map((reason) => ({
+      key: `blocking:${reason.code}:${reason.detail ?? ''}`,
+      tone: reason.retryable ? 'pending' : 'blocked',
+      label: reason.code,
+      value: reason.retryable ? 'retryable' : 'blocked',
+      detail: [
+        reason.reasonClass,
+        reason.lawfulReentryPoint,
+        reason.detail ?? reason.message,
+      ].filter(Boolean).join(' · ') || 'blocking reason',
+    })),
     ...attempt.detail.runtimeGaps.map((gap) => ({
       key: `gap:${gap.artifact}`,
       tone: gap.status === 'missing' ? 'blocked' : 'pending',
@@ -6407,12 +6541,26 @@ function liveAnalysisTone(signal: string) {
   return 'pending';
 }
 
-function liveAttemptTone(attempt: SidecarLiveAnalysisAttempt) {
-  if (attempt.closureDisposition === 'close' || attempt.postflightStatus === 'passed') return 'converged';
+function findWorkspaceOperatorRunForAttempt(
+  workspaceRun: SidecarSdlcWorkspaceRun | null,
+  attempt: SidecarLiveAnalysisAttempt,
+) {
+  if (!workspaceRun) return null;
+  return workspaceRun.operatorRuns.find((operatorRun) => {
+    if (attempt.operatorRunPath && operatorRun.operatorRunPath === attempt.operatorRunPath) return true;
+    if (attempt.operatorRunRef && attempt.operatorRunRef.endsWith(`/${operatorRun.operatorRunId}`)) return true;
+    return false;
+  }) ?? null;
+}
+
+function liveAttemptTone(attempt: SidecarLiveAnalysisAttempt, operatorRun: SidecarSdlcOperatorRun | null = null) {
+  if (operatorRun?.activeFeedbackLoop) return 'active';
+  const closureDisposition = operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition;
+  if (closureDisposition === 'close') return 'converged';
+  if (closureDisposition === 'retry' || closureDisposition === 'repair' || closureDisposition === 're-enter' || closureDisposition === 'reprice' || closureDisposition === 'yield') return 'pending';
+  if (attempt.postflightStatus === 'passed' && !closureDisposition) return 'converged';
   if (
-    attempt.closureDisposition === 'retry' ||
-    attempt.closureDisposition === 'repair' ||
-    attempt.closureDisposition === 'block' ||
+    closureDisposition === 'block' ||
     attempt.blockingReasonCodes.length > 0
   ) {
     return 'blocked';
@@ -6477,6 +6625,249 @@ function isTailFollowSurfacePath(relativePath: string) {
     filename === 'terminal.transcript' ||
     filename === 'screenlog.0' ||
     filename.endsWith('.transcript')
+  );
+}
+
+interface DirectorySurfaceLoad {
+  entries: SurfaceEntry[];
+  loading: boolean;
+  error: string | null;
+  truncated: boolean;
+  loadedAt: number | null;
+}
+
+function directorySurfaceLoad(surface: Extract<SurfaceData, { kind: 'directory' }>): DirectorySurfaceLoad {
+  return {
+    entries: surface.entries,
+    loading: false,
+    error: null,
+    truncated: surface.truncated,
+    loadedAt: Date.now(),
+  };
+}
+
+function directorySurfaceLabel(relativePath: string) {
+  const normalized = relativePath.replace(/\/+$/, '');
+  if (!normalized || normalized === '.') return '.';
+  return normalized.split('/').filter(Boolean).at(-1) ?? normalized;
+}
+
+function directorySurfaceGroupKey(relativePath: string) {
+  return navigatorGroupKey('surface-directory', relativePath);
+}
+
+function DirectorySurfaceBrowser({ projectRoot, surface, dispatch }: {
+  projectRoot: string | null;
+  surface: Extract<SurfaceData, { kind: 'directory' }>;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const [groupStates, setGroupStates] = useState<Record<string, NavigatorGroupState>>({});
+  const [navigatorSort, setNavigatorSort] = useState<NavigatorSortState>({ sort: 'time', reverse: true });
+  const [directoryLoads, setDirectoryLoads] = useState<Record<string, DirectorySurfaceLoad>>({
+    [surface.relative_path]: directorySurfaceLoad(surface),
+  });
+
+  const patchGroup = useCallback((key: string, patch: Partial<NavigatorGroupState>) => {
+    setGroupStates((current) => updateNavigatorGroup(current, key, patch));
+  }, []);
+
+  const openSurfaceTab = useCallback((relativePath: string) => {
+    dispatch({ type: 'select', kind: 'surface', id: relativePath });
+  }, [dispatch]);
+
+  const loadDirectory = useCallback(async (relativePath: string) => {
+    if (!projectRoot) {
+      setDirectoryLoads((current) => ({
+        ...current,
+        [relativePath]: {
+          entries: current[relativePath]?.entries ?? [],
+          loading: false,
+          error: 'No Project context is available.',
+          truncated: false,
+          loadedAt: current[relativePath]?.loadedAt ?? null,
+        },
+      }));
+      return;
+    }
+    setDirectoryLoads((current) => ({
+      ...current,
+      [relativePath]: {
+        entries: current[relativePath]?.entries ?? [],
+        loading: true,
+        error: null,
+        truncated: current[relativePath]?.truncated ?? false,
+        loadedAt: current[relativePath]?.loadedAt ?? null,
+      },
+    }));
+    try {
+      const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
+      const payload = await fetchJson(`/api/surface?${params.toString()}`) as SurfaceData;
+      if (payload.kind !== 'directory') {
+        throw new Error(`${relativePath} is not a directory surface`);
+      }
+      setDirectoryLoads((current) => ({
+        ...current,
+        [relativePath]: directorySurfaceLoad(payload),
+      }));
+    } catch (err) {
+      setDirectoryLoads((current) => ({
+        ...current,
+        [relativePath]: {
+          entries: current[relativePath]?.entries ?? [],
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+          truncated: current[relativePath]?.truncated ?? false,
+          loadedAt: current[relativePath]?.loadedAt ?? null,
+        },
+      }));
+    }
+  }, [projectRoot]);
+
+  const toggleDirectory = useCallback((relativePath: string, collapsed: boolean) => {
+    const key = directorySurfaceGroupKey(relativePath);
+    const nextCollapsed = !collapsed;
+    patchGroup(key, { collapsed: nextCollapsed });
+    if (!nextCollapsed && !directoryLoads[relativePath]?.loading && !directoryLoads[relativePath]?.loadedAt) {
+      void loadDirectory(relativePath);
+    }
+  }, [directoryLoads, loadDirectory, patchGroup]);
+
+  useEffect(() => {
+    setDirectoryLoads((current) => ({
+      ...current,
+      [surface.relative_path]: directorySurfaceLoad(surface),
+    }));
+    setGroupStates((current) => updateNavigatorGroup(current, directorySurfaceGroupKey(surface.relative_path), { collapsed: false }));
+  }, [surface]);
+
+  return (
+    <div className="sidecar-surface-inspector sidecar-directory-tab" aria-label={`Directory surface ${surface.relative_path}`}>
+      <div className="sidecar-directory-tab__header">
+        <div>
+          <div className="sidecar-inspector__id">{surface.relative_path}</div>
+          <h2 className="sidecar-inspector__title">Directory</h2>
+        </div>
+        <FolderRefreshButton
+          label={surface.relative_path}
+          loading={directoryLoads[surface.relative_path]?.loading === true}
+          loadedAt={directoryLoads[surface.relative_path]?.loadedAt ?? null}
+          onRefresh={() => void loadDirectory(surface.relative_path)}
+        />
+      </div>
+      <div className="sidecar-directory-tab__path">
+        <FolderPathBreadcrumb
+          currentPath={surface.relative_path}
+          loading={directoryLoads[surface.relative_path]?.loading === true}
+          onNavigate={openSurfaceTab}
+        />
+      </div>
+      <NavigatorSortToolbar
+        sort={navigatorSort}
+        onSort={(sort) => setNavigatorSort((current) => ({ ...current, sort }))}
+        onReverse={() => setNavigatorSort((current) => ({ ...current, reverse: !current.reverse }))}
+      />
+      <div className="sidecar-folder-tree sidecar-folder-tree--surface-tab">
+        <DirectorySurfaceNode
+          relativePath={surface.relative_path}
+          label={directorySurfaceLabel(surface.relative_path)}
+          depth={0}
+          groupStates={groupStates}
+          directoryLoads={directoryLoads}
+          defaultCollapsed={false}
+          onPatchGroup={patchGroup}
+          onToggle={toggleDirectory}
+          onOpenSurface={openSurfaceTab}
+          onLoadDirectory={loadDirectory}
+          navigatorSort={navigatorSort}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DirectorySurfaceNode({ relativePath, label, depth, groupStates, directoryLoads, defaultCollapsed = true, onPatchGroup, onToggle, onOpenSurface, onLoadDirectory, navigatorSort }: {
+  relativePath: string;
+  label: string;
+  depth: number;
+  groupStates: Record<string, NavigatorGroupState>;
+  directoryLoads: Record<string, DirectorySurfaceLoad>;
+  defaultCollapsed?: boolean;
+  onPatchGroup: (key: string, patch: Partial<NavigatorGroupState>) => void;
+  onToggle: (relativePath: string, collapsed: boolean) => void;
+  onOpenSurface: (relativePath: string) => void;
+  onLoadDirectory: (relativePath: string) => void;
+  navigatorSort: NavigatorSortState;
+}) {
+  const key = directorySurfaceGroupKey(relativePath);
+  const group = navigatorGroupState(groupStates, key, { collapsed: defaultCollapsed, sort: 'time', reverse: true });
+  const load = directoryLoads[relativePath] ?? null;
+  const entries = compareBySort(load?.entries ?? [], { ...group, ...navigatorSort }, (entry) => entry.name, (entry) => entry.name);
+  const controls = (
+    <>
+      <button
+        type="button"
+        className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--open"
+        onClick={() => onOpenSurface(relativePath)}
+        aria-label={`Open ${relativePath} in a surface tab`}
+        title={`Open ${relativePath} in a surface tab`}
+      >
+        Open
+      </button>
+      <FolderRefreshButton
+        label={relativePath}
+        loading={load?.loading === true}
+        loadedAt={load?.loadedAt ?? null}
+        onRefresh={() => onLoadDirectory(relativePath)}
+      />
+    </>
+  );
+
+  return (
+    <div className="sidecar-folder-node sidecar-folder-node--surface-tab" style={{ '--sidecar-tree-depth': depth } as CSSProperties}>
+      <NavigatorTreeGroup
+        label={label}
+        count={entries.length}
+        group={group}
+        onToggle={() => onToggle(relativePath, group.collapsed)}
+        extraControls={controls}
+      >
+        {load?.loading ? <NavigatorEmptyState>Loading folders...</NavigatorEmptyState> : null}
+        {load?.error ? <div className="sidecar-navigator-error">{load.error}</div> : null}
+        {load && !load.loading && !load.error && entries.length === 0 ? <NavigatorEmptyState>No child entries.</NavigatorEmptyState> : null}
+        {entries.map((entry) => {
+          if (entry.kind === 'file') {
+            return (
+              <button
+                key={entry.relative_path}
+                type="button"
+                className="sidecar-row sidecar-row--surface-file"
+                onClick={() => onOpenSurface(entry.relative_path)}
+                title={entry.relative_path}
+              >
+                <div className="sidecar-row__title">{entry.name}</div>
+                <div className="sidecar-row__meta">{entry.relative_path}</div>
+              </button>
+            );
+          }
+          return (
+            <DirectorySurfaceNode
+              key={entry.relative_path}
+              relativePath={entry.relative_path}
+              label={entry.name}
+              depth={depth + 1}
+              groupStates={groupStates}
+              directoryLoads={directoryLoads}
+              onPatchGroup={onPatchGroup}
+              onToggle={onToggle}
+              onOpenSurface={onOpenSurface}
+              onLoadDirectory={onLoadDirectory}
+              navigatorSort={navigatorSort}
+            />
+          );
+        })}
+        {load?.truncated ? <NavigatorEmptyState>Listing truncated.</NavigatorEmptyState> : null}
+      </NavigatorTreeGroup>
+    </div>
   );
 }
 
@@ -6558,21 +6949,7 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
     );
   }
   if (surface.kind === 'directory') {
-    return (
-      <div className="sidecar-surface-inspector">
-        <div className="sidecar-inspector__id">{surface.relative_path}</div>
-        <h2 className="sidecar-inspector__title">Directory</h2>
-        <div className="sidecar-surface-entry-list">
-          {surface.entries.map((entry) => (
-            <div key={entry.relative_path} className="sidecar-surface-entry">
-              <span className="panel__eyebrow">{entry.kind}</span>
-              <strong>{entry.name}</strong>
-              <small>{entry.relative_path}</small>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <DirectorySurfaceBrowser projectRoot={projectRoot} surface={surface} dispatch={dispatch} />;
   }
   if (surface.kind === 'unreadable') {
     const reason = surface.reason === 'permission_denied'

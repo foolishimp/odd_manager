@@ -142,6 +142,7 @@ export function loadSidecarProcessProjection(workspaceRoot) {
   // T-022: traced evidence is folded into each overlay's tracedEvidence.
   const leafOverlays = loadLeafOverlaysForLatestOpRun(root);
   const liveAnalysis = loadLiveAnalysisProjection(root, installValidation.manifest);
+  const workspaceRun = loadSdlcWorkspaceRunProjection(root);
 
   const eventPath = join(root, SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH);
   if (!existsSync(eventPath)) {
@@ -155,7 +156,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
       traversalOverlays,
       catalog,
       leafOverlays,
-      liveAnalysis
+      liveAnalysis,
+      workspaceRun
     };
   }
 
@@ -179,7 +181,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     traversalOverlays,
     catalog,
     leafOverlays,
-    liveAnalysis
+    liveAnalysis,
+    workspaceRun
   };
 }
 
@@ -283,6 +286,447 @@ function extractSdlcFdRunAnalysis(payload) {
   if (payload?.payload?.kind === "sdlc_fd_run_analysis") return payload.payload;
   if (payload?.payload?.analysis?.kind === "sdlc_fd_run_analysis") return payload.payload.analysis;
   return null;
+}
+
+function loadSdlcWorkspaceRunProjection(root) {
+  const operatorRunRoot = join(root, SIDECAR_OPERATOR_RUNS_RELATIVE_PATH);
+  let entries;
+  try {
+    entries = readdirSync(operatorRunRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const operatorRuns = entries
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .slice(-SDLC_WORKSPACE_RUN_MAX_OPERATOR_RUNS)
+    .map((entry) => readSdlcOperatorRun(join(operatorRunRoot, entry.name), entry.name))
+    .filter(Boolean);
+  if (operatorRuns.length === 0) return null;
+  const stageProcessCount = operatorRuns.reduce(
+    (total, run) => total + run.stages.reduce((stageTotal, stage) => stageTotal + stage.processInvocations.length, 0),
+    0
+  );
+  const transcriptSurfaceCount = operatorRuns.reduce(
+    (total, run) => total + run.stages.reduce(
+      (stageTotal, stage) => stageTotal + stage.processInvocations.reduce(
+        (processTotal, process) => processTotal + process.transcriptSurfaceCount,
+        0
+      ),
+      0
+    ),
+    0
+  );
+  return Object.freeze({
+    kind: "sidecar_sdlc_workspace_run",
+    workspaceRoot: root,
+    operatorRunRoot,
+    operatorRunCount: operatorRuns.length,
+    stageProcessCount,
+    transcriptSurfaceCount,
+    activeFeedbackLoopCount: operatorRuns.filter((run) => run.activeFeedbackLoop).length,
+    terminalBlockCount: operatorRuns.filter((run) => run.status === "blocked" && !run.activeFeedbackLoop).length,
+    closeCount: operatorRuns.filter((run) => run.closureDecision?.disposition === "close").length,
+    retryCount: operatorRuns.filter((run) => run.closureDecision?.disposition === "retry").length,
+    operatorRuns: Object.freeze(operatorRuns)
+  });
+}
+
+function readSdlcOperatorRun(operatorRunPath, operatorRunId) {
+  const manifest = readJsonFile(join(operatorRunPath, "handoff_manifest.json"));
+  const summary = readJsonFile(join(operatorRunPath, "operator_summary.json"));
+  if (!isObject(manifest) && !isObject(summary)) return null;
+
+  const run = readJsonFile(join(operatorRunPath, "run.json"));
+  const postflight = readJsonFile(join(operatorRunPath, "postflight.json"));
+  const reviewPostflight = readJsonFile(join(operatorRunPath, "review_grade_postflight.json"));
+  const fpEvaluate = readJsonFile(join(operatorRunPath, "fp_evaluate_result.json"));
+  const assurance = readJsonFile(join(operatorRunPath, "assurance_satisfaction.json"));
+  const ledger = readJsonFile(join(operatorRunPath, "sdlc_edge_fulfillment_ledger.json"));
+  const closure = readJsonFile(join(operatorRunPath, "sdlc_edge_closure_decision.json"));
+  const nextAction = readJsonFile(join(operatorRunPath, "sdlc_next_action_projection.json"));
+  const gapDossier = readJsonFile(join(operatorRunPath, "gap_dossier.json"));
+  const reviewAssessment = readJsonFile(join(operatorRunPath, "review_grade_edge_fulfillment_assessment.json"));
+  const status =
+    stringOrNull(summary, "status") ??
+    stringOrNull(run, "status") ??
+    stringOrNull(reviewPostflight, "status") ??
+    stringOrNull(postflight, "status");
+  const edge = sdlcTraversalEdge(manifest, run, fpEvaluate);
+  const processInvocations = discoverLiveAnalysisStageProcessCandidates(operatorRunPath)
+    .filter((candidate) => candidate.relation === "primary")
+    .map(readSdlcProcessInvocation)
+    .filter(Boolean);
+  const processInvocationsByStage = groupMappedByKey(
+    processInvocations,
+    (process) => sdlcComputeStageKindForProcessKind(process.processKind)
+  );
+  const systemArtifacts = sdlcSystemArtifacts(operatorRunPath, {
+    postflight,
+    reviewPostflight,
+    fpEvaluate,
+    assurance,
+    ledger,
+    closure,
+    nextAction,
+    gapDossier,
+    reviewAssessment
+  });
+  const artifactsByStage = groupMappedByKey(systemArtifacts, (artifact) => sdlcStageKindForArtifactLabel(artifact.label));
+  const evaluationFindings = sdlcEvaluationFindings(reviewAssessment);
+  const blockingReasons = sdlcBlockingReasons({
+    postflight,
+    reviewPostflight,
+    fpEvaluate,
+    assurance,
+    gapDossier
+  });
+  const closureDecision = sdlcClosureDecision(closure);
+  const nextActionProjection = sdlcNextActionProjection(nextAction);
+  const activeFeedbackLoop = Boolean(
+    status === "blocked" &&
+    closureDecision?.disposition === "retry" &&
+    nextActionProjection?.choosesNextTraversal === true
+  );
+  return Object.freeze({
+    kind: "sidecar_sdlc_operator_run",
+    operatorRunId,
+    operatorRunPath,
+    status,
+    edge,
+    stages: Object.freeze(sdlcComputeStages({
+      processInvocationsByStage,
+      artifactsByStage,
+      evaluationFindings,
+      blockingReasons,
+      postflight,
+      reviewPostflight,
+      fpEvaluate,
+      assurance,
+      ledger,
+      closureDecision,
+      nextActionProjection
+    })),
+    systemArtifacts: Object.freeze(systemArtifacts),
+    evaluationFindings: Object.freeze(evaluationFindings),
+    blockingReasons: Object.freeze(blockingReasons),
+    closureDecision,
+    nextActionProjection,
+    activeFeedbackLoop
+  });
+}
+
+function sdlcTraversalEdge(manifest, run, fpEvaluate) {
+  if (!isObject(manifest) && !isObject(run) && !isObject(fpEvaluate)) return null;
+  return Object.freeze({
+    kind: "sidecar_sdlc_traversal_edge",
+    edgeName:
+      stringOrNull(manifest, "edgeName") ??
+      stringOrNull(fpEvaluate, "edgeName") ??
+      stringOrNull(run?.manifest, "edgeName"),
+    graphFunctionName:
+      stringOrNull(manifest, "graphFunctionName") ??
+      stringOrNull(fpEvaluate, "graphFunctionName") ??
+      stringOrNull(run?.manifest, "graphFunctionName"),
+    graphVectorRef:
+      stringOrNull(manifest, "graphVectorRef") ??
+      stringOrNull(fpEvaluate, "graphVectorRef") ??
+      null,
+    vectorIndex:
+      numberOrNull(manifest, "vectorIndex") ??
+      numberOrNull(run?.manifest, "vectorIndex"),
+    targetAssetType:
+      stringOrNull(manifest, "targetAssetType") ??
+      stringOrNull(fpEvaluate, "targetAssetType") ??
+      stringOrNull(run?.manifest, "targetAssetType"),
+    overlayRef: stringOrNull(manifest, "overlayRef") ?? stringOrNull(run?.manifest, "overlayRef"),
+    edgeAssuranceContractRef:
+      stringOrNull(manifest, "edgeAssuranceContractRef") ??
+      stringOrNull(fpEvaluate, "edgeAssuranceContractRef"),
+    targetCarrierContractRef:
+      stringOrNull(manifest, "targetCarrierContractRef") ??
+      stringOrNull(fpEvaluate, "targetCarrierContractRef")
+  });
+}
+
+function readSdlcProcessInvocation(candidate) {
+  const started = readJsonFile(candidate.processStartedPath);
+  if (!isObject(started)) return null;
+  const summaryPath = sdlcRunSummaryPath(candidate);
+  const summary = summaryPath ? readJsonFile(summaryPath) : null;
+  const traceRoot =
+    pathFromArchiveRef(stringField(summary, "traceRoot")) ||
+    join(candidate.operatorRunPath, `${candidate.prefix}_process_events.jsonl.trace`);
+  const terminalTranscriptPath =
+    pathFromArchiveRef(stringField(summary, "terminalTranscriptRef")) ||
+    existingFilePath(join(traceRoot, "terminal.transcript"));
+  const stdoutPath = existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_stdout.log`));
+  const stderrPath = existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_stderr.log`));
+  const lastMessagePath = existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_last_message.txt`));
+  const transcriptSurfaceCount = discoverLiveAnalysisStageTranscriptSurfaceCandidates(candidate).length;
+  return Object.freeze({
+    kind: "sidecar_sdlc_process_invocation",
+    processKind: candidate.stageKind,
+    label: candidate.label,
+    role: candidate.role,
+    processStartedPath: candidate.processStartedPath,
+    processEventsPath: existingFilePath(candidate.processEventsPath),
+    promptPath: existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_prompt.md`)),
+    stdoutPath,
+    stderrPath,
+    lastMessagePath,
+    runSummaryPath: summaryPath,
+    terminalTranscriptPath,
+    status:
+      stringOrNull(summary, "status") ??
+      (numberOrNull(summary, "status") === null ? null : String(numberOrNull(summary, "status"))),
+    pid: numberOrNull(started, "pid"),
+    command: stringOrNull(started, "command") ?? stringOrNull(summary, "command"),
+    terminalSessionId:
+      stringOrNull(started, "terminalSessionId") ??
+      stringOrNull(summary, "terminalSessionId"),
+    transcriptSurfaceCount
+  });
+}
+
+function sdlcRunSummaryPath(candidate) {
+  const direct = existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_process_summary.json`));
+  if (direct) return direct;
+  return existingFilePath(join(candidate.operatorRunPath, `${candidate.prefix}_run.json`));
+}
+
+function sdlcComputeStageKindForProcessKind(processKind) {
+  if (processKind === "transform_worker" || processKind === "worker") return "transform";
+  if (processKind === "design_depth_evaluator") return "evaluate_design_depth";
+  if (processKind === "review_grade_evaluator" || processKind === "evaluator") return "evaluate_review_grade";
+  return "unknown";
+}
+
+function sdlcStageKindForArtifactLabel(label) {
+  const normalized = String(label || "").toLowerCase();
+  if (normalized.includes("review") || normalized.includes("fp evaluate")) return "evaluate_review_grade";
+  if (normalized.includes("postflight")) return "system_postflight";
+  if (normalized.includes("assurance") || normalized.includes("ledger")) return "assurance";
+  if (normalized.includes("closure")) return "closure";
+  if (normalized.includes("next action") || normalized.includes("gap dossier")) return "next_action";
+  return "unknown";
+}
+
+function sdlcSystemArtifacts(operatorRunPath, payloads) {
+  const artifacts = [];
+  const add = (filename, label, role, payload, summary = null) => {
+    const path = existingFilePath(join(operatorRunPath, filename));
+    if (!path) return;
+    artifacts.push(Object.freeze({
+      kind: "sidecar_sdlc_system_artifact",
+      role,
+      label,
+      path,
+      status: stringOrNull(payload, "status"),
+      summary
+    }));
+  };
+  add("postflight.json", "Postflight", "authority_admission", payloads.postflight, sdlcBlockingSummary(payloads.postflight));
+  add("fp_evaluate_result.json", "F_P evaluate result", "authority_admission", payloads.fpEvaluate, sdlcBlockingSummary(payloads.fpEvaluate));
+  add("review_grade_postflight.json", "Review-grade postflight", "authority_admission", payloads.reviewPostflight, sdlcBlockingSummary(payloads.reviewPostflight));
+  add("review_grade_edge_fulfillment_assessment.json", "Review-grade assessment", "domain_evidence", payloads.reviewAssessment, stringOrNull(payloads.reviewAssessment, "summary"));
+  add("assurance_satisfaction.json", "Assurance satisfaction", "read_model", payloads.assurance, sdlcBlockingSummary(payloads.assurance));
+  add("assurance_ledgers.json", "Assurance ledgers", "read_model", payloads.assurance, null);
+  add("sdlc_edge_fulfillment_ledger.json", "Edge fulfillment ledger", "read_model", payloads.ledger, sdlcLedgerSummary(payloads.ledger));
+  add("sdlc_edge_closure_decision.json", "Edge closure decision", "read_model", payloads.closure, stringOrNull(payloads.closure, "disposition"));
+  add("sdlc_next_action_projection.json", "Next action projection", "read_model", payloads.nextAction, stringOrNull(payloads.nextAction, "nextActionBasisKind"));
+  add("gap_dossier.json", "Gap dossier", "read_model", payloads.gapDossier, sdlcGapDossierSummary(payloads.gapDossier));
+  return artifacts;
+}
+
+function sdlcBlockingSummary(payload) {
+  const count =
+    (Array.isArray(payload?.blockingReasonCarriers) ? payload.blockingReasonCarriers.length : 0) ||
+    (Array.isArray(payload?.blockingReasons) ? payload.blockingReasons.length : 0);
+  return count > 0 ? `${count} blocking reason${count === 1 ? "" : "s"}` : null;
+}
+
+function sdlcLedgerSummary(ledger) {
+  const counts = isObject(ledger?.counts) ? ledger.counts : null;
+  if (!counts) return null;
+  return `${numberField(counts, "fulfilled") ?? 0}/${numberField(counts, "expected") ?? 0} fulfilled`;
+}
+
+function sdlcGapDossierSummary(gapDossier) {
+  if (!isObject(gapDossier)) return null;
+  const actions = stringArray(gapDossier.nextLawfulActions);
+  return `${booleanOrNull(gapDossier.retryEligible) === true ? "retry eligible" : "not retry eligible"}${actions.length ? `; ${actions.join(", ")}` : ""}`;
+}
+
+function sdlcEvaluationFindings(assessment) {
+  if (!Array.isArray(assessment?.findings)) return [];
+  return assessment.findings
+    .filter(isObject)
+    .sort((left, right) => {
+      const leftOpen = stringField(left, "fulfillmentStatus") === "fulfilled" ? 1 : 0;
+      const rightOpen = stringField(right, "fulfillmentStatus") === "fulfilled" ? 1 : 0;
+      return leftOpen - rightOpen;
+    })
+    .slice(0, SDLC_WORKSPACE_RUN_MAX_FINDINGS)
+    .map((finding) => Object.freeze({
+      kind: "sidecar_sdlc_evaluation_finding",
+      source: stringField(assessment, "kind") || "review_grade_edge_fulfillment_assessment",
+      status: stringOrNull(finding, "fulfillmentStatus"),
+      obligationId: stringOrNull(finding, "obligationId"),
+      failureClass: stringOrNull(finding, "failureClass"),
+      requiredAction: stringOrNull(finding, "requiredAction"),
+      rationale: stringOrNull(finding, "rationale"),
+      evidenceRefs: Object.freeze(stringArray(finding.evidenceRefs))
+    }));
+}
+
+function sdlcBlockingReasons(payloads) {
+  const reasons = [];
+  const addCarrier = (carrier) => {
+    const reason = sdlcBlockingReasonFromCarrier(carrier);
+    if (reason) reasons.push(reason);
+  };
+  for (const payload of [payloads.postflight, payloads.reviewPostflight, payloads.fpEvaluate, payloads.assurance]) {
+    if (Array.isArray(payload?.blockingReasonCarriers)) {
+      payload.blockingReasonCarriers.forEach(addCarrier);
+    }
+    if (Array.isArray(payload?.blockingReasons)) {
+      payload.blockingReasons.forEach((reason) => addCarrier(reason));
+    }
+  }
+  if (Array.isArray(payloads.gapDossier?.reasons)) {
+    for (const gapReason of payloads.gapDossier.reasons) {
+      if (isObject(gapReason?.blockingReason)) addCarrier(gapReason.blockingReason);
+      else addCarrier(stringField(gapReason, "reason"));
+    }
+  }
+  const seen = new Set();
+  return reasons
+    .filter((reason) => {
+      const key = `${reason.code}:${reason.detail ?? ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, SDLC_WORKSPACE_RUN_MAX_BLOCKING_REASONS);
+}
+
+function sdlcBlockingReasonFromCarrier(carrier) {
+  if (isObject(carrier)) {
+    const code = stringField(carrier, "code") || "unknown_blocking_reason";
+    const lawfulReentryPoint = stringOrNull(carrier, "lawfulReentryPoint");
+    return Object.freeze({
+      kind: "sidecar_sdlc_blocking_reason",
+      code,
+      reasonClass: stringOrNull(carrier, "reasonClass"),
+      lawfulReentryPoint,
+      retryable: isRetryableSdlcReentryPoint(lawfulReentryPoint),
+      message: stringOrNull(carrier, "message"),
+      detail: stringOrNull(carrier, "detail"),
+      evidenceRefs: Object.freeze(stringArray(carrier.evidenceRefs))
+    });
+  }
+  if (typeof carrier === "string" && carrier.trim()) {
+    const [code, ...detailParts] = carrier.split(":");
+    return Object.freeze({
+      kind: "sidecar_sdlc_blocking_reason",
+      code: code || "unknown_blocking_reason",
+      reasonClass: null,
+      lawfulReentryPoint: null,
+      retryable: false,
+      message: null,
+      detail: detailParts.join(":") || carrier,
+      evidenceRefs: Object.freeze([])
+    });
+  }
+  return null;
+}
+
+function isRetryableSdlcReentryPoint(reentryPoint) {
+  return new Set([
+    "same_edge_retry",
+    "repair_worker_output",
+    "attach_worker",
+    "fix_target_or_run_gaps",
+    "repair_project_conformance",
+    "triage_gap",
+    "rerun_start",
+    "inspect_worker_archive"
+  ]).has(String(reentryPoint || ""));
+}
+
+function sdlcClosureDecision(closure) {
+  if (!isObject(closure)) return null;
+  return Object.freeze({
+    kind: "sidecar_sdlc_closure_decision",
+    disposition: stringOrNull(closure, "disposition"),
+    decisionRef: stringOrNull(closure, "decisionRef"),
+    reasonRefs: Object.freeze(stringArray(closure.reasonRefs)),
+    edgeResidualPressureRefs: Object.freeze(stringArray(closure.edgeResidualPressureRefs)),
+    targetCarrierAdmissionStatus: stringOrNull(closure, "targetCarrierAdmissionStatus"),
+    edgeGainRef: stringOrNull(closure, "edgeGainRef"),
+    edgeClosureFunctionRef: stringOrNull(closure, "edgeClosureFunctionRef")
+  });
+}
+
+function sdlcNextActionProjection(nextAction) {
+  if (!isObject(nextAction)) return null;
+  return Object.freeze({
+    kind: "sidecar_sdlc_next_action_projection",
+    nextActionBasisKind: stringOrNull(nextAction, "nextActionBasisKind"),
+    selectedActionRef: stringOrNull(nextAction, "selectedActionRef"),
+    nextGraphFunctionRef: stringOrNull(nextAction, "nextGraphFunctionRef"),
+    nextGraphVectorRef: stringOrNull(nextAction, "nextGraphVectorRef"),
+    choosesNextTraversal: booleanOrNull(nextAction.choosesNextTraversal) === true,
+    gapPressureRefs: Object.freeze(stringArray(nextAction.gapPressureRefs)),
+    edgeResidualPressureRefs: Object.freeze(stringArray(nextAction.edgeResidualPressureRefs)),
+    overlayStopDisposition: stringOrNull(nextAction, "overlayStopDisposition"),
+    readOnly: booleanOrNull(nextAction.readOnly) === true
+  });
+}
+
+function sdlcComputeStages(input) {
+  const stages = [];
+  const add = (stageKind, label, status, findingFilter = () => false) => {
+    const processInvocations = Object.freeze(input.processInvocationsByStage.get(stageKind) ?? []);
+    const artifacts = Object.freeze(input.artifactsByStage.get(stageKind) ?? []);
+    if (processInvocations.length === 0 && artifacts.length === 0 && status === null) return;
+    stages.push(Object.freeze({
+      kind: "sidecar_sdlc_compute_stage",
+      stageKind,
+      label,
+      status,
+      processInvocations,
+      artifacts,
+      findings: Object.freeze(input.evaluationFindings.filter(findingFilter)),
+      blockingReasons: Object.freeze(stageKind === "evaluate_review_grade" ? input.blockingReasons : [])
+    }));
+  };
+  add("transform", "transform.C worker", sdlcStageStatus(input.processInvocationsByStage.get("transform")));
+  add("system_postflight", "system admission / postflight", stringOrNull(input.postflight, "status"));
+  add("evaluate_design_depth", "evaluate.C/F_P design depth", sdlcStageStatus(input.processInvocationsByStage.get("evaluate_design_depth")));
+  add(
+    "evaluate_review_grade",
+    "evaluate.C/F_P review grade",
+    stringOrNull(input.reviewPostflight, "status") ?? stringOrNull(input.fpEvaluate, "status"),
+    () => true
+  );
+  add(
+    "assurance",
+    "assurance fold",
+    stringOrNull(input.assurance, "status") ??
+      (booleanOrNull(input.ledger?.edgeConverged) === true ? "converged" : booleanOrNull(input.ledger?.edgeConverged) === false ? "open" : null)
+  );
+  add("closure", "closure decision", input.closureDecision?.disposition ?? null);
+  add("next_action", "next lawful action", input.nextActionProjection?.nextActionBasisKind ?? null);
+  return stages;
+}
+
+function sdlcStageStatus(processInvocations = []) {
+  const statuses = processInvocations.map((process) => process.status).filter(Boolean);
+  if (statuses.length === 0) return processInvocations.length > 0 ? "started" : null;
+  if (statuses.every((status) => status === "0" || status === "passed")) return "passed";
+  return statuses[statuses.length - 1] ?? null;
 }
 
 function mapLiveAnalysisToSidecar(analysis) {
@@ -613,33 +1057,6 @@ function discoverLiveAnalysisStageProcessCandidates(operatorRunPath, context = {
   };
 
   addRun(operatorRunPath, "primary");
-  if (candidates.length >= LIVE_ANALYSIS_MAX_STAGE_PROCESSES) {
-    return Object.freeze(candidates);
-  }
-
-  const matchContext = normalizeLiveAnalysisCliContext(context);
-  if (!matchContext.graphFunctionName && !matchContext.targetAssetType) {
-    return Object.freeze(candidates);
-  }
-
-  let entries;
-  try {
-    entries = readdirSync(dirname(operatorRunPath), { withFileTypes: true });
-  } catch {
-    return Object.freeze(candidates);
-  }
-
-  for (const entry of entries
-    .filter((candidate) => candidate.isDirectory())
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .slice(-LIVE_ANALYSIS_MAX_RELATED_TRANSCRIPT_RUNS)) {
-    if (candidates.length >= LIVE_ANALYSIS_MAX_STAGE_PROCESSES) break;
-    const runPath = join(dirname(operatorRunPath), entry.name);
-    if (runPath === operatorRunPath) continue;
-    if (!operatorRunMatchesCliContext(readOpRunManifest(runPath), matchContext)) continue;
-    addRun(runPath, "related");
-  }
-
   return Object.freeze(candidates.slice(0, LIVE_ANALYSIS_MAX_STAGE_PROCESSES));
 }
 
@@ -1251,6 +1668,9 @@ const LIVE_ANALYSIS_MAX_STAGE_PROCESSES = 24;
 const LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_DEPTH = 5;
 const LIVE_ANALYSIS_MAX_TRANSCRIPT_SCAN_ENTRIES = 600;
 const LIVE_ANALYSIS_MAX_RELATED_TRANSCRIPT_RUNS = 120;
+const SDLC_WORKSPACE_RUN_MAX_OPERATOR_RUNS = 120;
+const SDLC_WORKSPACE_RUN_MAX_FINDINGS = 16;
+const SDLC_WORKSPACE_RUN_MAX_BLOCKING_REASONS = 24;
 const LIVE_ANALYSIS_MAX_MANIFEST_PARSE_BYTES = 2 * 1024 * 1024;
 const LIVE_ANALYSIS_MANIFEST_HEAD_BYTES = 256 * 1024;
 const LIVE_ANALYSIS_MAX_TRACE_RESULT_PARSE_BYTES = 256 * 1024;

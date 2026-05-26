@@ -456,6 +456,8 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /theme:\s*appTheme === "light" \? "github-light" : "github-dark"/);
   assert.match(source, /MutationObserver/);
   assert.match(source, /dangerouslySetInnerHTML=\{\{\s*__html:\s*html\s*\}\}/);
+  assert.match(source, /isCompactMarkdownCodeBlock\(source,\s*normalizedLanguage\)/);
+  assert.match(source, /markdown-viewer__code-block\$\{compact \? " is-compact" : ""\}/);
   assert.match(source, /onPointerDown=\{beginPan\}/);
   assert.match(source, /setPointerCapture\(event\.pointerId\)/);
   assert.match(source, /xScroller:\s*HTMLElement/);
@@ -494,9 +496,12 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(styles, /\.markdown-viewer th,\s*\.markdown-viewer td\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(styles, /\.markdown-viewer th,\s*\.markdown-viewer td\s*\{[^}]*padding:\s*0\.3rem\s+0\.4rem;/s);
   assert.match(styles, /\.markdown-viewer td \.markdown-viewer__inline-code\s*\{[^}]*padding:\s*0\.015rem\s+0\.18rem;[^}]*line-height:\s*1\.15;/s);
+  assert.match(styles, /\.document-viewer \.markdown-viewer__inline-code\s*\{[^}]*padding:\s*0\s+0\.08rem;[^}]*border:\s*0;[^}]*line-height:\s*inherit;/s);
+  assert.match(styles, /\.document-viewer \.markdown-viewer__code-block\s*\{[^}]*border:\s*0;[^}]*border-left:\s*2px solid color-mix\(in srgb,\s*var\(--code-border\)\s*76%,\s*transparent\);[^}]*border-radius:\s*0;/s);
+  assert.match(styles, /\.document-viewer \.markdown-viewer__code-block\.is-compact,\s*\.document-viewer \.document-viewer__highlight\.is-compact pre\s*\{[^}]*display:\s*inline-block;[^}]*background:\s*transparent\s*!important;/s);
   assert.match(styles, /\.markdown-viewer__mermaid\s*\{[^}]*width:\s*fit-content;[^}]*max-width:\s*100%;/s);
   assert.match(styles, /\.markdown-viewer__mermaid svg\s*\{[^}]*margin:\s*0;/s);
-  assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*background:\s*var\(--code-bg\)\s*!important;/s);
+  assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--code-bg\)\s*52%,\s*transparent\)\s*!important;/s);
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*overflow:\s*visible;/s);
 });
 
@@ -519,6 +524,25 @@ test('Sidecar browser requests uncapped filesystem entries while generic browse 
   assert.match(serverSource, /if \(normalized === "all"\) return 0;/);
   assert.match(serverSource, /const listedEntries = maxEntries > 0 \? visibleEntries\.slice\(0, maxEntries\) : visibleEntries;/);
   assert.match(serverSource, /truncated: maxEntries > 0 && visibleEntries\.length > maxEntries/);
+});
+
+test('directory surface tabs reuse the Sidecar folder browser and open entries as surface tabs', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
+
+  assert.match(source, /function DirectorySurfaceBrowser/);
+  assert.match(source, /function DirectorySurfaceNode/);
+  assert.match(source, /return <DirectorySurfaceBrowser projectRoot=\{projectRoot\} surface=\{surface\} dispatch=\{dispatch\} \/>;/);
+  assert.doesNotMatch(source, /sidecar-surface-entry-list[\s\S]*surface\.entries\.map/);
+  assert.match(source, /const payload = await fetchJson\(`\/api\/surface\?\$\{params\.toString\(\)\}`\) as SurfaceData;/);
+  assert.match(source, /<NavigatorSortToolbar[\s\S]*sort=\{navigatorSort\}/);
+  assert.match(source, /<NavigatorTreeGroup[\s\S]*label=\{label\}[\s\S]*extraControls=\{controls\}/);
+  assert.match(source, /className="sidecar-folder-tree sidecar-folder-tree--surface-tab"/);
+  assert.match(source, /dispatch\(\{ type: 'select', kind: 'surface', id: relativePath \}\);/);
+  assert.match(source, /onClick=\{\(\) => onOpenSurface\(entry\.relative_path\)\}/);
+  assert.match(styles, /\.sidecar-directory-tab\s*\{[^}]*align-content:\s*start;[^}]*gap:\s*0\.44rem;/s);
+  assert.match(styles, /\.sidecar-directory-tab__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(styles, /\.sidecar-folder-tree--surface-tab\s*\{[^}]*gap:\s*0\.1rem;/s);
 });
 
 test('sidecar project selection promotes one active Project root across shell and browser', () => {
@@ -654,6 +678,29 @@ test('process navigator opens as an object viewer tab and keeps view selection i
   );
 });
 
+test('process navigator collapse-all replay owns every Live View row', async () => {
+  const module = await loadStateModule();
+  const collapsed = module.replaySidecarMessages(baseState(module), [
+    { type: 'process/set-live-all-collapsed', collapsed: true },
+  ]);
+  assert.deepEqual(collapsed.commands, []);
+  assert.equal(collapsed.state.ui.liveActiveRunRowCollapsed, true);
+  assert.equal(collapsed.state.ui.liveTranscriptCollapsed, true);
+  assert.equal(collapsed.state.ui.liveDetailRowCollapsed, true);
+  assert.equal(collapsed.state.ui.liveGapRowCollapsed, true);
+  assert.equal(collapsed.state.ui.liveEventViewerCollapsed, true);
+
+  const expanded = module.replaySidecarMessages(collapsed.state, [
+    { type: 'process/set-live-all-collapsed', collapsed: false },
+  ]);
+  assert.deepEqual(expanded.commands, []);
+  assert.equal(expanded.state.ui.liveActiveRunRowCollapsed, false);
+  assert.equal(expanded.state.ui.liveTranscriptCollapsed, false);
+  assert.equal(expanded.state.ui.liveDetailRowCollapsed, false);
+  assert.equal(expanded.state.ui.liveGapRowCollapsed, false);
+  assert.equal(expanded.state.ui.liveEventViewerCollapsed, false);
+});
+
 test('viewer split reset keeps main group and emits no Cmd effects', async () => {
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
@@ -665,6 +712,26 @@ test('viewer split reset keeps main group and emits no Cmd effects', async () =>
   assert.equal(result.state.ui.viewerWorkspace.split, 'single');
   assert.deepEqual(result.state.ui.viewerWorkspace.groups.map((group) => group.id), ['main']);
   assert.equal(result.state.ui.viewerWorkspace.groups[0].activeTabId, 'ticket:T-100');
+});
+
+test('viewer horizontal split resizes and empty pane can collapse without Cmd effects', async () => {
+  const module = await loadStateModule();
+  const resized = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/split', split: 'split-horizontal' },
+    { type: 'select', kind: 'ticket', id: 'T-100' },
+    { type: 'viewer/resize-boundary', index: 0, deltaRatio: 0.2 },
+  ]);
+  assert.deepEqual(resized.commands, []);
+  assert.equal(resized.state.ui.viewerWorkspace.split, 'split-horizontal');
+  assert.ok(resized.state.ui.viewerWorkspace.ratios[0] > resized.state.ui.viewerWorkspace.ratios[1]);
+
+  const collapsed = module.replaySidecarMessages(resized.state, [
+    { type: 'viewer/close-group', groupId: 'secondary' },
+  ]);
+  assert.deepEqual(collapsed.commands, []);
+  assert.equal(collapsed.state.ui.viewerWorkspace.split, 'single');
+  assert.deepEqual(collapsed.state.ui.viewerWorkspace.groups.map((group) => group.id), ['main']);
+  assert.equal(collapsed.state.ui.viewerWorkspace.groups[0].activeTabId, 'ticket:T-100');
 });
 
 test('empty viewer split group can be targeted before opening a tab', async () => {
@@ -732,6 +799,28 @@ test('terminal tab open, select, split, and close replay without Cmd effects', a
   assert.equal(secondary.activeTabId, null);
   assert.equal(result.state.ui.terminalWorkspace.activeGroupId, 'main');
   assert.equal(result.state.activeSessionId, 'sess-1');
+});
+
+test('terminal horizontal split resizes adjacent ratios without Cmd effects', async () => {
+  const module = await loadStateModule();
+  const state = {
+    ...baseState(module),
+    sessions: {
+      records: [
+        { id: 'sess-1', agent_type: 'shell', cwd: '/workspace/odd_manager', status: 'running' },
+        { id: 'sess-2', agent_type: 'shell', cwd: '/workspace/odd_manager', status: 'running' },
+      ],
+      diagnostic: { backplane: 'registry' },
+    },
+  };
+  const result = module.replaySidecarMessages(state, [
+    { type: 'terminal/open', sessionId: 'sess-1' },
+    { type: 'terminal/split', split: 'split-horizontal' },
+    { type: 'terminal/resize-boundary', index: 0, deltaRatio: 0.2 },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.ui.terminalWorkspace.split, 'split-horizontal');
+  assert.ok(result.state.ui.terminalWorkspace.ratios[0] > result.state.ui.terminalWorkspace.ratios[1]);
 });
 
 test('terminal split reset keeps main group and emits no Cmd effects', async () => {
@@ -946,6 +1035,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   );
   const liveMapTabIndex = processPanelSource.indexOf("onClick={() => dispatch({ type: 'process/select-map', map: 'live_view' })}");
   const mapLoopIndex = processPanelSource.indexOf('{projection.maps.map((map) => {');
+  const activeArchiveActionIndex = processPanelSource.indexOf('Active archive');
+  const processNavigatorVisibilityIndex = processPanelSource.indexOf('aria-label="Process Navigator row visibility"');
 
   assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N"[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
   assert.doesNotMatch(railSource, /symbol="N0"/);
@@ -981,6 +1072,7 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /process\/set-live-gap-row-collapsed/);
   assert.match(simpleProcessPanelSource, /liveEventViewerCollapsed=\{state\.ui\.liveEventViewerCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-event-viewer-collapsed/);
+  assert.match(simpleProcessPanelSource, /onLiveAllCollapsedChange=\{\(collapsed\) => dispatch\(\{ type: 'process\/set-live-all-collapsed', collapsed \}\)\}/);
   assert.match(simpleProcessPanelSource, /traversalOverlays/);
   assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
   assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
@@ -1048,12 +1140,24 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /aria-label="Stage event viewer"/);
   assert.match(processPanelSource, /Filtered to \{attempt\.graphFunctionName/);
   assert.match(processPanelSource, /className=\{`process-tab sidecar-live-view__event-filter\$\{sourceFilter === filter\.id \? ' is-selected' : ''\}`\}/);
+  assert.match(processPanelSource, /aria-label="Process Navigator row visibility"/);
+  assert.match(processPanelSource, /aria-label="Collapse all Process Navigator rows"/);
+  assert.match(processPanelSource, /aria-label="Expand all Process Navigator rows"/);
+  assert.match(processPanelSource, /onClick=\{\(\) => onLiveAllCollapsedChange\(true\)\}/);
+  assert.match(processPanelSource, /onClick=\{\(\) => onLiveAllCollapsedChange\(false\)\}/);
+  assert.ok(activeArchiveActionIndex !== -1 && processNavigatorVisibilityIndex !== -1 && activeArchiveActionIndex < processNavigatorVisibilityIndex);
+  assert.match(processPanelSource, /const visibleEventKeys = visibleEvents\.map\(liveAnalysisEventKey\);/);
+  assert.match(processPanelSource, /setVisibleEventsCollapsed/);
   assert.match(processPanelSource, /aria-label="Event row visibility"/);
   assert.match(processPanelSource, /aria-label="Collapse all event rows"/);
   assert.match(processPanelSource, /aria-label="Expand all event rows"/);
   assert.match(processPanelSource, /collapsed=\{collapsedEventKeys\.has\(key\)\}/);
   assert.match(processPanelSource, /onCollapsedChange=\{\(collapsed\) => setEventCollapsed\(key, collapsed\)\}/);
-  assert.match(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Show' : 'Hide'\} \$\{event\.title\} details`\}/);
+  assert.match(processPanelSource, /className="sidecar-live-view__event-ticket-toggle"/);
+  assert.match(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Expand' : 'Collapse'\} \$\{event\.title\} details`\}/);
+  assert.match(processPanelSource, /className="status-chip default sidecar-live-view__event-source"[\s\S]*>\s*Source\s*<\/button>/);
+  assert.doesNotMatch(processPanelSource, /Open source/);
+  assert.doesNotMatch(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Show' : 'Hide'\} \$\{event\.title\} details`\}/);
   assert.match(processPanelSource, /ariaLabel="ledger state and assurance row"/);
   assert.match(processPanelSource, /ariaLabel="gap analysis and requirement state row"/);
   assert.match(processPanelSource, /ariaLabel="event viewer row"/);
@@ -1092,13 +1196,18 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*>\s*span:first-child\s*\{[^}]*white-space:\s*nowrap;/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.5rem;/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group--wide\s*\{[^}]*width:\s*100%;/s);
+  assert.match(styles, /\.sidecar-live-view__actions\s*\{[^}]*justify-content:\s*flex-end;[^}]*justify-self:\s*end;/s);
   assert.match(styles, /\.sidecar-live-view__row-collapse-toggle\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*1\.9rem;/s);
   assert.match(styles, /\.sidecar-live-view__row-label\s*\{[^}]*display:\s*inline-flex;[^}]*white-space:\s*nowrap;/s);
   assert.match(styles, /\.sidecar-live-view__row-label-item\s*\{[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(styles, /\.sidecar-live-view__row-collapse-symbol\s*\{[^}]*display:\s*inline-grid;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__global-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
+  assert.match(styles, /\.sidecar-live-view__global-row-toggle\.status-chip\s*\{[^}]*display:\s*inline-grid;[^}]*width:\s*1\.65rem;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__event-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
-  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip,\s*\.sidecar-live-view__event-toggle\.status-chip\s*\{[^}]*min-height:\s*1\.45rem;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip\s*\{[^}]*min-height:\s*1\.45rem;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip\s*\{[^}]*width:\s*1\.45rem;[^}]*min-width:\s*1\.45rem;/s);
+  assert.match(styles, /\.sidecar-live-view__event-ticket-toggle\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*cursor:\s*pointer;/s);
+  assert.match(styles, /\.sidecar-live-view__event-source\.status-chip\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--panel-strong\)\s*82%,\s*var\(--sidecar-inset-bg\)\);[^}]*color:\s*var\(--ink\);/s);
   assert.match(styles, /\.sidecar-live-view__event-ticket\.is-collapsed\s*\{[^}]*gap:\s*0;/s);
   assert.match(styles, /\.sidecar-live-view__event-ticket-body\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.48rem;/s);
   assert.match(styles, /\.sidecar-live-view__event-list\s*\{[^}]*max-height:\s*clamp\(20rem,\s*54vh,\s*42rem\);[^}]*overflow:\s*auto;/s);
@@ -1347,6 +1456,7 @@ test('sidecar split targeting markup exposes empty groups and compact action fee
   );
   assert.match(viewerGroupSource, /tabIndex=\{0\}/);
   assert.match(viewerGroupSource, /onPointerDownCapture=\{\(\) => dispatch\(\{ type: 'viewer\/focus-group', groupId: group\.id \}\)\}/);
+  assert.match(viewerGroupSource, /<EmptyViewerPane[\s\S]*type: 'viewer\/close-group'/);
   assert.match(terminalGroupSource, /tabIndex=\{0\}/);
   assert.match(terminalGroupSource, /onPointerDownCapture=\{\(\) => dispatch\(\{ type: 'terminal\/focus-group', groupId: group\.id \}\)\}/);
   assert.match(collapsedDockSource, /<ResizeHandle[\s\S]*target="bottomDock"[\s\S]*label="Resize terminal dock"/);
@@ -1368,11 +1478,15 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.notEqual(historyStart, -1);
   assert.notEqual(browseStart, -1);
   assert.notEqual(browseEnd, -1);
+  const folderTreeStart = source.indexOf('function FolderTreeNode');
+  const folderTreeEnd = source.indexOf('function sessionLabel', folderTreeStart);
+  assert.notEqual(folderTreeStart, -1);
+  assert.notEqual(folderTreeEnd, -1);
   const projectsSource = source.slice(projectsStart, historyStart);
   const browseSource = source.slice(browseStart, browseEnd);
   const folderTreeSource = source.slice(
-    source.indexOf('function FolderTreeNode'),
-    source.indexOf('function SurfaceInspector'),
+    folderTreeStart,
+    folderTreeEnd,
   );
   assert.match(source, /const load = \{ \.\.\.asNavigatorFolderLoad\(payload\), loadedAt: Date\.now\(\) \};/);
   assert.match(source, /if \(!nextCollapsed && !folderLoads\[path\]\?\.loading\) \{[\s\S]*?void loadFolder\(path\);/);
@@ -1385,7 +1499,12 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(projectsSource, /actions=\{actionsWithRefresh\(projectBrowserRefreshAction\)\}/);
   assert.match(projectsSource, /const projectBrowserTabStrip = \(/);
   assert.match(projectsSource, /titleAddon=\{projectBrowserTabStrip\}/);
-  assert.match(projectsSource, /role="tablist" aria-label="Project Browser views"/);
+  assert.match(source, /sidecar-pane__header--with-title-addon/);
+  assert.match(source, /sidecar-pane__title-row--with-addon/);
+  assert.match(projectsSource, /role="tablist"[\s\S]*aria-label="Project Browser views"/);
+  assert.match(projectsSource, /onWheel=\{scrollHorizontalOverflowOnWheel\}/);
+  assert.match(source, /function scrollHorizontalOverflowOnWheel/);
+  assert.match(source, /target\.scrollLeft \+= event\.deltaY;/);
   assert.match(projectsSource, /sidecar-project-browser__tabs sidecar-project-browser__tabs--header/);
   assert.match(projectsSource, /label: 'Favourite'/);
   assert.match(projectsSource, /label: 'Recent'/);
@@ -1418,12 +1537,14 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
 
   const sidecarBlock = readSidecarCssBlock();
   assert.match(sidecarBlock, /\.sidecar-pane__title-row\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*flex:\s*1\s+1\s+auto;/s);
-  assert.match(sidecarBlock, /\.sidecar-pane__title-addon\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*0;/s);
+  assert.match(sidecarBlock, /\.sidecar-pane__title-row--with-addon\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+  assert.match(sidecarBlock, /\.sidecar-pane__title-addon\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*1\s+1\s+auto;[^}]*overflow:\s*hidden;/s);
+  assert.match(sidecarBlock, /\.sidecar-pane__title-row--with-addon\s+\.sidecar-pane__title-addon\s*\{[^}]*width:\s*100%;/s);
   assert.match(sidecarBlock, /\.sidecar-project-browser--tabbed\s*\{[^}]*gap:\s*0\.12rem;/s);
   assert.match(sidecarBlock, /\.sidecar-project-browser__tabs\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.18rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s*\{[^}]*gap:\s*0\.12rem;[^}]*padding:\s*0\.06rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s*\{[^}]*flex:\s*1\s+1\s+auto;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;[^}]*scrollbar-width:\s*thin;/s);
   assert.match(sidecarBlock, /\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.5rem;[^}]*font-size:\s*0\.68rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;/s);
+  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*flex:\s*0\s+0\s+auto;[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;[^}]*white-space:\s*nowrap;/s);
   assert.match(sidecarBlock, /\.sidecar-row__actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.18rem;/s);
   assert.match(sidecarBlock, /\.sidecar-tree-control--compact\s*\{[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(sidecarBlock, /\.sidecar-tree-control--refresh\s*\{[^}]*font-family:\s*var\(--font-mono\);/s);

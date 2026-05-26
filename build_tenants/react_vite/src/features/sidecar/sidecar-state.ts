@@ -318,6 +318,7 @@ export type SidecarMsg =
   | { type: 'process/set-live-detail-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-gap-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-event-viewer-collapsed'; collapsed: boolean }
+  | { type: 'process/set-live-all-collapsed'; collapsed: boolean }
   | { type: 'process/set-graph-mode'; mode: SidecarProcessGraphMode }
   | { type: 'process/select-variant'; variant: SidecarProcessFlowVariantId }
   | { type: 'process/select-leaf'; leafName: string | null }
@@ -333,6 +334,7 @@ export type SidecarMsg =
   | { type: 'viewer/open'; kind: SidecarViewerTabKind; id: string; groupId?: SidecarViewerGroupId }
   | { type: 'viewer/select-tab'; groupId: SidecarViewerGroupId; tabId: string }
   | { type: 'viewer/close-tab'; groupId: SidecarViewerGroupId; tabId: string }
+  | { type: 'viewer/close-group'; groupId: SidecarViewerGroupId }
   | { type: 'viewer/split'; split: SidecarViewerSplit }
   | { type: 'viewer/split-add-vertical' }
   | { type: 'viewer/resize-boundary'; index: number; deltaRatio: number }
@@ -752,6 +754,33 @@ function closeViewerTab(workspace: SidecarViewerWorkspace, groupId: SidecarViewe
   return normalizeViewerWorkspace({ ...normalized, tabs, groups, activeGroupId: groupId });
 }
 
+function closeEmptyViewerGroup(workspace: SidecarViewerWorkspace, groupId: SidecarViewerGroupId): SidecarViewerWorkspace {
+  const normalized = normalizeViewerWorkspace(workspace);
+  if (normalized.split === 'single' || groupId === 'main') return normalized;
+  const target = findViewerGroup(normalized, groupId);
+  if (!target || target.tabIds.length > 0) return normalized;
+  const groups = normalized.groups.filter((group) => group.id !== groupId);
+  if (groups.length <= 1) {
+    return normalizeViewerWorkspace({
+      ...normalized,
+      split: 'single',
+      activeGroupId: 'main',
+      groups,
+      ratios: [1],
+    });
+  }
+  return normalizeViewerWorkspace({
+    ...normalized,
+    split: 'split-vertical',
+    activeGroupId: groups.some((group) => group.id === normalized.activeGroupId) ? normalized.activeGroupId : groups[0].id,
+    groups,
+    ratios: normalizePaneRatios(
+      groups.map((group) => normalized.ratios[normalized.groups.findIndex((candidate) => candidate.id === group.id)] ?? 1),
+      groups.length,
+    ),
+  });
+}
+
 function pruneDocumentViewers(
   viewers: Record<string, SidecarDocumentViewerState>,
   workspace: SidecarViewerWorkspace,
@@ -795,7 +824,7 @@ function addViewerVerticalGroup(workspace: SidecarViewerWorkspace): SidecarViewe
 
 function resizeViewerBoundary(workspace: SidecarViewerWorkspace, index: number, deltaRatio: number): SidecarViewerWorkspace {
   const normalized = normalizeViewerWorkspace(workspace);
-  if (normalized.split !== 'split-vertical') return normalized;
+  if (normalized.split === 'single') return normalized;
   return { ...normalized, ratios: resizePaneRatios(normalized.ratios, index, deltaRatio) };
 }
 
@@ -990,7 +1019,7 @@ function addTerminalVerticalGroup(workspace: SidecarTerminalWorkspace, sessions:
 
 function resizeTerminalBoundary(workspace: SidecarTerminalWorkspace, sessions: SessionRecord[], index: number, deltaRatio: number): SidecarTerminalWorkspace {
   const normalized = normalizeTerminalWorkspace(workspace, sessions);
-  if (normalized.split !== 'split-vertical') return normalized;
+  if (normalized.split === 'single') return normalized;
   return { ...normalized, ratios: resizePaneRatios(normalized.ratios, index, deltaRatio) };
 }
 
@@ -1492,6 +1521,18 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           liveEventViewerCollapsed: msg.collapsed,
         },
       };
+    case 'process/set-live-all-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveActiveRunRowCollapsed: msg.collapsed,
+          liveTranscriptCollapsed: msg.collapsed,
+          liveDetailRowCollapsed: msg.collapsed,
+          liveGapRowCollapsed: msg.collapsed,
+          liveEventViewerCollapsed: msg.collapsed,
+        },
+      };
     case 'process/set-graph-mode':
       return {
         ...state,
@@ -1694,6 +1735,19 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           viewerWorkspace,
           documentViewers: pruneDocumentViewers(state.ui.documentViewers, viewerWorkspace),
           terminalWorkspace,
+        },
+      };
+    }
+    case 'viewer/close-group': {
+      const viewerWorkspace = closeEmptyViewerGroup(state.ui.viewerWorkspace, msg.groupId);
+      const tab = activeViewerTab(viewerWorkspace);
+      return {
+        ...state,
+        selection: selectionFromViewerTab(tab),
+        ui: {
+          ...state.ui,
+          viewerWorkspace,
+          documentViewers: pruneDocumentViewers(state.ui.documentViewers, viewerWorkspace),
         },
       };
     }

@@ -651,6 +651,122 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   );
   writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_stdout.log'), ['review grade stdout', ''].join('\n'));
   writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_last_message.txt'), ['review grade final message', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'postflight.json'), {
+    kind: 'sdlc_operator_postflight_result',
+    status: 'passed',
+    blockingReasons: [],
+    blockingReasonCarriers: [],
+  });
+  writeJsonFile(join(opRunPath, 'fp_evaluate_result.json'), {
+    kind: 'sdlc_fp_evaluate_result',
+    status: 'admitted_with_open_obligations',
+    postflightStatus: 'passed',
+    blockingReasons: [],
+  });
+  writeJsonFile(join(opRunPath, 'review_grade_postflight.json'), {
+    kind: 'sdlc_operator_postflight_result',
+    status: 'blocked',
+    blockingReasons: ['review_grade_edge_fulfillment_blocked:requirement:fixture.req_1:trace_missing'],
+    blockingReasonCarriers: [{
+      kind: 'sdlc_blocking_reason',
+      code: 'review_grade_edge_fulfillment_blocked',
+      reasonClass: 'assurance',
+      lawfulReentryPoint: 'same_edge_retry',
+      message: 'Worker obligation assessment does not satisfy traversal pressure.',
+      detail: 'requirement:fixture.req_1:trace_missing',
+      evidenceRefs: [join(opRunPath, 'review_grade_edge_fulfillment_assessment.json')],
+    }],
+  });
+  writeJsonFile(join(opRunPath, 'review_grade_edge_fulfillment_assessment.json'), {
+    kind: 'sdlc_review_grade_edge_fulfillment_assessment',
+    status: 'blocked',
+    edgeName: 'derive_intent_surface',
+    targetAssetType: 'intent_surface',
+    summary: 'One requirement trace is missing; retry the same edge.',
+    findings: [
+      {
+        kind: 'sdlc_review_grade_obligation_finding',
+        obligationId: 'requirement:fixture.req_1',
+        fulfillmentStatus: 'blocked',
+        failureClass: 'trace_missing',
+        requiredAction: 'add trace',
+        rationale: 'Required trace was not found.',
+        evidenceRefs: ['workspace://specification/INTENT.md'],
+      },
+      {
+        kind: 'sdlc_review_grade_obligation_finding',
+        obligationId: 'target_asset:intent_surface',
+        fulfillmentStatus: 'fulfilled',
+        failureClass: null,
+        requiredAction: null,
+        rationale: 'Target asset exists.',
+        evidenceRefs: ['workspace://specification/INTENT.md'],
+      },
+    ],
+  });
+  writeJsonFile(join(opRunPath, 'assurance_satisfaction.json'), {
+    kind: 'sdlc_traversal_requirement_satisfaction',
+    status: 'not_applicable',
+    blockingReasons: [],
+    ledgers: [],
+  });
+  writeJsonFile(join(opRunPath, 'assurance_ledgers.json'), []);
+  writeJsonFile(join(opRunPath, 'sdlc_edge_fulfillment_ledger.json'), {
+    kind: 'sdlc_edge_fulfillment_ledger',
+    edgeRef: 'derive_intent_surface',
+    edgeResidualPressureRefs: ['pressure://fixture/intent/req_1'],
+    counts: { expected: 2, fulfilled: 1, partial: 0, blocked: 1, unfulfilled: 0, missing: 0, extra: 0 },
+    edgeConverged: false,
+    carryConverged: true,
+    fulfillmentConverged: false,
+    admitted: true,
+    targetCertificationPassed: true,
+    fdRecheckPassed: true,
+  });
+  writeJsonFile(join(opRunPath, 'sdlc_edge_closure_decision.json'), {
+    kind: 'sdlc_edge_closure_decision',
+    decisionRef: 'closure-decision://fixture/intent/1',
+    disposition: 'retry',
+    reasonRefs: ['pressure://fixture/intent/req_1'],
+    edgeResidualPressureRefs: ['pressure://fixture/intent/req_1'],
+    targetCarrierAdmissionStatus: 'admitted',
+    edgeGainRef: 'edge-gain://fixture/intent',
+    edgeClosureFunctionRef: 'closure://fixture/intent',
+  });
+  writeJsonFile(join(opRunPath, 'sdlc_next_action_projection.json'), {
+    kind: 'sdlc_next_action_projection',
+    nextActionBasisKind: 'post_retry',
+    selectedActionRef: 'construction-action://fixture/post_retry/derive_intent_surface',
+    nextGraphFunctionRef: 'derive_intent_surface',
+    nextGraphVectorRef: 'derive_intent_surface',
+    choosesNextTraversal: true,
+    gapPressureRefs: ['pressure://fixture/intent/retry'],
+    edgeResidualPressureRefs: ['pressure://fixture/intent/req_1'],
+    overlayStopDisposition: null,
+    readOnly: false,
+  });
+  writeJsonFile(join(opRunPath, 'gap_dossier.json'), {
+    kind: 'sdlc_postflight_gap_dossier',
+    status: 'open',
+    edgeName: 'derive_intent_surface',
+    targetAssetType: 'intent_surface',
+    retryEligible: true,
+    nextLawfulActions: ['retry_same_edge'],
+    reasons: [{
+      kind: 'sdlc_postflight_gap_reason',
+      reason: 'review_grade_edge_fulfillment_blocked:requirement:fixture.req_1:trace_missing',
+      reasonClass: 'assurance',
+      blockingReason: {
+        kind: 'sdlc_blocking_reason',
+        code: 'review_grade_edge_fulfillment_blocked',
+        reasonClass: 'assurance',
+        lawfulReentryPoint: 'same_edge_retry',
+        message: 'Worker obligation assessment does not satisfy traversal pressure.',
+        detail: 'requirement:fixture.req_1:trace_missing',
+        evidenceRefs: [join(opRunPath, 'review_grade_edge_fulfillment_assessment.json')],
+      },
+    }],
+  });
   const evaluatorRunPath = writeOpRun(
     root,
     '20260518T010001Z_pid1',
@@ -748,6 +864,22 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   assert.equal(projection.liveAnalysis.runtimeArtifactGapCount, 1);
   assert.equal(projection.liveAnalysis.retryForensicCount, 1);
   assert.equal(projection.liveAnalysis.summaryDriftCount, 1);
+  assert.equal(projection.workspaceRun.kind, 'sidecar_sdlc_workspace_run');
+  const observedRun = projection.workspaceRun.operatorRuns.find((run) => run.operatorRunPath === opRunPath);
+  assert.ok(observedRun, 'direct SDLC workspace-run model should include the selected operator run');
+  assert.equal(observedRun.edge.edgeName, 'derive_intent_surface');
+  assert.equal(observedRun.status, 'blocked');
+  assert.equal(observedRun.activeFeedbackLoop, true);
+  assert.equal(observedRun.closureDecision.disposition, 'retry');
+  assert.equal(observedRun.nextActionProjection.nextActionBasisKind, 'post_retry');
+  assert.equal(observedRun.nextActionProjection.choosesNextTraversal, true);
+  assert.deepEqual(
+    observedRun.stages.map((stage) => stage.stageKind),
+    ['transform', 'system_postflight', 'evaluate_design_depth', 'evaluate_review_grade', 'assurance', 'closure', 'next_action'],
+  );
+  assert.equal(observedRun.stages.find((stage) => stage.stageKind === 'evaluate_review_grade').processInvocations.length, 1);
+  assert.equal(observedRun.stages.find((stage) => stage.stageKind === 'evaluate_review_grade').blockingReasons[0].retryable, true);
+  assert.equal(observedRun.evaluationFindings[0].status, 'blocked');
 });
 
 test('Live View event projection defers oversized archive JSON instead of parsing it', () => {

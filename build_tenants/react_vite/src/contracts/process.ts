@@ -112,10 +112,167 @@ export interface SidecarProcessProjection {
   // This is an admitted analysis read model over operator-run archives; the UX
   // renders it but does not inspect the filesystem directly.
   liveAnalysis?: SidecarLiveAnalysisProjection | null;
+  // Current odd_sdlc runtime observer model, projected directly from
+  // `.ai-workspace/runtime/odd_sdlc/operator-runs/<operator-run-id>/`.
+  // It models one traversal/operator run with multiple compute-stage processes.
+  workspaceRun?: SidecarSdlcWorkspaceRun | null;
   // T-026: variant identifier for the process flow map, selected by the sidecar reducer.
   // The carrier itself is variant-agnostic; this field records which variant the consumer is rendering.
   // Absent on initial fetch; set when the user picks a variant from the tab strip.
   activeProcessFlowVariant?: SidecarProcessFlowVariantId;
+}
+
+export type SidecarSdlcComputeStageKind =
+  | 'transform'
+  | 'system_postflight'
+  | 'evaluate_design_depth'
+  | 'evaluate_review_grade'
+  | 'assurance'
+  | 'closure'
+  | 'next_action'
+  | 'unknown';
+
+export type SidecarSdlcProcessKind =
+  | 'transform_worker'
+  | 'design_depth_evaluator'
+  | 'review_grade_evaluator'
+  | 'evaluator'
+  | 'worker'
+  | 'unknown';
+
+export type SidecarSdlcArtifactRole =
+  | 'runtime_fact'
+  | 'worker_projection'
+  | 'authority_admission'
+  | 'read_model'
+  | 'forensic_payload'
+  | 'domain_evidence';
+
+export interface SidecarSdlcWorkspaceRun {
+  kind: 'sidecar_sdlc_workspace_run';
+  workspaceRoot: string;
+  operatorRunRoot: string;
+  operatorRunCount: number;
+  stageProcessCount: number;
+  transcriptSurfaceCount: number;
+  activeFeedbackLoopCount: number;
+  terminalBlockCount: number;
+  closeCount: number;
+  retryCount: number;
+  operatorRuns: SidecarSdlcOperatorRun[];
+}
+
+export interface SidecarSdlcOperatorRun {
+  kind: 'sidecar_sdlc_operator_run';
+  operatorRunId: string;
+  operatorRunPath: string;
+  status: string | null;
+  edge: SidecarSdlcTraversalEdge | null;
+  stages: SidecarSdlcComputeStage[];
+  systemArtifacts: SidecarSdlcSystemArtifact[];
+  evaluationFindings: SidecarSdlcEvaluationFinding[];
+  blockingReasons: SidecarSdlcBlockingReason[];
+  closureDecision: SidecarSdlcClosureDecision | null;
+  nextActionProjection: SidecarSdlcNextActionProjection | null;
+  activeFeedbackLoop: boolean;
+}
+
+export interface SidecarSdlcTraversalEdge {
+  kind: 'sidecar_sdlc_traversal_edge';
+  edgeName: string | null;
+  graphFunctionName: string | null;
+  graphVectorRef: string | null;
+  vectorIndex: number | null;
+  targetAssetType: string | null;
+  overlayRef: string | null;
+  edgeAssuranceContractRef: string | null;
+  targetCarrierContractRef: string | null;
+}
+
+export interface SidecarSdlcComputeStage {
+  kind: 'sidecar_sdlc_compute_stage';
+  stageKind: SidecarSdlcComputeStageKind;
+  label: string;
+  status: string | null;
+  processInvocations: SidecarSdlcProcessInvocation[];
+  artifacts: SidecarSdlcSystemArtifact[];
+  findings: SidecarSdlcEvaluationFinding[];
+  blockingReasons: SidecarSdlcBlockingReason[];
+}
+
+export interface SidecarSdlcProcessInvocation {
+  kind: 'sidecar_sdlc_process_invocation';
+  processKind: SidecarSdlcProcessKind;
+  label: string;
+  role: string;
+  processStartedPath: string;
+  processEventsPath: string | null;
+  promptPath: string | null;
+  stdoutPath: string | null;
+  stderrPath: string | null;
+  lastMessagePath: string | null;
+  runSummaryPath: string | null;
+  terminalTranscriptPath: string | null;
+  status: string | null;
+  pid: number | null;
+  command: string | null;
+  terminalSessionId: string | null;
+  transcriptSurfaceCount: number;
+}
+
+export interface SidecarSdlcSystemArtifact {
+  kind: 'sidecar_sdlc_system_artifact';
+  role: SidecarSdlcArtifactRole;
+  label: string;
+  path: string;
+  status: string | null;
+  summary: string | null;
+}
+
+export interface SidecarSdlcEvaluationFinding {
+  kind: 'sidecar_sdlc_evaluation_finding';
+  source: string;
+  status: string | null;
+  obligationId: string | null;
+  failureClass: string | null;
+  requiredAction: string | null;
+  rationale: string | null;
+  evidenceRefs: string[];
+}
+
+export interface SidecarSdlcBlockingReason {
+  kind: 'sidecar_sdlc_blocking_reason';
+  code: string;
+  reasonClass: string | null;
+  lawfulReentryPoint: string | null;
+  retryable: boolean;
+  message: string | null;
+  detail: string | null;
+  evidenceRefs: string[];
+}
+
+export interface SidecarSdlcClosureDecision {
+  kind: 'sidecar_sdlc_closure_decision';
+  disposition: SidecarEdgeClosureDisposition | string | null;
+  decisionRef: string | null;
+  reasonRefs: string[];
+  edgeResidualPressureRefs: string[];
+  targetCarrierAdmissionStatus: string | null;
+  edgeGainRef: string | null;
+  edgeClosureFunctionRef: string | null;
+}
+
+export interface SidecarSdlcNextActionProjection {
+  kind: 'sidecar_sdlc_next_action_projection';
+  nextActionBasisKind: string | null;
+  selectedActionRef: string | null;
+  nextGraphFunctionRef: string | null;
+  nextGraphVectorRef: string | null;
+  choosesNextTraversal: boolean;
+  gapPressureRefs: string[];
+  edgeResidualPressureRefs: string[];
+  overlayStopDisposition: string | null;
+  readOnly: boolean;
 }
 
 // ---------------------------------------------------------------------------
