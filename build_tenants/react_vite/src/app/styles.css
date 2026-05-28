@@ -3255,6 +3255,27 @@ pre {
   font-size: 0.65rem;
 }
 
+.sidecar-live-view__attempt-metrics {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  line-height: 1.2;
+}
+
+.sidecar-live-view__attempt-metrics span {
+  min-width: max-content;
+  padding: 0.08rem 0.24rem;
+  border: 1px solid color-mix(in srgb, var(--line) 46%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidecar-inset-bg) 80%, transparent);
+}
+
 .sidecar-live-view__run-detail {
   display: grid;
   gap: 0.7rem;
@@ -3312,6 +3333,10 @@ pre {
 
 .sidecar-live-view__detail-row-group--transcript {
   order: 99;
+}
+
+.sidecar-live-view__detail-row-group--internal {
+  order: 0;
 }
 
 .sidecar-live-view__detail-row-group.is-collapsed {
@@ -3574,6 +3599,138 @@ pre {
   color: var(--muted);
   font-size: 0.7rem;
   line-height: 1.3;
+}
+
+.sidecar-live-view__internal-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.sidecar-live-view__internal-state {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sidecar-live-view__internal-steps {
+  display: grid;
+  gap: 0.42rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidecar-live-view__internal-step {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
+  min-width: 0;
+  padding: 0.52rem;
+  border: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  border-radius: var(--sidecar-radius-sm);
+  background: var(--sidecar-inset-bg);
+}
+
+.sidecar-live-view__internal-step--active {
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--line) 70%);
+}
+
+.sidecar-live-view__internal-step--blocked {
+  border-color: color-mix(in srgb, var(--warn) 46%, var(--line) 54%);
+}
+
+.sidecar-live-view__internal-step--converged {
+  border-color: color-mix(in srgb, var(--ok) 44%, var(--line) 56%);
+}
+
+.sidecar-live-view__internal-step--pending {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line) 72%);
+}
+
+.sidecar-live-view__internal-step-index {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-align: right;
+  user-select: none;
+}
+
+.sidecar-live-view__internal-step-main {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.sidecar-live-view__internal-step-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.44rem;
+  min-width: 0;
+}
+
+.sidecar-live-view__internal-step-title strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.74rem;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidecar-live-view__internal-step-main small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidecar-live-view__internal-step-main p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.28;
+}
+
+.sidecar-live-view__internal-step-actions,
+.sidecar-live-view__asset-links {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.26rem;
+  min-width: 0;
+}
+
+.sidecar-live-view__internal-step-actions {
+  max-width: 16rem;
+}
+
+.sidecar-live-view__asset-links {
+  justify-content: flex-start;
+  margin-top: 0.55rem;
+}
+
+.sidecar-live-view__asset-links .status-chip {
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sidecar-live-view__asset-links .status-chip span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidecar-live-view__event-viewer {
@@ -4064,8 +4221,19 @@ pre {
   .sidecar-live-view__header,
   .sidecar-live-view__run-header,
   .sidecar-live-view__detail-grid,
-  .sidecar-live-view__details {
+  .sidecar-live-view__details,
+  .sidecar-live-view__internal-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidecar-live-view__internal-step {
+    grid-template-columns: 1.6rem minmax(0, 1fr);
+  }
+
+  .sidecar-live-view__internal-step-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    max-width: 100%;
   }
 
   .sidecar-live-view__actions {

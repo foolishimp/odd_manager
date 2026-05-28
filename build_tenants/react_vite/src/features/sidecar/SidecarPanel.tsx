@@ -1697,6 +1697,7 @@ function SelectionFlyout({
   const [pinDraft, setPinDraft] = useState('');
   const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
   const [expandedProjectRoots, setExpandedProjectRoots] = useState<Record<string, boolean>>({});
+  const [activeProjectBrowserRoot, setActiveProjectBrowserRoot] = useState<string | null>(null);
   const [projectBrowserTab, setProjectBrowserTab] = useState<ProjectBrowserTab>('favourites');
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
@@ -1721,7 +1722,10 @@ function SelectionFlyout({
       },
     }));
     try {
-      const payload = await fetchJson(`/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1&includeHidden=1&maxEntries=0`);
+      const payload = await fetchJson(
+        `/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1&includeHidden=1&maxEntries=0&refresh=${Date.now()}`,
+        { cache: 'no-store' },
+      );
       const load = { ...asNavigatorFolderLoad(payload), loadedAt: Date.now() };
       setFolderLoads((current) => ({ ...current, [path]: load }));
     } catch (err) {
@@ -1771,6 +1775,10 @@ function SelectionFlyout({
       ...current,
       [normalizedRoot]: nextExpanded,
     }));
+    setActiveProjectBrowserRoot((current) => {
+      if (nextExpanded) return normalizedRoot;
+      return current === normalizedRoot ? null : current;
+    });
     if (nextExpanded && !folderLoads[normalizedRoot]?.loading) {
       void loadFolder(normalizedRoot);
     }
@@ -1918,8 +1926,19 @@ function SelectionFlyout({
     const firstExpandedProjectRoot = state.projects
       .map((project) => normalizePinnedPath(project.root))
       .find((root) => expandedProjectRoots[root] === true) ?? null;
+    const projectBrowserRootIsVisible = (root: string | null) => Boolean(
+      root &&
+      state.projects.some((project) => normalizePinnedPath(project.root) === root) &&
+      (expandedProjectRoots[root] ?? root === normalizedSelectedProjectRootPath)
+    );
+    const activeProjectBrowserRefreshRoot = projectBrowserRootIsVisible(activeProjectBrowserRoot)
+      ? activeProjectBrowserRoot
+      : null;
+    const firstVisibleProjectBrowserRoot = state.projects
+      .map((project) => normalizePinnedPath(project.root))
+      .find((root) => projectBrowserRootIsVisible(root)) ?? null;
     const projectBrowserRefreshRoot = projectBrowserTab === 'favourites'
-      ? normalizedSelectedProjectRootPath ?? firstExpandedProjectRoot
+      ? activeProjectBrowserRefreshRoot ?? firstVisibleProjectBrowserRoot ?? firstExpandedProjectRoot
       : null;
     const projectBrowserRefreshAction = projectBrowserTab === 'pick'
       ? (
@@ -3090,11 +3109,14 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
           <ProcessLiveViewPanel
             analysis={projection.liveAnalysis ?? null}
             workspaceRun={workspaceRun}
+            projectRoot={liveRefreshRoot}
             onOpenTracePath={openTracePath}
             onRefresh={requestLiveRefresh}
             refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
             liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
             onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
+            liveInternalRowCollapsed={state.ui.liveInternalRowCollapsed}
+            onLiveInternalRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-internal-row-collapsed', collapsed })}
             liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
             onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
             liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
@@ -4302,11 +4324,14 @@ function ProcessNavigatorPanel({ state, dispatch }: {
             <ProcessLiveViewPanel
               analysis={projection.liveAnalysis ?? null}
               workspaceRun={workspaceRun}
+              projectRoot={liveRefreshRoot}
               onOpenTracePath={openTracePath}
               onRefresh={requestLiveRefresh}
               refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
               liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
               onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
+              liveInternalRowCollapsed={state.ui.liveInternalRowCollapsed}
+              onLiveInternalRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-internal-row-collapsed', collapsed })}
               liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
               onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
               liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
@@ -5220,11 +5245,14 @@ function ProcessLiveRowGroup({ widgetNames, ariaLabel, collapsed, onCollapsedCha
 function ProcessLiveViewPanel({
   analysis,
   workspaceRun,
+  projectRoot,
   onOpenTracePath,
   onRefresh,
   refreshing,
   liveActiveRunRowCollapsed,
   onLiveActiveRunRowCollapsedChange,
+  liveInternalRowCollapsed,
+  onLiveInternalRowCollapsedChange,
   liveTranscriptCollapsed,
   onLiveTranscriptCollapsedChange,
   liveDetailRowCollapsed,
@@ -5237,11 +5265,14 @@ function ProcessLiveViewPanel({
 }: {
   analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
   workspaceRun: SidecarProcessProjection['workspaceRun'] | null | undefined;
+  projectRoot: string | null;
   onOpenTracePath: (absolutePath: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
   liveActiveRunRowCollapsed: boolean;
   onLiveActiveRunRowCollapsedChange: (collapsed: boolean) => void;
+  liveInternalRowCollapsed: boolean;
+  onLiveInternalRowCollapsedChange: (collapsed: boolean) => void;
   liveTranscriptCollapsed: boolean;
   onLiveTranscriptCollapsedChange: (collapsed: boolean) => void;
   liveDetailRowCollapsed: boolean;
@@ -5373,6 +5404,10 @@ function ProcessLiveViewPanel({
           const tone = liveAttemptTone(attempt, operatorRun);
           const active = activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef;
           const canOpen = Boolean(attempt.operatorRunPath);
+          const stageProcessCount = attempt.detail.stageProcesses?.length
+            ?? operatorRun?.stages.reduce((total, stage) => total + stage.processInvocations.length, 0)
+            ?? 0;
+          const eventCount = attempt.detail.events?.length ?? 0;
           const dispositionLabel = operatorRun?.activeFeedbackLoop
             ? 'feedback loop'
             : operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open';
@@ -5389,6 +5424,10 @@ function ProcessLiveViewPanel({
                 <strong>{operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</strong>
                 <small>{operatorRun?.edge?.targetAssetType ?? attempt.targetAssetType ?? attempt.traversalClass}</small>
                 <span className={`status-chip ${tone}`}>{dispositionLabel}</span>
+                <span className="sidecar-live-view__attempt-metrics">
+                  <span>{stageProcessCount} stages</span>
+                  <span>{eventCount} events</span>
+                </span>
               </button>
             </li>
           );
@@ -5450,6 +5489,9 @@ function ProcessLiveViewPanel({
         <ProcessLiveRunDetail
           attempt={selectedAttempt}
           operatorRun={selectedOperatorRun}
+          projectRoot={projectRoot}
+          internalRowCollapsed={liveInternalRowCollapsed}
+          onInternalRowCollapsedChange={onLiveInternalRowCollapsedChange}
           detailRowCollapsed={liveDetailRowCollapsed}
           onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
           gapRowCollapsed={liveGapRowCollapsed}
@@ -5468,6 +5510,9 @@ function ProcessLiveViewPanel({
 function ProcessLiveRunDetail({
   attempt,
   operatorRun,
+  projectRoot,
+  internalRowCollapsed,
+  onInternalRowCollapsedChange,
   detailRowCollapsed,
   onDetailRowCollapsedChange,
   gapRowCollapsed,
@@ -5480,6 +5525,9 @@ function ProcessLiveRunDetail({
 }: {
   attempt: SidecarLiveAnalysisAttempt;
   operatorRun: SidecarSdlcOperatorRun | null;
+  projectRoot: string | null;
+  internalRowCollapsed: boolean;
+  onInternalRowCollapsedChange: (collapsed: boolean) => void;
   detailRowCollapsed: boolean;
   onDetailRowCollapsedChange: (collapsed: boolean) => void;
   gapRowCollapsed: boolean;
@@ -5540,6 +5588,15 @@ function ProcessLiveRunDetail({
           ) : null}
         </div>
       </header>
+
+      <ProcessLiveInternalStateWidget
+        attempt={attempt}
+        operatorRun={operatorRun}
+        projectRoot={projectRoot}
+        collapsed={internalRowCollapsed}
+        onCollapsedChange={onInternalRowCollapsedChange}
+        onOpenTracePath={onOpenTracePath}
+      />
 
       <ProcessLiveRowGroup
         widgetNames={['Ledger State', 'Assurance Ledgers']}
@@ -5705,6 +5762,356 @@ function ProcessLiveRunDetail({
       />
     </section>
   );
+}
+
+type ProcessLiveActionTone = SidecarProcessTone | 'default';
+
+interface ProcessLiveActionLink {
+  key: string;
+  label: string;
+  path: string;
+  tone: ProcessLiveActionTone;
+}
+
+interface ProcessLiveInternalStep {
+  id: string;
+  label: string;
+  boundary: string;
+  status: string;
+  tone: ProcessLiveActionTone;
+  detail: string;
+  actions: ProcessLiveActionLink[];
+}
+
+function ProcessLiveInternalStateWidget({ attempt, operatorRun, projectRoot, collapsed, onCollapsedChange, onOpenTracePath }: {
+  attempt: SidecarLiveAnalysisAttempt;
+  operatorRun: SidecarSdlcOperatorRun | null;
+  projectRoot: string | null;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const stageProcesses = useMemo(() => (attempt.detail.stageProcesses ?? [])
+    .map(normalizeLiveAnalysisStageProcess)
+    .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process)), [attempt.detail.stageProcesses]);
+  const transformProcesses = stageProcesses.filter((process) => process.role === 'transform' || process.stageKind === 'transform_worker');
+  const evaluationProcesses = stageProcesses.filter((process) => process.role === 'evaluate' || process.stageKind.includes('evaluator'));
+  const allTranscripts = stageProcesses.flatMap((process) => process.transcriptSurfaces);
+  const primaryTailTranscript = allTranscripts.find((transcript) => transcript.sourcePath && isTailFollowSurfacePath(transcript.sourcePath))
+    ?? allTranscripts.find((transcript) => transcript.sourcePath)
+    ?? null;
+  const allArtifacts = [
+    ...(operatorRun?.systemArtifacts ?? []),
+    ...(operatorRun?.stages.flatMap((stage) => stage.artifacts) ?? []),
+  ];
+  const evaluationFindings = [
+    ...(operatorRun?.evaluationFindings ?? []),
+    ...(operatorRun?.stages.flatMap((stage) => stage.findings) ?? []),
+  ];
+  const blockingReasons = [
+    ...(operatorRun?.blockingReasons ?? []),
+    ...(operatorRun?.stages.flatMap((stage) => stage.blockingReasons) ?? []),
+  ];
+  const events = attempt.detail.events ?? [];
+  const runtimeEventCount = events.filter((event) => event.sourceKind === 'runtime_event').length;
+  const workerEventCount = events.filter((event) => event.sourceKind === 'worker_event').length;
+  const artifactEventCount = events.filter((event) => event.sourceKind === 'artifact').length;
+  const transformStage = operatorRun?.stages.find((stage) => stage.stageKind === 'transform') ?? null;
+  const postflightStage = operatorRun?.stages.find((stage) => stage.stageKind === 'system_postflight') ?? null;
+  const designEvaluationStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_design_depth') ?? null;
+  const reviewEvaluationStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_review_grade') ?? null;
+  const assuranceStage = operatorRun?.stages.find((stage) => stage.stageKind === 'assurance') ?? null;
+  const closureStage = operatorRun?.stages.find((stage) => stage.stageKind === 'closure') ?? null;
+  const nextActionStage = operatorRun?.stages.find((stage) => stage.stageKind === 'next_action') ?? null;
+  const edge = attempt.detail.edgeAssurance;
+  const assurance = attempt.detail.assurance;
+  const closure = operatorRun?.closureDecision ?? null;
+  const nextAction = operatorRun?.nextActionProjection ?? null;
+  const operatorRunPath = operatorRun?.operatorRunPath ?? attempt.operatorRunPath ?? null;
+  const admissionArtifacts = allArtifacts.filter((artifact) => (
+    artifact.role === 'authority_admission' ||
+    /admission|postflight|carrier|result/i.test(`${artifact.label} ${artifact.path}`)
+  ));
+  const readModelArtifacts = allArtifacts.filter((artifact) => artifact.role === 'read_model' || /projection|next_action|consequence/i.test(`${artifact.label} ${artifact.path}`));
+  const transformArtifactLinks = uniqueLiveActionLinks([
+    ...transformProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
+    ...liveArtifactLinks(admissionArtifacts.slice(0, 3), projectRoot),
+  ]);
+  const evaluationArtifactLinks = uniqueLiveActionLinks([
+    ...evaluationProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
+    ...liveArtifactLinks((operatorRun?.stages.filter((stage) => stage.stageKind.startsWith('evaluate')).flatMap((stage) => stage.artifacts) ?? []).slice(0, 3), projectRoot),
+  ]);
+  const closureLinks = uniqueLiveActionLinks([
+    liveActionLink('Ledger', edge?.ledgerRef ?? null, projectRoot),
+    liveActionLink('Closure', edge?.closureDecisionRef ?? closure?.decisionRef ?? null, projectRoot),
+    liveActionLink('Next action', edge?.selectedActionRef ?? nextAction?.selectedActionRef ?? null, projectRoot),
+  ]);
+  const runAssetLinks = uniqueLiveActionLinks([
+    liveActionLink('Run archive', operatorRunPath, projectRoot, 'active'),
+    liveActionLink('Tail live', primaryTailTranscript?.sourcePath ?? null, projectRoot, 'active'),
+    ...stageProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
+    ...liveArtifactLinks(allArtifacts, projectRoot),
+  ]).slice(0, 14);
+  const productFileLinks = uniqueLiveActionLinks([
+    ...attempt.productFilesWritten.map((path) => liveActionLink('Written', path, projectRoot, 'active')),
+    ...attempt.productFilesReplayed.map((path) => liveActionLink('Replayed', path, projectRoot)),
+  ]).slice(0, 10);
+  const steps: ProcessLiveInternalStep[] = [
+    {
+      id: 'gtl-edge',
+      label: 'GTL graph function edge',
+      boundary: 'contract',
+      status: operatorRun?.edge || attempt.graphFunctionName ? 'selected' : 'pending',
+      tone: operatorRun?.edge || attempt.graphFunctionName ? 'active' : 'pending',
+      detail: operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'No selected graph edge was projected.',
+      actions: uniqueLiveActionLinks([liveActionLink('Archive', operatorRunPath, projectRoot)]),
+    },
+    {
+      id: 'abg-frame-open',
+      label: 'ABG start / frame open',
+      boundary: 'system event',
+      status: runtimeEventCount > 0 ? `${runtimeEventCount} events` : 'pending',
+      tone: runtimeEventCount > 0 ? 'active' : 'pending',
+      detail: compactIdentity(attempt.operatorRunRef),
+      actions: uniqueLiveActionLinks([liveActionLink('Archive', operatorRunPath, projectRoot)]),
+    },
+    {
+      id: 'edge-policy',
+      label: 'SDLC EdgePolicy selected',
+      boundary: 'policy fact',
+      status: edge?.edgeAssuranceContractRef ? 'admitted' : 'pending',
+      tone: edge?.edgeAssuranceContractRef ? 'active' : 'pending',
+      detail: edge?.edgeAssuranceContractRef ?? operatorRun?.edge?.edgeAssuranceContractRef ?? 'No edge policy carrier was projected.',
+      actions: closureLinks.slice(0, 1),
+    },
+    {
+      id: 'composition',
+      label: 'ABG selected composition',
+      boundary: 'composition',
+      status: operatorRun?.edge?.graphVectorRef || attempt.graphVectorRef ? 'selected' : 'pending',
+      tone: operatorRun?.edge?.graphVectorRef || attempt.graphVectorRef ? 'active' : 'pending',
+      detail: operatorRun?.edge?.graphVectorRef ?? attempt.graphVectorRef ?? 'No graph vector identity was projected.',
+      actions: [],
+    },
+    {
+      id: 'transform-plugin',
+      label: 'plugin.transform.C',
+      boundary: 'plugin',
+      status: transformStage?.status ?? attempt.workerStatus ?? (transformProcesses.length ? 'invoked' : 'pending'),
+      tone: transformStage?.status === 'failed' ? 'blocked' : transformProcesses.length || transformStage ? 'active' : 'pending',
+      detail: `${transformProcesses.length} process invocation${transformProcesses.length === 1 ? '' : 's'} · ${workerEventCount} worker events`,
+      actions: transformArtifactLinks.slice(0, 4),
+    },
+    {
+      id: 'transform-admission',
+      label: 'system admission/write transform result',
+      boundary: 'system write',
+      status: postflightStage?.status ?? attempt.postflightStatus ?? (admissionArtifacts.length ? 'recorded' : 'pending'),
+      tone: attempt.postflightStatus === 'failed' ? 'blocked' : admissionArtifacts.length || postflightStage ? 'active' : 'pending',
+      detail: `${admissionArtifacts.length} admission artifact${admissionArtifacts.length === 1 ? '' : 's'}`,
+      actions: liveArtifactLinks(admissionArtifacts.slice(0, 4), projectRoot),
+    },
+    {
+      id: 'evaluation-plan',
+      label: 'system plan evaluation set',
+      boundary: 'deterministic plan',
+      status: designEvaluationStage || reviewEvaluationStage || evaluationFindings.length ? 'planned' : 'pending',
+      tone: designEvaluationStage || reviewEvaluationStage || evaluationFindings.length ? 'active' : 'pending',
+      detail: `${evaluationFindings.length} finding${evaluationFindings.length === 1 ? '' : 's'} projected`,
+      actions: evaluationArtifactLinks.slice(0, 3),
+    },
+    {
+      id: 'evaluate-plugin',
+      label: 'plugin.evaluate.C.rule[*]',
+      boundary: 'plugin',
+      status: reviewEvaluationStage?.status ?? designEvaluationStage?.status ?? attempt.fpEvaluateStatus ?? (evaluationProcesses.length ? 'invoked' : 'pending'),
+      tone: evaluationProcesses.length || reviewEvaluationStage || designEvaluationStage ? 'active' : 'pending',
+      detail: `${evaluationProcesses.length} evaluator process${evaluationProcesses.length === 1 ? '' : 'es'}`,
+      actions: evaluationArtifactLinks.slice(0, 4),
+    },
+    {
+      id: 'evaluation-admission',
+      label: 'system admission/write evaluation outcomes',
+      boundary: 'system write',
+      status: evaluationFindings.length ? `${evaluationFindings.length} outcomes` : 'pending',
+      tone: blockingReasons.length ? 'blocked' : evaluationFindings.length ? 'active' : 'pending',
+      detail: blockingReasons.length ? `${blockingReasons.length} blocking reason${blockingReasons.length === 1 ? '' : 's'}` : 'No blocking evaluator outcome projected.',
+      actions: evaluationArtifactLinks.slice(0, 3),
+    },
+    {
+      id: 'evaluation-collect',
+      label: 'system collect evaluation set',
+      boundary: 'projection',
+      status: assurance ? assurance.status ?? 'collected' : 'pending',
+      tone: assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'pending',
+      detail: assurance ? `${assurance.satisfiedDimensions.length} satisfied · ${assurance.missingRequiredDimensions.length} missing` : 'No assurance summary was projected.',
+      actions: closureLinks.slice(0, 1),
+    },
+    {
+      id: 'assurance-fold',
+      label: 'system assurance / closure fold',
+      boundary: 'deterministic fold',
+      status: closure?.disposition ?? edge?.closureDisposition ?? attempt.closureDisposition ?? 'open',
+      tone: closure?.disposition === 'close' || edge?.closeReady ? 'converged' : blockingReasons.length ? 'blocked' : edge || closure ? 'active' : 'pending',
+      detail: edge ? `${edge.carrierState} · close ready ${formatLiveBoolean(edge.closeReady)}` : 'No edge assurance carrier was projected.',
+      actions: closureLinks,
+    },
+    {
+      id: 'consequence-plugin',
+      label: 'plugin.consequence.C',
+      boundary: 'projection',
+      status: nextAction?.nextActionBasisKind ?? nextActionStage?.status ?? 'pending',
+      tone: nextAction ? 'active' : 'pending',
+      detail: nextAction?.selectedActionRef ?? attempt.selectedNextActionRef ?? 'No next-action projection was selected.',
+      actions: uniqueLiveActionLinks([liveActionLink('Next action', nextAction?.selectedActionRef ?? attempt.selectedNextActionRef, projectRoot)]),
+    },
+    {
+      id: 'consequence-admission',
+      label: 'system admission/write consequence projection',
+      boundary: 'system write',
+      status: readModelArtifacts.length ? `${readModelArtifacts.length} read models` : nextAction ? 'admitted' : 'pending',
+      tone: nextAction || readModelArtifacts.length ? 'active' : 'pending',
+      detail: nextAction?.overlayStopDisposition ?? 'No consequence read model artifact was projected.',
+      actions: uniqueLiveActionLinks([
+        ...liveArtifactLinks(readModelArtifacts.slice(0, 3), projectRoot),
+        liveActionLink('Next action', nextAction?.selectedActionRef ?? null, projectRoot),
+      ]),
+    },
+    {
+      id: 'traversal-transition',
+      label: 'traversal transition',
+      boundary: 'ABG event',
+      status: nextAction?.choosesNextTraversal ? 'chosen' : nextAction?.nextGraphVectorRef ? 'projected' : 'pending',
+      tone: nextAction?.choosesNextTraversal || nextAction?.nextGraphVectorRef ? 'active' : 'pending',
+      detail: nextAction?.nextGraphVectorRef ?? edge?.nextGraphVectorRef ?? 'No next graph vector was projected.',
+      actions: [],
+    },
+  ];
+
+  return (
+    <ProcessLiveRowGroup
+      widgetNames={['Internal State', 'Run Assets']}
+      ariaLabel="internal state and run assets row"
+      collapsed={collapsed}
+      onCollapsedChange={onCollapsedChange}
+      className="sidecar-live-view__detail-row-group--wide sidecar-live-view__detail-row-group--internal"
+      meta={(
+        <>
+          <span className="status-chip default">{steps.length} boundaries</span>
+          <span className={`status-chip ${runAssetLinks.length ? 'active' : 'default'}`}>{runAssetLinks.length} assets</span>
+          <span className={`status-chip ${primaryTailTranscript ? 'active' : 'default'}`}>{primaryTailTranscript ? 'tail ready' : 'no tail'}</span>
+        </>
+      )}
+    >
+      <div className="sidecar-live-view__internal-layout">
+        <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__internal-state">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Internal State</span>
+            <span className="status-chip default">{artifactEventCount} artifact events</span>
+          </div>
+          <ol className="sidecar-live-view__internal-steps" aria-label="Selected run internal boundary state">
+            {steps.map((step, index) => (
+              <li key={step.id} className={`sidecar-live-view__internal-step sidecar-live-view__internal-step--${step.tone}`}>
+                <span className="sidecar-live-view__internal-step-index">{index + 1}</span>
+                <div className="sidecar-live-view__internal-step-main">
+                  <div className="sidecar-live-view__internal-step-title">
+                    <strong>{step.label}</strong>
+                    <span className={`status-chip ${step.tone}`}>{step.status}</span>
+                  </div>
+                  <small>{step.boundary}</small>
+                  <p>{step.detail}</p>
+                </div>
+                {step.actions.length ? (
+                  <div className="sidecar-live-view__internal-step-actions">
+                    {step.actions.map((action) => (
+                      <button key={action.key} type="button" className={`status-chip ${action.tone}`} onClick={() => onOpenTracePath(action.path)}>
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Run Assets</span>
+            <span className={`status-chip ${runAssetLinks.length ? 'active' : 'default'}`}>{runAssetLinks.length}</span>
+          </div>
+          {runAssetLinks.length ? (
+            <div className="sidecar-live-view__asset-links" aria-label="Run asset links">
+              {runAssetLinks.map((link) => (
+                <button key={link.key} type="button" className={`status-chip ${link.tone}`} onClick={() => onOpenTracePath(link.path)}>
+                  {link.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="sidecar-body-text">No run asset paths were projected.</div>
+          )}
+        </section>
+
+        <section className="sidecar-live-view__detail">
+          <div className="requirements-explorer__section-heading">
+            <span className="panel__eyebrow">Product Files</span>
+            <span className={`status-chip ${productFileLinks.length ? 'active' : 'default'}`}>{productFileLinks.length}</span>
+          </div>
+          {productFileLinks.length ? (
+            <div className="sidecar-live-view__asset-links" aria-label="Product file links">
+              {productFileLinks.map((link) => (
+                <button key={link.key} type="button" className={`status-chip ${link.tone}`} onClick={() => onOpenTracePath(link.path)}>
+                  {link.label}
+                  <span>{folderDisplayPath(link.path, projectRoot)}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="sidecar-body-text">No product files were declared by this run.</div>
+          )}
+        </section>
+      </div>
+    </ProcessLiveRowGroup>
+  );
+}
+
+function liveActionLink(label: string, pathRef: string | null | undefined, projectRoot: string | null, tone: ProcessLiveActionTone = 'default'): ProcessLiveActionLink | null {
+  const path = projectPathRefToAbsolutePath(projectRoot, pathRef ?? null);
+  if (!path) return null;
+  return {
+    key: `${label}:${path}`,
+    label,
+    path,
+    tone,
+  };
+}
+
+function liveStageProcessLinks(stageProcess: SidecarLiveAnalysisStageProcess, projectRoot: string | null): Array<ProcessLiveActionLink | null> {
+  const tailTranscript = stageProcess.transcriptSurfaces.find((transcript) => transcript.sourcePath && isTailFollowSurfacePath(transcript.sourcePath))
+    ?? stageProcess.transcriptSurfaces.find((transcript) => transcript.sourcePath)
+    ?? null;
+  return [
+    liveActionLink('Archive', stageProcess.operatorRunPath, projectRoot),
+    liveActionLink('Started', stageProcess.processStartedPath, projectRoot),
+    liveActionLink('Events', stageProcess.processEventsPath, projectRoot),
+    liveActionLink('Tail', tailTranscript?.sourcePath ?? null, projectRoot, tailTranscript ? 'active' : 'default'),
+  ];
+}
+
+function liveArtifactLinks(artifacts: SidecarSdlcOperatorRun['systemArtifacts'], projectRoot: string | null): Array<ProcessLiveActionLink | null> {
+  return artifacts.map((artifact) => liveActionLink(artifact.label || artifact.role, artifact.path, projectRoot, artifact.role === 'authority_admission' ? 'active' : 'default'));
+}
+
+function uniqueLiveActionLinks(links: Array<ProcessLiveActionLink | null | undefined>) {
+  const seen = new Set<string>();
+  const next: ProcessLiveActionLink[] = [];
+  links.forEach((link) => {
+    if (!link || seen.has(link.key)) return;
+    seen.add(link.key);
+    next.push(link);
+  });
+  return next;
 }
 
 function ProcessLiveEventViewer({ attempt, collapsed, onCollapsedChange, onOpenTracePath }: {
@@ -6048,7 +6455,7 @@ function ProcessLiveCliTranscriptWidget({ stageProcesses = [], transcripts, coll
             <span>{formatBytes(transcript.byteCount)}</span>
             {transcript.sourcePath ? (
               <button type="button" className="status-chip default" onClick={() => onOpenTracePath(transcript.sourcePath as string)}>
-                Open raw
+                {isTailFollowSurfacePath(transcript.sourcePath) ? 'Tail raw' : 'Open raw'}
               </button>
             ) : null}
           </div>
@@ -6616,6 +7023,23 @@ function refToAbsolutePath(ref: string | null) {
   } catch {
     return ref.slice('file://'.length) || null;
   }
+}
+
+function projectPathRefToAbsolutePath(projectRoot: string | null, ref: string | null) {
+  if (!ref) return null;
+  const absolute = refToAbsolutePath(ref);
+  if (absolute) return absolute;
+  if (!projectRoot) return null;
+  const trimmed = ref.trim();
+  if (
+    !trimmed ||
+    trimmed.startsWith('../') ||
+    trimmed.includes('\0') ||
+    /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+  ) {
+    return null;
+  }
+  return absoluteProjectPath(projectRoot, trimmed);
 }
 
 function isTailFollowSurfacePath(relativePath: string) {

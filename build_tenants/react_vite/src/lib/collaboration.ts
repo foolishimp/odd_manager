@@ -179,8 +179,11 @@ async function expectJson<T>(response: Response): Promise<T> {
 }
 
 export async function browsePath(path?: string): Promise<FsBrowseResult> {
-  const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  return expectJson<FsBrowseResult>(await fetch(`/api/fs/browse${query}`));
+  const params = new URLSearchParams();
+  if (path) params.set("path", path);
+  params.set("refresh", String(Date.now()));
+  const query = `?${params.toString()}`;
+  return expectJson<FsBrowseResult>(await fetch(`/api/fs/browse${query}`, { cache: "no-store" }));
 }
 
 export async function scanForOddWorkspaces(root: string): Promise<WorkspaceScanResult[]> {

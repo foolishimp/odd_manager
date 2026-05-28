@@ -16,6 +16,7 @@ const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
 const serverIndexPath = resolve(here, '../../src/server/index.mjs');
+const collaborationPath = resolve(here, '../../src/lib/collaboration.ts');
 const stylesPath = resolve(here, '../../src/app/styles.css');
 const documentViewerPath = resolve(here, '../../src/components/DocumentViewer.tsx');
 
@@ -373,6 +374,7 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'process/select-view', view: 'blocked_waiting' },
     { type: 'process/select-record', id: 'process-record-1' },
     { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
+    { type: 'process/set-live-internal-row-collapsed', collapsed: true },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
     { type: 'process/set-live-detail-row-collapsed', collapsed: true },
     { type: 'process/set-live-gap-row-collapsed', collapsed: true },
@@ -392,6 +394,7 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
   assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
+  assert.equal(result.state.ui.liveInternalRowCollapsed, true);
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
   assert.equal(result.state.ui.liveDetailRowCollapsed, true);
   assert.equal(result.state.ui.liveGapRowCollapsed, true);
@@ -516,10 +519,14 @@ test('Sidecar load keeps Projects visible when a workspace-scoped surface fails'
 test('Sidecar browser requests uncapped filesystem entries while generic browse stays bounded', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
   const serverSource = readFileSync(serverIndexPath, 'utf-8');
+  const collaborationSource = readFileSync(collaborationPath, 'utf-8');
   assert.match(source, /\/api\/fs\/browse\?path=\$\{encodeURIComponent\(path\)\}&includeFiles=1&includeHidden=1&maxEntries=0/);
+  assert.match(source, /&refresh=\$\{Date\.now\(\)\}`,[\s\S]*?\{ cache: 'no-store' \}/);
   assert.match(source, /No child entries\./);
   assert.match(source, /Showing first 500 entries\./);
   assert.doesNotMatch(source, /Showing first 500 folders\./);
+  assert.match(collaborationSource, /params\.set\("refresh", String\(Date\.now\(\)\)\);/);
+  assert.match(collaborationSource, /fetch\(`\/api\/fs\/browse\$\{query\}`, \{ cache: "no-store" \}\)/);
   assert.match(serverSource, /function browseMaxEntriesFromParam\(value\)/);
   assert.match(serverSource, /if \(normalized === "all"\) return 0;/);
   assert.match(serverSource, /const listedEntries = maxEntries > 0 \? visibleEntries\.slice\(0, maxEntries\) : visibleEntries;/);
@@ -655,6 +662,7 @@ test('process navigator opens as an object viewer tab and keeps view selection i
     { type: 'process/select-view', view: 'ready_handoff' },
     { type: 'process/select-record', id: 'process-record-2' },
     { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
+    { type: 'process/set-live-internal-row-collapsed', collapsed: true },
     { type: 'process/set-live-transcript-collapsed', collapsed: true },
     { type: 'process/set-live-detail-row-collapsed', collapsed: true },
     { type: 'process/set-live-gap-row-collapsed', collapsed: true },
@@ -667,6 +675,7 @@ test('process navigator opens as an object viewer tab and keeps view selection i
   assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
   assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
+  assert.equal(result.state.ui.liveInternalRowCollapsed, true);
   assert.equal(result.state.ui.liveTranscriptCollapsed, true);
   assert.equal(result.state.ui.liveDetailRowCollapsed, true);
   assert.equal(result.state.ui.liveGapRowCollapsed, true);
@@ -685,6 +694,7 @@ test('process navigator collapse-all replay owns every Live View row', async () 
   ]);
   assert.deepEqual(collapsed.commands, []);
   assert.equal(collapsed.state.ui.liveActiveRunRowCollapsed, true);
+  assert.equal(collapsed.state.ui.liveInternalRowCollapsed, true);
   assert.equal(collapsed.state.ui.liveTranscriptCollapsed, true);
   assert.equal(collapsed.state.ui.liveDetailRowCollapsed, true);
   assert.equal(collapsed.state.ui.liveGapRowCollapsed, true);
@@ -695,6 +705,7 @@ test('process navigator collapse-all replay owns every Live View row', async () 
   ]);
   assert.deepEqual(expanded.commands, []);
   assert.equal(expanded.state.ui.liveActiveRunRowCollapsed, false);
+  assert.equal(expanded.state.ui.liveInternalRowCollapsed, false);
   assert.equal(expanded.state.ui.liveTranscriptCollapsed, false);
   assert.equal(expanded.state.ui.liveDetailRowCollapsed, false);
   assert.equal(expanded.state.ui.liveGapRowCollapsed, false);
@@ -1059,11 +1070,14 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /projection\.liveAnalysis/);
   assert.match(simpleProcessPanelSource, /<ProcessLiveViewPanel[\s\S]*analysis=\{projection\.liveAnalysis \?\? null\}/);
   assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\.workspaceRoot \?\? null;/);
+  assert.match(simpleProcessPanelSource, /projectRoot=\{liveRefreshRoot\}/);
   assert.match(simpleProcessPanelSource, /window\.setInterval\(\(\) => \{[\s\S]*type: 'load\/request'[\s\S]*reason: 'action_completed'[\s\S]*\}, 30000\)/);
   assert.match(simpleProcessPanelSource, /onRefresh=\{requestLiveRefresh\}/);
   assert.match(simpleProcessPanelSource, /refreshing=\{state\.loading && state\.activeLoadRoot === liveRefreshRoot\}/);
   assert.match(simpleProcessPanelSource, /liveActiveRunRowCollapsed=\{state\.ui\.liveActiveRunRowCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-active-run-row-collapsed/);
+  assert.match(simpleProcessPanelSource, /liveInternalRowCollapsed=\{state\.ui\.liveInternalRowCollapsed\}/);
+  assert.match(simpleProcessPanelSource, /process\/set-live-internal-row-collapsed/);
   assert.match(simpleProcessPanelSource, /liveTranscriptCollapsed=\{state\.ui\.liveTranscriptCollapsed\}/);
   assert.match(simpleProcessPanelSource, /process\/set-live-transcript-collapsed/);
   assert.match(simpleProcessPanelSource, /liveDetailRowCollapsed=\{state\.ui\.liveDetailRowCollapsed\}/);
@@ -1095,7 +1109,9 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /ProcessLiveViewPanel/);
   assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
   assert.match(processPanelSource, /ProcessLiveRowGroup/);
+  assert.match(processPanelSource, /projectRoot=\{liveRefreshRoot\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Active Run', 'Diagnostics'\]\}/);
+  assert.match(processPanelSource, /widgetNames=\{\['Internal State', 'Run Assets'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Ledger State', 'Assurance Ledgers'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Gap Analysis', 'Requirement \/ Stage State'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Event Viewer'\]\}/);
@@ -1108,10 +1124,27 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /function defaultLiveCliTranscriptLabel/);
   assert.match(processPanelSource, /selectedTranscriptId/);
   assert.match(processPanelSource, /aria-label="Select transcript surface"/);
+  assert.match(processPanelSource, /ProcessLiveInternalStateWidget/);
+  assert.match(processPanelSource, /ariaLabel="internal state and run assets row"/);
+  assert.match(processPanelSource, /plugin\.transform\.C/);
+  assert.match(processPanelSource, /system admission\/write transform result/);
+  assert.match(processPanelSource, /plugin\.evaluate\.C\.rule\[\*\]/);
+  assert.match(processPanelSource, /system assurance \/ closure fold/);
+  assert.match(processPanelSource, /plugin\.consequence\.C/);
+  assert.match(processPanelSource, /aria-label="Selected run internal boundary state"/);
+  assert.match(processPanelSource, /aria-label="Run asset links"/);
+  assert.match(processPanelSource, /aria-label="Product file links"/);
+  assert.match(processPanelSource, /projectPathRefToAbsolutePath/);
+  assert.match(processPanelSource, /\{isTailFollowSurfacePath\(transcript\.sourcePath\) \? 'Tail raw' : 'Open raw'\}/);
   assert.ok(
     processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}") <
       processPanelSource.indexOf('<ProcessLiveRunDetail'),
     'Active Run / Diagnostics row must stay ahead of selected-run detail widgets',
+  );
+  assert.ok(
+    processPanelSource.indexOf('<ProcessLiveInternalStateWidget') <
+      processPanelSource.indexOf("widgetNames={['Ledger State', 'Assurance Ledgers']}"),
+    'Internal State / Run Assets must be the first selected-run detail widget',
   );
   assert.ok(
     processPanelSource.indexOf('<ProcessLiveEventViewer') <
@@ -1120,6 +1153,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   );
   assert.match(processPanelSource, /detailRowCollapsed=\{liveDetailRowCollapsed\}/);
   assert.match(processPanelSource, /onDetailRowCollapsedChange=\{onLiveDetailRowCollapsedChange\}/);
+  assert.match(processPanelSource, /internalRowCollapsed=\{liveInternalRowCollapsed\}/);
+  assert.match(processPanelSource, /onInternalRowCollapsedChange=\{onLiveInternalRowCollapsedChange\}/);
   assert.match(processPanelSource, /gapRowCollapsed=\{liveGapRowCollapsed\}/);
   assert.match(processPanelSource, /onGapRowCollapsedChange=\{onLiveGapRowCollapsedChange\}/);
   assert.match(processPanelSource, /eventViewerCollapsed=\{liveEventViewerCollapsed\}/);
@@ -1184,6 +1219,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view\s*\{/);
   assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__attempt\s*>\s*button\s*\{[^}]*min-height:\s*6\.6rem;/s);
+  assert.match(styles, /\.sidecar-live-view__attempt-metrics\s*\{[^}]*display:\s*inline-flex;[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(styles, /\.sidecar-live-view__detail-row-group--internal\s*\{[^}]*order:\s*0;/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group--transcript\s*\{[^}]*order:\s*99;/s);
   assert.match(styles, /\.sidecar-live-view__refresh-button\s*\{[^}]*font:\s*inherit;[^}]*text-align:\s*left;/s);
   assert.match(styles, /\.sidecar-live-view__refresh-button:hover:not\(:disabled\),\s*\.sidecar-live-view__refresh-button:focus-visible\s*\{/s);
@@ -1191,6 +1228,9 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__ledger-info\s*\{[^}]*border-radius:\s*999px;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__ledger-description\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*overflow-wrap:\s*anywhere;/s);
   assert.match(styles, /\.sidecar-live-view__event-viewer\s*>\s*\.requirements-explorer__section-heading\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
+  assert.match(styles, /\.sidecar-live-view__internal-layout\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /\.sidecar-live-view__internal-step\s*\{[^}]*grid-template-columns:\s*2rem\s+minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(styles, /\.sidecar-live-view__internal-step-actions,\s*\.sidecar-live-view__asset-links\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s);
   assert.match(styles, /\.sidecar-live-view__event-filters\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*width:\s*auto;[^}]*min-width:\s*max-content;[^}]*min-height:\s*1\.45rem;[^}]*padding:\s*0\.16rem\s+0\.42rem;/s);
   assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*>\s*span:first-child\s*\{[^}]*white-space:\s*nowrap;/s);
@@ -1491,6 +1531,12 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(source, /const load = \{ \.\.\.asNavigatorFolderLoad\(payload\), loadedAt: Date\.now\(\) \};/);
   assert.match(source, /if \(!nextCollapsed && !folderLoads\[path\]\?\.loading\) \{[\s\S]*?void loadFolder\(path\);/);
   assert.match(source, /if \(nextExpanded && !folderLoads\[normalizedRoot\]\?\.loading\) \{[\s\S]*?void loadFolder\(normalizedRoot\);/);
+  assert.match(source, /const \[activeProjectBrowserRoot, setActiveProjectBrowserRoot\] = useState<string \| null>\(null\);/);
+  assert.match(source, /setActiveProjectBrowserRoot\(\(current\) => \{[\s\S]*?if \(nextExpanded\) return normalizedRoot;[\s\S]*?return current === normalizedRoot \? null : current;/);
+  assert.match(projectsSource, /const activeProjectBrowserRefreshRoot = projectBrowserRootIsVisible\(activeProjectBrowserRoot\)/);
+  assert.match(projectsSource, /const firstVisibleProjectBrowserRoot = state\.projects[\s\S]*?\.find\(\(root\) => projectBrowserRootIsVisible\(root\)\) \?\? null;/);
+  assert.match(projectsSource, /activeProjectBrowserRefreshRoot \?\? firstVisibleProjectBrowserRoot \?\? firstExpandedProjectRoot/);
+  assert.doesNotMatch(projectsSource, /normalizedSelectedProjectRootPath \?\? firstExpandedProjectRoot/);
   assert.doesNotMatch(source, /!nextCollapsed && \(!folderLoads\[path\] \|\| folderLoads\[path\]\.error\)/);
   assert.match(source, /function FolderRefreshButton/);
   assert.doesNotMatch(folderTreeSource, /<FolderRefreshButton/);

@@ -172,6 +172,7 @@ export interface SidecarLayoutProfile {
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
     liveActiveRunRowCollapsed: boolean;
+    liveInternalRowCollapsed: boolean;
     liveTranscriptCollapsed: boolean;
     liveDetailRowCollapsed: boolean;
     liveGapRowCollapsed: boolean;
@@ -256,6 +257,7 @@ export interface SidecarState {
     activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
     liveActiveRunRowCollapsed: boolean;
+    liveInternalRowCollapsed: boolean;
     liveTranscriptCollapsed: boolean;
     liveDetailRowCollapsed: boolean;
     liveGapRowCollapsed: boolean;
@@ -314,6 +316,7 @@ export type SidecarMsg =
   | { type: 'process/select-map'; map: SidecarProcessMapId }
   | { type: 'process/select-record'; id: string | null }
   | { type: 'process/set-live-active-run-row-collapsed'; collapsed: boolean }
+  | { type: 'process/set-live-internal-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-transcript-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-detail-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-gap-row-collapsed'; collapsed: boolean }
@@ -417,6 +420,7 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
     liveActiveRunRowCollapsed: false,
+    liveInternalRowCollapsed: false,
     liveTranscriptCollapsed: false,
     liveDetailRowCollapsed: false,
     liveGapRowCollapsed: false,
@@ -1201,6 +1205,7 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         activeProcessMap: isProcessMap(ui.activeProcessMap) ? ui.activeProcessMap : 'process_flow',
         activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
         liveActiveRunRowCollapsed: ui.liveActiveRunRowCollapsed === true,
+        liveInternalRowCollapsed: ui.liveInternalRowCollapsed === true,
         liveTranscriptCollapsed: ui.liveTranscriptCollapsed === true,
         liveDetailRowCollapsed: ui.liveDetailRowCollapsed === true,
         liveGapRowCollapsed: ui.liveGapRowCollapsed === true,
@@ -1242,6 +1247,7 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       activeProcessMap: state.ui.activeProcessMap,
       activeProcessRecordId: state.ui.activeProcessRecordId,
       liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed,
+      liveInternalRowCollapsed: state.ui.liveInternalRowCollapsed,
       liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed,
       liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed,
       liveGapRowCollapsed: state.ui.liveGapRowCollapsed,
@@ -1272,6 +1278,7 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
     activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
     liveActiveRunRowCollapsed: false,
+    liveInternalRowCollapsed: false,
     liveTranscriptCollapsed: false,
     liveDetailRowCollapsed: false,
     liveGapRowCollapsed: false,
@@ -1313,6 +1320,7 @@ function normalizeLoadedState(state: SidecarState) {
     ui: {
       ...state.ui,
       liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed === true,
+      liveInternalRowCollapsed: state.ui.liveInternalRowCollapsed === true,
       liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed === true,
       liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed === true,
       liveGapRowCollapsed: state.ui.liveGapRowCollapsed === true,
@@ -1489,6 +1497,14 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           liveActiveRunRowCollapsed: msg.collapsed,
         },
       };
+    case 'process/set-live-internal-row-collapsed':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          liveInternalRowCollapsed: msg.collapsed,
+        },
+      };
     case 'process/set-live-transcript-collapsed':
       return {
         ...state,
@@ -1527,6 +1543,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         ui: {
           ...state.ui,
           liveActiveRunRowCollapsed: msg.collapsed,
+          liveInternalRowCollapsed: msg.collapsed,
           liveTranscriptCollapsed: msg.collapsed,
           liveDetailRowCollapsed: msg.collapsed,
           liveGapRowCollapsed: msg.collapsed,
@@ -1658,6 +1675,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeProcessMap: validation.profile.ui.activeProcessMap,
           activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
           liveActiveRunRowCollapsed: validation.profile.ui.liveActiveRunRowCollapsed,
+          liveInternalRowCollapsed: validation.profile.ui.liveInternalRowCollapsed,
           liveTranscriptCollapsed: validation.profile.ui.liveTranscriptCollapsed,
           liveDetailRowCollapsed: validation.profile.ui.liveDetailRowCollapsed,
           liveGapRowCollapsed: validation.profile.ui.liveGapRowCollapsed,

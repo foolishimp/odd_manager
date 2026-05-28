@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260526T131037710Z_pid64804/workspace",
+  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260528T070413647Z_pid85948/workspace",
   "projects": [
     {
       "id": "odd_world_model-6f55d0a5",
@@ -73,6 +73,14 @@
       "tags": [],
       "registered_at": "2026-05-23T19:17:41.345Z",
       "updated_at": "2026-05-23T19:17:41.345Z"
+    },
+    {
+      "id": "scenario_t133_hello_world_rust_live-487dabf2",
+      "root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/scenario_t133_hello_world_rust_live",
+      "label": "scenario_t133_hello_world_rust_live",
+      "tags": [],
+      "registered_at": "2026-05-27T19:57:36.428Z",
+      "updated_at": "2026-05-27T19:57:36.428Z"
     }
   ]
 }
