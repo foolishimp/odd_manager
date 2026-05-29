@@ -1,4 +1,4 @@
-import { memo, type PointerEvent, type WheelEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type WheelEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
@@ -119,15 +119,6 @@ export function DocumentViewer({
   const hasControls = Boolean(onZoomIn || onZoomOut || onReset || onFitWidth);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const panRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    xScroller: HTMLElement;
-    yScroller: HTMLElement;
-    scrollLeft: number;
-    scrollTop: number;
-  } | null>(null);
   const zoomAnchorRef = useRef<{ x: number; y: number; centerX: number; centerY: number } | null>(null);
   const viewerClassName = `document-viewer${scrollMode === "outer" ? " document-viewer--outer-scroll" : ""}`;
 
@@ -207,35 +198,6 @@ export function DocumentViewer({
     onZoomOut?.();
   }
 
-  function beginPan(event: PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || !viewportRef.current) return;
-    const viewport = viewportRef.current;
-    const scrollParent = nearestScrollableParent(viewport);
-    const xScroller = canScrollAxis(viewport, "x") ? viewport : scrollParent ?? viewport;
-    const yScroller = canScrollAxis(viewport, "y") ? viewport : scrollParent ?? viewport;
-    panRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      xScroller,
-      yScroller,
-      scrollLeft: xScroller.scrollLeft,
-      scrollTop: yScroller.scrollTop,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function movePan(event: PointerEvent<HTMLDivElement>) {
-    const pan = panRef.current;
-    if (!pan || pan.pointerId !== event.pointerId) return;
-    pan.xScroller.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
-    pan.yScroller.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
-  }
-
-  function endPan(event: PointerEvent<HTMLDivElement>) {
-    if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
-  }
-
   function handleWheel(event: WheelEvent<HTMLDivElement>) {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -274,10 +236,6 @@ export function DocumentViewer({
       <div
         ref={viewportRef}
         className={`document-viewer__viewport${state.fit === "width" ? " is-fit-width" : ""}`}
-        onPointerDown={beginPan}
-        onPointerMove={movePan}
-        onPointerUp={endPan}
-        onPointerCancel={endPan}
         onWheel={handleWheel}
       >
         <div

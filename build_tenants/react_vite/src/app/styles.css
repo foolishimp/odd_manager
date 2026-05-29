@@ -7437,17 +7437,12 @@ button.sidecar-project-picker__segment:hover {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  cursor: grab;
   touch-action: pan-x pan-y;
-  user-select: none;
+  user-select: text;
 }
 
 .document-viewer--outer-scroll .document-viewer__viewport {
   overflow: visible;
-}
-
-.document-viewer__viewport:active {
-  cursor: grabbing;
 }
 
 .document-viewer__content {
