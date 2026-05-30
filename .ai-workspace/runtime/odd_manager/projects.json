@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260528T070413647Z_pid85948/workspace",
+  "active_project_root": "/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t164_data_mapper_full_capability_live/20260530T002513920Z_pid54953/workspace",
   "projects": [
     {
       "id": "odd_world_model-6f55d0a5",
@@ -40,7 +40,7 @@
       "label": "odd_manager",
       "tags": [],
       "registered_at": "2026-05-12T23:10:48.071Z",
-      "updated_at": "2026-05-12T23:16:19.022Z"
+      "updated_at": "2026-05-29T15:12:12.138Z"
     },
     {
       "id": "scenario_t132_hello_world_js_live-1503be3a",
