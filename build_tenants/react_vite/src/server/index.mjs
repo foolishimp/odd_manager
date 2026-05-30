@@ -20,12 +20,10 @@ import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
 import {
-  composeManagerWorld,
-  managerSurfaceMediaType,
-  readManagerSurface,
-  resolveManagerSurfacePath,
-  runManagerCommand,
-} from "./manager-world-service.mjs";
+  readWorkspaceSurface,
+  resolveWorkspaceSurfacePath,
+  workspaceSurfaceMediaType,
+} from "./workspace-surface-service.mjs";
 import {
   spawnSession,
   killSession,
@@ -74,15 +72,6 @@ const serverDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(serverDir, "../../../../");
 const appsRoot = resolve(serverDir, "../../../../../");
 const port = Number(process.env.OMAN_API_PORT ?? 4173);
-const sessionServiceBaseUrl = normalizeBaseUrl(process.env.OMAN_ODD_SDLC_SERVICE_URL ?? null);
-
-function normalizeBaseUrl(value) {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
-}
 
 function firstString(...values) {
   for (const value of values) {
@@ -93,178 +82,9 @@ function firstString(...values) {
   return null;
 }
 
-function firstNumber(...values) {
-  for (const value of values) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-  }
-  return null;
-}
-
 function finiteQueryNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function normalizeCollection(payload, keys) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-  if (!payload || typeof payload !== "object") {
-    return [];
-  }
-  for (const key of keys) {
-    const value = payload[key];
-    if (Array.isArray(value)) {
-      return value;
-    }
-  }
-  return [];
-}
-
-function normalizeServiceRun(entry) {
-  return {
-    run_id: firstString(entry?.run_id, entry?.runId, entry?.id, entry?.instance_id) ?? "unknown-run",
-    status: firstString(entry?.status, entry?.state, entry?.stage) ?? "unknown",
-    graph_function: firstString(
-      entry?.graph_function,
-      entry?.graphFunction,
-      entry?.graph_function_id,
-      entry?.graphFunctionId,
-    ),
-    module: firstString(entry?.module, entry?.module_name, entry?.moduleName),
-    edge: firstString(entry?.edge, entry?.edge_id, entry?.edgeId),
-    blocking_reason: firstString(entry?.blocking_reason, entry?.blockingReason, entry?.reason),
-    selected_worker: firstString(
-      entry?.selected_worker,
-      entry?.selectedWorker,
-      entry?.worker,
-      entry?.worker_name,
-      entry?.workerName,
-    ),
-    updated_at: firstString(entry?.updated_at, entry?.updatedAt, entry?.event_time, entry?.eventTime),
-  };
-}
-
-function normalizeServiceWorker(entry) {
-  return {
-    name: firstString(entry?.name, entry?.worker_name, entry?.workerName, entry?.id) ?? "unknown-worker",
-    agent: firstString(entry?.agent, entry?.agent_type, entry?.agentType),
-    transport: firstString(entry?.transport, entry?.transport_kind, entry?.transportKind),
-    status: firstString(entry?.status, entry?.state),
-    remote_host: firstString(entry?.remote_host, entry?.remoteHost, entry?.host),
-    history_bytes: firstNumber(entry?.history_bytes, entry?.historyBytes, entry?.history_size),
-    last_activity_at: firstString(
-      entry?.last_activity_at,
-      entry?.lastActivityAt,
-      entry?.updated_at,
-      entry?.updatedAt,
-    ),
-  };
-}
-
-async function parseServiceJson(response) {
-  const payloadText = await response.text();
-  let payload = null;
-  if (payloadText.trim()) {
-    try {
-      payload = JSON.parse(payloadText);
-    } catch (caught) {
-      throw new Error(
-        caught instanceof Error
-          ? `service returned invalid JSON: ${caught.message}`
-          : "service returned invalid JSON",
-      );
-    }
-  }
-  if (!response.ok) {
-    const detail =
-      payload && typeof payload === "object" && typeof payload.error === "string"
-        ? payload.error
-        : payloadText.trim() || `${response.status} ${response.statusText}`;
-    throw new Error(detail);
-  }
-  return payload;
-}
-
-function buildSessionServiceUrl(pathname, workspaceRoot, extraParams = {}) {
-  if (!sessionServiceBaseUrl) {
-    return null;
-  }
-  const nextUrl = new URL(pathname, sessionServiceBaseUrl);
-  if (workspaceRoot) {
-    nextUrl.searchParams.set("workspaceRoot", workspaceRoot);
-  }
-  for (const [key, value] of Object.entries(extraParams)) {
-    if (value !== null && value !== undefined && value !== "") {
-      nextUrl.searchParams.set(key, String(value));
-    }
-  }
-  return nextUrl;
-}
-
-async function loadSessionServiceSnapshot(workspaceRoot) {
-  const observedAt = new Date().toISOString();
-  if (!sessionServiceBaseUrl) {
-    return {
-      configured: false,
-      available: false,
-      base_url: null,
-      observed_at: observedAt,
-      error: "Set OMAN_ODD_SDLC_SERVICE_URL on the odd_manager API to read odd_sdlc_service runs and workers.",
-      runs: [],
-      workers: [],
-    };
-  }
-
-  try {
-    const [runsPayload, workersPayload] = await Promise.all([
-      fetch(buildSessionServiceUrl("/api/runs", workspaceRoot)).then(parseServiceJson),
-      fetch(buildSessionServiceUrl("/api/workers", workspaceRoot)).then(parseServiceJson),
-    ]);
-    return {
-      configured: true,
-      available: true,
-      base_url: sessionServiceBaseUrl,
-      observed_at: observedAt,
-      error: null,
-      runs: normalizeCollection(runsPayload, ["runs", "items", "data"]).map(normalizeServiceRun),
-      workers: normalizeCollection(workersPayload, ["workers", "items", "data"]).map(normalizeServiceWorker),
-    };
-  } catch (caught) {
-    return {
-      configured: true,
-      available: false,
-      base_url: sessionServiceBaseUrl,
-      observed_at: observedAt,
-      error: caught instanceof Error ? caught.message : String(caught),
-      runs: [],
-      workers: [],
-    };
-  }
-}
-
-async function postSessionServiceCommand(pathname, body = {}, workspaceRoot = null) {
-  const serviceUrl = buildSessionServiceUrl(pathname, workspaceRoot);
-  if (!serviceUrl) {
-    throw new Error("odd_sdlc_service is not configured for odd_manager");
-  }
-  return parseServiceJson(
-    await fetch(serviceUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    }),
-  );
 }
 
 function humanizeName(value) {
@@ -852,7 +672,7 @@ function writeSseEvent(response, event, payload) {
 }
 
 function writeRawSurface(response, workspaceRoot, relativePath, options = {}) {
-  const resolved = resolveManagerSurfacePath(workspaceRoot, relativePath);
+  const resolved = resolveWorkspaceSurfacePath(workspaceRoot, relativePath);
   if (resolved.outsideWorkspace) {
     writeJson(response, 403, { error: "surface path resolves outside the active Project root" });
     return;
@@ -867,7 +687,7 @@ function writeRawSurface(response, workspaceRoot, relativePath, options = {}) {
     return;
   }
   response.writeHead(200, {
-    "Content-Type": managerSurfaceMediaType(relativePath),
+    "Content-Type": workspaceSurfaceMediaType(relativePath),
     "Content-Length": String(stat.size),
     "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(basename(resolved.target))}`,
     "X-Content-Type-Options": "nosniff",
@@ -963,21 +783,6 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "GET" && url.pathname === "/api/world") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-      writeJson(response, 200, {
-        ...composeManagerWorld(workspaceRoot),
-        workspace_profile: profileWorkspace(workspaceRoot),
-      });
-      return;
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/session-service") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-      writeJson(response, 200, await loadSessionServiceSnapshot(workspaceRoot));
-      return;
-    }
-
     if (request.method === "GET" && url.pathname === "/api/surface") {
       const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
       const relativePath = url.searchParams.get("relativePath");
@@ -985,7 +790,7 @@ const server = createServer(async (request, response) => {
         writeJson(response, 400, { error: "surface requests require relativePath" });
         return;
       }
-      writeJson(response, 200, readManagerSurface(workspaceRoot, relativePath));
+      writeJson(response, 200, readWorkspaceSurface(workspaceRoot, relativePath));
       return;
     }
 
@@ -997,66 +802,6 @@ const server = createServer(async (request, response) => {
         return;
       }
       writeRawSurface(response, workspaceRoot, relativePath, { headOnly: request.method === "HEAD" });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/commands/run") {
-      const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
-      const command = body.command;
-      if (!["gaps", "iterate", "start"].includes(command)) {
-        writeJson(response, 400, { error: `unsupported command: ${command}` });
-        return;
-      }
-      const result = await runManagerCommand(workspaceRoot, command, { auto: body.auto });
-      writeJson(response, result.ok ? 200 : 501, result);
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/session-service/run/approve") {
-      const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
-      if (!body.runId) {
-        writeJson(response, 400, { error: "approve requires runId" });
-        return;
-      }
-      writeJson(
-        response,
-        200,
-        await postSessionServiceCommand(
-          `/api/runs/${encodeURIComponent(body.runId)}/approve`,
-          {
-            edge: body.edge ?? null,
-          },
-          workspaceRoot,
-        ),
-      );
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/session-service/run/reject") {
-      const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
-      if (!body.runId) {
-        writeJson(response, 400, { error: "reject requires runId" });
-        return;
-      }
-      if (!body.reason || !String(body.reason).trim()) {
-        writeJson(response, 400, { error: "reject requires reason" });
-        return;
-      }
-      writeJson(
-        response,
-        200,
-        await postSessionServiceCommand(
-          `/api/runs/${encodeURIComponent(body.runId)}/reject`,
-          {
-            edge: body.edge ?? null,
-            reason: body.reason,
-          },
-          workspaceRoot,
-        ),
-      );
       return;
     }
 

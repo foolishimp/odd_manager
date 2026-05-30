@@ -3,8 +3,8 @@ id: T-023
 title: Project STDO four-method authority surface in BuilderPanel
 type: feature
 ticket_category: ui_substrate_alignment
-status: backlog
-review_status: pending
+status: superseded
+review_status: superseded_by_t030
 goal: realize-ai-workspace-topology-and-agent-interoperability
 build_tenant: react_vite
 owner: unassigned
@@ -15,7 +15,7 @@ affected_boundary: AssetSurface contract for installed standards mirror, Manager
 priority: medium
 triaged_at: 2026-05-04
 created_at: 2026-05-04
-updated_at: 2026-05-04
+updated_at: 2026-05-30
 governance_scope: STDO Method
 governance_scope_expansion:
   - S: SPEC_METHOD.md
@@ -26,6 +26,7 @@ governance_scope_expansion:
 depends_on:
   - abiogenesis bootloader STDO update (completed 2026-05-04)
   - abiogenesis installer smoke list extension (completed 2026-05-04)
+superseded_by: T-030
 intake_source: The bootloader at `abiogenesis/CLAUDE.md` and `abiogenesis/AGENTS.md` now names STDO as the four-method constitutional governance. odd_manager's BuilderPanel currently shows graph functions, workorders, ambiguity register, and asset taxonomy without any reference to the constitutional authority that governs them. Operators reading BuilderPanel cannot tell which method authorises a given builder artifact.
 target_truth: BuilderPanel renders, alongside published graph functions and workorders, the four STDO methods as a discrete authority surface, each with its installed mirror path and a count of artifacts authorised under it. Each published graph function exposes its primary authority binding (which constitutional method authorises it), its declared F_D / F_P / F_H regime distribution per edge, and a derivation chain summary (REQ-* -> ADR-* -> Module).
 superseded_truth: BuilderPanel surfaces graph functions and workorders without reference to STDO four-method authority or per-edge regime distribution.
@@ -54,6 +55,15 @@ non_closure_conditions:
 ---
 
 # T-023: Project STDO Four-Method Authority In BuilderPanel
+
+## Supersession Update - 2026-05-30
+
+Superseded by `T-030`.
+
+The BuilderPanel and ManagerWorld route projection no longer exist in the live
+React tenant. Any future STDO authority operator surface must enter through the
+Sidecar state/message/command/view surface and typed asset contracts rather
+than reviving this legacy route target.
 
 ## STDO Triage
 

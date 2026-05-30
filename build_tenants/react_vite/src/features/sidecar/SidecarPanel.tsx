@@ -4419,8 +4419,8 @@ function ProcessNavigatorPanel({ state, dispatch }: {
         </div>
       </div>
 
-      <div className="sidecar-process-layout sidecar-process-layout--graph process-page__lens">
-        <section className="sidecar-process-records process-page__explorer" aria-label="Process Explorer">
+      <div className="sidecar-process-layout sidecar-process-layout--graph">
+        <section className="sidecar-process-records" aria-label="Process Explorer">
           <div className="process-explorer__controls">
             <div className="requirements-explorer__section-heading">
               <span className="panel__eyebrow">Process Explorer</span>
@@ -4458,7 +4458,7 @@ function ProcessNavigatorPanel({ state, dispatch }: {
           </div>
         </section>
 
-        <section className="sidecar-process-detail process-page__workbench" aria-label="Selected process record">
+        <section className="sidecar-process-detail" aria-label="Selected process record">
           {liveViewActive && projection.liveAnalysis ? (
             <ProcessLiveAnalysisSummary analysis={projection.liveAnalysis} visibleRecordCount={records.length} />
           ) : (

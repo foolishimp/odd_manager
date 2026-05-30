@@ -5,7 +5,7 @@
 **Ticket**: B-015
 **Tenant**: `react_vite`
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
-**Reference Source**: `build_tenants/react_vite/src/features/oddterm/OddTermPanel.tsx`; `build_tenants/react_vite/src/server/oddterm-pool-service.mjs`
+**Reference Source**: historical legacy screens at tag `last-legacy-screens`; live session substrate in `build_tenants/react_vite/src/server/oddterm-pool-service.mjs`
 **Target Surface**: `build_tenants/react_vite/src/features/sidecar/`
 
 ## 1. Purpose
@@ -53,7 +53,7 @@ WebSocket effects.
 | `/api/oddterm/session` create/select/close | wrapped by Sidecar session commands and projected as `SessionRecord` |
 | `/api/oddterm` WebSocket | used by the terminal effect membrane |
 | `GTermSessionSummary` | demoted to `raw` payload on `SessionRecord`; not consumed as Sidecar truth |
-| `OddTermPanel` split layout, rename, promote, agent join controls | deferred families outside B-015 |
+| former `OddTermPanel` split layout, rename, promote, agent join controls | historical reference only; live behavior must be modeled in Sidecar |
 | view-local action state and direct async handlers | rejected for target; replaced by `State`/`Msg`/`Update`/`Cmd` |
 
 ## 4. State / Msg / Update / Cmd
@@ -244,6 +244,40 @@ Sidecar now owns its own info browser and shell workspace.
 This is a route-local exclusion. The ambient widgets remain valid on the other
 manager pages until their retirement is designed separately. The Sidecar route
 must not initialize their console polling effects solely to hide them with CSS.
+
+### T-030 Sole Sidecar Route Authority Amendment
+
+T-030 supersedes the temporary "other manager pages" allowance above. The
+React tenant now has one route-level workbench: Sidecar.
+
+The live route law is:
+
+- `WorkspaceRoute` mounts `SidecarPanel` directly and does not accept
+  `selectedPage`, `ManagerWorld`, graph selection, or command-runner props.
+- `App` keeps only host-level theme and active Project root state; Project
+  switching is lifted from Sidecar Context changes and must not close backend
+  PTYs.
+- `AppShell` may render compact chrome and a Sidecar identity affordance, but
+  it must not expose a multi-page manager navigation or shell-owned Project
+  selector.
+- No route-level page vocabulary remains outside the shell's single Sidecar
+  affordance.
+- Legacy screens and ambient route widgets are deleted from the live source
+  tree rather than hidden, redirected, or preserved as inactive reference code.
+- Historical reference for the deleted screens lives only in git at
+  `last-legacy-screens`.
+
+The surviving shared primitives are:
+
+- `DocumentViewer`, including markdown, code, HTML, and PDF adapters.
+- Sidecar-owned `State`/`Msg`/`Update`/`Cmd` and typed asset-surface
+  contracts.
+- Server `/api/surface` read primitives used by the Sidecar document viewer.
+- Backend session substrate routes used by the Sidecar shell workspace.
+
+The deleted route screens must not be reintroduced as compatibility wrappers
+or hidden fallbacks. Any future operator capability enters through Sidecar
+state, messages, commands, and view projections.
 
 ## 14. B-021 Rail / Flyout Workbench Rule
 
@@ -738,19 +772,21 @@ The Process Navigator law is:
 
 ## 35. B-066 Shared Document Viewer Carrier Rule
 
-B-066 defines the shared document viewer carrier used by Sidecar and other
-document-consuming surfaces. The existing `MarkdownDocument` component is prior
-implementation material, not the carrier boundary.
+B-066 defines the shared document viewer carrier used by Sidecar document
+surfaces. The former `MarkdownDocument` component is historical implementation
+material at `last-legacy-screens`, not a compatibility boundary.
 
 The carrier is `DocumentViewer`. It is a UX projection carrier over one
 document descriptor, one document source, format-specific adapters, and
-explicit viewer state. It is reusable by:
+explicit viewer state. In the live tenant it is consumed by:
 
 - Sidecar surface viewer tabs
-- Inspector document surfaces
-- Requirements document surfaces
-- WorkspaceRoute document surfaces
-- legacy OddBoard document surfaces while they still exist
+- Sidecar process and trace tabs that open document surfaces
+
+Future document-consuming surfaces must import `DocumentViewer` directly under
+their own STDO-UX design entry. They must not revive deleted route screens,
+restore `MarkdownDocument`, or introduce one-off renderers that bypass this
+carrier.
 
 `DocumentViewer` must not store or mutate source-project truth. It renders
 admitted file or record content and emits only UX-local viewer messages unless
@@ -867,20 +903,12 @@ iframe wheel events back to the parent viewer; scripts remain disabled. The PDF
 adapter keeps browser-native PDF pinch behavior and does not intercept PDF
 iframe gestures.
 
-### B-066 Migration Boundary
+### B-066 T-030 Sole-Consumer Boundary
 
-Downstream consumers migrate to `DocumentViewer` rather than extending
-`MarkdownDocument` in place:
-
-- Sidecar `SurfaceInspector` becomes the first consumer.
-- `InspectorPanel`, `RequirementsWorkspace`, and `WorkspaceRoute` migrate next
-  when their document surface paths are touched.
-- `OddBoardWidget` may keep its current renderer until retirement or explicit
-  migration, but it is no longer authority for document capability.
-
-`MarkdownDocument` may remain as a compatibility wrapper around the markdown
-adapter during migration. It must not grow Mermaid, zoom, PDF, or syntax
-highlighting behavior that bypasses the shared `DocumentViewer` contract.
+T-030 removes the migration period. `DocumentViewer` is the live document
+viewer carrier. `MarkdownDocument`, legacy document panels, and OddBoard route
+renderers are deleted rather than retained as wrappers or fallback renderers.
+Historical reference remains available only from the `last-legacy-screens` tag.
 
 B-067, B-068, B-069, and B-070 are downstream tickets over this carrier:
 

@@ -3,8 +3,8 @@ id: T-029
 title: Retire legacy workspace-route panels and consolidate runtime/process/builder entry on the sidecar
 type: feature
 ticket_category: ui_substrate_alignment
-status: backlog
-review_status: pending
+status: superseded
+review_status: superseded_by_t030
 goal: realize-ai-workspace-topology-and-agent-interoperability
 build_tenant: react_vite
 owner: unassigned
@@ -14,18 +14,29 @@ re_entry_point: design
 affected_boundary: src/features/home/HomePanel.tsx, src/features/runtime/RuntimePanel.tsx, src/features/builder/BuilderPanel.tsx, src/features/process/ProcessWorkspace.tsx, src/routes/WorkspaceRoute.tsx
 priority: medium
 created_at: 2026-05-05
-updated_at: 2026-05-05
+updated_at: 2026-05-30
 governance_scope: STDO Method
 depends_on:
   - T-022
   - T-024
   - T-026
+superseded_by: T-030
 intake_source: T-025 audit classified HomePanel as extension_required only if retained; the safer product move is a legacy-retirement wave because the sidecar now owns the live TypeScript process projection.
 target_truth: Legacy workspace-route runtime/process/builder surfaces are either removed, clearly demoted, or redirected to the sidecar carriers. ManagerWorld-derived runtime/process truth no longer competes with the sidecar process projection.
 closure_law: This ticket closes only after design decides remove vs redirect per panel, routes are updated accordingly, and regression coverage proves the sidecar remains the canonical runtime/process entry.
 ---
 
 # T-029: Retire Legacy Workspace Route Panels And Consolidate On Sidecar
+
+## Supersession Update - 2026-05-30
+
+Superseded by `T-030`; its BuilderPanel-dependent follow-on `T-023` is also
+superseded by the same Sidecar-only decision.
+
+The operator repriced this from a design decision about remove/redirect/retain
+into a deletion cleanup wave: Sidecar is now the only intended STDO-UX surface
+truth, and the legacy screens are retained only at the git checkpoint tag
+`last-legacy-screens`.
 
 ## STDO Triage
 
@@ -37,7 +48,7 @@ The substrate-aligned carrier path now lives in the sidecar. The legacy Home / R
 
 - `HomePanel.tsx`: retire or reframe as a thin entry dashboard
 - `RuntimePanel.tsx`: retire; T-022 moved runtime evidence to sidecar
-- `BuilderPanel.tsx`: retire or defer with T-023
+- `BuilderPanel.tsx`: retired by T-030; T-023 is superseded
 - `ProcessWorkspace.tsx`: retire; T-026 moved process navigation to sidecar
 
 ## Closure Criteria

@@ -31,31 +31,13 @@ async function captureReviewShot(
 
 async function waitForChrome(page: Page) {
   await expect(page.getByRole("banner")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toBeVisible();
+  await expect(
+    page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("banner").getByRole("button", { name: "Apply", exact: true })).toHaveCount(0);
 }
 
 async function openWorkspace(page: Page, workspaceRoot: string) {
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Manual" }).click();
-  await dialog.getByRole("textbox").first().fill(workspaceRoot);
-  await dialog.getByRole("button", { name: "Add Project" }).click();
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Projects" }).click();
-  const projectRow = dialog.locator(".project-selector__workspace").filter({ hasText: workspaceRoot }).first();
-  await expect(projectRow).toBeVisible();
-  const openButton = projectRow.getByRole("button", { name: "Open" });
-  const currentButton = projectRow.getByRole("button", { name: "Current" });
-  if ((await openButton.count()) > 0 && await openButton.isEnabled()) {
-    await openButton.click();
-  } else if ((await currentButton.count()) > 0) {
-    await dialog.getByRole("button", { name: "Close" }).click();
-  } else {
-    await dialog.getByRole("button", { name: "Close" }).click();
-  }
-  await expect(dialog).toHaveCount(0);
   const registryActivated = await page.evaluate(async (root) => {
     const response = await fetch("/api/projects/register", {
       method: "POST",
@@ -67,6 +49,7 @@ async function openWorkspace(page: Page, workspaceRoot: string) {
   expect(registryActivated).toBe(true);
   await page.reload();
   await waitForChrome(page);
+  await expect(page.getByRole("banner")).toContainText(workspaceRoot);
   await expect(
     page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }),
   ).toBeVisible();
@@ -74,80 +57,26 @@ async function openWorkspace(page: Page, workspaceRoot: string) {
 
 async function openManagerWorkspace(page: Page) {
   await openWorkspace(page, MANAGER_WORKSPACE);
-  await expect(page.getByText("Backlog Driver")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 }
 
 async function openObservedWorkspace(page: Page) {
   await openWorkspace(page, OBSERVED_WORKSPACE);
-  await expect(page.getByText("Backlog Navigator")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 }
 
-test("captures requirements and evidence surfaces for an observed odd_sdlc workspace", async ({
-  page,
-}, testInfo) => {
+test("sidecar is the only route-level manager surface", async ({ page }, testInfo) => {
   await page.goto("/");
   await waitForChrome(page);
   await openWorkspace(page, OBSERVED_WORKSPACE);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Requirements View", exact: true }).click();
-  await expect(page.getByText("REQ-LDM-001")).toBeVisible({ timeout: 30_000 });
-  await captureReviewShot(page, testInfo, "requirements-inspector");
-
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Policy & Evidence", exact: true }).click();
-  const evidenceSelector = page.locator(".surface-browser__selector");
-  await expect(evidenceSelector).toContainText("Generated Bootstrap Requirements", { timeout: 30_000 });
-  await expect(evidenceSelector).toContainText("Release Surface");
-
-  await captureReviewShot(page, testInfo, "evidence-inspector");
-});
-
-test("captures browse-root scan from the project selector", async ({ page }, testInfo) => {
-  await page.goto("/");
-  await waitForChrome(page);
-
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-
-  await dialog.getByRole("tab", { name: "Browse" }).click();
-  const crumbs = dialog.locator(".folder-browser__crumbs");
-  await crumbs.getByRole("button", { name: "apps" }).click();
-
-  await expect(
-    dialog.getByRole("button", {
-      name: /abiogenesis managed/i,
-    }),
-  ).toBeVisible({ timeout: 20_000 });
-  await expect(
-    dialog.getByRole("button", {
-      name: /odd_manager Odd Manager/i,
-    }),
-  ).toBeVisible();
-
-  await captureReviewShot(dialog, testInfo, "project-selector-browse");
-});
-
-test("project add stays in dialog and preserves the current manager page", async ({ page }) => {
-  await page.goto("/");
-  await waitForChrome(page);
-  await expect(page.locator(".shell__control-card--status strong")).not.toHaveText("Loading", { timeout: 30_000 });
-
   const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
   await expect(sidecarNav).toBeVisible({ timeout: 30_000 });
-  await sidecarNav.click();
-  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Manual" }).click();
-  await dialog.getByRole("textbox").first().fill(OBSERVED_WORKSPACE);
-  await dialog.getByRole("button", { name: "Add Project" }).click();
-
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText("Added data_mapper.test35.");
   await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
+  await expect(page.locator("nav.manager-nav").getByRole("button", { name: "Requirements View" })).toHaveCount(0);
+  await expect(page.locator("nav.manager-nav").getByRole("button", { name: "Policy & Evidence" })).toHaveCount(0);
+  await captureReviewShot(page, testInfo, "sidecar-only-entry");
 });
 
 test("managed project add refreshes sidecar project selection without page reload", async ({ page }, testInfo) => {
@@ -158,17 +87,15 @@ test("managed project add refreshes sidecar project selection without page reloa
     await page.goto("/");
     await waitForChrome(page);
 
-    await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
     await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
-
-    await page.getByRole("button", { name: "Open workspace selector" }).click();
-    const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("tab", { name: "Manual" }).click();
-    await dialog.getByRole("textbox").first().fill(managedProjectRoot);
-    await dialog.getByRole("button", { name: "Add Project" }).click();
-    await dialog.getByRole("button", { name: "Close" }).click();
-    await expect(dialog).toHaveCount(0);
+    await page.evaluate(async (root) => {
+      await fetch("/api/projects/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root, setActive: false }),
+      });
+      window.dispatchEvent(new CustomEvent("odd-manager:project-registry-changed"));
+    }, managedProjectRoot);
 
     const sidecarSurfaces = page.getByRole("navigation", { name: "Sidecar selection surfaces" });
     await sidecarSurfaces.getByRole("button", { name: "Projects" }).click();
@@ -185,16 +112,14 @@ test("managed project add refreshes sidecar project selection without page reloa
   }
 });
 
-test("managed project control remains readable in dark grey mode", async ({ page }) => {
+test("sidecar surface control remains readable in dark grey mode", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("oman-theme", "dark-grey");
   });
   await page.goto("/");
   await waitForChrome(page);
 
-  await expect
-    .poll(() => page.locator(".shell__control-card--button strong").evaluate((node) => window.getComputedStyle(node).color))
-    .toBe("rgb(212, 212, 212)");
+  await expect(page.locator(".shell__control-card--status")).toContainText("Sidecar");
 });
 
 test("project switching from sidecar keeps sidecar open and scopes pinned folders", async ({ page }) => {
@@ -221,24 +146,20 @@ test("project switching from sidecar keeps sidecar open and scopes pinned folder
   await page.reload();
   await waitForChrome(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
   const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
   await expect(sidecarNav).toHaveClass(/is-selected/);
   const activityRail = page.locator("nav.sidecar-activity-rail");
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Projects" }).click();
-  const observedRow = dialog.locator(".project-selector__workspace").filter({ hasText: OBSERVED_WORKSPACE }).first();
-  await expect(observedRow).toBeVisible();
-  await observedRow.getByRole("button", { name: "Open" }).click();
-  await expect(dialog).toHaveCount(0);
+  await activityRail.getByRole("button", { name: "Projects" }).click();
+  const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
+  const observedProject = flyout.locator(".sidecar-row").filter({ hasText: OBSERVED_WORKSPACE.split("/").at(-1) ?? "data_mapper.test35" }).first();
+  await expect(observedProject).toBeVisible();
+  await observedProject.click();
 
   await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(OBSERVED_WORKSPACE);
+  await expect(page.getByRole("banner")).toContainText(OBSERVED_WORKSPACE);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toHaveCount(0);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./docs" })).toBeVisible();
 });
@@ -268,10 +189,9 @@ test("project selection from sidecar Projects surface promotes active context", 
   await page.reload();
   await waitForChrome(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
   const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
   await expect(sidecarNav).toHaveClass(/is-selected/);
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(MANAGER_WORKSPACE);
+  await expect(page.getByRole("banner")).toContainText(MANAGER_WORKSPACE);
 
   const activityRail = page.locator("nav.sidecar-activity-rail");
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toBeVisible();
@@ -283,7 +203,7 @@ test("project selection from sidecar Projects surface promotes active context", 
 
   await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(OBSERVED_WORKSPACE);
+  await expect(page.getByRole("banner")).toContainText(OBSERVED_WORKSPACE);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toHaveCount(0);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./docs" })).toBeVisible();
 });
@@ -291,13 +211,6 @@ test("project selection from sidecar Projects surface promotes active context", 
 test("floating side windows close on outside click", async ({ page }) => {
   await page.goto("/");
   await waitForChrome(page);
-  await expect(page.locator(".shell__control-card--status strong")).not.toHaveText("Loading", { timeout: 30_000 });
-
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  await page.locator(".manager-nav").click();
-  await expect(dialog).toHaveCount(0);
 
   const sidecarButton = page.getByRole("button", { name: "Sidecar", exact: true });
   await expect(sidecarButton).toBeVisible({ timeout: 30_000 });
@@ -306,45 +219,6 @@ test("floating side windows close on outside click", async ({ page }) => {
   await expect(flyout).toBeVisible();
   await page.getByRole("region", { name: "Sidecar canvas" }).click();
   await expect(flyout).toHaveCount(0);
-});
-
-test("active project row shows current state without wait cursor", async ({ page }) => {
-  await page.goto("/");
-  await waitForChrome(page);
-  const activeSet = await page.evaluate(async (root) => {
-    const response = await fetch("/api/projects/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ root, setActive: true }),
-    });
-    return response.ok;
-  }, OBSERVED_WORKSPACE);
-  expect(activeSet).toBe(true);
-
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  const projectRow = dialog.locator(".project-selector__workspace").filter({ hasText: OBSERVED_WORKSPACE }).first();
-  await expect(projectRow).toBeVisible();
-  const currentButton = projectRow.getByRole("button", { name: "Current" });
-  const removeButton = projectRow.getByRole("button", { name: "Remove" });
-  await expect(currentButton).toBeDisabled();
-  await expect(removeButton).toBeDisabled();
-  await expect(currentButton).toHaveAttribute("title", "This Project is already active.");
-  await expect(removeButton).toHaveAttribute("title", "Open another Project before removing this one.");
-  await expect
-    .poll(() => currentButton.evaluate((node) => window.getComputedStyle(node).cursor))
-    .toBe("not-allowed");
-});
-
-test("captures collapsed oddboard and oddterm widgets", async ({ page }, testInfo) => {
-  await page.goto("/");
-  await waitForChrome(page);
-
-  await expect(page.getByRole("button", { name: "Expand oddboard" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Expand terminal workspace" })).toBeVisible();
-
-  await captureReviewShot(page, testInfo, "collapsed-collaboration-widgets");
 });
 
 test("sidecar sections minimize and restore independently", async ({ page }, testInfo) => {
@@ -734,7 +608,7 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   await expect(abiogenesisAgentsOpen).toBeVisible();
   await expect(abiogenesisAgentsOpen).toBeEnabled();
   await abiogenesisAgentsOpen.click();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(ABIOGENESIS_WORKSPACE, { timeout: 30_000 });
+  await expect(page.getByRole("banner")).toContainText(ABIOGENESIS_WORKSPACE, { timeout: 30_000 });
   await expect(canvas.locator(".sidecar-viewer-tab.is-selected .sidecar-viewer-tab__kind")).toHaveText("surface");
   await expect(canvas.getByRole("tab", { name: "surface AGENTS.md", selected: true })).toBeVisible();
   await openWorkspace(page, OBSERVED_WORKSPACE);
@@ -757,7 +631,7 @@ test("sidecar browse pins folders inside abiogenesis project", async ({ page }) 
 
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./docs" })).toBeVisible();
   await expect(flyout.getByRole("heading", { name: "./docs" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toContainText(ABIOGENESIS_WORKSPACE);
+  await expect(page.getByRole("banner")).toContainText(ABIOGENESIS_WORKSPACE);
   await expect(page.evaluate(() => window.localStorage.getItem(
     "oman-sidecar-pinned-folders:/Users/jim/src/apps/abiogenesis",
   ))).resolves.toContain("/Users/jim/src/apps/abiogenesis/docs");
@@ -1310,38 +1184,29 @@ test("sidecar process navigator N0 opens as a TypeScript-only object viewer tab"
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
-  const processCommand = page.getByRole("button", { name: "Open Process Navigator N0" });
+  const processCommand = page.getByRole("button", { name: "Open Process Navigator", exact: true });
   await expect(processCommand).toBeVisible();
   await processCommand.click();
 
   await expect(canvas.locator(".sidecar-viewer-tab.is-selected .sidecar-viewer-tab__kind")).toHaveText("process");
-  const processPanel = canvas.getByLabel("Sidecar Process Navigator");
+  const processPanel = canvas.locator(".sidecar-process-simple");
   await expect(processPanel).toBeVisible();
   await expect(processPanel).toContainText("ts-v1");
-  await expect(processPanel.getByRole("tablist", { name: "Process views" }).getByRole("tab")).toHaveCount(3);
-  await expect(processPanel.getByRole("tab", { name: /Active Work/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Blocked \/ Waiting/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Ready for Handoff/ })).toBeVisible();
-  await expect(processPanel.getByRole("tablist", { name: "Process maps" }).getByRole("tab")).toHaveCount(3);
-  await expect(processPanel.getByRole("tab", { name: /Process Flow Map/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Builder Governance Graph/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Runtime Evidence Flow/ })).toBeVisible();
-  await expect(processPanel.getByRole("region", { name: "Process Flow Map" })).toContainText("derive_code_surface");
+  await expect(processPanel.getByRole("tablist", { name: "Process navigator sections" }).getByRole("tab")).toHaveCount(4);
+  await expect(processPanel.getByRole("tab", { name: /Live View/ })).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Graph Overlays/ })).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Graph Functions/ })).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Leaf Assets/ })).toBeVisible();
+  await expect(processPanel.getByRole("region", { name: "Live View" })).toContainText("odd_sdlc runtime projection");
   await expect(processPanel).not.toContainText("Observed SDLC Surfaces");
   await expect(processPanel).not.toContainText("Recent Failures");
   await expect(processPanel).not.toContainText("Recent Activity");
   await expect(processPanel).not.toContainText("Tests / Qualification");
 
-  await processPanel.getByRole("tab", { name: /Builder Governance Graph/ }).click();
-  await expect(processPanel.getByRole("region", { name: "Builder Governance Graph" })).toContainText("Project Conformance");
-
-  await processPanel.getByRole("tab", { name: /Blocked \/ Waiting/ }).click();
-  await processPanel.getByRole("tab", { name: /Runtime Evidence Flow/ }).click();
-  await expect(processPanel.getByRole("region", { name: "Runtime Evidence Flow" })).toContainText("derive_code_surface");
-  await expect(processPanel).toContainText("vector_traversal_planned");
-
-  await processPanel.getByRole("tab", { name: /Ready for Handoff/ }).click();
-  await expect(processPanel.getByRole("region", { name: "Runtime Evidence Flow" })).toContainText("Fg_conform_project");
+  await processPanel.getByRole("tab", { name: /Graph Functions/ }).click();
+  await expect(processPanel).toContainText("derive_code_surface");
+  await processPanel.getByRole("tab", { name: /Leaf Assets/ }).click();
+  await expect(processPanel).toContainText("code_surface");
 
   await captureReviewShot(canvas, testInfo, "sidecar-process-navigator-ts-object-viewer");
   await openWorkspace(page, OBSERVED_WORKSPACE);

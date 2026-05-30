@@ -588,6 +588,7 @@ test('sidecar project selection promotes one active Project root across shell an
   assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
   assert.match(routeSource, /<SidecarPanel[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onContextChange=\{\(ctx\) => \{/);
   assert.match(routeSource, /if \(ctx\.project\.root !== workspaceRoot\) \{[\s\S]*onProjectRootChange\(ctx\.project\.root\);/);
+  assert.doesNotMatch(routeSource, /selectedPage|ManagerWorld|RequirementsWorkspace|ProcessWorkspace|RuntimePanel|BuilderPanel|GraphWorkspace|HomePanel|InspectorPanel|WorldModelPanel|OddBoardWidget|OddTermWorkspaceWidget/);
   assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
   assert.match(source, /if \(projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere\) return;/);
   assert.match(source, /projectRootOverride=\{currentProjectRoot\}/);

@@ -1,21 +1,19 @@
 # runtime
 
-The React/Vite tenant runtime is Node-owned. Projection logic lives in
-`src/server/manager-world-service.mjs`; runtime adapters in this folder are
-Node entrypoints for auxiliary local tools.
+The React/Vite tenant runtime is Node-owned. Sidecar document-surface helpers
+live in `src/server/workspace-surface-service.mjs`; runtime adapters in this
+folder are Node entrypoints for auxiliary local tools.
 
 It does not replace ABG runtime authority and it does not move domain ownership
 into the UI tenant. Its job is narrower:
 
 - read specification, runtime, and record surfaces from the managed workspace
-- project ABG event truth into runtime aggregates when event surfaces exist
-- derive manager-local graph and workorder projections for the UI
+- return document-surface payloads for the Sidecar viewer
 
-Manager world API commands:
+Workspace surface API commands:
 
-- `/api/world`
 - `/api/surface?relativePath=<path>`
-- `/api/commands/run` for local `gaps` projection
+- `/api/surface/raw?relativePath=<path>`
 
 Traversal commands are not implemented through a tenant-local compatibility
 helper. Execution belongs behind the configured domain/runtime service
