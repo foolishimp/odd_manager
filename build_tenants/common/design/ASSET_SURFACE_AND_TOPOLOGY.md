@@ -111,7 +111,7 @@ Each typed collection's storage root and MCP resource are bound here. Per `ODD_M
 | **Comments** | `.ai-workspace/comments/<agent>/*.md` | `comments://` | T-008 |
 | **Threads** | derived from Comments via filename + frontmatter `Addresses` field; not a primary storage root | `threads://` | T-008 (derivation lives with Comments) |
 | **Sessions** | runtime backplane (tmux/zellij or native equivalent), transcript anchored under `.ai-workspace/runtime/sessions/<session-id>/` | `sessions://` | T-009 |
-| **Projects** | `.ai-workspace/runtime/odd_manager/projects.json` under the manager workspace (the maintained registry of known Projects, separate from any managed Project's contents) | `projects://` | B-046 |
+| **Projects** | `.ai-workspace/runtime/odd_manager/projects.local.json` under the manager workspace (the local maintained registry of known Projects, separate from any managed Project's contents); committed shape lives in `.ai-workspace/runtime/odd_manager/projects.template.json` | `projects://` | B-046 |
 | **ActiveContext** | runtime singleton, persisted under `.ai-workspace/runtime/active_context.json` | `active_context://current` | emitted by T-010 widget; consumed everywhere |
 
 Notes:

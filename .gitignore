@@ -8,3 +8,4 @@ build_tenants/react_vite/dist/
 build_tenants/react_vite/tests/artifacts/
 
 .ai-workspace/runtime/conversation_history/
+.ai-workspace/runtime/odd_manager/projects.local.json

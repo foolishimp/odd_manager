@@ -50,7 +50,7 @@ test('register persists Project records under the manager workspace', () => {
     assert.equal(registered.is_active, true);
     assert.ok(registered.build_tenants.includes('react_vite'));
 
-    const registryPath = join(managerRoot, '.ai-workspace/runtime/odd_manager/projects.json');
+    const registryPath = join(managerRoot, '.ai-workspace/runtime/odd_manager/projects.local.json');
     assert.equal(existsSync(registryPath), true);
     const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
     assert.equal(registry.active_project_root, projectRoot);
@@ -131,7 +131,8 @@ test('discoverProjects still scans candidate roots without registering them', ()
 });
 
 test('demo: print maintained Projects', () => {
-  const surface = createProjectSurface('/Users/jim/src/apps/odd_manager');
+  const managerRoot = join(process.cwd(), '../..');
+  const surface = createProjectSurface(managerRoot);
   /* eslint-disable no-console */
   console.log('\n=== ProjectAssetSurface maintained registry read ===');
   console.log('diagnostic:', surface.diagnostic());

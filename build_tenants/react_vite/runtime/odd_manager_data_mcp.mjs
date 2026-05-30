@@ -48,7 +48,7 @@ import { rehydrateSessions } from '../src/server/session-pty-service.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(process.env.OMAN_WORKSPACE_ROOT || resolve(here, '..', '..', '..'));
 const managerWorkspaceRoot = resolve(here, '..', '..', '..');
-const REGISTRY_ROOT = process.env.PROJECT_REGISTRY_ROOT ?? '/Users/jim/src/apps';
+const REGISTRY_ROOT = process.env.PROJECT_REGISTRY_ROOT ?? resolve(managerWorkspaceRoot, '..');
 const VIEWER_AGENT = process.env.OMAN_AGENT_PROVIDER ?? process.env.OMAN_SESSION_LABEL ?? 'operator';
 
 const ticketSurface = createTicketSurface(projectRoot);

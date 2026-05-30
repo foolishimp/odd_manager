@@ -1,9 +1,10 @@
 // ProjectAssetSurface service.
 //
 // Projects are maintained manager-workspace state, not a scan result. Discovery
-// can propose candidates, but the Projects collection is the registry stored at
-// `.ai-workspace/runtime/odd_manager/projects.json` under the odd_manager
-// workspace.
+// can propose candidates, but the Projects collection is the local registry
+// stored at `.ai-workspace/runtime/odd_manager/projects.local.json` under the
+// odd_manager workspace. The committed `projects.template.json` documents the
+// shape without carrying machine-specific paths.
 
 import {
   existsSync,
@@ -22,8 +23,8 @@ const DEFAULT_MANAGER_WORKSPACE_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../../',
 );
-const DEFAULT_DISCOVERY_ROOT = '/Users/jim/src/apps';
-const PROJECT_REGISTRY_RELATIVE_PATH = '.ai-workspace/runtime/odd_manager/projects.json';
+const DEFAULT_DISCOVERY_ROOT = resolve(DEFAULT_MANAGER_WORKSPACE_ROOT, '..');
+const PROJECT_REGISTRY_RELATIVE_PATH = '.ai-workspace/runtime/odd_manager/projects.local.json';
 const PROJECT_REGISTRY_VERSION = 1;
 
 function nowIso() {

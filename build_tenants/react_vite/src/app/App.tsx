@@ -19,9 +19,7 @@ import type {
 } from "../lib/types";
 import { WorkspaceRoute } from "../routes/WorkspaceRoute";
 
-const LEGACY_MANAGER_WORKSPACE = "/Users/jim/src/apps/odd_manager";
-const DEFAULT_WORKSPACE =
-  "/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35";
+const DEFAULT_WORKSPACE = "";
 const WORKSPACE_STORAGE_KEY = "oman-workspace-root";
 const THEME_STORAGE_KEY = "oman-theme";
 
@@ -48,10 +46,7 @@ function initialWorkspace() {
     return DEFAULT_WORKSPACE;
   }
   const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)?.trim();
-  if (!stored || stored === LEGACY_MANAGER_WORKSPACE) {
-    return DEFAULT_WORKSPACE;
-  }
-  return stored;
+  return stored || DEFAULT_WORKSPACE;
 }
 
 export function App() {
@@ -183,16 +178,19 @@ export function App() {
       .then((registry) => {
         if (cancelled) return;
         const activeProject = registry.projects.find((project) => project.is_active);
-        if (activeProject?.root && activeProject.root !== workspaceRoot) {
-          setWorkspaceRoot(activeProject.root);
-          setWorkspaceDraft(activeProject.root);
-          void refreshWorld(activeProject.root, { resetPage: true });
+        const registryDefault = activeProject?.root || registry.diagnostic.manager_workspace_root || workspaceRoot;
+        if (registryDefault && registryDefault !== workspaceRoot) {
+          setWorkspaceRoot(registryDefault);
+          setWorkspaceDraft(registryDefault);
+          void refreshWorld(registryDefault, { resetPage: true });
           return;
         }
-        void refreshWorld(workspaceRoot, { resetPage: true });
+        if (workspaceRoot) {
+          void refreshWorld(workspaceRoot, { resetPage: true });
+        }
       })
       .catch(() => {
-        if (!cancelled) void refreshWorld(workspaceRoot, { resetPage: true });
+        if (!cancelled && workspaceRoot) void refreshWorld(workspaceRoot, { resetPage: true });
       });
     return () => {
       cancelled = true;
