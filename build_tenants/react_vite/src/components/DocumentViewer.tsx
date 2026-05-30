@@ -1,11 +1,11 @@
-import { memo, type WheelEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type WheelEvent as ReactWheelEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mermaid from "mermaid";
 import { createBundledHighlighter, createSingletonShorthands } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
-export type DocumentViewerFormat = "markdown" | "code" | "text";
+export type DocumentViewerFormat = "markdown" | "code" | "html" | "pdf" | "text";
 export type DocumentViewerFitMode = "none" | "width";
 export type DocumentViewerScrollMode = "internal" | "outer";
 
@@ -18,6 +18,7 @@ export interface DocumentDescriptor {
   id: string;
   relativePath: string;
   displayName: string;
+  mediaType: string;
   format: DocumentViewerFormat;
   language: string | null;
 }
@@ -29,6 +30,8 @@ export const DOCUMENT_VIEWER_DEFAULT_STATE: DocumentViewerState = {
 
 const DOCUMENT_ZOOM_MIN = 0.5;
 const DOCUMENT_ZOOM_MAX = 2.5;
+const DOCUMENT_PINCH_ZOOM_SENSITIVITY = 0.002;
+const DOCUMENT_PINCH_ZOOM_MAX_STEP = 0.22;
 const CODE_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   ".ts": "typescript",
   ".tsx": "tsx",
@@ -80,15 +83,21 @@ export function documentDescriptorForPath(relativePath: string): DocumentDescrip
   const displayName = relativePath.split("/").pop() || relativePath;
   const extension = extensionForPath(relativePath);
   const language = CODE_LANGUAGE_BY_EXTENSION[extension] ?? null;
-  const format = extension === ".md" || extension === ".markdown"
-    ? "markdown"
-    : language
-      ? "code"
-      : "text";
+  let format: DocumentViewerFormat = "text";
+  if (extension === ".md" || extension === ".markdown") {
+    format = "markdown";
+  } else if (extension === ".html" || extension === ".htm") {
+    format = "html";
+  } else if (extension === ".pdf") {
+    format = "pdf";
+  } else if (language) {
+    format = "code";
+  }
   return {
     id: `surface:${relativePath}`,
     relativePath,
     displayName,
+    mediaType: mediaTypeForDocumentFormat(format, extension),
     format,
     language: format === "code" ? language : null,
   };
@@ -97,21 +106,25 @@ export function documentDescriptorForPath(relativePath: string): DocumentDescrip
 export function DocumentViewer({
   descriptor,
   content,
+  sourceUrl,
   state = DOCUMENT_VIEWER_DEFAULT_STATE,
   scrollMode = "internal",
   followAppends = false,
   onZoomIn,
   onZoomOut,
+  onZoomBy,
   onReset,
   onFitWidth,
 }: {
   descriptor: DocumentDescriptor;
   content: string;
+  sourceUrl?: string;
   state?: DocumentViewerState;
   scrollMode?: DocumentViewerScrollMode;
   followAppends?: boolean;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
+  onZoomBy?: (delta: number) => void;
   onReset?: () => void;
   onFitWidth?: () => void;
 }) {
@@ -120,6 +133,7 @@ export function DocumentViewer({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const zoomAnchorRef = useRef<{ x: number; y: number; centerX: number; centerY: number } | null>(null);
+  const embedded = descriptor.format === "html" || descriptor.format === "pdf";
   const viewerClassName = `document-viewer${scrollMode === "outer" ? " document-viewer--outer-scroll" : ""}`;
 
   useLayoutEffect(() => {
@@ -171,15 +185,28 @@ export function DocumentViewer({
     yScroller.scrollTop = yScroller.scrollHeight;
   }, [descriptor.id, content, followAppends, zoom]);
 
-  function preserveViewportCenterForZoom() {
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !onZoomBy || descriptor.format === "pdf") return;
+    const handleNativeWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (handlePinchZoom(event.deltaY, event.clientX, event.clientY, () => event.preventDefault())) {
+        event.stopPropagation();
+      }
+    };
+    viewport.addEventListener("wheel", handleNativeWheel, { passive: false, capture: true });
+    return () => viewport.removeEventListener("wheel", handleNativeWheel, { capture: true });
+  }, [descriptor.format, onZoomBy, zoom]);
+
+  function preserveViewportPointForZoom(clientX?: number, clientY?: number) {
     const viewport = viewportRef.current;
     const content = contentRef.current;
     if (!viewport || !content) return;
     const scrollParent = nearestScrollableParent(viewport);
     const observationRect = (scrollParent ?? viewport).getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
-    const centerX = observationRect.left + observationRect.width / 2;
-    const centerY = observationRect.top + observationRect.height / 2;
+    const centerX = Number.isFinite(clientX) ? clamp(clientX ?? 0, observationRect.left, observationRect.right) : observationRect.left + observationRect.width / 2;
+    const centerY = Number.isFinite(clientY) ? clamp(clientY ?? 0, observationRect.top, observationRect.bottom) : observationRect.top + observationRect.height / 2;
     zoomAnchorRef.current = {
       x: (centerX - contentRect.left) / zoom,
       y: (centerY - contentRect.top) / zoom,
@@ -189,16 +216,26 @@ export function DocumentViewer({
   }
 
   function requestZoomIn() {
-    preserveViewportCenterForZoom();
+    preserveViewportPointForZoom();
     onZoomIn?.();
   }
 
   function requestZoomOut() {
-    preserveViewportCenterForZoom();
+    preserveViewportPointForZoom();
     onZoomOut?.();
   }
 
-  function handleWheel(event: WheelEvent<HTMLDivElement>) {
+  function handlePinchZoom(deltaY: number, clientX: number, clientY: number, preventDefault: () => void) {
+    if (!onZoomBy || descriptor.format === "pdf") return false;
+    const delta = clamp(-deltaY * DOCUMENT_PINCH_ZOOM_SENSITIVITY, -DOCUMENT_PINCH_ZOOM_MAX_STEP, DOCUMENT_PINCH_ZOOM_MAX_STEP);
+    if (Math.abs(delta) < 0.001) return false;
+    preventDefault();
+    preserveViewportPointForZoom(clientX, clientY);
+    onZoomBy(delta);
+    return true;
+  }
+
+  function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const canScrollY = viewport.scrollHeight > viewport.clientHeight;
@@ -240,11 +277,27 @@ export function DocumentViewer({
       >
         <div
           ref={contentRef}
-          className="document-viewer__content"
+          className={`document-viewer__content${embedded ? " document-viewer__content--embedded" : ""}`}
           style={{ transform: `scale(${zoom})` }}
         >
           {descriptor.format === "markdown" ? (
             <MarkdownDocumentContent descriptorId={descriptor.id} content={content} />
+          ) : descriptor.format === "html" ? (
+            <HtmlDocumentContent
+              descriptor={descriptor}
+              content={content}
+              onPinchZoom={(event, frame) => {
+                const frameRect = frame.getBoundingClientRect();
+                return handlePinchZoom(
+                  event.deltaY,
+                  frameRect.left + event.clientX,
+                  frameRect.top + event.clientY,
+                  () => event.preventDefault(),
+                );
+              }}
+            />
+          ) : descriptor.format === "pdf" ? (
+            <PdfDocumentContent descriptor={descriptor} sourceUrl={sourceUrl} />
           ) : descriptor.format === "code" ? (
             <CodeBlock source={content} language={descriptor.language ?? "text"} />
           ) : (
@@ -324,6 +377,74 @@ export const MarkdownDocumentContent = memo(function MarkdownDocumentContent({ d
     </div>
   );
 });
+
+function HtmlDocumentContent({
+  descriptor,
+  content,
+  onPinchZoom,
+}: {
+  descriptor: DocumentDescriptor;
+  content: string;
+  onPinchZoom?: (event: WheelEvent, frame: HTMLIFrameElement) => boolean;
+}) {
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || !onPinchZoom) return;
+    let cleanupFrameWheel: (() => void) | null = null;
+
+    const bindFrameWheel = () => {
+      cleanupFrameWheel?.();
+      cleanupFrameWheel = null;
+      const frameWindow = frame.contentWindow;
+      if (!frameWindow) return;
+      const handleFrameWheel = (event: WheelEvent) => {
+        if ((event.ctrlKey || event.metaKey) && onPinchZoom(event, frame)) {
+          event.stopPropagation();
+        }
+      };
+      frameWindow.addEventListener("wheel", handleFrameWheel, { passive: false, capture: true });
+      cleanupFrameWheel = () => frameWindow.removeEventListener("wheel", handleFrameWheel, { capture: true });
+    };
+
+    frame.addEventListener("load", bindFrameWheel);
+    bindFrameWheel();
+
+    return () => {
+      frame.removeEventListener("load", bindFrameWheel);
+      cleanupFrameWheel?.();
+    };
+  }, [content, onPinchZoom]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      className="document-viewer__embed-frame document-viewer__html-frame"
+      title={`HTML document ${descriptor.displayName}`}
+      sandbox="allow-same-origin"
+      referrerPolicy="no-referrer"
+      srcDoc={content}
+    />
+  );
+}
+
+function PdfDocumentContent({ descriptor, sourceUrl }: { descriptor: DocumentDescriptor; sourceUrl?: string }) {
+  if (!sourceUrl) {
+    return (
+      <div className="document-viewer__embed-fallback">
+        PDF preview requires a raw surface URL for {descriptor.relativePath}.
+      </div>
+    );
+  }
+  return (
+    <iframe
+      className="document-viewer__embed-frame document-viewer__pdf-frame"
+      title={`PDF document ${descriptor.displayName}`}
+      src={sourceUrl}
+    />
+  );
+}
 
 function CodeBlock({ source, language, blockKey }: { source: string; language: string; blockKey?: string }) {
   const normalizedLanguage = normalizeCodeLanguage(language);
@@ -451,9 +572,22 @@ function extensionForPath(path: string) {
   return match?.[1] ?? "";
 }
 
+function mediaTypeForDocumentFormat(format: DocumentViewerFormat, extension: string) {
+  if (format === "html") return "text/html";
+  if (format === "pdf") return "application/pdf";
+  if (format === "markdown") return "text/markdown";
+  if (extension === ".json") return "application/json";
+  if (extension === ".yaml" || extension === ".yml") return "application/yaml";
+  return "text/plain";
+}
+
 function normalizeCodeLanguage(language: string) {
   const normalized = language.trim().toLowerCase();
   return CODE_FENCE_LANGUAGE_ALIASES[normalized] ?? normalized;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function stableHash(value: string) {

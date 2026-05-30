@@ -229,7 +229,141 @@ function persistSessionMeta(session) {
   );
 }
 
-function restoreSessionsFromDisk(store) {
+function clearScreenMonitor(session) {
+  if (session.pollTimer) {
+    clearInterval(session.pollTimer);
+    session.pollTimer = null;
+  }
+}
+
+function sessionScreenEntry(screenSessions, screenSessionId) {
+  return screenSessions.find((entry) => entry.id === screenSessionId) ?? null;
+}
+
+function initialScreenLogOffset(meta, transcriptPath) {
+  if (Number.isFinite(meta.screenLogOffset)) {
+    return meta.screenLogOffset;
+  }
+  return existsSync(transcriptPath) ? statSync(transcriptPath).size : 0;
+}
+
+function emptySessionFromDisk(store, sessionId) {
+  return {
+    id: sessionId,
+    workspaceRoot: store.workspaceRoot,
+    label: sessionId,
+    archived: false,
+    status: "closed",
+    shell: null,
+    pid: null,
+    backend: null,
+    screenSessionId: screenSessionName(sessionId),
+    transcriptPath: sessionTranscriptPath(store.workspaceRoot, sessionId),
+    screenLogOffset: null,
+    pollTimer: null,
+    lastLivenessCheckAt: 0,
+    attachedTrainId: null,
+    attachedStationId: null,
+    attachedEdgeId: null,
+    conversationHistoryId: sessionConversationHistoryId(sessionId),
+    createdAt: null,
+    lastOutputAt: null,
+    exitCode: null,
+    signal: null,
+    clients: new Set(),
+    metaPath: sessionMetaPath(store.workspaceRoot, sessionId),
+    historyBytes: 0,
+    pendingRoomMirror: null,
+  };
+}
+
+function hydrateSessionFromDisk(store, session, meta, screenSessions) {
+  const screenSessionId = meta.screenSessionId || session.screenSessionId || screenSessionName(session.id);
+  const transcriptPath = meta.transcriptPath || session.transcriptPath || sessionTranscriptPath(store.workspaceRoot, session.id);
+  const screenBacked = meta.backend === "node-screen-pty" || session.backend === "node-screen-pty" || Boolean(meta.screenSessionId);
+  const screenEntry = screenBacked ? sessionScreenEntry(screenSessions, screenSessionId) : null;
+  const live = Boolean(screenEntry);
+  const previousStatus = session.status;
+  const previousPid = session.pid;
+
+  session.workspaceRoot = store.workspaceRoot;
+  session.label = meta.label || session.label || session.id;
+  session.archived = Boolean(meta.archived);
+  session.status = live ? "live" : meta.status === "error" ? "error" : "closed";
+  session.shell = meta.shell ?? session.shell ?? null;
+  session.pid = live ? (screenEntry?.pid ?? null) : null;
+  session.backend = meta.backend ?? session.backend ?? (screenBacked ? "node-screen-pty" : null);
+  session.screenSessionId = screenSessionId;
+  session.transcriptPath = transcriptPath;
+  const diskOffset = initialScreenLogOffset(meta, transcriptPath);
+  if (!Number.isFinite(session.screenLogOffset)) {
+    session.screenLogOffset = diskOffset;
+  } else if (Number.isFinite(meta.screenLogOffset) && meta.screenLogOffset > session.screenLogOffset) {
+    session.screenLogOffset = meta.screenLogOffset;
+  }
+  session.lastLivenessCheckAt = session.lastLivenessCheckAt ?? 0;
+  session.attachedTrainId = meta.attachedTrainId ?? session.attachedTrainId ?? null;
+  session.attachedStationId = meta.attachedStationId ?? session.attachedStationId ?? null;
+  session.attachedEdgeId = meta.attachedEdgeId ?? session.attachedEdgeId ?? null;
+  session.conversationHistoryId = meta.conversationHistoryId ?? session.conversationHistoryId ?? sessionConversationHistoryId(session.id);
+  session.createdAt = meta.createdAt ?? session.createdAt ?? null;
+  session.lastOutputAt = meta.lastOutputAt ?? session.lastOutputAt ?? null;
+  session.exitCode = meta.exitCode ?? session.exitCode ?? null;
+  session.signal = meta.signal ?? session.signal ?? null;
+  session.metaPath = sessionMetaPath(store.workspaceRoot, session.id);
+  session.pendingRoomMirror = session.pendingRoomMirror ?? null;
+
+  ensureConversationHistory(store.workspaceRoot, {
+    historyId: session.conversationHistoryId,
+    ownerKind: "oddterm_session",
+    ownerRef: session.id,
+    metadata: {
+      sessionId: session.id,
+      label: session.label,
+    },
+  });
+  session.historyBytes = loadConversationHistoryStats(store.workspaceRoot, session.conversationHistoryId).historyBytes;
+
+  updateConversationMetadata(store.workspaceRoot, session.conversationHistoryId, {
+    label: session.label,
+    shell: session.shell,
+    pid: session.pid,
+    backend: session.backend,
+    state: session.status,
+    lastOutputAt: session.lastOutputAt,
+    selectedTrainId: session.attachedTrainId,
+    stationId: session.attachedStationId,
+    edgeId: session.attachedEdgeId,
+  });
+
+  if (session.status === "live") {
+    if (!session.pollTimer) {
+      startScreenMonitor(session);
+    }
+  } else {
+    clearScreenMonitor(session);
+  }
+
+  if (previousStatus !== session.status || previousPid !== session.pid) {
+    persistSessionMeta(session);
+  }
+
+  return session;
+}
+
+function removeArchivedSession(store, sessionId) {
+  const existing = store.sessions.get(sessionId);
+  if (!existing) {
+    return;
+  }
+  clearScreenMonitor(existing);
+  store.sessions.delete(sessionId);
+  if (store.activeSessionId === sessionId) {
+    store.activeSessionId = null;
+  }
+}
+
+function refreshSessionsFromDisk(store) {
   const root = runtimeRoot(store.workspaceRoot);
   if (!existsSync(root)) {
     return;
@@ -239,6 +373,7 @@ function restoreSessionsFromDisk(store) {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
+  const screenSessions = directories.length > 0 && isOddTermScreenAvailable() ? listScreenSessions() : [];
 
   for (const sessionId of directories) {
     const metaPath = sessionMetaPath(store.workspaceRoot, sessionId);
@@ -253,61 +388,19 @@ function restoreSessionsFromDisk(store) {
       continue;
     }
 
-    const screenSessionId = meta.screenSessionId || screenSessionName(sessionId);
-    const transcriptPath = meta.transcriptPath || sessionTranscriptPath(store.workspaceRoot, sessionId);
-    const screenBacked = meta.backend === "node-screen-pty" || Boolean(meta.screenSessionId);
-    const live = screenBacked && isOddTermScreenAvailable() && listScreenSessions().some((entry) => entry.id === screenSessionId);
-    const session = {
-      id: sessionId,
-      workspaceRoot: store.workspaceRoot,
-      label: meta.label || sessionId,
-      archived: Boolean(meta.archived),
-      status: live ? "live" : meta.status === "error" ? "error" : "closed",
-      shell: meta.shell ?? null,
-      pid: live ? (listScreenSessions().find((entry) => entry.id === screenSessionId)?.pid ?? null) : null,
-      backend: meta.backend ?? null,
-      screenSessionId,
-      transcriptPath,
-      screenLogOffset: Number.isFinite(meta.screenLogOffset)
-        ? meta.screenLogOffset
-        : existsSync(transcriptPath)
-          ? statSync(transcriptPath).size
-          : 0,
-      pollTimer: null,
-      lastLivenessCheckAt: 0,
-      attachedTrainId: meta.attachedTrainId ?? null,
-      attachedStationId: meta.attachedStationId ?? null,
-      attachedEdgeId: meta.attachedEdgeId ?? null,
-      conversationHistoryId: meta.conversationHistoryId ?? sessionConversationHistoryId(sessionId),
-      createdAt: meta.createdAt ?? null,
-      lastOutputAt: meta.lastOutputAt ?? null,
-      exitCode: meta.exitCode ?? null,
-      signal: meta.signal ?? null,
-      clients: new Set(),
-      metaPath,
-      historyBytes: 0,
-      pendingRoomMirror: null,
-    };
-    if (session.archived) {
+    if (meta.archived) {
+      removeArchivedSession(store, sessionId);
       continue;
     }
-    ensureConversationHistory(store.workspaceRoot, {
-      historyId: session.conversationHistoryId,
-      ownerKind: "oddterm_session",
-      ownerRef: session.id,
-      metadata: {
-        sessionId: session.id,
-        label: session.label,
-      },
-    });
-    session.historyBytes = loadConversationHistoryStats(store.workspaceRoot, session.conversationHistoryId).historyBytes;
+
+    const session = store.sessions.get(sessionId) ?? emptySessionFromDisk(store, sessionId);
+    hydrateSessionFromDisk(store, session, meta, screenSessions);
     store.sessions.set(sessionId, session);
-    if (session.status === "live") {
-      startScreenMonitor(session);
-    }
-    if (!store.activeSessionId) {
-      store.activeSessionId = sessionId;
-    }
+  }
+
+  if (!store.activeSessionId || !store.sessions.has(store.activeSessionId)) {
+    const sessions = Array.from(store.sessions.values());
+    store.activeSessionId = sessions.find((session) => session.status === "live")?.id ?? sessions[0]?.id ?? null;
   }
 }
 
@@ -321,9 +414,9 @@ function ensureWorkspaceStore(workspaceRoot) {
       activeSessionId: null,
       sessions: new Map(),
     };
-    restoreSessionsFromDisk(store);
     workspaceStores.set(root, store);
   }
+  refreshSessionsFromDisk(store);
   return store;
 }
 
@@ -1256,13 +1349,20 @@ export function attachGTermServer(server, { defaultWorkspaceRoot }) {
   socketServer.on("connection", (socket, request, url) => {
     const workspaceRoot = resolve(url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot);
     const sessionId = url.searchParams.get("sessionId");
-    const session =
-      resolveSession(workspaceRoot, sessionId) ??
-      createSession(workspaceRoot, {
-        selectedTrainId: url.searchParams.get("selectedTrainId") || null,
-        stationId: url.searchParams.get("stationId") || null,
-        edgeId: url.searchParams.get("edgeId") || null,
+    let session = sessionId ? resolveSession(workspaceRoot, sessionId) : null;
+    if (sessionId && !session) {
+      sendJson(socket, {
+        type: "error",
+        message: `terminal session not found: ${sessionId}`,
       });
+      socket.close();
+      return;
+    }
+    session ??= createSession(workspaceRoot, {
+      selectedTrainId: url.searchParams.get("selectedTrainId") || null,
+      stationId: url.searchParams.get("stationId") || null,
+      edgeId: url.searchParams.get("edgeId") || null,
+    });
 
     attachSocketToSession(session, socket);
   });

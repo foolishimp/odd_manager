@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
@@ -21,7 +21,9 @@ import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
 import {
   composeManagerWorld,
+  managerSurfaceMediaType,
   readManagerSurface,
+  resolveManagerSurfacePath,
   runManagerCommand,
 } from "./manager-world-service.mjs";
 import {
@@ -328,9 +330,13 @@ function loadOddTermSessionRecords(workspaceRoot) {
     diagnostic: {
       backplane: "oddterm",
       registry_root: ".ai-workspace/runtime/oddterm",
-      notes: ["sessions are served by the Local Shell Workspace oddterm backplane"],
+      notes: [
+        "sessions are served by the Local Shell Workspace oddterm backplane",
+        "session listing rehydrates persisted oddterm records before projection",
+      ],
       runtime: {
         default_backplane: "oddterm",
+        reconnect: "browser reloads reconnect to backend-managed GNU screen sessions by session id",
         notes: ["oddterm is the product session substrate for sidecar-visible shells"],
       },
     },
@@ -845,6 +851,39 @@ function writeSseEvent(response, event, payload) {
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function writeRawSurface(response, workspaceRoot, relativePath, options = {}) {
+  const resolved = resolveManagerSurfacePath(workspaceRoot, relativePath);
+  if (resolved.outsideWorkspace) {
+    writeJson(response, 403, { error: "surface path resolves outside the active Project root" });
+    return;
+  }
+  if (!existsSync(resolved.target)) {
+    writeJson(response, 404, { error: "surface not found" });
+    return;
+  }
+  const stat = statSync(resolved.target);
+  if (!stat.isFile()) {
+    writeJson(response, 400, { error: "raw surface requests require a file path" });
+    return;
+  }
+  response.writeHead(200, {
+    "Content-Type": managerSurfaceMediaType(relativePath),
+    "Content-Length": String(stat.size),
+    "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(basename(resolved.target))}`,
+    "X-Content-Type-Options": "nosniff",
+    "Access-Control-Allow-Origin": "*",
+  });
+  if (options.headOnly) {
+    response.end();
+    return;
+  }
+  const stream = createReadStream(resolved.target);
+  stream.on("error", (error) => {
+    response.destroy(error);
+  });
+  stream.pipe(response);
+}
+
 function readBody(request) {
   return new Promise((resolvePromise, reject) => {
     let body = "";
@@ -947,6 +986,17 @@ const server = createServer(async (request, response) => {
         return;
       }
       writeJson(response, 200, readManagerSurface(workspaceRoot, relativePath));
+      return;
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/surface/raw") {
+      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const relativePath = url.searchParams.get("relativePath");
+      if (!relativePath) {
+        writeJson(response, 400, { error: "raw surface requests require relativePath" });
+        return;
+      }
+      writeRawSurface(response, workspaceRoot, relativePath, { headOnly: request.method === "HEAD" });
       return;
     }
 

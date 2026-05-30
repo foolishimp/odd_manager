@@ -587,6 +587,9 @@ export type SurfaceData =
       relative_path: string;
       path: string;
       content: string;
+      media_type?: string;
+      encoding?: "utf8" | "binary";
+      size_bytes?: number;
     }
   | {
       kind: "directory";

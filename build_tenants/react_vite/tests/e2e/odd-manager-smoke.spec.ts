@@ -819,7 +819,8 @@ test("sidecar pinned selector remains open while browsing and selecting files", 
   await openWorkspace(page, OBSERVED_WORKSPACE);
 });
 
-test("sidecar document viewer renders Mermaid, zoom controls, and highlighted source files", async ({ page }, testInfo) => {
+test("sidecar document viewer renders Mermaid, highlighted source, HTML, and PDF surfaces", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await waitForChrome(page);
   await openManagerWorkspace(page);
@@ -909,6 +910,22 @@ test("sidecar document viewer renders Mermaid, zoom controls, and highlighted so
   expect(zoomOutMermaidMetrics.contentHeight).toBeLessThan(zoomOutMermaidMetrics.layoutHeight);
   await canvas.getByRole("button", { name: "Reset document zoom" }).click();
   await expect(documentContent).toHaveCSS("transform", /matrix\(1,\s*0,\s*0,\s*1,/);
+  await page.evaluate(() => {
+    const viewport = document.querySelector(".document-viewer__viewport") as HTMLElement | null;
+    if (!viewport) throw new Error("document viewer viewport missing");
+    const rect = viewport.getBoundingClientRect();
+    viewport.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -80,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    }));
+  });
+  await expect(documentContent).toHaveCSS("transform", /matrix\(1\.16,\s*0,\s*0,\s*1\.16,/);
+  await canvas.getByRole("button", { name: "Reset document zoom" }).click();
+  await expect(documentContent).toHaveCSS("transform", /matrix\(1,\s*0,\s*0,\s*1,/);
 
   await activityRail.getByRole("button", { name: "Browse" }).click();
   await expect(flyout.getByRole("heading", { name: "Browse" }).first()).toBeVisible();
@@ -935,8 +952,36 @@ test("sidecar document viewer renders Mermaid, zoom controls, and highlighted so
   expect(toolbarTopAfterScroll).not.toBeNull();
   expect(Math.abs((toolbarTopAfterScroll ?? 0) - (toolbarTopBeforeScroll ?? 0))).toBeLessThan(2);
 
-  await captureReviewShot(canvas, testInfo, "sidecar-document-viewer-mermaid-zoom-highlight");
-  await openWorkspace(page, OBSERVED_WORKSPACE);
+  await activityRail.getByRole("button", { name: "Browse" }).click();
+  await expect(flyout.getByRole("heading", { name: "Browse" }).first()).toBeVisible();
+  await flyout.getByRole("textbox", { name: "Folder path to pin" }).fill("./build_tenants/react_vite/tests/fixtures/document-viewer");
+  await flyout.getByRole("button", { name: "Pin", exact: true }).click();
+  await expect(flyout.getByRole("heading", { name: "./build_tenants/react_vite/tests/fixtures/document-viewer" }).first()).toBeVisible();
+  await flyout.getByRole("button", { name: /fixture\.html/i }).click();
+  await expect(canvas.locator(".document-viewer__html-frame").first()).toBeVisible({ timeout: 30_000 });
+  await expect(canvas.frameLocator('iframe[title="HTML document fixture.html"]').getByRole("heading", { name: "Odd Manager HTML Fixture" })).toBeVisible();
+  await page.evaluate(() => {
+    const frame = document.querySelector(".document-viewer__html-frame") as HTMLIFrameElement | null;
+    if (!frame?.contentWindow) throw new Error("HTML frame missing");
+    frame.contentWindow.dispatchEvent(new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -80,
+      clientX: 80,
+      clientY: 80,
+    }));
+  });
+  await expect(canvas.locator(".document-viewer__html-frame").first().locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' document-viewer__content ')][1]")).toHaveCSS("transform", /matrix\(1\.16,\s*0,\s*0,\s*1\.16,/);
+
+  await flyout.getByRole("button", { name: /fixture\.pdf/i }).click();
+  const pdfFrame = canvas.locator(".document-viewer__pdf-frame").first();
+  await expect(pdfFrame).toBeVisible({ timeout: 30_000 });
+  const pdfSrc = await pdfFrame.getAttribute("src");
+  expect(pdfSrc).toContain("/api/surface/raw?");
+  expect(decodeURIComponent(pdfSrc ?? "")).toContain("build_tenants/react_vite/tests/fixtures/document-viewer/fixture.pdf");
+
+  await captureReviewShot(canvas, testInfo, "sidecar-document-viewer-mermaid-code-html-pdf");
 });
 
 test("sidecar build tenant favorite opens and highlights as single pinned folder", async ({ page }) => {

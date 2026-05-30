@@ -785,6 +785,11 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     dispatch({ type: 'session/kill/request', id });
   };
 
+  const handleRefreshSessions = () => {
+    if (!state.context) return;
+    dispatch({ type: 'load/request', projectRoot: state.context.project.root, reason: 'session_refresh' });
+  };
+
   const handleReplySubmit = (parentId: string, body: string) => {
     dispatch({ type: 'reply/submit/request', parentId, body });
   };
@@ -1116,6 +1121,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                 dispatch={dispatch}
                 onSpawn={handleSpawnSession}
                 onKill={handleKillSession}
+                onRefresh={handleRefreshSessions}
                 onCollapse={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: true })}
               />
             </>
@@ -7356,16 +7362,21 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
   }
   if (surface.kind === 'file') {
     const descriptor = documentDescriptorForPath(surface.relative_path);
+    const sourceUrl = descriptor.format === 'pdf'
+      ? surfaceRawUrl(projectRoot, surface.relative_path)
+      : undefined;
     return (
       <div className="sidecar-surface-inspector">
         <DocumentViewer
           descriptor={descriptor}
           content={surface.content}
+          sourceUrl={sourceUrl}
           state={viewerState}
           scrollMode="outer"
           followAppends={tailFollowSurface}
           onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
           onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
+          onZoomBy={(delta) => dispatch({ type: 'document/zoom', tabId, delta })}
           onReset={() => dispatch({ type: 'document/reset', tabId })}
           onFitWidth={() => dispatch({ type: 'document/fit-width', tabId })}
         />
@@ -7388,6 +7399,11 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
     );
   }
   return <div className="sidecar-inspector__empty">Surface not found: {surface.relative_path}</div>;
+}
+
+function surfaceRawUrl(projectRoot: string, relativePath: string) {
+  const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
+  return `/api/surface/raw?${params.toString()}`;
 }
 
 function Inspector({ children }: PropsWithChildrenLike<{}>) {
@@ -7542,12 +7558,13 @@ function terminalSessionMetaLabel(session: SessionRecord | null) {
   return meta || session.cwd || session.id;
 }
 
-function TerminalWorkspace({ state, projectRoot, dispatch, onSpawn, onKill, onCollapse }: {
+function TerminalWorkspace({ state, projectRoot, dispatch, onSpawn, onKill, onRefresh, onCollapse }: {
   state: SidecarState;
   projectRoot: string | null;
   dispatch: Dispatch<SidecarMsg>;
   onSpawn: (groupId?: SidecarTerminalGroupId) => void;
   onKill: (id: string) => void;
+  onRefresh: () => void;
   onCollapse: () => void;
 }) {
   const terminalWorkspace = state.ui.terminalWorkspace;
@@ -7608,6 +7625,14 @@ function TerminalWorkspace({ state, projectRoot, dispatch, onSpawn, onKill, onCo
             </button>
           ) : null}
         </div>
+        <button
+          className="ghost agent-console__terminal-action sidecar-terminal-toolbar__refresh"
+          type="button"
+          disabled={!projectRoot}
+          onClick={onRefresh}
+        >
+          Refresh
+        </button>
         <div className="sidecar-terminal-toolbar__tabs" role="tablist" aria-label={`Terminal tabs ${activeGroupLabel}`}>
           {activeGroupTabs.map((tab) => {
             const title = terminalTabTitle(state, tab);

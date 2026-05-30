@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   composeManagerWorld,
+  managerSurfaceMediaType,
   projectRequirements,
   readManagerSurface,
   runManagerCommand,
@@ -29,6 +30,24 @@ test('readManagerSurface rejects paths outside workspace', () => {
     const surface = readManagerSurface(fixtureRoot, '../outside.json');
     assert.equal(surface.kind, 'unreadable');
     assert.equal(surface.reason, 'outside_workspace');
+  } finally {
+    teardown();
+  }
+});
+
+test('readManagerSurface treats PDFs as binary metadata instead of UTF-8 JSON payloads', () => {
+  setup();
+  try {
+    writeFileSync(join(fixtureRoot, 'report.pdf'), Buffer.from('%PDF-1.7\nfixture\n%%EOF\n'));
+
+    const surface = readManagerSurface(fixtureRoot, 'report.pdf');
+
+    assert.equal(surface.kind, 'file');
+    assert.equal(surface.media_type, 'application/pdf');
+    assert.equal(surface.encoding, 'binary');
+    assert.equal(surface.content, '');
+    assert.equal(surface.size_bytes, 23);
+    assert.equal(managerSurfaceMediaType('report.html'), 'text/html; charset=utf-8');
   } finally {
     teardown();
   }

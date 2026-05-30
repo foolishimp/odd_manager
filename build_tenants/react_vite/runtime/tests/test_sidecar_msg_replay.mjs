@@ -437,15 +437,32 @@ test('document viewer zoom state is scoped to surface tabs and persists in layou
   assert.deepEqual(closed.state.ui.documentViewers, {});
 });
 
-test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning', () => {
+test('shared document viewer adapter governs Markdown, code, HTML, PDF, and selectable text', () => {
   const source = readFileSync(documentViewerPath, 'utf-8');
   const sidecarSource = readFileSync(sidecarPanelPath, 'utf-8');
+  const serverSource = readFileSync(serverIndexPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
 
   assert.match(source, /export type DocumentViewerScrollMode = "internal" \| "outer"/);
+  assert.match(source, /export type DocumentViewerFormat = "markdown" \| "code" \| "html" \| "pdf" \| "text"/);
+  assert.match(source, /mediaType:\s*mediaTypeForDocumentFormat\(format,\s*extension\)/);
+  assert.match(source, /extension === "\.html" \|\| extension === "\.htm"/);
+  assert.match(source, /extension === "\.pdf"/);
   assert.match(source, /scrollMode = "internal"/);
   assert.match(source, /followAppends = false/);
   assert.match(source, /document-viewer--outer-scroll/);
+  assert.match(source, /function HtmlDocumentContent/);
+  assert.match(source, /sandbox="allow-same-origin"/);
+  assert.match(source, /srcDoc=\{content\}/);
+  assert.match(source, /viewport\.addEventListener\("wheel",\s*handleNativeWheel,\s*\{\s*passive:\s*false,\s*capture:\s*true\s*\}\)/);
+  assert.match(source, /viewport\.removeEventListener\("wheel",\s*handleNativeWheel,\s*\{\s*capture:\s*true\s*\}\)/);
+  assert.match(source, /frameWindow\.addEventListener\("wheel",\s*handleFrameWheel,\s*\{\s*passive:\s*false,\s*capture:\s*true\s*\}\)/);
+  assert.match(source, /function PdfDocumentContent/);
+  assert.match(source, /src=\{sourceUrl\}/);
+  assert.match(source, /DOCUMENT_PINCH_ZOOM_SENSITIVITY/);
+  assert.match(source, /function handlePinchZoom/);
+  assert.match(source, /descriptor\.format === "pdf"/);
+  assert.match(source, /onZoomBy\(delta\)/);
   assert.match(source, /securityLevel:\s*"strict"/);
   assert.match(source, /flowchart:\s*\{\s*htmlLabels:\s*false\s*\}/);
   assert.match(source, /stableHash\(`\$\{descriptorId\}:\$\{blockIndex\}:\$\{source\}`\)/);
@@ -461,12 +478,10 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /dangerouslySetInnerHTML=\{\{\s*__html:\s*html\s*\}\}/);
   assert.match(source, /isCompactMarkdownCodeBlock\(source,\s*normalizedLanguage\)/);
   assert.match(source, /markdown-viewer__code-block\$\{compact \? " is-compact" : ""\}/);
-  assert.match(source, /onPointerDown=\{beginPan\}/);
-  assert.match(source, /setPointerCapture\(event\.pointerId\)/);
-  assert.match(source, /xScroller:\s*HTMLElement/);
-  assert.match(source, /yScroller:\s*HTMLElement/);
-  assert.match(source, /pan\.xScroller\.scrollLeft/);
-  assert.match(source, /pan\.yScroller\.scrollTop/);
+  assert.doesNotMatch(source, /onPointerDown=\{beginPan\}/);
+  assert.doesNotMatch(source, /setPointerCapture\(event\.pointerId\)/);
+  assert.doesNotMatch(source, /pan\.xScroller\.scrollLeft/);
+  assert.doesNotMatch(source, /pan\.yScroller\.scrollTop/);
   assert.match(source, /onWheel=\{handleWheel\}/);
   assert.match(source, /nearestScrollableParent\(viewport\)/);
   assert.match(source, /window\.getComputedStyle\(element\)/);
@@ -479,11 +494,24 @@ test('shared document viewer adapter governs Mermaid, Shiki, and pointer panning
   assert.match(source, /normalizeMermaidSvg\(hostRef\.current\)/);
   assert.match(source, /svg\.style\.width = `\$\{viewBoxWidth\}px`/);
   assert.match(source, /className="markdown-viewer__table-wrap"/);
-  assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*overflow:\s*auto;[^}]*cursor:\s*grab;[^}]*touch-action:\s*pan-x\s+pan-y;/s);
+  assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*overflow:\s*auto;[^}]*touch-action:\s*pan-x\s+pan-y;[^}]*user-select:\s*text;/s);
+  assert.doesNotMatch(styles, /cursor:\s*grab/);
+  assert.doesNotMatch(styles, /cursor:\s*grabbing/);
   assert.match(styles, /\.document-viewer__viewport\s*\{[^}]*container-type:\s*inline-size;/s);
+  assert.match(styles, /\.document-viewer__embed-frame\s*\{[^}]*height:\s*clamp\(32rem,\s*72vh,\s*56rem\);/s);
+  assert.match(styles, /\.document-viewer__html-frame\s*\{[^}]*border:\s*1px solid/s);
+  assert.match(styles, /\.document-viewer__pdf-frame\s*\{/s);
   assert.match(styles, /\.document-viewer--outer-scroll\s*\{[^}]*grid-template-rows:\s*auto\s+auto;[^}]*align-content:\s*start;/s);
   assert.match(styles, /\.document-viewer--outer-scroll\s+\.document-viewer__viewport\s*\{[^}]*overflow:\s*visible;/s);
   assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
+  assert.match(sidecarSource, /onZoomBy=\{\(delta\) => dispatch\(\{ type: 'document\/zoom', tabId, delta \}\)\}/);
+  assert.match(sidecarSource, /descriptor\.format === 'pdf'[\s\S]*?surfaceRawUrl\(projectRoot,\s*surface\.relative_path\)/);
+  assert.match(sidecarSource, /sourceUrl=\{sourceUrl\}/);
+  assert.match(sidecarSource, /function surfaceRawUrl\(projectRoot: string,\s*relativePath: string\)/);
+  assert.match(sidecarSource, /\/api\/surface\/raw\?\$\{params\.toString\(\)\}/);
+  assert.match(serverSource, /url\.pathname === "\/api\/surface\/raw"/);
+  assert.match(serverSource, /writeRawSurface\(response,\s*workspaceRoot,\s*relativePath,\s*\{\s*headOnly:\s*request\.method === "HEAD"\s*\}\)/);
+  assert.match(serverSource, /"Content-Disposition": `inline; filename\*=UTF-8''\$\{encodeURIComponent\(basename\(resolved\.target\)\)\}`/);
   assert.match(sidecarSource, /const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500/);
   assert.match(sidecarSource, /function isTailFollowSurfacePath/);
   assert.match(sidecarSource, /filename === 'terminal\.transcript'/);
@@ -1338,6 +1366,7 @@ test('sidecar density grammar collapses terminal chrome into the selected-pane t
   assert.match(terminalWorkspaceSource, /className="sidecar-terminal-toolbar"/);
   assert.match(terminalWorkspaceSource, /className="agent-console__select sidecar-shell-session-select"/);
   assert.match(terminalWorkspaceSource, /className="sidecar-terminal-toolbar__context"/);
+  assert.match(terminalWorkspaceSource, /sidecar-terminal-toolbar__refresh/);
   assert.match(terminalWorkspaceSource, /className="sidecar-terminal-toolbar__tabs"/);
   assert.doesNotMatch(terminalWorkspaceSource, /sidecar-shell-manager/);
   assert.doesNotMatch(terminalGroupSource, /sidecar-terminal-tabs/);
@@ -1355,7 +1384,7 @@ test('sidecar density CSS keeps controls shallow and gives height to terminal ho
   );
   assert.match(
     sidecarBlock,
-    /\.sidecar-terminal-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(10rem,\s*18rem\)\s+minmax\(12rem,\s*0\.85fr\)\s+minmax\(12rem,\s*1\.15fr\)\s+auto\s+auto\s+auto;[^}]*padding:\s*0\.22rem\s+0\.28rem;/s,
+    /\.sidecar-terminal-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(10rem,\s*18rem\)\s+minmax\(12rem,\s*0\.85fr\)\s+auto\s+minmax\(12rem,\s*1\.15fr\)\s+auto\s+auto\s+auto;[^}]*padding:\s*0\.22rem\s+0\.28rem;/s,
   );
   assert.match(
     sidecarBlock,

@@ -281,7 +281,7 @@ export interface SidecarState {
   nextCommandId: number;
 }
 
-export type SidecarLoadReason = 'initial' | 'project_selected' | 'action_completed';
+export type SidecarLoadReason = 'initial' | 'project_selected' | 'action_completed' | 'session_refresh';
 
 export type SidecarMsg =
   | { type: 'load/request'; projectRoot: string | null; reason: SidecarLoadReason }

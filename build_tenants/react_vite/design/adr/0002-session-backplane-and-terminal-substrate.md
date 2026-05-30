@@ -46,6 +46,12 @@ where `screen` is runnable. Restricted environments without GNU `screen` must
 install or expose that substrate rather than silently dropping to a weaker
 terminal model.
 
+The OddTerm registry under `.ai-workspace/runtime/oddterm` is rehydrated when
+session state is listed or attached. A browser crash or reload therefore
+recovers by discovering the backend-managed `screen` sessions and reconnecting
+to the selected session id; an explicit stale id fails closed instead of
+silently creating a different shell.
+
 The xterm.js UI is still appropriate as a terminal emulator surface, but the
 current substrate does not claim full pty parity. Resize is accepted as a
 control message for forward compatibility, but it is not a closure condition
@@ -60,6 +66,7 @@ Required proof surfaces:
 - `test_session_pty_screen.mjs`: screen-backed spawn and rehydrate, skipped
   with explicit diagnostics when screen cannot run
 - `test_oddterm_node_screen.mjs`: OddTerm browser-session backend uses the
-  same Node/screen substrate and streams appended `screenlog.0` output
+  same Node/screen substrate, streams appended `screenlog.0` output, and
+  rehydrates a live session from persisted backend state
 - API `/api/sessions` diagnostics: selected runtime capability is reported to
   consumers

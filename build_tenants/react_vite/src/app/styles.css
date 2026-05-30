@@ -5199,7 +5199,7 @@ pre {
 
 .sidecar-terminal-toolbar {
   display: grid;
-  grid-template-columns: minmax(10rem, 18rem) minmax(12rem, 0.85fr) minmax(12rem, 1.15fr) auto auto auto;
+  grid-template-columns: minmax(10rem, 18rem) minmax(12rem, 0.85fr) auto minmax(12rem, 1.15fr) auto auto auto;
   align-items: center;
   align-self: start;
   gap: 0.35rem;
@@ -5241,6 +5241,13 @@ pre {
   min-height: 1.42rem;
   padding: 0.1rem 0.42rem;
   font-size: 0.68rem;
+}
+
+.sidecar-terminal-toolbar__refresh {
+  min-height: 1.42rem;
+  padding: 0.1rem 0.42rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
 }
 
 .sidecar-terminal-toolbar .sidecar-shell-session-select {
@@ -7454,6 +7461,36 @@ button.sidecar-project-picker__segment:hover {
 
 .document-viewer__viewport.is-fit-width .document-viewer__content {
   width: var(--document-viewer-layout-width, 100%);
+}
+
+.document-viewer__content--embedded {
+  min-height: 32rem;
+}
+
+.document-viewer__embed-frame {
+  display: block;
+  width: 100%;
+  height: clamp(32rem, 72vh, 56rem);
+  min-height: 32rem;
+  border: 0;
+  background: #ffffff;
+}
+
+.document-viewer__html-frame {
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 4px;
+}
+
+.document-viewer__pdf-frame {
+  background: color-mix(in srgb, var(--panel) 92%, #ffffff);
+}
+
+.document-viewer__embed-fallback {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 4px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
 }
 
 .document-viewer__highlight pre {

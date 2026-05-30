@@ -24,6 +24,27 @@ const BACKTICK_REF_RE = /`([^`]+)`/g;
 const PATH_REF_RE =
   /(?<![:\w])((?:\.ai-workspace|specification|build_tenants)\/[A-Za-z0-9_./-]+|README\.md)/g;
 
+const SURFACE_MEDIA_TYPES = new Map([
+  [".html", "text/html; charset=utf-8"],
+  [".htm", "text/html; charset=utf-8"],
+  [".pdf", "application/pdf"],
+  [".md", "text/markdown; charset=utf-8"],
+  [".markdown", "text/markdown; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".mjs", "text/javascript; charset=utf-8"],
+  [".cjs", "text/javascript; charset=utf-8"],
+  [".ts", "text/plain; charset=utf-8"],
+  [".tsx", "text/plain; charset=utf-8"],
+  [".css", "text/css; charset=utf-8"],
+  [".yaml", "application/yaml; charset=utf-8"],
+  [".yml", "application/yaml; charset=utf-8"],
+  [".txt", "text/plain; charset=utf-8"],
+  [".log", "text/plain; charset=utf-8"],
+]);
+
+const BINARY_SURFACE_EXTENSIONS = new Set([".pdf"]);
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -48,6 +69,29 @@ function readText(path, fallback = "") {
   } catch {
     return fallback;
   }
+}
+
+export function resolveManagerSurfacePath(workspaceRoot, relativePath) {
+  const root = resolve(workspaceRoot);
+  const target = resolve(root, relativePath);
+  return {
+    root,
+    target,
+    outsideWorkspace: !target.startsWith(`${root}/`) && target !== root,
+  };
+}
+
+export function managerSurfaceMediaType(relativePath) {
+  return SURFACE_MEDIA_TYPES.get(extensionForSurfacePath(relativePath)) ?? "text/plain; charset=utf-8";
+}
+
+function shouldReadSurfaceAsBinary(relativePath) {
+  return BINARY_SURFACE_EXTENSIONS.has(extensionForSurfacePath(relativePath));
+}
+
+function extensionForSurfacePath(path) {
+  const match = String(path ?? "").toLowerCase().match(/(\.[a-z0-9]+)$/);
+  return match?.[1] ?? "";
 }
 
 function uniqueStrings(values) {
@@ -1428,9 +1472,8 @@ export function composeManagerWorld(workspaceRoot) {
 }
 
 export function readManagerSurface(workspaceRoot, relativePath) {
-  const root = resolve(workspaceRoot);
-  const target = resolve(root, relativePath);
-  if (!target.startsWith(`${root}/`) && target !== root) {
+  const { root, target, outsideWorkspace } = resolveManagerSurfacePath(workspaceRoot, relativePath);
+  if (outsideWorkspace) {
     return {
       kind: "unreadable",
       relative_path: relativePath,
@@ -1464,11 +1507,16 @@ export function readManagerSurface(workspaceRoot, relativePath) {
         truncated: entries.length > 200,
       };
     }
+    const mediaType = managerSurfaceMediaType(relativePath);
+    const binary = shouldReadSurfaceAsBinary(relativePath);
     return {
       kind: "file",
       relative_path: relativePath,
       path: target,
-      content: readFileSync(target, "utf8"),
+      content: binary ? "" : readFileSync(target, "utf8"),
+      media_type: mediaType,
+      encoding: binary ? "binary" : "utf8",
+      size_bytes: stat.size,
     };
   } catch (error) {
     return {
