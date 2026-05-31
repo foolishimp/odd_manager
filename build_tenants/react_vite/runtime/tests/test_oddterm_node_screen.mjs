@@ -8,7 +8,9 @@ import {
   closeAllGTermSessions,
   createGTermSession,
   isOddTermScreenAvailable,
+  loadGTermPoolState,
   readGTermSessionTail,
+  resizeGTermSession,
   sendGTermSessionInput,
 } from '../../src/server/oddterm-pool-service.mjs';
 
@@ -91,6 +93,63 @@ test('OddTerm rehydrates and reconnects live screen sessions from backend state'
       return tail.text.includes('oddterm-after-reconnect') ? tail : null;
     });
     assert.ok(after, 'expected rehydrated session to accept input and append output');
+  } finally {
+    try { restarted?.closeAllGTermSessions(fixtureRoot); } catch { /* best effort */ }
+    teardown();
+  }
+});
+
+test('OddTerm resizes managed screen sessions and persists the terminal size', { skip: screenSkip }, async () => {
+  setup();
+  let restarted = null;
+  try {
+    const session = createGTermSession(fixtureRoot, { label: 'node-screen-resize-proof' });
+    assert.equal(session.backend, 'node-screen-pty');
+
+    const resized = resizeGTermSession(fixtureRoot, session.id, { cols: 102, rows: 31, seq: 7 });
+    assert.deepEqual(resized.resize, {
+      cols: 102,
+      rows: 31,
+      seq: 7,
+      duplicate: false,
+    });
+    assert.equal(resized.terminalSize.cols, 102);
+    assert.equal(resized.terminalSize.rows, 31);
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+    sendGTermSessionInput(fixtureRoot, session.id, 'stty size\r');
+    const observedSize = await waitFor(() => {
+      const tail = readGTermSessionTail(fixtureRoot, session.id, 80);
+      return /(?:^|\s)31 102(?:\s|$)/.test(tail.text) ? tail : null;
+    });
+    assert.ok(observedSize, 'expected shell to observe resized terminal dimensions');
+
+    const duplicate = resizeGTermSession(fixtureRoot, session.id, { cols: 102, rows: 31, seq: 8 });
+    assert.deepEqual(duplicate.resize, {
+      cols: 102,
+      rows: 31,
+      seq: 8,
+      duplicate: true,
+    });
+
+    const clamped = resizeGTermSession(fixtureRoot, session.id, { cols: 1, rows: 999, seq: 9 });
+    assert.deepEqual(clamped.resize, {
+      cols: 20,
+      rows: 120,
+      seq: 9,
+      duplicate: false,
+    });
+
+    const current = loadGTermPoolState(fixtureRoot).sessions.find((candidate) => candidate.id === session.id);
+    assert.equal(current?.terminalSize?.cols, 20);
+    assert.equal(current?.terminalSize?.rows, 120);
+    assert.equal(typeof current?.lastResizeAt, 'string');
+
+    restarted = await freshOddTermModule();
+    const restored = restarted.loadGTermPoolState(fixtureRoot).sessions.find((candidate) => candidate.id === session.id);
+    assert.equal(restored?.terminalSize?.cols, 20);
+    assert.equal(restored?.terminalSize?.rows, 120);
+    assert.equal(typeof restored?.lastResizeAt, 'string');
   } finally {
     try { restarted?.closeAllGTermSessions(fixtureRoot); } catch { /* best effort */ }
     teardown();

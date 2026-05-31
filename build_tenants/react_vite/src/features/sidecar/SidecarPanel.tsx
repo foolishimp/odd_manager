@@ -6933,7 +6933,22 @@ type TerminalEvent =
   | { type: 'ready'; workspaceRoot: string; shell: string; pid: number; backend?: string }
   | { type: 'data'; data: string }
   | { type: 'exit'; exitCode: number; signal: number | null }
+  | { type: 'resize_ack'; cols: number; rows: number; seq?: number | null; duplicate?: boolean }
+  | { type: 'resize_error'; message: string; seq?: number | null }
   | { type: 'error'; message: string };
+
+const ODDTERM_RESIZE_DEBOUNCE_MS = 180;
+const ODDTERM_RESIZE_MAX_WAIT_MS = 900;
+const ODDTERM_RESIZE_MIN_COLS = 20;
+const ODDTERM_RESIZE_MIN_ROWS = 6;
+const ODDTERM_RESIZE_MAX_COLS = 300;
+const ODDTERM_RESIZE_MAX_ROWS = 120;
+
+type PendingTerminalResize = {
+  cols: number;
+  rows: number;
+  seq: number;
+};
 
 function terminalTheme() {
   return {
@@ -6984,6 +6999,11 @@ function SidecarTerminal({ session, projectRoot }: {
     const fitAddon = new FitAddon();
     let disposed = false;
     let pendingFitFrame: number | null = null;
+    let pendingResizeTimer: number | null = null;
+    let pendingResizeMaxTimer: number | null = null;
+    let pendingResize: PendingTerminalResize | null = null;
+    let lastSentResize: PendingTerminalResize | null = null;
+    let resizeSeq = 0;
 
     function setConnectionStatus(nextStatus: TerminalStatus) {
       statusRef.current = nextStatus;
@@ -6992,25 +7012,94 @@ function SidecarTerminal({ session, projectRoot }: {
 
     function send(payload: Record<string, unknown>) {
       const socket = socketRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
       socket.send(JSON.stringify(payload));
+      return true;
     }
 
-    function safeFitAndResize() {
+    function clearResizeTimers() {
+      if (pendingResizeTimer !== null) {
+        window.clearTimeout(pendingResizeTimer);
+        pendingResizeTimer = null;
+      }
+      if (pendingResizeMaxTimer !== null) {
+        window.clearTimeout(pendingResizeMaxTimer);
+        pendingResizeMaxTimer = null;
+      }
+    }
+
+    function normalizeTerminalResize(cols: number, rows: number) {
+      if (!Number.isFinite(cols) || !Number.isFinite(rows)) return null;
+      return {
+        cols: Math.max(
+          ODDTERM_RESIZE_MIN_COLS,
+          Math.min(ODDTERM_RESIZE_MAX_COLS, Math.floor(cols)),
+        ),
+        rows: Math.max(
+          ODDTERM_RESIZE_MIN_ROWS,
+          Math.min(ODDTERM_RESIZE_MAX_ROWS, Math.floor(rows)),
+        ),
+      };
+    }
+
+    function flushResize() {
+      clearResizeTimers();
+      const nextResize = pendingResize;
+      pendingResize = null;
+      if (!nextResize || disposed) return;
+      if (lastSentResize?.cols === nextResize.cols && lastSentResize.rows === nextResize.rows) return;
+      const sent = send({
+        type: 'resize',
+        cols: nextResize.cols,
+        rows: nextResize.rows,
+        seq: nextResize.seq,
+      });
+      if (sent) {
+        lastSentResize = nextResize;
+      }
+    }
+
+    function queueResize(cols: number, rows: number, immediate = false) {
+      const normalized = normalizeTerminalResize(cols, rows);
+      if (!normalized) return;
+      if (!pendingResize && lastSentResize?.cols === normalized.cols && lastSentResize.rows === normalized.rows) {
+        return;
+      }
+
+      resizeSeq += 1;
+      pendingResize = {
+        cols: normalized.cols,
+        rows: normalized.rows,
+        seq: resizeSeq,
+      };
+
+      if (immediate) {
+        flushResize();
+        return;
+      }
+
+      if (pendingResizeTimer !== null) window.clearTimeout(pendingResizeTimer);
+      pendingResizeTimer = window.setTimeout(flushResize, ODDTERM_RESIZE_DEBOUNCE_MS);
+      if (pendingResizeMaxTimer === null) {
+        pendingResizeMaxTimer = window.setTimeout(flushResize, ODDTERM_RESIZE_MAX_WAIT_MS);
+      }
+    }
+
+    function safeFitAndResize(immediate = false) {
       if (disposed || terminalRef.current !== terminal || !host.isConnected) return;
       try {
         fitAddon.fit();
-        send({ type: 'resize', cols: terminal.cols, rows: terminal.rows });
+        queueResize(terminal.cols, terminal.rows, immediate);
       } catch {
         // xterm may not have renderer dimensions during React dev probe mounts.
       }
     }
 
-    function scheduleFitAndResize() {
+    function scheduleFitAndResize(immediate = false) {
       if (pendingFitFrame !== null) window.cancelAnimationFrame(pendingFitFrame);
       pendingFitFrame = window.requestAnimationFrame(() => {
         pendingFitFrame = null;
-        safeFitAndResize();
+        safeFitAndResize(immediate);
       });
     }
 
@@ -7036,7 +7125,7 @@ function SidecarTerminal({ session, projectRoot }: {
         return;
       }
       setConnectionStatus('connected');
-      scheduleFitAndResize();
+      scheduleFitAndResize(true);
       terminal.focus();
     });
 
@@ -7049,6 +7138,15 @@ function SidecarTerminal({ session, projectRoot }: {
         return;
       }
       if (payload.type === 'ready') {
+        return;
+      }
+      if (payload.type === 'resize_ack') {
+        return;
+      }
+      if (payload.type === 'resize_error') {
+        if (payload.seq == null || payload.seq === lastSentResize?.seq) {
+          lastSentResize = null;
+        }
         return;
       }
       if (payload.type === 'data') {
@@ -7087,6 +7185,8 @@ function SidecarTerminal({ session, projectRoot }: {
         window.cancelAnimationFrame(pendingFitFrame);
         pendingFitFrame = null;
       }
+      clearResizeTimers();
+      pendingResize = null;
       resizeObserver.disconnect();
       inputDisposable.dispose();
       if (socket.readyState === WebSocket.OPEN) socket.close();

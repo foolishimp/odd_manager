@@ -30,6 +30,10 @@ import {
 const workspaceStores = new Map();
 const SCREEN_POLL_INTERVAL_MS = 100;
 const SCREEN_LIVENESS_INTERVAL_MS = 1000;
+const ODDTERM_RESIZE_MIN_COLS = 20;
+const ODDTERM_RESIZE_MIN_ROWS = 6;
+const ODDTERM_RESIZE_MAX_COLS = 300;
+const ODDTERM_RESIZE_MAX_ROWS = 120;
 
 function isPidAlive(pid) {
   const parsed = Number(pid);
@@ -182,6 +186,116 @@ function sendToScreen(session, data) {
   };
 }
 
+function normalizeResizeDimension(value, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function normalizeResizePayload(payload) {
+  const cols = normalizeResizeDimension(
+    payload?.cols,
+    ODDTERM_RESIZE_MIN_COLS,
+    ODDTERM_RESIZE_MAX_COLS,
+  );
+  const rows = normalizeResizeDimension(
+    payload?.rows,
+    ODDTERM_RESIZE_MIN_ROWS,
+    ODDTERM_RESIZE_MAX_ROWS,
+  );
+  if (cols === null || rows === null) {
+    return {
+      ok: false,
+      error: "terminal resize requires numeric cols and rows",
+    };
+  }
+  const seq = Number.isInteger(payload?.seq) ? payload.seq : null;
+  return {
+    ok: true,
+    cols,
+    rows,
+    seq,
+  };
+}
+
+function resizeScreen(session, cols, rows) {
+  if (!session.screenSessionId) {
+    return {
+      ok: false,
+      error: "terminal screen session is unavailable",
+    };
+  }
+
+  const widthResult = spawnSync(
+    "screen",
+    ["-S", session.screenSessionId, "-p", "0", "-X", "width", "-w", String(cols), String(rows)],
+    { encoding: "utf8" },
+  );
+  if (widthResult.status === 0) {
+    return { ok: true };
+  }
+
+  const heightResult = spawnSync(
+    "screen",
+    ["-S", session.screenSessionId, "-p", "0", "-X", "height", "-w", String(rows), String(cols)],
+    { encoding: "utf8" },
+  );
+  if (heightResult.status === 0) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    error:
+      heightResult.stderr ||
+      heightResult.stdout ||
+      widthResult.stderr ||
+      widthResult.stdout ||
+      `screen resize exit ${heightResult.status}`,
+  };
+}
+
+function resizeGTermBackend(session, payload) {
+  const normalized = normalizeResizePayload(payload);
+  if (!normalized.ok) {
+    return normalized;
+  }
+
+  const previousSize = session.terminalSize ?? null;
+  if (previousSize?.cols === normalized.cols && previousSize?.rows === normalized.rows) {
+    return {
+      ok: true,
+      cols: normalized.cols,
+      rows: normalized.rows,
+      seq: normalized.seq,
+      duplicate: true,
+    };
+  }
+
+  const result = resizeScreen(session, normalized.cols, normalized.rows);
+  if (!result.ok) {
+    return result;
+  }
+
+  const resizedAt = new Date().toISOString();
+  session.terminalSize = {
+    cols: normalized.cols,
+    rows: normalized.rows,
+    updatedAt: resizedAt,
+  };
+  session.lastResizeAt = resizedAt;
+  persistSessionMeta(session);
+  return {
+    ok: true,
+    cols: normalized.cols,
+    rows: normalized.rows,
+    seq: normalized.seq,
+    duplicate: false,
+  };
+}
+
 function quitScreen(session) {
   if (!session.screenSessionId) {
     return;
@@ -208,6 +322,8 @@ function serializeSession(session) {
     attachedEdgeId: session.attachedEdgeId,
     conversationHistoryId: session.conversationHistoryId,
     historyBytes: session.historyBytes,
+    terminalSize: session.terminalSize ?? null,
+    lastResizeAt: session.lastResizeAt ?? null,
     liveClientCount: session.clients.size,
   };
 }
@@ -273,6 +389,8 @@ function emptySessionFromDisk(store, sessionId) {
     clients: new Set(),
     metaPath: sessionMetaPath(store.workspaceRoot, sessionId),
     historyBytes: 0,
+    terminalSize: null,
+    lastResizeAt: null,
     pendingRoomMirror: null,
   };
 }
@@ -310,6 +428,15 @@ function hydrateSessionFromDisk(store, session, meta, screenSessions) {
   session.lastOutputAt = meta.lastOutputAt ?? session.lastOutputAt ?? null;
   session.exitCode = meta.exitCode ?? session.exitCode ?? null;
   session.signal = meta.signal ?? session.signal ?? null;
+  session.terminalSize =
+    meta.terminalSize && Number.isInteger(meta.terminalSize.cols) && Number.isInteger(meta.terminalSize.rows)
+      ? {
+          cols: meta.terminalSize.cols,
+          rows: meta.terminalSize.rows,
+          updatedAt: meta.terminalSize.updatedAt ?? null,
+        }
+      : session.terminalSize ?? null;
+  session.lastResizeAt = meta.lastResizeAt ?? session.lastResizeAt ?? session.terminalSize?.updatedAt ?? null;
   session.metaPath = sessionMetaPath(store.workspaceRoot, session.id);
   session.pendingRoomMirror = session.pendingRoomMirror ?? null;
 
@@ -628,7 +755,7 @@ function writeGTermBackend(session, payload) {
     return sendToScreen(session, payload.data);
   }
   if (payload?.type === "resize") {
-    return { ok: true, ignored: true };
+    return resizeGTermBackend(session, payload);
   }
   if (payload?.type === "close") {
     quitScreen(session);
@@ -937,6 +1064,8 @@ function createSession(workspaceRoot, options = {}) {
     screenLogOffset: 0,
     pollTimer: null,
     lastLivenessCheckAt: 0,
+    terminalSize: null,
+    lastResizeAt: null,
     pendingRoomMirror: null,
   };
 
@@ -1039,9 +1168,28 @@ function attachSocketToSession(session, socket) {
 
     const result = writeGTermBackend(session, payload);
     if (!result.ok) {
+      if (payload?.type === "resize") {
+        sendJson(socket, {
+          type: "resize_error",
+          message: result.error || "oddterm backend resize is unavailable",
+          seq: Number.isInteger(payload?.seq) ? payload.seq : null,
+        });
+        return;
+      }
       sendJson(socket, {
         type: "error",
         message: result.error || "oddterm backend stdin is unavailable",
+      });
+      return;
+    }
+
+    if (payload?.type === "resize") {
+      sendJson(socket, {
+        type: "resize_ack",
+        cols: result.cols,
+        rows: result.rows,
+        seq: result.seq ?? null,
+        duplicate: result.duplicate === true,
       });
     }
   });
@@ -1201,6 +1349,36 @@ export function readGTermSessionTail(workspaceRoot, sessionId, lineCount = 120) 
     session: loadGTermPoolState(workspaceRoot).sessions.find((entry) => entry.id === sessionId) ?? null,
     chunks: extracted.entries,
     text: extracted.text,
+  };
+}
+
+export function resizeGTermSession(workspaceRoot, sessionId, payload = {}) {
+  const store = ensureWorkspaceStore(workspaceRoot);
+  const session = store.sessions.get(sessionId);
+  if (!session) {
+    throw new Error("terminal session not found");
+  }
+  if (session.status !== "live") {
+    throw new Error("terminal session is not live");
+  }
+
+  const result = writeGTermBackend(session, {
+    type: "resize",
+    cols: payload.cols,
+    rows: payload.rows,
+    seq: payload.seq,
+  });
+  if (!result.ok) {
+    throw new Error(result.error || "oddterm backend resize is unavailable");
+  }
+  return {
+    ...serializeSession(session),
+    resize: {
+      cols: result.cols,
+      rows: result.rows,
+      seq: result.seq ?? null,
+      duplicate: result.duplicate === true,
+    },
   };
 }
 

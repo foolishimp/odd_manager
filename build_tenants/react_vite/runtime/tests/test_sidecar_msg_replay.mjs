@@ -1398,6 +1398,13 @@ test('sidecar density grammar collapses terminal chrome into the selected-pane t
   assert.doesNotMatch(sessionWindowSource, /sidecar-session-window__body/);
   assert.match(sessionWindowSource, /<SidecarTerminal session=\{session\} projectRoot=\{projectRoot\} \/>/);
   assert.doesNotMatch(sidecarTerminalSource, /agent-console__terminal-bar/);
+  assert.match(source, /const ODDTERM_RESIZE_DEBOUNCE_MS = 180;/);
+  assert.match(source, /const ODDTERM_RESIZE_MAX_WAIT_MS = 900;/);
+  assert.match(sidecarTerminalSource, /lastSentResize\?\.cols === nextResize\.cols && lastSentResize\.rows === nextResize\.rows/);
+  assert.match(sidecarTerminalSource, /seq: nextResize\.seq/);
+  assert.match(sidecarTerminalSource, /payload\.type === 'resize_ack'/);
+  assert.match(sidecarTerminalSource, /payload\.type === 'resize_error'/);
+  assert.match(sidecarTerminalSource, /lastSentResize = null/);
 });
 
 test('sidecar density CSS keeps controls shallow and gives height to terminal host', () => {
