@@ -31,9 +31,7 @@ async function captureReviewShot(
 
 async function waitForChrome(page: Page) {
   await expect(page.getByRole("banner")).toBeVisible();
-  await expect(
-    page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }),
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("banner").getByRole("button", { name: "Apply", exact: true })).toHaveCount(0);
 }
 
@@ -50,9 +48,6 @@ async function openWorkspace(page: Page, workspaceRoot: string) {
   await page.reload();
   await waitForChrome(page);
   await expect(page.getByRole("banner")).toContainText(workspaceRoot);
-  await expect(
-    page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }),
-  ).toBeVisible();
 }
 
 async function openManagerWorkspace(page: Page) {
@@ -70,12 +65,9 @@ test("sidecar is the only route-level manager surface", async ({ page }, testInf
   await waitForChrome(page);
   await openWorkspace(page, OBSERVED_WORKSPACE);
 
-  const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
-  await expect(sidecarNav).toBeVisible({ timeout: 30_000 });
-  await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
-  await expect(page.locator("nav.manager-nav").getByRole("button", { name: "Requirements View" })).toHaveCount(0);
-  await expect(page.locator("nav.manager-nav").getByRole("button", { name: "Policy & Evidence" })).toHaveCount(0);
+  await expect(page.locator("nav.manager-nav")).toHaveCount(0);
+  await expect(page.locator(".shell__control-card--status")).toHaveCount(0);
   await captureReviewShot(page, testInfo, "sidecar-only-entry");
 });
 
@@ -112,14 +104,142 @@ test("managed project add refreshes sidecar project selection without page reloa
   }
 });
 
-test("sidecar surface control remains readable in dark grey mode", async ({ page }) => {
+test("project favourite browse tree can add nested folders to Project Favourites", async ({ page }, testInfo) => {
+  const managedProjectRoot = testInfo.outputPath("managed-favourite-root");
+  const nestedProjectRoot = `${managedProjectRoot}/nested-favourite`;
+  mkdirSync(nestedProjectRoot, { recursive: true });
+
+  try {
+    await page.goto("/");
+    await waitForChrome(page);
+    const registered = await page.evaluate(async (root) => {
+      const response = await fetch("/api/projects/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root, setActive: false }),
+      });
+      window.dispatchEvent(new CustomEvent("odd-manager:project-registry-changed"));
+      return response.ok;
+    }, managedProjectRoot);
+    expect(registered).toBe(true);
+
+    await page.reload();
+    await waitForChrome(page);
+    await page.locator("nav.sidecar-activity-rail").getByRole("button", { name: "Projects" }).click();
+    const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
+    await expect(flyout.getByRole("heading", { name: "Project Browser" }).first()).toBeVisible();
+
+    const rootEntry = flyout.locator(".sidecar-project-browser__entry").filter({ hasText: "managed-favourite-root" }).first();
+    await expect(rootEntry).toBeVisible();
+    await rootEntry.getByRole("button", { name: "Browse" }).click();
+
+    const addNestedFavourite = flyout.getByRole("button", { name: "Add nested-favourite to Project Favourites" });
+    await expect(addNestedFavourite).toBeVisible({ timeout: 20_000 });
+    await addNestedFavourite.click();
+
+    const nestedEntry = flyout.locator(".sidecar-project-browser__entry").filter({ hasText: "nested-favourite" }).first();
+    await expect(nestedEntry).toBeVisible({ timeout: 20_000 });
+    await expect(addNestedFavourite).toBeDisabled();
+  } finally {
+    await page.evaluate(async ({ root, nested }) => {
+      for (const target of [nested, root]) {
+        await fetch("/api/projects/unregister", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ root: target }),
+        }).catch(() => undefined);
+      }
+      window.dispatchEvent(new CustomEvent("odd-manager:project-registry-changed"));
+    }, { root: managedProjectRoot, nested: nestedProjectRoot }).catch(() => undefined);
+  }
+});
+
+test("project browser refresh updates visible open trees", async ({ page }, testInfo) => {
+  const managedProjectRoot = testInfo.outputPath("managed-refresh-root");
+  const branchRoot = `${managedProjectRoot}/open-branch`;
+  mkdirSync(`${branchRoot}/initial-child`, { recursive: true });
+
+  try {
+    await page.goto("/");
+    await waitForChrome(page);
+    const registered = await page.evaluate(async (root) => {
+      const response = await fetch("/api/projects/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root, setActive: false }),
+      });
+      window.dispatchEvent(new CustomEvent("odd-manager:project-registry-changed"));
+      return response.ok;
+    }, managedProjectRoot);
+    expect(registered).toBe(true);
+
+    await page.reload();
+    await waitForChrome(page);
+    await page.locator("nav.sidecar-activity-rail").getByRole("button", { name: "Projects" }).click();
+    const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
+    await expect(flyout.getByRole("heading", { name: "Project Browser" }).first()).toBeVisible();
+
+    const rootEntry = flyout.locator(".sidecar-project-browser__entry").filter({ hasText: "managed-refresh-root" }).first();
+    await expect(rootEntry).toBeVisible();
+    await rootEntry.getByRole("button", { name: "Browse" }).click();
+
+    const tree = rootEntry.locator(".sidecar-project-browser__tree");
+    const branchToggle = tree.getByRole("button", { name: /open-branch/ }).first();
+    await expect(branchToggle).toBeVisible({ timeout: 20_000 });
+    await branchToggle.click();
+    await expect(tree.getByText("initial-child", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    await branchToggle.click();
+    mkdirSync(`${branchRoot}/expand-refresh-child`, { recursive: true });
+    await branchToggle.click();
+    await expect(tree.getByText("expand-refresh-child", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    mkdirSync(`${managedProjectRoot}/root-refresh-new`, { recursive: true });
+    mkdirSync(`${branchRoot}/branch-refresh-new`, { recursive: true });
+    await flyout.getByRole("button", { name: "Refresh Project Browser visible folders" }).click();
+    await expect(tree.getByText("root-refresh-new", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(tree.getByText("branch-refresh-new", { exact: true })).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await page.evaluate(async (root) => {
+      await fetch("/api/projects/unregister", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root }),
+      }).catch(() => undefined);
+      window.dispatchEvent(new CustomEvent("odd-manager:project-registry-changed"));
+    }, managedProjectRoot).catch(() => undefined);
+  }
+});
+
+test("shell mode control stays attached to the right edge in dark grey mode", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("oman-theme", "dark-grey");
   });
   await page.goto("/");
   await waitForChrome(page);
 
-  await expect(page.locator(".shell__control-card--status")).toContainText("Sidecar");
+  const modeButton = page.getByRole("banner").getByRole("button", { name: "Switch to dark blue mode" });
+  await expect(modeButton).toBeVisible();
+  await expect(page.locator(".shell__control-card--status")).toHaveCount(0);
+  await expect(page.locator("nav.manager-nav")).toHaveCount(0);
+
+  const headerMetrics = await page.evaluate(() => {
+    const header = document.querySelector(".shell__header")?.getBoundingClientRect();
+    const button = document.querySelector(".shell__icon-button")?.getBoundingClientRect();
+    const label = document.querySelector(".shell__control-label")?.getBoundingClientRect();
+    const title = document.querySelector(".shell__title h1")?.getBoundingClientRect();
+    if (!header || !button || !label || !title) throw new Error("shell header was not measurable");
+    return {
+      height: Math.round(header.height),
+      rightGap: Math.round(header.right - button.right),
+      titleButtonGap: Math.round(button.left - title.right),
+      titleCenterDelta: Math.round(Math.abs((label.top + label.height / 2) - (title.top + title.height / 2))),
+    };
+  });
+  expect(headerMetrics.height).toBeLessThanOrEqual(32);
+  expect(headerMetrics.rightGap).toBeLessThanOrEqual(8);
+  expect(headerMetrics.titleButtonGap).toBeGreaterThanOrEqual(4);
+  expect(headerMetrics.titleCenterDelta).toBeLessThanOrEqual(5);
 });
 
 test("project switching from sidecar keeps sidecar open and scopes pinned folders", async ({ page }) => {
@@ -146,8 +266,6 @@ test("project switching from sidecar keeps sidecar open and scopes pinned folder
   await page.reload();
   await waitForChrome(page);
 
-  const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
-  await expect(sidecarNav).toHaveClass(/is-selected/);
   const activityRail = page.locator("nav.sidecar-activity-rail");
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toBeVisible();
 
@@ -157,7 +275,6 @@ test("project switching from sidecar keeps sidecar open and scopes pinned folder
   await expect(observedProject).toBeVisible();
   await observedProject.click();
 
-  await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
   await expect(page.getByRole("banner")).toContainText(OBSERVED_WORKSPACE);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toHaveCount(0);
@@ -189,8 +306,6 @@ test("project selection from sidecar Projects surface promotes active context", 
   await page.reload();
   await waitForChrome(page);
 
-  const sidecarNav = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
-  await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("banner")).toContainText(MANAGER_WORKSPACE);
 
   const activityRail = page.locator("nav.sidecar-activity-rail");
@@ -201,7 +316,6 @@ test("project selection from sidecar Projects surface promotes active context", 
   await expect(observedProject).toBeVisible();
   await observedProject.click();
 
-  await expect(sidecarNav).toHaveClass(/is-selected/);
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
   await expect(page.getByRole("banner")).toContainText(OBSERVED_WORKSPACE);
   await expect(activityRail.getByRole("button", { name: "Pinned folder ./.playwright-mcp" })).toHaveCount(0);
@@ -212,9 +326,7 @@ test("floating side windows close on outside click", async ({ page }) => {
   await page.goto("/");
   await waitForChrome(page);
 
-  const sidecarButton = page.getByRole("button", { name: "Sidecar", exact: true });
-  await expect(sidecarButton).toBeVisible({ timeout: 30_000 });
-  await sidecarButton.click();
+  await page.locator("nav.sidecar-activity-rail").getByRole("button", { name: "Projects" }).click();
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
   await expect(flyout).toBeVisible();
   await page.getByRole("region", { name: "Sidecar canvas" }).click();
@@ -226,7 +338,7 @@ test("sidecar sections minimize and restore independently", async ({ page }, tes
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const minimizeInfo = activityRail.getByRole("button", { name: "Close selection flyout" });
@@ -276,7 +388,7 @@ test("sidecar workbench resize controls support keyboard and pointer operation",
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const explorerResize = page.getByRole("separator", { name: "Resize selection flyout" });
   const terminalResize = page.getByRole("separator", { name: "Resize terminal dock" });
@@ -315,7 +427,7 @@ test("sidecar layout profile persists resize across reload and resets to default
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const explorerResize = page.getByRole("separator", { name: "Resize selection flyout" });
   await expect(explorerResize).toBeVisible();
@@ -338,7 +450,7 @@ test("sidecar layout profile persists resize across reload and resets to default
   await page.reload();
   await waitForChrome(page);
   await openObservedWorkspace(page);
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const persistedExplorerResize = page.getByRole("separator", { name: "Resize selection flyout" });
   await expect
@@ -358,7 +470,7 @@ test("sidecar explorer provider registry omits sessions provider", async ({ page
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const activityRail = page.locator("nav.sidecar-activity-rail");
   await expect(activityRail.getByRole("button", { name: "Sessions" })).toHaveCount(0);
@@ -373,7 +485,7 @@ test("sidecar selector uses the same filesystem browser for tickets and comments
   await waitForChrome(page);
   await openManagerWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
@@ -458,7 +570,7 @@ test("sidecar browse navigator pins project folders", async ({ page }, testInfo)
   }, { root: MANAGER_WORKSPACE, abiogenesisRoot: ABIOGENESIS_WORKSPACE });
   await openManagerWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
   const activityRail = page.locator("nav.sidecar-activity-rail");
@@ -619,7 +731,7 @@ test("sidecar browse pins folders inside abiogenesis project", async ({ page }) 
   await waitForChrome(page);
   await openWorkspace(page, ABIOGENESIS_WORKSPACE);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
   await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
@@ -645,7 +757,7 @@ test("sidecar pinned selector remains open while browsing and selecting files", 
   await waitForChrome(page);
   await openManagerWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
@@ -699,7 +811,7 @@ test("sidecar document viewer renders Mermaid, highlighted source, HTML, and PDF
   await waitForChrome(page);
   await openManagerWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
@@ -868,9 +980,6 @@ test("sidecar build tenant favorite opens and highlights as single pinned folder
   }, MANAGER_WORKSPACE);
   await openManagerWorkspace(page);
 
-  const sidecarButton = page.getByRole("button", { name: "Sidecar", exact: true });
-  await expect(sidecarButton).toBeVisible({ timeout: 30_000 });
-  await sidecarButton.click();
   const activityRail = page.locator("nav.sidecar-activity-rail");
   const flyout = page.getByRole("complementary", { name: "Sidecar selection flyout" });
   const buildTenantFavorite = activityRail.getByRole("button", { name: "Pinned folder ./build_tenants" });
@@ -881,7 +990,7 @@ test("sidecar build tenant favorite opens and highlights as single pinned folder
   await buildTenantFavorite.click();
   await expect(buildTenantFavorite).toHaveAttribute("aria-pressed", "true");
   await expect(flyout.getByRole("heading", { name: "./build_tenants" }).first()).toBeVisible();
-  await expect(flyout.getByRole("button", { name: /\.\/build_tenants/i }).first()).toHaveAttribute("aria-expanded", "true");
+  await expect(flyout.locator(".sidecar-tree-group__toggle").filter({ hasText: "./build_tenants" }).first()).toHaveAttribute("aria-expanded", "true");
 
   await flyout.getByRole("button", { name: "Close selection flyout" }).click();
   await expect(buildTenantFavorite).toHaveAttribute("aria-pressed", "true");
@@ -902,7 +1011,7 @@ test("sidecar viewer panes open tabs and split groups", async ({ page }, testInf
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const activityRail = page.locator("nav.sidecar-activity-rail");
   await activityRail.getByRole("button", { name: "Projects" }).click();
@@ -935,7 +1044,7 @@ test("sidecar terminal panes open tabs and split groups", async ({ page }, testI
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const terminalDock = page.getByRole("region", { name: "Sidecar terminal dock" });
   await expect(terminalDock).toBeVisible();
@@ -972,7 +1081,7 @@ test("sidecar panes add vertical splits and resize adjacent widths", async ({ pa
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await canvas.locator(".sidecar-viewer-layout-toggle").getByRole("button", { name: "Add vertical viewer pane" }).click();
@@ -1052,13 +1161,10 @@ test("sidecar design language keeps workspace low-border in light, dark grey, an
   await page.addInitScript(() => window.localStorage.setItem("oman-theme", "light"));
   await page.goto("/");
   await waitForChrome(page);
-  await expect(page.locator("nav.manager-nav")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".shell__control-card--status strong")).not.toHaveText("Loading", { timeout: 30_000 });
+  await expect(page.locator("nav.manager-nav")).toHaveCount(0);
+  await expect(page.locator(".shell__control-card--status")).toHaveCount(0);
 
-  const themeSidecarButton = page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true });
-  await expect(themeSidecarButton).toBeVisible({ timeout: 30_000 });
   await expect(async () => {
-    await themeSidecarButton.click();
     await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 5_000 });
   }).toPass({ timeout: 30_000 });
   await expect(page.getByRole("region", { name: "Sidecar terminal dock" })).toBeVisible();
@@ -1147,7 +1253,7 @@ test("sidecar right context rail is narrow and sweeps out detail", async ({ page
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const contextRail = page.getByRole("complementary", { name: "Sidecar context rail" });
   await expect(contextRail).toBeVisible();
@@ -1180,7 +1286,7 @@ test("sidecar process navigator N0 opens as a TypeScript-only object viewer tab"
   await waitForChrome(page);
   await openWorkspace(page, PROCESS_WORKSPACE);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas).toBeVisible({ timeout: 30_000 });
@@ -1192,20 +1298,29 @@ test("sidecar process navigator N0 opens as a TypeScript-only object viewer tab"
   const processPanel = canvas.locator(".sidecar-process-simple");
   await expect(processPanel).toBeVisible();
   await expect(processPanel).toContainText("ts-v1");
-  await expect(processPanel.getByRole("tablist", { name: "Process navigator sections" }).getByRole("tab")).toHaveCount(4);
-  await expect(processPanel.getByRole("tab", { name: /Live View/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Graph Overlays/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Graph Functions/ })).toBeVisible();
-  await expect(processPanel.getByRole("tab", { name: /Leaf Assets/ })).toBeVisible();
-  await expect(processPanel.getByRole("region", { name: "Live View" })).toContainText("odd_sdlc runtime projection");
+  await expect(processPanel.getByRole("tablist", { name: "Process navigator sections" }).getByRole("tab").first()).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Runtime State/ })).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Function Catalog/ })).toBeVisible();
+  await expect(processPanel.getByRole("tab", { name: /Asset Nodes/ })).toBeVisible();
+  await expect(processPanel.getByRole("region", { name: "Runtime State" })).toContainText("odd_sdlc runtime projection");
   await expect(processPanel).not.toContainText("Observed SDLC Surfaces");
   await expect(processPanel).not.toContainText("Recent Failures");
   await expect(processPanel).not.toContainText("Recent Activity");
   await expect(processPanel).not.toContainText("Tests / Qualification");
+  const selectedRunDetail = processPanel.getByRole("region", { name: "Selected run detail" });
+  await expect(selectedRunDetail).toBeVisible();
+  await expect(selectedRunDetail.locator(".sidecar-live-view__run-header")).toContainText(/Started\s+\S/);
+  await expect(processPanel.getByRole("region", { name: "active run and diagnostics row" })).toBeVisible();
+  const selectedRunBeforeActiveRun = await processPanel.evaluate((root) => {
+    const selected = root.querySelector('[aria-label="Selected run detail"]');
+    const active = root.querySelector('[aria-label="active run and diagnostics row"]');
+    return Boolean(selected && active && (selected.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(selectedRunBeforeActiveRun).toBe(true);
 
-  await processPanel.getByRole("tab", { name: /Graph Functions/ }).click();
+  await processPanel.getByRole("tab", { name: /Function Catalog/ }).click();
   await expect(processPanel).toContainText("derive_code_surface");
-  await processPanel.getByRole("tab", { name: /Leaf Assets/ }).click();
+  await processPanel.getByRole("tab", { name: /Asset Nodes/ }).click();
   await expect(processPanel).toContainText("code_surface");
 
   await captureReviewShot(canvas, testInfo, "sidecar-process-navigator-ts-object-viewer");
@@ -1217,7 +1332,7 @@ test("sidecar info browser splitter stays compact in canvas header", async ({ pa
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await expect(canvas.locator(".sidecar-canvas__header .sidecar-viewer-layout-toggle")).toBeVisible();
@@ -1250,10 +1365,10 @@ test("sidecar horizontal viewer split keeps top and bottom panes balanced", asyn
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
-  await page.getByRole("button", { name: "Projects" }).click();
+  await page.locator("nav.sidecar-activity-rail").getByRole("button", { name: "Projects" }).click();
   const firstProject = page.locator(".sidecar-flyout .sidecar-row").first();
   await expect(firstProject).toBeVisible();
   await firstProject.click();
@@ -1304,7 +1419,7 @@ test("sidecar split panes can be explicitly targeted when empty", async ({ page 
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const canvas = page.getByRole("region", { name: "Sidecar canvas" });
   await canvas.locator(".sidecar-viewer-layout-toggle").getByRole("button", { name: "Add vertical viewer pane" }).click();
@@ -1313,7 +1428,7 @@ test("sidecar split panes can be explicitly targeted when empty", async ({ page 
   await secondaryViewer.click();
   await expect(secondaryViewer).toHaveAttribute("aria-selected", "true");
 
-  await page.getByRole("button", { name: "Projects" }).click();
+  await page.locator("nav.sidecar-activity-rail").getByRole("button", { name: "Projects" }).click();
   const firstProject = page.locator(".sidecar-flyout .sidecar-row").first();
   await expect(firstProject).toBeVisible();
   await firstProject.click();
@@ -1349,7 +1464,7 @@ test("sidecar terminal dock drag collapses and restores", async ({ page }, testI
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const terminalDock = page.getByRole("region", { name: "Sidecar terminal dock" });
   const resizeHandle = page.getByRole("separator", { name: "Resize terminal dock" });
@@ -1386,7 +1501,7 @@ test("sidecar horizontal terminal split uses maximum assigned height", async ({ 
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const terminalDock = page.getByRole("region", { name: "Sidecar terminal dock" });
   await expect(terminalDock.locator(".sidecar-terminal-toolbar")).toBeVisible();
@@ -1469,7 +1584,7 @@ test("sidecar terminal chrome stays compact before the terminal host", async ({ 
   await waitForChrome(page);
   await openObservedWorkspace(page);
 
-  await page.locator("nav.manager-nav").getByRole("button", { name: "Sidecar", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 30_000 });
 
   const terminalDock = page.getByRole("region", { name: "Sidecar terminal dock" });
   await expect(terminalDock.locator(".sidecar-terminal-toolbar")).toBeVisible();

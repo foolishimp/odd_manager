@@ -51,11 +51,14 @@ Acceptance Criteria
   implementation, proof, work, and discussion surfaces where relevant
 - process-first framing does not require duplicating those downstream widgets
   into a second unrelated architecture
-- the Sidecar Process Navigator exposes exactly three operator views:
-  `Active Work`, `Blocked / Waiting`, and `Ready for Handoff`
-- the Sidecar Process Navigator body is graph-first, with process flow,
-  builder governance, and runtime evidence maps available under those three
-  views rather than as additional saved views
+- the Sidecar Process Navigator exposes sections derived from the current
+  `odd_sdlc` node-management projection: runtime state is always the first
+  process posture section, and graph overlays, function catalog entries, and
+  asset-node relationships appear only when the TypeScript projection supplies
+  those carriers
+- the Sidecar Process Navigator body is graph-first for graph and asset-node
+  carriers, while runtime state remains an operator-run and stage-process
+  projection over the same TypeScript truth
 - the Sidecar Process Navigator accepts the TypeScript query contract
   `odd_sdlc.query-domain` `ts-v1` and rejects or ignores legacy Python SDLC
   process projection shapes with an explicit unsupported-format state

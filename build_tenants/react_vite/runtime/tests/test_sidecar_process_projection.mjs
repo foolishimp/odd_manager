@@ -248,7 +248,7 @@ function analysisPayload(overrides = {}) {
   };
 }
 
-test('data_mapper test56 TypeScript event log projects the three Sidecar process views', () => {
+test('data_mapper test56 TypeScript event log projects current process maps without fixed operator views', () => {
   assert.ok(existsSync(DATA_MAPPER_TEST56), 'data_mapper.test56.ts fixture is required');
   const projection = loadSidecarProcessProjection(DATA_MAPPER_TEST56);
 
@@ -256,14 +256,7 @@ test('data_mapper test56 TypeScript event log projects the three Sidecar process
   assert.equal(projection.contractName, SIDECAR_PROCESS_CONTRACT_NAME);
   assert.equal(projection.contractVersion, SIDECAR_PROCESS_CONTRACT_VERSION);
   assert.equal(projection.readOnly, true);
-  assert.deepEqual(
-    projection.views.map((view) => view.label),
-    ['Active Work', 'Blocked / Waiting', 'Ready for Handoff'],
-  );
-  assert.deepEqual(
-    projection.views.map((view) => view.id),
-    ['active_work', 'blocked_waiting', 'ready_handoff'],
-  );
+  assert.deepEqual(projection.views, []);
   for (const kind of [
     'graph_call_opened',
     'frame_opened',
@@ -276,8 +269,6 @@ test('data_mapper test56 TypeScript event log projects the three Sidecar process
   }
   assert.ok(projection.eventCount > 0);
   assert.ok(projection.records.length > 0);
-  assert.ok(projection.views.some((view) => view.id === 'blocked_waiting' && view.recordIds.length > 0));
-  assert.ok(projection.views.some((view) => view.id === 'ready_handoff' && view.recordIds.length > 0));
   assert.deepEqual(
     projection.maps.map((map) => map.label),
     ['Process Flow Map', 'Builder Governance Graph', 'Runtime Evidence Flow'],
@@ -378,10 +369,7 @@ test('missing TypeScript odd_sdlc install fails closed while preserving generic 
 
   assert.equal(projection.supported, false);
   assert.match(projection.unsupportedReason ?? '', /TypeScript installation projection is missing/);
-  assert.deepEqual(
-    projection.views.map((view) => view.label),
-    ['Active Work', 'Blocked / Waiting', 'Ready for Handoff'],
-  );
+  assert.deepEqual(projection.views, []);
   assert.equal(projection.records.length, 0);
   assert.equal(projection.maps.length, 0);
 });
@@ -797,6 +785,7 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
 
   const projection = loadSidecarProcessProjection(root);
   assert.equal(projection.supported, true);
+  assert.equal(projection.workspaceRun.operatorRuns[0].startedAt, '2026-05-18T01:00:00.000Z');
   assert.equal(projection.liveAnalysis.kind, 'sidecar_live_analysis_projection');
   assert.equal(projection.liveAnalysis.sourceKind, 'sdlc_fd_run_analysis');
   assert.equal(projection.liveAnalysis.readOnly, true);

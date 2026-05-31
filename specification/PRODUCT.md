@@ -275,8 +275,10 @@ During the forward-only pre-release line, the live process surface is the
 Sidecar `Process Navigator`. It is an object-viewer workspace surface selected
 from the Sidecar right rail. It supports the `odd_sdlc` TypeScript tenant event
 and query contract only: `odd_sdlc.query-domain` `ts-v1` over ABG event truth.
-Its primary body is graph-first: process flow, builder governance, and runtime
-evidence maps are the object-viewer carriers under the three operator views.
+Its primary sections are derived from the current `odd_sdlc` runtime and
+domain projection: runtime state, projected graph overlays, the function
+catalog, and typed asset-node relationships appear only when their backing
+carrier is present.
 Python SDLC process projections are historical compatibility material and do
 not define the live Sidecar process contract.
 

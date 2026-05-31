@@ -2,7 +2,7 @@ import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
-import type { SidecarProcessFlowVariantId, SidecarProcessMapId, SidecarProcessProjection, SidecarProcessViewId } from '../../contracts/process';
+import type { SidecarProcessProjection } from '../../contracts/process';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -168,8 +168,6 @@ export interface SidecarLayoutProfile {
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
-    activeProcessView: SidecarProcessViewId;
-    activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
     liveActiveRunRowCollapsed: boolean;
     liveInternalRowCollapsed: boolean;
@@ -178,13 +176,6 @@ export interface SidecarLayoutProfile {
     liveGapRowCollapsed: boolean;
     liveEventViewerCollapsed: boolean;
     activeProcessGraphMode: SidecarProcessGraphMode;
-    // T-026: variant selection over the process flow map. V0 is canonical;
-    // V1/V2/V4 are §13A scaffolds. Persisted across sessions via the layout
-    // profile so the operator's last-used variant is restored.
-    activeProcessFlowVariant: SidecarProcessFlowVariantId;
-    // T-026 + T-022: focused leaf for the per-leaf workbench (overlay,
-    // assurance vector, traced evidence). Null when no leaf is focused.
-    activeLeafName: string | null;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
     documentViewers: Record<string, SidecarDocumentViewerState>;
@@ -253,8 +244,6 @@ export interface SidecarState {
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
-    activeProcessView: SidecarProcessViewId;
-    activeProcessMap: SidecarProcessMapId;
     activeProcessRecordId: string | null;
     liveActiveRunRowCollapsed: boolean;
     liveInternalRowCollapsed: boolean;
@@ -263,8 +252,6 @@ export interface SidecarState {
     liveGapRowCollapsed: boolean;
     liveEventViewerCollapsed: boolean;
     activeProcessGraphMode: SidecarProcessGraphMode;
-    activeProcessFlowVariant: SidecarProcessFlowVariantId;
-    activeLeafName: string | null;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
     documentViewers: Record<string, SidecarDocumentViewerState>;
@@ -312,8 +299,6 @@ export type SidecarMsg =
   | { type: 'ui/set-info-pinned'; pinned?: boolean }
   | { type: 'ui/set-shell-layout'; layout: SidecarShellLayout }
   | { type: 'ui/select-info-surface'; surface: SidecarInfoSurface; open?: boolean }
-  | { type: 'process/select-view'; view: SidecarProcessViewId }
-  | { type: 'process/select-map'; map: SidecarProcessMapId }
   | { type: 'process/select-record'; id: string | null }
   | { type: 'process/set-live-active-run-row-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-internal-row-collapsed'; collapsed: boolean }
@@ -323,8 +308,6 @@ export type SidecarMsg =
   | { type: 'process/set-live-event-viewer-collapsed'; collapsed: boolean }
   | { type: 'process/set-live-all-collapsed'; collapsed: boolean }
   | { type: 'process/set-graph-mode'; mode: SidecarProcessGraphMode }
-  | { type: 'process/select-variant'; variant: SidecarProcessFlowVariantId }
-  | { type: 'process/select-leaf'; leafName: string | null }
   | { type: 'ui/resize-start'; target: SidecarResizeTarget; pointerId: number | null; clientX: number; clientY: number }
   | { type: 'ui/resize-preview'; target: SidecarResizeTarget; valuePx: number }
   | { type: 'ui/resize-commit'; target?: SidecarResizeTarget; valuePx?: number }
@@ -416,8 +399,6 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
     shellCollapsed: false,
     shellLayout: 'single',
     activeInfoSurface: 'tickets',
-    activeProcessView: 'active_work',
-    activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
     liveActiveRunRowCollapsed: false,
     liveInternalRowCollapsed: false,
@@ -426,8 +407,6 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
     liveGapRowCollapsed: false,
     liveEventViewerCollapsed: false,
     activeProcessGraphMode: 'expanded',
-    activeProcessFlowVariant: 'v1',
-    activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: { ...SIDECAR_VIEWER_WORKSPACE_DEFAULTS, groups: [...SIDECAR_VIEWER_WORKSPACE_DEFAULTS.groups] },
     documentViewers: {},
@@ -1107,14 +1086,6 @@ function isInfoSurface(value: unknown): value is SidecarInfoSurface {
   return SIDECAR_EXPLORER_PROVIDERS.some((provider) => provider.id === value);
 }
 
-function isProcessView(value: unknown): value is SidecarProcessViewId {
-  return value === 'active_work' || value === 'blocked_waiting' || value === 'ready_handoff';
-}
-
-function isProcessMap(value: unknown): value is SidecarProcessMapId {
-  return value === 'process_flow' || value === 'builder_governance' || value === 'runtime_evidence' || value === 'live_view';
-}
-
 function validWorkbenchLayout(value: unknown): SidecarWorkbenchLayout | null {
   if (!isRecord(value)) return null;
   const { explorerWidthPx, contextRailWidthPx, bottomDockHeightPx } = value;
@@ -1201,8 +1172,6 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         shellCollapsed: ui.shellCollapsed,
         shellLayout: terminalWorkspace.split,
         activeInfoSurface: ui.activeInfoSurface,
-        activeProcessView: isProcessView(ui.activeProcessView) ? ui.activeProcessView : 'active_work',
-        activeProcessMap: isProcessMap(ui.activeProcessMap) ? ui.activeProcessMap : 'process_flow',
         activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
         liveActiveRunRowCollapsed: ui.liveActiveRunRowCollapsed === true,
         liveInternalRowCollapsed: ui.liveInternalRowCollapsed === true,
@@ -1211,10 +1180,6 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         liveGapRowCollapsed: ui.liveGapRowCollapsed === true,
         liveEventViewerCollapsed: ui.liveEventViewerCollapsed === true,
         activeProcessGraphMode: isProcessGraphMode(ui.activeProcessGraphMode) ? ui.activeProcessGraphMode : 'expanded',
-        activeProcessFlowVariant: isProcessFlowVariant(ui.activeProcessFlowVariant)
-          ? (ui.activeProcessFlowVariant as SidecarProcessFlowVariantId)
-          : 'v1',
-        activeLeafName: typeof ui.activeLeafName === 'string' ? ui.activeLeafName : null,
         workbenchLayout,
         viewerWorkspace,
         documentViewers: validDocumentViewers(ui.documentViewers, viewerWorkspace),
@@ -1228,10 +1193,6 @@ function isProcessGraphMode(value: unknown): value is SidecarProcessGraphMode {
   return value === 'expanded' || value === 'compressed';
 }
 
-function isProcessFlowVariant(value: unknown): value is SidecarProcessFlowVariantId {
-  return value === 'v0' || value === 'v1' || value === 'v2' || value === 'v4';
-}
-
 export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: string): SidecarLayoutProfile {
   const terminalWorkspace = normalizeTerminalWorkspace(state.ui.terminalWorkspace, state.sessions.records);
   return {
@@ -1243,8 +1204,6 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       shellCollapsed: state.ui.shellCollapsed,
       shellLayout: terminalWorkspace.split,
       activeInfoSurface: state.ui.activeInfoSurface,
-      activeProcessView: state.ui.activeProcessView,
-      activeProcessMap: state.ui.activeProcessMap,
       activeProcessRecordId: state.ui.activeProcessRecordId,
       liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed,
       liveInternalRowCollapsed: state.ui.liveInternalRowCollapsed,
@@ -1253,8 +1212,6 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       liveGapRowCollapsed: state.ui.liveGapRowCollapsed,
       liveEventViewerCollapsed: state.ui.liveEventViewerCollapsed,
       activeProcessGraphMode: state.ui.activeProcessGraphMode,
-      activeProcessFlowVariant: state.ui.activeProcessFlowVariant,
-      activeLeafName: state.ui.activeLeafName,
       workbenchLayout: normalizeWorkbenchLayout({
         ...state.ui.workbenchLayout,
         activeResize: null,
@@ -1274,8 +1231,6 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
     shellCollapsed: false,
     shellLayout: terminalWorkspace.split,
     activeInfoSurface: 'tickets',
-    activeProcessView: 'active_work',
-    activeProcessMap: 'process_flow',
     activeProcessRecordId: null,
     liveActiveRunRowCollapsed: false,
     liveInternalRowCollapsed: false,
@@ -1284,8 +1239,6 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
     liveGapRowCollapsed: false,
     liveEventViewerCollapsed: false,
     activeProcessGraphMode: 'expanded',
-    activeProcessFlowVariant: 'v1',
-    activeLeafName: null,
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: defaultViewerWorkspace(),
     documentViewers: {},
@@ -1365,7 +1318,6 @@ function clearStaleProcessLoadState(state: SidecarState): SidecarState {
     ui: {
       ...state.ui,
       activeProcessRecordId: null,
-      activeLeafName: null,
     },
   };
 }
@@ -1446,39 +1398,6 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeInfoSurface: msg.surface,
           infoCollapsed: msg.open === false ? true : false,
           infoPinned: msg.open === false ? false : state.ui.infoPinned,
-        },
-      };
-    case 'process/select-view':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeProcessView: msg.view,
-          activeProcessRecordId: null,
-        },
-      };
-    case 'process/select-map':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeProcessMap: msg.map,
-        },
-      };
-    case 'process/select-variant':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeProcessFlowVariant: msg.variant,
-        },
-      };
-    case 'process/select-leaf':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeLeafName: msg.leafName,
         },
       };
     case 'process/select-record':
@@ -1653,6 +1572,9 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       if (!validation.ok) {
         return { ...state, lastAction: { ok: false, error: `layout profile rejected: ${validation.error}` } };
       }
+      const viewerWorkspace = state.selection.kind && state.selection.id
+        ? openViewerTab(validation.profile.ui.viewerWorkspace, state.selection.kind, state.selection.id)
+        : validation.profile.ui.viewerWorkspace;
       const terminalWorkspace = normalizeTerminalWorkspace(
         validation.profile.ui.terminalWorkspace,
         state.sessions.records,
@@ -1671,8 +1593,6 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           shellCollapsed: validation.profile.ui.shellCollapsed,
           shellLayout: terminalWorkspace.split,
           activeInfoSurface: validation.profile.ui.activeInfoSurface,
-          activeProcessView: validation.profile.ui.activeProcessView,
-          activeProcessMap: validation.profile.ui.activeProcessMap,
           activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
           liveActiveRunRowCollapsed: validation.profile.ui.liveActiveRunRowCollapsed,
           liveInternalRowCollapsed: validation.profile.ui.liveInternalRowCollapsed,
@@ -1682,8 +1602,8 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           liveEventViewerCollapsed: validation.profile.ui.liveEventViewerCollapsed,
           activeProcessGraphMode: validation.profile.ui.activeProcessGraphMode,
           workbenchLayout: validation.profile.ui.workbenchLayout,
-          viewerWorkspace: validation.profile.ui.viewerWorkspace,
-          documentViewers: validation.profile.ui.documentViewers,
+          viewerWorkspace,
+          documentViewers: normalizeDocumentViewers(validation.profile.ui.documentViewers, viewerWorkspace),
           terminalWorkspace,
         },
       };

@@ -1,4 +1,4 @@
-export type SidecarProcessViewId = 'active_work' | 'blocked_waiting' | 'ready_handoff';
+export type SidecarProcessViewId = 'runtime_activity' | 'runtime_pressure' | 'runtime_closed';
 
 export type SidecarProcessMapId = 'process_flow' | 'builder_governance' | 'runtime_evidence' | 'live_view';
 
@@ -116,10 +116,6 @@ export interface SidecarProcessProjection {
   // `.ai-workspace/runtime/odd_sdlc/operator-runs/<operator-run-id>/`.
   // It models one traversal/operator run with multiple compute-stage processes.
   workspaceRun?: SidecarSdlcWorkspaceRun | null;
-  // T-026: variant identifier for the process flow map, selected by the sidecar reducer.
-  // The carrier itself is variant-agnostic; this field records which variant the consumer is rendering.
-  // Absent on initial fetch; set when the user picks a variant from the tab strip.
-  activeProcessFlowVariant?: SidecarProcessFlowVariantId;
 }
 
 export type SidecarSdlcComputeStageKind =
@@ -166,6 +162,7 @@ export interface SidecarSdlcOperatorRun {
   kind: 'sidecar_sdlc_operator_run';
   operatorRunId: string;
   operatorRunPath: string;
+  startedAt: string | null;
   status: string | null;
   edge: SidecarSdlcTraversalEdge | null;
   stages: SidecarSdlcComputeStage[];
@@ -840,53 +837,6 @@ export interface TracedCalloutEvidence {
 }
 
 // ---------------------------------------------------------------------------
-// T-026: process flow map variant identifiers. Variants V1/V2/V4 are §13A
-// scaffolds and carry the variant-tab label, retirement condition, and
-// owning-ticket metadata at render time. V0 is the canonical baseline.
-// ---------------------------------------------------------------------------
-
-export type SidecarProcessFlowVariantId = 'v0' | 'v1' | 'v2' | 'v4';
-
-export interface SidecarProcessFlowVariantDescriptor {
-  id: SidecarProcessFlowVariantId;
-  label: string;
-  scaffoldKind: 'baseline' | 'scaffold';
-  retirementCondition: string | null;
-  owningTicket: string | null;
-}
-
-export const SIDECAR_PROCESS_FLOW_VARIANTS: readonly SidecarProcessFlowVariantDescriptor[] = [
-  {
-    id: 'v0',
-    label: 'Baseline',
-    scaffoldKind: 'scaffold',
-    retirementCondition: 'local paydown after V1 canonical promotion (T-026)',
-    owningTicket: 'T-026',
-  },
-  {
-    id: 'v1',
-    label: 'Three-lane Structural',
-    scaffoldKind: 'baseline',
-    retirementCondition: null,
-    owningTicket: null,
-  },
-  {
-    id: 'v2',
-    label: 'Asset-DAG',
-    scaffoldKind: 'scaffold',
-    retirementCondition: 'sprint close review (T-026)',
-    owningTicket: 'T-026',
-  },
-  {
-    id: 'v4',
-    label: 'Assurance Matrix',
-    scaffoldKind: 'scaffold',
-    retirementCondition: 'sprint close review (T-026)',
-    owningTicket: 'T-026',
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Runtime validators (UX_METHOD §10). Hand-rolled type guards consistent
 // with the existing project lightweight-validator posture (no zod / ajv
 // dependency added). Every untrusted-seam payload (HTTP responses, file
@@ -961,13 +911,6 @@ const LEAF_CATALOG_IDS: readonly SidecarLeafCatalogId[] = [
   'bootstrap',
   'operational',
   'triage',
-];
-
-const FLOW_VARIANT_IDS: readonly SidecarProcessFlowVariantId[] = [
-  'v0',
-  'v1',
-  'v2',
-  'v4',
 ];
 
 const LIVE_ANALYSIS_INSPECTED_KINDS: readonly SidecarLiveAnalysisInspectedKind[] = [
@@ -1680,12 +1623,6 @@ export function isSidecarTraversalOverlay(value: unknown): value is SidecarTrave
   return true;
 }
 
-export function isSidecarProcessFlowVariantId(
-  value: unknown,
-): value is SidecarProcessFlowVariantId {
-  return isOneOf(value, FLOW_VARIANT_IDS);
-}
-
 // Top-level guard. Use this at the `/api/sidecar/process` response seam to
 // reject malformed payloads before they enter UX state. The legacy
 // `payload.kind === 'sidecar_process_projection'` check at the sidecar
@@ -1732,11 +1669,6 @@ export function isSidecarProcessProjection(
     value.liveAnalysis !== undefined &&
     value.liveAnalysis !== null &&
     !isSidecarLiveAnalysisProjection(value.liveAnalysis)
-  )
-    return false;
-  if (
-    value.activeProcessFlowVariant !== undefined &&
-    !isSidecarProcessFlowVariantId(value.activeProcessFlowVariant)
   )
     return false;
   return true;

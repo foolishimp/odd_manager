@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 export const SIDECAR_PROCESS_CONTRACT_NAME = "odd_sdlc.query-domain";
 export const SIDECAR_PROCESS_CONTRACT_VERSION = "ts-v1";
@@ -62,23 +62,7 @@ const LEAF_INVOCATION_STATUSES = new Set([
   "unattested"
 ]);
 
-export const SIDECAR_PROCESS_VIEWS = Object.freeze([
-  Object.freeze({
-    id: "active_work",
-    label: "Active Work",
-    summary: "Graph calls, frames, vectors, and worker assessments currently moving through the TypeScript process lane."
-  }),
-  Object.freeze({
-    id: "blocked_waiting",
-    label: "Blocked / Waiting",
-    summary: "Blocked vectors, retry repair, reopened continuation, and fail-closed process pressure."
-  }),
-  Object.freeze({
-    id: "ready_handoff",
-    label: "Ready for Handoff",
-    summary: "Closed vectors and advanced process objects with downstream handoff evidence."
-  })
-]);
+export const SIDECAR_PROCESS_VIEWS = Object.freeze([]);
 
 const TS_INSTALL_PROJECTION_RELATIVE_PATH = ".ai-workspace/runtime/odd_sdlc-typescript-installation.json";
 const TS_INSTALL_MANIFEST_RELATIVE_PATH = ".abiogenesis/odd_sdlc/typescript/install-manifest.json";
@@ -392,6 +376,7 @@ function readSdlcOperatorRun(operatorRunPath, operatorRunId) {
     kind: "sidecar_sdlc_operator_run",
     operatorRunId,
     operatorRunPath,
+    startedAt: operatorRunStartedAt(operatorRunId, operatorRunPath),
     status,
     edge,
     stages: Object.freeze(sdlcComputeStages({
@@ -414,6 +399,28 @@ function readSdlcOperatorRun(operatorRunPath, operatorRunId) {
     nextActionProjection,
     activeFeedbackLoop
   });
+}
+
+function operatorRunStartedAt(operatorRunId, operatorRunPath) {
+  return parseOperatorRunTimestamp(operatorRunId) ?? parseOperatorRunTimestamp(basename(operatorRunPath));
+}
+
+function parseOperatorRunTimestamp(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z(?:_|$)/.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, fraction = ""] = match;
+  const date = new Date(Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(fraction.padEnd(3, "0") || "0")
+  ));
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 function sdlcTraversalEdge(manifest, run, fpEvaluate) {
@@ -3094,7 +3101,7 @@ function projectProcessRecords(events) {
         kind: "graph_call",
         title: graphFunctionTitle(event),
         summary: `Graph call opened for ${graphFunctionTitle(event)}.`,
-        viewIds: ["active_work"],
+        viewIds: ["runtime_activity"],
         tone: "active",
         status: "opened",
         graphFunctionId: stringOrNull(event, "graphFunctionId"),
@@ -3117,7 +3124,7 @@ function projectProcessRecords(events) {
         kind: "frame",
         title: "Frame opened",
         summary: `Frame opened with ${numberField(event, "vectorCount") ?? 0} vector(s).`,
-        viewIds: ["active_work"],
+        viewIds: ["runtime_activity"],
         tone: "active",
         status: "opened",
         graphFunctionId: null,
@@ -4040,15 +4047,15 @@ function statusForNonVectorEvent(event, kind) {
 
 function viewIdsForEvent(kind, status) {
   const views = [];
-  if (ACTIVE_EVENT_KINDS.has(kind)) views.push("active_work");
-  if (BLOCKED_EVENT_KINDS.has(kind) || status === "blocked") views.push("blocked_waiting");
-  if (READY_EVENT_KINDS.has(kind) || status === "advanced" || status === "closed") views.push("ready_handoff");
-  return views.length > 0 ? views : ["active_work"];
+  if (ACTIVE_EVENT_KINDS.has(kind)) views.push("runtime_activity");
+  if (BLOCKED_EVENT_KINDS.has(kind) || status === "blocked") views.push("runtime_pressure");
+  if (READY_EVENT_KINDS.has(kind) || status === "advanced" || status === "closed") views.push("runtime_closed");
+  return views.length > 0 ? views : ["runtime_activity"];
 }
 
 function toneForViews(viewIds) {
-  if (viewIds.includes("blocked_waiting")) return "blocked";
-  if (viewIds.includes("ready_handoff")) return "converged";
+  if (viewIds.includes("runtime_pressure")) return "blocked";
+  if (viewIds.includes("runtime_closed")) return "converged";
   return "active";
 }
 

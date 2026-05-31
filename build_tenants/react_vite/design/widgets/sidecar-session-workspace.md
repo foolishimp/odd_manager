@@ -257,11 +257,13 @@ The live route law is:
 - `App` keeps only host-level theme and active Project root state; Project
   switching is lifted from Sidecar Context changes and must not close backend
   PTYs.
-- `AppShell` may render compact chrome and a Sidecar identity affordance, but
-  it must not expose a multi-page manager navigation or shell-owned Project
-  selector.
-- No route-level page vocabulary remains outside the shell's single Sidecar
-  affordance.
+- `AppShell` renders only compact project identity and host-level mode controls;
+  it must not expose a multi-page manager navigation, redundant Sidecar tab, or
+  shell-owned Project selector.
+- The shell identity is a single inline row: product label, active Project name,
+  and right-edge mode control. It must not stack product label over Project name
+  in the normal Sidecar header.
+- No route-level page vocabulary remains in shell chrome.
 - Legacy screens and ambient route widgets are deleted from the live source
   tree rather than hidden, redirected, or preserved as inactive reference code.
 - Historical reference for the deleted screens lives only in git at
@@ -714,6 +716,33 @@ The uniform selector law is:
   tabs or explicit future context actions, but selector row click behavior is
   filesystem-backed and uniform
 
+## 32A. B-078 Project Browser Tree Consistency Rule
+
+B-078 extends the uniform selector law to the Sidecar Project Browser. The
+Project Browser is the owner of Project Favourite registration; Browse remains
+the current-Project folder navigator and folder-pin surface.
+
+The Project Browser tree law is:
+
+- Project Browser `Favourite` rows may inline-browse their registered Project
+  roots through the same folder-tree component as Browse, pinned folders,
+  Tickets, and Comments
+- folder rows inside a Project Browser tree expose Project Favourite add
+  controls using the same compact tree-control grammar as the `Recent` and
+  `Pick` Project Browser paths
+- already registered Project roots disable the add control rather than
+  creating duplicate Project Favourite entries
+- the Project Browser header refresh reloads every visible folder row in the
+  currently open Project Browser trees
+- a folder chevron expansion reloads that folder only, so collapse/expand is a
+  local refresh affordance
+- the refresh affordance uses the same compact square proportions as the tree
+  pin control
+
+These rules are UX projection behavior. They do not create a second Project
+registry, change active Project selection, or reintroduce cross-project picking
+inside Browse.
+
 ## 33. B-065 Right-Rail Section Chrome Rule
 
 B-065 consolidates Sidecar workspace chrome into the existing narrow right rail.
@@ -747,13 +776,15 @@ The Process Navigator law is:
   workspace; it does not route to a separate page
 - the object-viewer tab follows the same split, tab, focus, and close grammar
   as file, ticket, comment, project, and session tabs
-- the navigator exposes exactly three process views: `Active Work`,
-  `Blocked / Waiting`, and `Ready for Handoff`
-- each process view is graph-first: the body presents named maps such as the
-  process flow map, builder governance graph, and runtime evidence flow rather
-  than a record list as the primary operator surface
-- map selection is reducer-owned Sidecar UI state; it refines the visible graph
-  carrier without adding extra saved process views
+- the navigator derives its section tabs from the current TypeScript
+  `odd_sdlc` projection: runtime state is always present; graph overlays,
+  function catalog, and typed asset-node relationship sections appear only when
+  their backing carrier is present
+- graph and asset-node sections render graph-first carriers; runtime state
+  renders the current operator-run, stage-process, transcript, analysis, and
+  liveness projection over the same TypeScript truth
+- process section choice is local object-viewer UX state, not a persisted
+  reducer-owned process taxonomy
 - the data contract is TypeScript-only: `odd_sdlc.query-domain` `ts-v1` plus
   `.ai-workspace/events/events.jsonl` events from the installed TypeScript
   odd_sdlc tenant
@@ -766,9 +797,9 @@ The Process Navigator law is:
   TypeScript odd_sdlc contract is absent
 - the manager projects process state only; it does not choose traversal,
   continuation, next edge, retry, gap closure, or ABG event writes
-- selected process view, selected process map, and selected process object are
-  reducer-owned UX state and may participate in future layout/profile
-  persistence
+- selected process object and graph expansion state are reducer-owned UX state
+  where they affect shared viewer behavior; local section tabs do not mint a
+  second saved-view model
 
 ## 35. B-066 Shared Document Viewer Carrier Rule
 

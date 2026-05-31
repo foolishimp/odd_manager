@@ -5,7 +5,7 @@
 - status: open
 - goal: realize-ai-workspace-topology-and-agent-interoperability
 - opened_at: 2026-05-17T00:00:00+10:00
-- updated_at: 2026-05-17T21:08:03+10:00
+- updated_at: 2026-05-30T22:35:48+10:00
 - governance_scope: STDO-UX Method
 
 ## Authority
@@ -27,6 +27,9 @@ chrome. The displaced capability is rehomed into Sidecar-native surfaces:
 - Projects is the Project Browser surface: it exposes separate `Favourite`,
   `Recent`, and `Pick` tabs for registered Project favourites, recent-folder
   candidates, and outside-Project navigation.
+- Project Browser inline browse trees reuse the same navigator controls as
+  Browse, including compact Project Favourite add controls for nested folders
+  and scoped refresh behavior.
 - Removing a Project favourite uses one compact `[U]` control beside Browse on
   the same row, not a separate line or a full-width action.
 
@@ -42,6 +45,10 @@ chrome. The displaced capability is rehomed into Sidecar-native surfaces:
   tab that can add Project Favourites.
 - [x] Projects surface exposes outside-project navigation on a separate `Pick`
   tab for picking a new Project favourite.
+- [x] Project Browser inline browse trees can add nested folders as Project
+  Favourites.
+- [x] Project Browser refresh reloads visible open folder trees and folder
+  chevron expansion refreshes one folder.
 - [x] Browse surface only browses and pins folders within the current Project.
 - [x] Focused reducer/markup/style proof passes.
 - [x] `npm run build` passes.
@@ -70,6 +77,16 @@ chrome. The displaced capability is rehomed into Sidecar-native surfaces:
 - Header-placement browser smoke against `http://127.0.0.1:5173/`: Project
   Browser tablist was in `.sidecar-pane__header`, centered with the title, and
   no duplicate tab row remained in the pane body.
+- 2026-05-30: Project Browser `Favourite` inline trees expose nested Project
+  Favourite add controls, the header refresh reloads all visible open folders,
+  and chevron expansion refreshes only the expanded folder.
+- 2026-05-30 `node --test runtime/tests/test_sidecar_msg_replay.mjs`: passed,
+  60 tests.
+- 2026-05-30 focused Playwright Project Browser refresh/add/header run: passed,
+  4 tests.
+- 2026-05-30 full Playwright Sidecar smoke run: passed, 30 tests.
+- 2026-05-30 `npm run test:runtime:node`: passed, 166 tests.
+- 2026-05-30 `npm run build`: passed with existing large-chunk warnings.
 
 ## Open Review
 

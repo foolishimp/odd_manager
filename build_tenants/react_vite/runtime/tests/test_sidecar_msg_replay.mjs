@@ -15,6 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
+const appShellPath = resolve(here, '../../src/layout/AppShell.tsx');
 const serverIndexPath = resolve(here, '../../src/server/index.mjs');
 const collaborationPath = resolve(here, '../../src/lib/collaboration.ts');
 const stylesPath = resolve(here, '../../src/app/styles.css');
@@ -371,7 +372,6 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'ui/resize-preview', target: 'contextRail', valuePx: 128 },
     { type: 'ui/select-info-surface', surface: 'comments' },
     { type: 'ui/set-info-pinned', pinned: true },
-    { type: 'process/select-view', view: 'blocked_waiting' },
     { type: 'process/select-record', id: 'process-record-1' },
     { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
     { type: 'process/set-live-internal-row-collapsed', collapsed: true },
@@ -391,7 +391,6 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.workbenchLayout.contextRailWidthPx, 128);
   assert.equal(result.state.ui.activeInfoSurface, 'comments');
   assert.equal(result.state.ui.infoPinned, true);
-  assert.equal(result.state.ui.activeProcessView, 'blocked_waiting');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
   assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
   assert.equal(result.state.ui.liveInternalRowCollapsed, true);
@@ -401,6 +400,25 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.liveEventViewerCollapsed, true);
   assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
+});
+
+test('layout profile load preserves the actively selected viewer object', async () => {
+  const module = await loadStateModule();
+  const contextKey = '/workspace/odd_manager::react_vite';
+  const emptyProfile = module.sidecarLayoutProfileFromState(baseState(module), contextKey);
+  const selected = module.replaySidecarMessages(baseState(module), [
+    { type: 'select', kind: 'project', id: 'odd_manager' },
+  ]).state;
+
+  const result = module.replaySidecarMessages(selected, [
+    { type: 'layout/profile-loaded', contextKey, payload: emptyProfile },
+  ]);
+
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'project');
+  assert.equal(result.state.selection.id, 'odd_manager');
+  assert.equal(result.state.ui.viewerWorkspace.groups[0].activeTabId, 'project:odd_manager');
+  assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'project:odd_manager'));
 });
 
 test('document viewer zoom state is scoped to surface tabs and persists in layout profiles', async () => {
@@ -583,12 +601,18 @@ test('directory surface tabs reuse the Sidecar folder browser and open entries a
 test('sidecar project selection promotes one active Project root across shell and browser', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
   const routeSource = readFileSync(workspaceRoutePath, 'utf-8');
+  const appShellSource = readFileSync(appShellPath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(source, /const currentProjectRoot = state\.activeLoadRoot \?\? state\.context\?\.project\.root \?\? projectRoot \?\? null;/);
   assert.match(source, /await setActiveProject\(project\.id\)/);
   assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
   assert.match(routeSource, /<SidecarPanel[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onContextChange=\{\(ctx\) => \{/);
   assert.match(routeSource, /if \(ctx\.project\.root !== workspaceRoot\) \{[\s\S]*onProjectRootChange\(ctx\.project\.root\);/);
   assert.doesNotMatch(routeSource, /selectedPage|ManagerWorld|RequirementsWorkspace|ProcessWorkspace|RuntimePanel|BuilderPanel|GraphWorkspace|HomePanel|InspectorPanel|WorldModelPanel|OddBoardWidget|OddTermWorkspaceWidget/);
+  assert.doesNotMatch(appShellSource, /manager-nav|shell__control-card--status|Single STDO-UX workbench|<strong>Sidecar<\/strong>/);
+  assert.match(appShellSource, /className="secondary shell__icon-button"/);
+  assert.match(styles, /\.shell--sidecar \.shell__title > div\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline;/s);
+  assert.match(styles, /\.shell--sidecar \.shell__header\s*\{[^}]*grid-template-columns:\s*minmax\(10rem,\s*1fr\) auto;[^}]*padding:\s*0\.14rem 0\.28rem;/s);
   assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
   assert.match(source, /if \(projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere\) return;/);
   assert.match(source, /projectRootOverride=\{currentProjectRoot\}/);
@@ -683,12 +707,11 @@ test('viewer tab open, select, split, and close replay without Cmd effects', asy
   assert.equal(result.state.selection.id, 'codex/20260427T010101Z_REVIEW_note');
 });
 
-test('process navigator opens as an object viewer tab and keeps view selection in reducer state', async () => {
+test('process navigator opens as an object viewer tab and keeps record selection in reducer state', async () => {
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'viewer/open', kind: 'process', id: 'navigator' },
     { type: 'process/select-record', id: 'process-record-1' },
-    { type: 'process/select-view', view: 'ready_handoff' },
     { type: 'process/select-record', id: 'process-record-2' },
     { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
     { type: 'process/set-live-internal-row-collapsed', collapsed: true },
@@ -701,7 +724,6 @@ test('process navigator opens as an object viewer tab and keeps view selection i
   assert.deepEqual(result.commands, []);
   assert.equal(result.state.selection.kind, 'process');
   assert.equal(result.state.selection.id, 'navigator');
-  assert.equal(result.state.ui.activeProcessView, 'ready_handoff');
   assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
   assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
   assert.equal(result.state.ui.liveInternalRowCollapsed, true);
@@ -1065,16 +1087,12 @@ test('process navigator source is right-rail selected and object-viewer hosted',
     source.indexOf('<aside className="sidecar-context-rail"'),
     source.indexOf('<section className="sidecar-bottom-dock"'),
   );
+  const processPanelStart = source.indexOf('function buildProcessNavigatorSections');
   const processPanelSource = source.slice(
-    source.indexOf('function ProcessNavigatorPanel'),
-    source.indexOf('function ProcessRecordDetail'),
+    processPanelStart,
+    source.indexOf('function compactIdentity'),
   );
-  const simpleProcessPanelSource = source.slice(
-    source.indexOf('function ProcessNavigatorSimplePanel'),
-    source.indexOf('function ProcessNavigatorPanel'),
-  );
-  const liveMapTabIndex = processPanelSource.indexOf("onClick={() => dispatch({ type: 'process/select-map', map: 'live_view' })}");
-  const mapLoopIndex = processPanelSource.indexOf('{projection.maps.map((map) => {');
+  const simpleProcessPanelSource = processPanelSource;
   const activeArchiveActionIndex = processPanelSource.indexOf('Active archive');
   const processNavigatorVisibilityIndex = processPanelSource.indexOf('aria-label="Process Navigator row visibility"');
 
@@ -1091,14 +1109,23 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*return 'Process Navigator';/);
   assert.doesNotMatch(source, /Process Navigator N0|Use N0/);
   assert.match(simpleProcessPanelSource, /Graph Overlays/);
-  assert.match(simpleProcessPanelSource, /Graph Functions/);
-  assert.match(simpleProcessPanelSource, /Leaf Assets/);
-  assert.match(simpleProcessPanelSource, /Live View/);
+  assert.doesNotMatch(source, /function ProcessNavigatorPanel/);
+  assert.match(simpleProcessPanelSource, /Function Catalog/);
+  assert.match(simpleProcessPanelSource, /Asset Nodes/);
+  assert.match(simpleProcessPanelSource, /Runtime State/);
   assert.match(simpleProcessPanelSource, /useState<ProcessNavigatorSimpleTab>\('live'\)/);
-  assert.match(simpleProcessPanelSource, /\(\[\s*\['live', 'Live View', liveAttemptCount\]/);
+  assert.match(simpleProcessPanelSource, /buildProcessNavigatorSections/);
+  assert.match(simpleProcessPanelSource, /tab:\s*'live', label:\s*'Runtime State'/);
+  assert.match(simpleProcessPanelSource, /input\.graphTabCount > 0/);
+  assert.match(simpleProcessPanelSource, /input\.functionCount > 0/);
+  assert.match(simpleProcessPanelSource, /input\.assetCount > 0/);
   assert.match(simpleProcessPanelSource, /projection\.liveAnalysis/);
   assert.match(simpleProcessPanelSource, /<ProcessLiveViewPanel[\s\S]*analysis=\{projection\.liveAnalysis \?\? null\}/);
-  assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\.workspaceRoot \?\? null;/);
+  assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\?\.workspaceRoot \?\? null;/);
+  assert.ok(
+    simpleProcessPanelSource.indexOf('const requestLiveRefresh = useCallback') < simpleProcessPanelSource.indexOf('if (!projection)'),
+    'Process navigator refresh hook must be declared before projection early returns.',
+  );
   assert.match(simpleProcessPanelSource, /projectRoot=\{liveRefreshRoot\}/);
   assert.match(simpleProcessPanelSource, /window\.setInterval\(\(\) => \{[\s\S]*type: 'load\/request'[\s\S]*reason: 'action_completed'[\s\S]*\}, 30000\)/);
   assert.match(simpleProcessPanelSource, /onRefresh=\{requestLiveRefresh\}/);
@@ -1134,11 +1161,14 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /processAssetRelationships/);
   assert.doesNotMatch(processPanelSource, /Observed SDLC Surfaces|Recent Failures|Recent Activity|Tests \/ Qualification/);
   assert.match(processPanelSource, /ProcessGraphMap/);
-  assert.match(processPanelSource, /Live View/);
+  assert.match(processPanelSource, /Runtime State/);
   assert.match(processPanelSource, /ProcessLiveViewPanel/);
   assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
   assert.match(processPanelSource, /ProcessLiveRowGroup/);
   assert.match(processPanelSource, /projectRoot=\{liveRefreshRoot\}/);
+  assert.match(processPanelSource, /formatLiveRunStartedAt/);
+  assert.match(processPanelSource, /parseOperatorRunStartedAt/);
+  assert.match(processPanelSource, /Started \{formatLiveRunStartedAt\(selectedRunStartedAt\)\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Active Run', 'Diagnostics'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Internal State', 'Run Assets'\]\}/);
   assert.match(processPanelSource, /widgetNames=\{\['Ledger State', 'Assurance Ledgers'\]\}/);
@@ -1166,9 +1196,9 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /projectPathRefToAbsolutePath/);
   assert.match(processPanelSource, /\{isTailFollowSurfacePath\(transcript\.sourcePath\) \? 'Tail raw' : 'Open raw'\}/);
   assert.ok(
-    processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}") <
-      processPanelSource.indexOf('<ProcessLiveRunDetail'),
-    'Active Run / Diagnostics row must stay ahead of selected-run detail widgets',
+    processPanelSource.indexOf('<ProcessLiveRunDetail') <
+      processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}"),
+    'Selected Run detail must appear ahead of Active Run / Diagnostics',
   );
   assert.ok(
     processPanelSource.indexOf('<ProcessLiveInternalStateWidget') <
@@ -1229,22 +1259,16 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(processPanelSource, /sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary/);
   assert.match(processPanelSource, /aria-label="Scrollable stage event tickets"/);
   assert.match(processPanelSource, /Raw event payload/);
-  assert.ok(liveMapTabIndex !== -1 && mapLoopIndex !== -1 && liveMapTabIndex < mapLoopIndex);
   assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
   assert.match(processPanelSource, /sidecar-live-view__detail-row-group--transcript/);
   assert.match(processPanelSource, /aria-label="Scrollable transcript surface"/);
-  assert.match(processPanelSource, /process\/select-map', map: 'live_view'/);
   assert.match(processPanelSource, /projection\.liveAnalysis/);
-  assert.match(processPanelSource, /aria-label="Process maps"/);
-  assert.match(processPanelSource, /type: 'process\/select-map'/);
   assert.match(processPanelSource, /<line[\s\S]*className=\{`sidecar-process-map__edge/);
   assert.match(processPanelSource, /const primaryRecordId = node\.recordIds\.find\(\(id\) => activeRecordSet\.has\(id\)\) \?\? null;/);
-  assert.match(processPanelSource, /panel__eyebrow">Saved Views/);
-  assert.match(processPanelSource, /panel__eyebrow">Active Query/);
-  assert.match(processPanelSource, /panel__eyebrow">Process Explorer/);
+  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Saved Views/);
+  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Active Query/);
+  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Process Explorer/);
   assert.match(styles, /\.sidecar-process-navigator\s*\{/);
-  assert.match(styles, /\.sidecar-process-layout\s*\{[^}]*grid-template-columns:\s*minmax\(18rem,\s*0\.82fr\)\s+minmax\(0,\s*1\.28fr\);/s);
-  assert.match(styles, /\.sidecar-process-map-stack\s*,\s*\.sidecar-process-navigator__views\s*\{/s);
   assert.match(styles, /\.sidecar-live-view\s*\{/);
   assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__attempt\s*>\s*button\s*\{[^}]*min-height:\s*6\.6rem;/s);
@@ -1289,9 +1313,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-live-view__transcript\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.sidecar-live-view__transcript\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
   assert.match(styles, /\.sidecar-process-simple\s*\{/);
-  assert.match(styles, /\.sidecar-process-simple__tabs,\s*\.sidecar-process-maps\.process-tab-grid,\s*\.sidecar-process-views\.process-tab-grid\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.28rem;/s);
-  assert.match(styles, /\.sidecar-process-simple__tab\.process-tab,\s*\.sidecar-process-map-tab\.process-tab,\s*\.sidecar-process-view\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*min-height:\s*1\.55rem;[^}]*padding:\s*0\.2rem\s+0\.44rem;/s);
-  assert.match(styles, /\.sidecar-process-map-tab\.process-tab p,\s*\.sidecar-process-view\.process-tab p\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /\.sidecar-process-simple__tabs\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.28rem;/s);
+  assert.match(styles, /\.sidecar-process-simple__tab\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*min-height:\s*1\.55rem;[^}]*padding:\s*0\.2rem\s+0\.44rem;/s);
   assert.match(styles, /\.sidecar-process-simple__graph\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);/s);
   assert.match(styles, /\.sidecar-process-simple__graph--compressed\s*\{[^}]*min-height:\s*0;/s);
   assert.match(styles, /\.sidecar-process-simple__mode-toggle\s*\{[^}]*width:\s*1\.85rem;[^}]*height:\s*1\.85rem;/s);
@@ -1561,16 +1584,25 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(source, /const load = \{ \.\.\.asNavigatorFolderLoad\(payload\), loadedAt: Date\.now\(\) \};/);
   assert.match(source, /if \(!nextCollapsed && !folderLoads\[path\]\?\.loading\) \{[\s\S]*?void loadFolder\(path\);/);
   assert.match(source, /if \(nextExpanded && !folderLoads\[normalizedRoot\]\?\.loading\) \{[\s\S]*?void loadFolder\(normalizedRoot\);/);
-  assert.match(source, /const \[activeProjectBrowserRoot, setActiveProjectBrowserRoot\] = useState<string \| null>\(null\);/);
-  assert.match(source, /setActiveProjectBrowserRoot\(\(current\) => \{[\s\S]*?if \(nextExpanded\) return normalizedRoot;[\s\S]*?return current === normalizedRoot \? null : current;/);
-  assert.match(projectsSource, /const activeProjectBrowserRefreshRoot = projectBrowserRootIsVisible\(activeProjectBrowserRoot\)/);
-  assert.match(projectsSource, /const firstVisibleProjectBrowserRoot = state\.projects[\s\S]*?\.find\(\(root\) => projectBrowserRootIsVisible\(root\)\) \?\? null;/);
-  assert.match(projectsSource, /activeProjectBrowserRefreshRoot \?\? firstVisibleProjectBrowserRoot \?\? firstExpandedProjectRoot/);
+  assert.doesNotMatch(source, /activeProjectBrowserRefreshRoot/);
+  assert.match(projectsSource, /const projectFavouriteRoots = state\.projects\.map\(\(project\) => normalizePinnedPath\(project\.root\)\);/);
+  assert.match(projectsSource, /const visibleProjectBrowserRoots = state\.projects[\s\S]*?\.filter\(\(root\) => projectBrowserRootIsVisible\(root\)\);/);
+  assert.match(projectsSource, /const projectBrowserVisibleFolderPaths = \(\(\) => \{/);
+  assert.match(projectsSource, /const collectFolder = \(folderPath: string, defaultCollapsed: boolean\) => \{/);
+  assert.match(projectsSource, /visibleFolders\.add\(normalizedPath\);[\s\S]*?if \(group\.collapsed\) return;/);
+  assert.match(projectsSource, /for \(const entry of load\?\.entries \?\? \[\]\) \{[\s\S]*?collectFolder\(entry\.absolutePath, true\);/);
+  assert.match(projectsSource, /for \(const root of visibleProjectBrowserRoots\) collectFolder\(root, false\);/);
+  assert.match(projectsSource, /projectBrowserVisibleFolderPaths\.some\(\(path\) => folderLoads\[path\]\?\.loading === true\)/);
+  assert.match(projectsSource, /label="Project Browser visible folders"/);
+  assert.match(projectsSource, /disabled=\{projectBrowserVisibleFolderPaths\.length === 0\}/);
+  assert.match(projectsSource, /for \(const path of projectBrowserVisibleFolderPaths\) void loadFolder\(path\);/);
   assert.doesNotMatch(projectsSource, /normalizedSelectedProjectRootPath \?\? firstExpandedProjectRoot/);
   assert.doesNotMatch(source, /!nextCollapsed && \(!folderLoads\[path\] \|\| folderLoads\[path\]\.error\)/);
   assert.match(source, /function FolderRefreshButton/);
   assert.doesNotMatch(folderTreeSource, /<FolderRefreshButton/);
   assert.doesNotMatch(projectsSource, /<FolderRefreshButton[\s\S]*?label=\{project\.name \|\| project\.id\}/);
+  assert.match(folderTreeSource, /projectBrowser && depth > 0 && onProjectFavourite/);
+  assert.match(folderTreeSource, /title=\{isProjectFavourite \? 'Already a Project Favourite\.' : `Add \$\{normalizedPath\} to Project Favourites`\}/);
   assert.match(projectsSource, /<Pane\s+title="Project Browser"/);
   assert.match(projectsSource, /actions=\{actionsWithRefresh\(projectBrowserRefreshAction\)\}/);
   assert.match(projectsSource, /const projectBrowserTabStrip = \(/);
@@ -1594,6 +1626,8 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(source, /function FolderPathBreadcrumb/);
   assert.match(source, /type: 'browse\/navigate-to', path/);
   assert.match(projectsSource, /\[U\]/);
+  assert.match(projectsSource, /projectFavouriteRoots=\{projectFavouriteRoots\}/);
+  assert.match(projectsSource, /onProjectFavourite=\{\(path\) => dispatch\(\{ type: 'browse\/favourite-folder', path \}\)\}/);
   assert.match(projectsSource, /className="sidecar-project-picker__workspace-button"/);
   assert.match(projectsSource, /title=\{`Open workspace \$\{entry\.absolutePath\}`\}/);
   assert.match(projectsSource, />\s*wspace\s*<\/button>/);
@@ -1623,7 +1657,7 @@ test('Sidecar Project Favourites owns outside-project picking while Browse stays
   assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*flex:\s*0\s+0\s+auto;[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;[^}]*white-space:\s*nowrap;/s);
   assert.match(sidecarBlock, /\.sidecar-row__actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.18rem;/s);
   assert.match(sidecarBlock, /\.sidecar-tree-control--compact\s*\{[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(sidecarBlock, /\.sidecar-tree-control--refresh\s*\{[^}]*font-family:\s*var\(--font-mono\);/s);
+  assert.match(sidecarBlock, /\.sidecar-tree-control--refresh\s*\{[^}]*width:\s*1\.18rem;[^}]*height:\s*1\.18rem;[^}]*min-width:\s*1\.18rem;[^}]*font-family:\s*var\(--font-mono\);[^}]*font-size:\s*0\.68rem;[^}]*font-weight:\s*900;/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__breadcrumb\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/s);
   assert.match(sidecarBlock, /\.sidecar-project-picker__segment\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);

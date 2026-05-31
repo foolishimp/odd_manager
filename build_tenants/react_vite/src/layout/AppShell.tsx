@@ -34,46 +34,28 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="shell__control-strip">
-          <div className="shell__control-card shell__control-card--status">
-            <span className="shell__control-label">Surface</span>
-            <strong>Sidecar</strong>
-            <small>Single STDO-UX workbench</small>
-          </div>
-
-          <div className="shell__control-actions">
-            <button
-              type="button"
-              className="secondary shell__icon-button"
-              onClick={onToggleTheme}
-              title={themeToggleLabel}
-              aria-label={themeToggleLabel}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="shell__icon-svg">
-                <path
-                  d="M9 18h6m-5 3h4m-6.5-6.2A6.5 6.5 0 1 1 18.5 10c0 2.1-1 3.5-2.1 4.8-.8.9-1.4 1.7-1.6 2.7h-5.6c-.2-1-.8-1.8-1.6-2.7C6.5 13.5 5.5 12.1 5.5 10"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
+        <div className="shell__control-actions">
+          <button
+            type="button"
+            className="secondary shell__icon-button"
+            onClick={onToggleTheme}
+            title={themeToggleLabel}
+            aria-label={themeToggleLabel}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="shell__icon-svg">
+              <path
+                d="M9 18h6m-5 3h4m-6.5-6.2A6.5 6.5 0 1 1 18.5 10c0 2.1-1 3.5-2.1 4.8-.8.9-1.4 1.7-1.6 2.7h-5.6c-.2-1-.8-1.8-1.6-2.7C6.5 13.5 5.5 12.1 5.5 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
         {error ? <div className="shell__error">{error}</div> : null}
-
-        <nav className="manager-nav" aria-label="Manager surfaces">
-          <button
-            type="button"
-            className="manager-nav__item is-selected"
-            aria-current="page"
-          >
-            Sidecar
-          </button>
-        </nav>
       </header>
 
       {children}

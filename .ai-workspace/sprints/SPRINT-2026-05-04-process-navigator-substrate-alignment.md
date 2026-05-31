@@ -27,12 +27,18 @@ REQ-OM-LNS-003 is the live load-bearing requirement. It already obligates:
 
 - the TypeScript query contract `odd_sdlc.query-domain ts-v1`
 - explicit rejection of legacy Python SDLC process projection shapes
-- exactly three operator views (Active Work, Blocked / Waiting, Ready for Handoff)
-- three graph-first maps (process flow, builder governance, runtime evidence) under those views
+- Process Navigator sections derived from the current `odd_sdlc` runtime,
+  catalog, overlay, and asset-node carriers rather than from a fixed saved-view
+  taxonomy
+- graph-first carriers where graph overlays and asset-node relationships are
+  present, with runtime state rendered as operator-run and stage-process
+  projection
 - projection from ABG/odd_sdlc TypeScript truth
 - read-only posture (no traversal, continuation, edge selection, or gap closure decisions in the navigator)
 
-The current ProcessWorkspace implementation does not realize this requirement: it encodes a hardcoded stage list, may accept Python projection shapes, and lacks the live-projection invariant. This sprint closes that realization gap.
+The current Process Navigator must not reintroduce the historical
+three-operator-view shape or process-flow variant scaffold. The sprint closes
+that realization gap by consuming the current TypeScript projection directly.
 
 The Python tenant is retired; the sidecar is TypeScript-only. The substrate publishes typed runtime evidence (TracedProcessOutcome, executor profile, parser observations, trace archive shape) that the UI does not yet admit.
 
@@ -43,11 +49,11 @@ This sprint realizes REQ-OM-LNS-003 plus the ABG 3.5.0-rc.1 traced call-out subs
 ### Wave 1 — Source Carriers (parallel)
 
 - **T-022** Surface ABG 3.5.0-rc.1 traced call-out runtime evidence in RuntimePanel — admits `TracedCalloutEvidence` per supervised actor invocation
-- **T-026** Rebuild Process Navigator over live odd_sdlc TypeScript projection under variant portfolio — admits `LiveModuleProjection` and `LiveOpRunProjection`, structurally rebuilds ProcessWorkspace under the three-view × three-map shape required by REQ-OM-LNS-003, ships a §13A scaffold-exemption variant portfolio (V0 / V1 / V2 / V4) over the process flow map only
+- **T-026** Rebuild Process Navigator over live odd_sdlc TypeScript projection — admits `LiveModuleProjection` and `LiveOpRunProjection`, structurally rebuilds ProcessWorkspace around the current runtime, catalog, overlay, and asset-node carriers required by REQ-OM-LNS-003, and retires the historical process-flow variant portfolio from the live reducer surface
 
 ### Wave 2 — Downstream Consumers (depends on Wave 1)
 
-- **T-024** Render per-edge outcome and executor profile in ProcessWorkspace and Builder Governance graph — consumes T-022's `TracedCalloutEvidence` and T-026's `LiveModuleProjection`; glyph rendering decorates whichever process flow map variant is promoted to canonical at sprint close
+- **T-024** Render per-edge outcome and executor profile in ProcessWorkspace and Builder Governance graph — consumes T-022's `TracedCalloutEvidence` and T-026's `LiveModuleProjection`; glyph rendering decorates the live graph carrier projected by the current TypeScript state
 
 ### Cross-Cutting (parallel from start, needs only carrier shapes)
 
@@ -91,33 +97,28 @@ This sprint **is not eligible** for compliance escrow against:
 
 If any of those appear during execution, the sprint records the finding and the work exits the UX sprint path through standalone repricing or sprint supersession.
 
-## Variant Scaffold Law (UX_METHOD §13A)
+## Retired Variant Scaffold
 
-T-026 ships V0 (baseline, canonical) plus V1 (three-lane structural), V2 (asset-DAG), V4 (assurance-matrix) as parallel variants of the process flow map only. V1 / V2 / V4 are §13A scaffolds and each carries:
-
-- visible scaffold/debug label rendered in the variant tab
-- permitted operations: read-only projection of admitted carriers (no product-truth-changing Msgs distinct from V0)
-- mutation policy: forbidden — variants share the same admitted carriers and Msg algebra; only View differs
-- superseding surface: the variant promoted to canonical at sprint close (or V0 if no variant is promoted)
-- retirement condition: sprint close review
-- owning ticket: T-026
-- non-closure condition: sprint cannot close while any variant remains unclassified under the §13B vocabulary
-
-Builder governance map and runtime evidence map render once each — variants are not in scope on those maps for this sprint.
+The earlier V0 / V1 / V2 / V4 process-flow variant scaffold is superseded for
+RC1. The live Sidecar object-viewer surface derives its tabs from the current
+`odd_sdlc` projection and does not persist process-flow variant or leaf-focus
+state in the Sidecar reducer.
 
 ## Closure
 
 ### Closure Triggers
 
-The sprint closes when all four included tickets reach `completed` and sprint close review classifies every variant.
+The sprint closes when all four included tickets reach `completed` and sprint close review confirms the live Process Navigator is projection-derived.
 
 ### Required Closure Evidence
 
 - T-022, T-024, T-025, T-026 each marked `completed`
-- §8A Msg-replay proofs pass for `LiveModuleProjection`, `LiveOpRunProjection`, `TracedCalloutEvidence`, and each shipped process-flow-map variant
-- playwright e2e walks pass for the navigator (view × map × variant switching) and for the runtime panel (TracedCalloutEvidence rendering)
-- forensic walkthrough classifies every variant (V0 / V1 / V2 / V4) under `accepted | local_paydown | design_reframe | requirement_reprice | product_reprice | remove`
-- exactly one process-flow-map variant promoted to canonical, OR the wave is returned to design with a recorded reprice
+- §8A Msg-replay proofs pass for `LiveModuleProjection`, `LiveOpRunProjection`, and `TracedCalloutEvidence`
+- playwright e2e walks pass for the navigator's projection-derived runtime,
+  catalog, and asset-node sections and for the runtime panel
+  (TracedCalloutEvidence rendering)
+- forensic walkthrough confirms no fixed saved-view taxonomy or variant
+  scaffold remains in the live reducer/UI path
 - T-025 audit document published under `.ai-workspace/comments/claude/<timestamp>Z_REVIEW_odd-manager-tabs-substrate-coverage.md`
 - every `extension_required` finding from T-025 has a follow-up backlog ticket admitted
 
@@ -126,12 +127,13 @@ The sprint closes when all four included tickets reach `completed` and sprint cl
 - any ticket extends a Python projection layer in parallel with the TypeScript carriers
 - any carrier returns memoized or snapshotted state instead of reading live workspace truth at admission time
 - any projection accepts legacy Python SDLC shapes instead of rejecting them with a typed `UnsupportedFormatState`
-- ProcessWorkspace renders fewer than three operator views or more than three graph-first maps
-- variant scaffolds ship without §13A boilerplate
-- variants ship with product-truth-changing Msgs that diverge from V0's algebra
+- ProcessWorkspace renders the historical fixed saved-view taxonomy instead of
+  deriving sections from current `odd_sdlc` node-management state
+- variant scaffold state or tabs return to the live reducer/UI path
 - the navigator's `Cmd` algebra includes write paths that bypass an admitted AssetSurface action registry
 - the navigator carries traversal, continuation, edge-selection, or gap-closure decision logic (REQ-OM-LNS-003 forbids it)
-- close review claims completion without classifying every variant under the §13B vocabulary
+- close review claims completion without confirming the live projection-derived
+  section model
 - T-023 quietly migrated into this sprint without an upstream `requirement_reprice`
 
 ## Included Tickets
@@ -140,6 +142,7 @@ The sprint closes when all four included tickets reach `completed` and sprint cl
 - `tickets/active/T-024-render-per-edge-outcome-and-executor-in-processworkspace.md`
 - `tickets/active/T-025-audit-additional-tabs-for-new-substrate-coverage.md`
 - `tickets/active/T-026-rebuild-process-navigator-over-live-ts-projection.md`
+- `tickets/active/B-079-reprice-process-navigator-to-current-odd-sdlc-node-state.md`
 
 ## Excluded From This Sprint
 
@@ -158,9 +161,9 @@ escrow against the visual / a11y / replay-update / cleanup categories
 listed above. It is **not** eligible for escrow against carrier or
 product-truth obligations or against the live-projection invariant.
 
-Per `UX_METHOD.md` §13A, the process-flow-map variants ship under
-scaffold-exemption boilerplate; sprint cannot close while any variant
-remains unclassified.
+Per the 2026-05-31 requirement reprice, the process-flow-map variant scaffold
+is retired from the live RC1 surface; sprint close now checks that the
+projection-derived section model is the only live Process Navigator path.
 
 Per `TICKET_METHOD.md` §Inside-Out First Ticket Sequencing, the source
 carriers (T-022, T-026) lead the wave; the downstream consumer (T-024)

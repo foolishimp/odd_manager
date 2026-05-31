@@ -56,7 +56,6 @@ import type { ProjectRecord } from '../../contracts/project';
 import type {
   SidecarProcessMap,
   SidecarProcessProjection,
-  SidecarProcessRecord,
   SidecarProcessTone,
 } from '../../contracts/process';
 import {
@@ -570,6 +569,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const suppressNextLayoutSave = useRef<Set<string>>(new Set());
   const lastSavedLayoutByContext = useRef<Map<string, string>>(new Map());
   const pendingProjectContextRoot = useRef<string | null>(null);
+  const pendingProjectSelection = useRef<{ root: string; projectId: string } | null>(null);
   const runCommand = useCallback((entry: PendingSidecarCmd) => {
     void interpretSidecarCommand(entry.cmd, { backend, viewerAgent, dispatch });
   }, [backend, viewerAgent]);
@@ -649,6 +649,14 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
       dispatch({ type: 'layout/profile-load-failed', contextKey: layoutContextKey, error: String(err) });
     }
   }, [layoutContextKey]);
+
+  useEffect(() => {
+    const pending = pendingProjectSelection.current;
+    if (!pending || state.loading || !state.context) return;
+    if (normalizePinnedPath(state.context.project.root) !== normalizePinnedPath(pending.root)) return;
+    pendingProjectSelection.current = null;
+    dispatch({ type: 'select', kind: 'project', id: pending.projectId });
+  }, [state.context, state.loading]);
 
   useEffect(() => {
     if (!layoutContextKey || !state.context || state.loading || typeof window === 'undefined') return;
@@ -749,11 +757,17 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   };
 
   const handleProjectSelect = async (project: ProjectRecord) => {
+    pendingProjectSelection.current = { root: project.root, projectId: project.id };
     try {
       const result = await setActiveProject(project.id);
       pendingProjectContextRoot.current = result.project.root;
+      pendingProjectSelection.current = { root: result.project.root, projectId: result.project.id };
       dispatch({ type: 'select', kind: 'project', id: result.project.id });
+      if (currentProjectRoot && normalizePinnedPath(currentProjectRoot) === normalizePinnedPath(result.project.root)) {
+        pendingProjectSelection.current = null;
+      }
     } catch (caught) {
+      pendingProjectSelection.current = null;
       dispatch({ type: 'action/result', ok: false, error: caught instanceof Error ? caught.message : String(caught) });
     }
   };
@@ -1703,7 +1717,6 @@ function SelectionFlyout({
   const [pinDraft, setPinDraft] = useState('');
   const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
   const [expandedProjectRoots, setExpandedProjectRoots] = useState<Record<string, boolean>>({});
-  const [activeProjectBrowserRoot, setActiveProjectBrowserRoot] = useState<string | null>(null);
   const [projectBrowserTab, setProjectBrowserTab] = useState<ProjectBrowserTab>('favourites');
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
@@ -1781,10 +1794,6 @@ function SelectionFlyout({
       ...current,
       [normalizedRoot]: nextExpanded,
     }));
-    setActiveProjectBrowserRoot((current) => {
-      if (nextExpanded) return normalizedRoot;
-      return current === normalizedRoot ? null : current;
-    });
     if (nextExpanded && !folderLoads[normalizedRoot]?.loading) {
       void loadFolder(normalizedRoot);
     }
@@ -1924,28 +1933,41 @@ function SelectionFlyout({
   if (surface === 'projects') {
     const browseState = state.ui.browse;
     const projectFavouriteCandidates = projectFavouriteCandidatesFromHistory(state.pathHistory, projectRoot, state.projects);
+    const projectFavouriteRoots = state.projects.map((project) => normalizePinnedPath(project.root));
     const projectBrowserTabs: Array<{ id: ProjectBrowserTab; label: string; count: number }> = [
       { id: 'favourites', label: 'Favourite', count: state.projects.length },
       { id: 'recent', label: 'Recent', count: projectFavouriteCandidates.length },
       { id: 'pick', label: 'Browse', count: browseState.entries.length },
     ];
-    const firstExpandedProjectRoot = state.projects
-      .map((project) => normalizePinnedPath(project.root))
-      .find((root) => expandedProjectRoots[root] === true) ?? null;
     const projectBrowserRootIsVisible = (root: string | null) => Boolean(
       root &&
       state.projects.some((project) => normalizePinnedPath(project.root) === root) &&
       (expandedProjectRoots[root] ?? root === normalizedSelectedProjectRootPath)
     );
-    const activeProjectBrowserRefreshRoot = projectBrowserRootIsVisible(activeProjectBrowserRoot)
-      ? activeProjectBrowserRoot
-      : null;
-    const firstVisibleProjectBrowserRoot = state.projects
+    const visibleProjectBrowserRoots = state.projects
       .map((project) => normalizePinnedPath(project.root))
-      .find((root) => projectBrowserRootIsVisible(root)) ?? null;
-    const projectBrowserRefreshRoot = projectBrowserTab === 'favourites'
-      ? activeProjectBrowserRefreshRoot ?? firstVisibleProjectBrowserRoot ?? firstExpandedProjectRoot
-      : null;
+      .filter((root) => projectBrowserRootIsVisible(root));
+    const projectBrowserVisibleFolderPaths = (() => {
+      const visibleFolders = new Set<string>();
+      const collectFolder = (folderPath: string, defaultCollapsed: boolean) => {
+        const normalizedPath = normalizePinnedPath(folderPath);
+        if (!normalizedPath || visibleFolders.has(normalizedPath)) return;
+        visibleFolders.add(normalizedPath);
+        const group = navigatorGroupState(
+          groupStates,
+          navigatorGroupKey('folder', normalizedPath),
+          { collapsed: defaultCollapsed, sort: 'time', reverse: true },
+        );
+        if (group.collapsed) return;
+        const load = folderLoads[normalizedPath] ?? null;
+        for (const entry of load?.entries ?? []) {
+          if ((entry.kind ?? 'directory') === 'directory') collectFolder(entry.absolutePath, true);
+        }
+      };
+      for (const root of visibleProjectBrowserRoots) collectFolder(root, false);
+      return Array.from(visibleFolders);
+    })();
+    const projectBrowserVisibleRefreshLoading = projectBrowserVisibleFolderPaths.some((path) => folderLoads[path]?.loading === true);
     const projectBrowserRefreshAction = projectBrowserTab === 'pick'
       ? (
         <FolderRefreshButton
@@ -1957,7 +1979,16 @@ function SelectionFlyout({
           }}
         />
       )
-      : folderRefreshAction(projectBrowserRefreshRoot, 'Project Browser root');
+      : (
+        <FolderRefreshButton
+          label="Project Browser visible folders"
+          loading={projectBrowserVisibleRefreshLoading}
+          disabled={projectBrowserVisibleFolderPaths.length === 0}
+          onRefresh={() => {
+            for (const path of projectBrowserVisibleFolderPaths) void loadFolder(path);
+          }}
+        />
+      );
     const projectBrowserTabStrip = (
       <div
         className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header"
@@ -2059,6 +2090,8 @@ function SelectionFlyout({
                           onUnpinFolder={() => undefined}
                           navigatorSort={navigatorSort}
                           projectBrowser
+                          projectFavouriteRoots={projectFavouriteRoots}
+                          onProjectFavourite={(path) => dispatch({ type: 'browse/favourite-folder', path })}
                           onProjectRootOpen={onProjectRootOpen}
                         />
                       </div>
@@ -2426,7 +2459,7 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
   );
 }
 
-function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, canOpenProject = false, onProjectRootOpen }: {
+function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, projectFavouriteRoots = [], onProjectFavourite, canOpenProject = false, onProjectRootOpen }: {
   path: string;
   label: string;
   depth: number;
@@ -2443,6 +2476,8 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
   onUnpinFolder: (path: string) => void;
   navigatorSort: NavigatorSortState;
   projectBrowser?: boolean;
+  projectFavouriteRoots?: string[];
+  onProjectFavourite?: (path: string) => void;
   canOpenProject?: boolean;
   onProjectRootOpen?: (root: string) => void;
 }) {
@@ -2455,8 +2490,10 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
   const entries = compareBySort(visibleEntries, { ...group, ...navigatorSort }, (entry) => entry.name, folderEntryTime);
   const normalizedPath = normalizePinnedPath(path);
   const isPinned = pinnedFolders.includes(normalizedPath);
+  const isProjectFavourite = projectFavouriteRoots.includes(normalizedPath);
   const isBuiltIn = builtInNavigatorFolders(projectRoot).map(normalizePinnedPath).includes(normalizedPath);
   const pinLabel = `${isPinned ? 'Unpin' : 'Pin'} ${label}`;
+  const projectFavouriteLabel = `Add ${label} to Project Favourites`;
   const controls = (
     <>
       {canOpenProject && onProjectRootOpen ? (
@@ -2467,6 +2504,18 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
           title={`Open Project ${normalizedPath}`}
         >
           Open
+        </button>
+      ) : null}
+      {projectBrowser && depth > 0 && onProjectFavourite ? (
+        <button
+          type="button"
+          className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+          onClick={() => onProjectFavourite(normalizedPath)}
+          aria-label={projectFavouriteLabel}
+          title={isProjectFavourite ? 'Already a Project Favourite.' : `Add ${normalizedPath} to Project Favourites`}
+          disabled={isProjectFavourite}
+        >
+          [+]
         </button>
       ) : null}
       {!projectBrowser && !isBuiltIn ? (
@@ -2534,6 +2583,8 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
               onUnpinFolder={onUnpinFolder}
               navigatorSort={navigatorSort}
               projectBrowser={projectBrowser}
+              projectFavouriteRoots={projectFavouriteRoots}
+              onProjectFavourite={onProjectFavourite}
               canOpenProject={entry.hasWorkspace === true}
               onProjectRootOpen={onProjectRootOpen}
             />
@@ -2966,6 +3017,11 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
 }
 
 type ProcessNavigatorSimpleTab = 'graphs' | 'functions' | 'assets' | 'live';
+type ProcessNavigatorSection = {
+  tab: ProcessNavigatorSimpleTab;
+  label: string;
+  count: number;
+};
 type ProcessSimpleFunctionItem = {
   id: string;
   name: string;
@@ -2979,6 +3035,27 @@ type ProcessSimpleFunctionItem = {
   library?: NonNullable<SidecarProcessProjection['catalog']>['library'][number];
 };
 
+function buildProcessNavigatorSections(input: {
+  graphTabCount: number;
+  functionCount: number;
+  assetCount: number;
+  liveAttemptCount: number;
+}): ProcessNavigatorSection[] {
+  const sections: ProcessNavigatorSection[] = [
+    { tab: 'live', label: 'Runtime State', count: input.liveAttemptCount },
+  ];
+  if (input.graphTabCount > 0) {
+    sections.push({ tab: 'graphs', label: 'Graph Overlays', count: input.graphTabCount });
+  }
+  if (input.functionCount > 0) {
+    sections.push({ tab: 'functions', label: 'Function Catalog', count: input.functionCount });
+  }
+  if (input.assetCount > 0) {
+    sections.push({ tab: 'assets', label: 'Asset Nodes', count: input.assetCount });
+  }
+  return sections;
+}
+
 function ProcessNavigatorSimplePanel({ state, dispatch }: {
   state: SidecarState;
   dispatch: Dispatch<SidecarMsg>;
@@ -2988,6 +3065,19 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   const [selectedOverlayRef, setSelectedOverlayRef] = useState<string | null>(null);
   const [selectedFunctionId, setSelectedFunctionId] = useState<string | null>(null);
   const [selectedAssetName, setSelectedAssetName] = useState<string | null>(null);
+  const liveRefreshRoot = state.context?.project.root ?? projection?.workspaceRoot ?? null;
+  const requestLiveRefresh = useCallback(() => {
+    if (!liveRefreshRoot || state.loading) return;
+    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+  }, [dispatch, liveRefreshRoot, state.loading]);
+
+  useEffect(() => {
+    if (activeTab !== 'live' || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
+    const refreshTimer = window.setInterval(() => {
+      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
+    }, 30000);
+    return () => window.clearInterval(refreshTimer);
+  }, [activeTab, dispatch, liveRefreshRoot, state.loading]);
 
   if (!projection) {
     return <div className="sidecar-inspector__empty">Process projection is not loaded.</div>;
@@ -3012,44 +3102,53 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   const functionItems = catalog ? processFunctionItems(catalog) : [];
   const workspaceRun = projection.workspaceRun ?? null;
   const liveAttemptCount = workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0;
+  const processSections = buildProcessNavigatorSections({
+    graphTabCount,
+    functionCount: functionItems.length,
+    assetCount: assetRelationships.length,
+    liveAttemptCount,
+  });
+  const activeProcessTab = processSections.some((section) => section.tab === activeTab)
+    ? activeTab
+    : processSections[0]?.tab ?? 'live';
   const selectedOverlay = traversalOverlays.find((overlay) => overlay.overlayRef === selectedOverlayRef) ?? traversalOverlays[0] ?? null;
   const selectedFunction = functionItems.find((item) => item.id === selectedFunctionId) ?? functionItems[0] ?? null;
   const selectedAsset = assetRelationships.find((asset) => asset.name === selectedAssetName) ?? assetRelationships[0] ?? null;
-  const simpleMap = selectedOverlay && activeTab === 'graphs'
+  const simpleMap = selectedOverlay && activeProcessTab === 'graphs'
     ? buildSimpleOverlayGraph(selectedOverlay)
-    : selectedFunction && catalog && activeTab === 'functions'
+    : selectedFunction && catalog && activeProcessTab === 'functions'
       ? buildSimpleFunctionGraph(selectedFunction, catalog)
-      : selectedAsset && catalog && activeTab === 'assets'
+      : selectedAsset && catalog && activeProcessTab === 'assets'
         ? buildSimpleAssetGraph(selectedAsset, catalog)
         : null;
-  const defaultSelectedRecordId = activeTab === 'live'
+  const defaultSelectedRecordId = activeProcessTab === 'live'
     ? null
-    : activeTab === 'graphs' && selectedOverlay
+    : activeProcessTab === 'graphs' && selectedOverlay
     ? processGraphRecordId('overlay-function', selectedOverlay.defaultStartTarget || selectedOverlay.graphFunctionRefs[0] || selectedOverlay.overlayRef)
-    : activeTab === 'functions' && selectedFunction
+    : activeProcessTab === 'functions' && selectedFunction
       ? processGraphRecordId('function', selectedFunction.name)
-      : activeTab === 'assets' && selectedAsset
+      : activeProcessTab === 'assets' && selectedAsset
         ? processGraphRecordId('asset', selectedAsset.name)
         : null;
   const selectedRecordId = simpleMap && state.ui.activeProcessRecordId && processMapHasRecordId(simpleMap, state.ui.activeProcessRecordId)
     ? state.ui.activeProcessRecordId
     : defaultSelectedRecordId;
-  const graphTitle = activeTab === 'graphs'
+  const graphTitle = activeProcessTab === 'graphs'
     ? selectedOverlay?.name ?? 'Graph Overlays'
-    : activeTab === 'functions'
-      ? selectedFunction?.title ?? 'Graph Functions'
-      : activeTab === 'live'
-        ? 'Live View'
-      : selectedAsset?.name ?? 'Leaf Assets';
-  const graphSummary = activeTab === 'graphs'
+    : activeProcessTab === 'functions'
+      ? selectedFunction?.title ?? 'Function Catalog'
+      : activeProcessTab === 'live'
+        ? 'Runtime State'
+      : selectedAsset?.name ?? 'Asset Nodes';
+  const graphSummary = activeProcessTab === 'graphs'
     ? selectedOverlay?.intent ?? 'No graph overlay is selected.'
-    : activeTab === 'functions'
+    : activeProcessTab === 'functions'
       ? selectedFunction?.summary ?? 'No graph function is selected.'
-      : activeTab === 'live'
-        ? 'Analyze-run timeline and active runtime liveness.'
+      : activeProcessTab === 'live'
+        ? 'Current odd_sdlc operator-run, stage-process, and live-analysis state.'
       : selectedAsset
         ? `Produced by ${selectedAsset.producers.length} and consumed by ${selectedAsset.consumers.length}.`
-        : 'No leaf asset is selected.';
+        : 'No asset node is selected.';
   const openTracePath = (absolutePath: string) => {
     const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
     if (!relativePath) {
@@ -3058,19 +3157,6 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
     }
     dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
   };
-  const liveRefreshRoot = state.context?.project.root ?? projection.workspaceRoot ?? null;
-  const requestLiveRefresh = useCallback(() => {
-    if (!liveRefreshRoot || state.loading) return;
-    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-  }, [liveRefreshRoot, state.loading]);
-
-  useEffect(() => {
-    if (activeTab !== 'live' || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
-    const refreshTimer = window.setInterval(() => {
-      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-    }, 30000);
-    return () => window.clearInterval(refreshTimer);
-  }, [activeTab, liveRefreshRoot, state.loading]);
 
   return (
     <div className="sidecar-process-simple" aria-label="Process Navigator">
@@ -3090,18 +3176,13 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
       </div>
 
       <div className="sidecar-process-simple__tabs" role="tablist" aria-label="Process navigator sections">
-        {([
-          ['live', 'Live View', liveAttemptCount],
-          ['graphs', 'Graph Overlays', graphTabCount],
-          ['functions', 'Graph Functions', catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0],
-          ['assets', 'Leaf Assets', assetRelationships.length],
-        ] as const).map(([tab, label, count]) => (
+        {processSections.map(({ tab, label, count }) => (
           <button
             key={tab}
             type="button"
             role="tab"
-            aria-selected={activeTab === tab}
-            className={`process-tab sidecar-process-simple__tab${activeTab === tab ? ' is-selected' : ''}`}
+            aria-selected={activeProcessTab === tab}
+            className={`process-tab sidecar-process-simple__tab${activeProcessTab === tab ? ' is-selected' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
             <strong>{label}</strong>
@@ -3110,8 +3191,8 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         ))}
       </div>
 
-      {activeTab === 'live' ? (
-        <section className="sidecar-process-simple__live sidecar-process-map" aria-label="Live View">
+      {activeProcessTab === 'live' ? (
+        <section className="sidecar-process-simple__live sidecar-process-map" aria-label="Runtime State">
           <ProcessLiveViewPanel
             analysis={projection.liveAnalysis ?? null}
             workspaceRun={workspaceRun}
@@ -3153,7 +3234,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         />
       )}
 
-      {activeTab === 'graphs' && (
+      {activeProcessTab === 'graphs' && (
         <section className="sidecar-process-simple__section" aria-label="Graph overlays">
           {traversalOverlays.length ? (
             <div className="sidecar-process-overlay-grid">
@@ -3178,7 +3259,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         </section>
       )}
 
-      {activeTab === 'functions' && (
+      {activeProcessTab === 'functions' && (
         <section className="sidecar-process-simple__section" aria-label="Graph functions">
           {catalog ? (
             <div className="sidecar-process-function-groups">
@@ -3228,7 +3309,7 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
         </section>
       )}
 
-      {activeTab === 'assets' && (
+      {activeProcessTab === 'assets' && (
         <section className="sidecar-process-simple__section" aria-label="Leaf node assets and relationships">
           {assetRelationships.length ? (
             <div className="sidecar-process-assets">
@@ -4184,973 +4265,6 @@ function processFunctionStage(name: string): { column: number; label: string } {
   return { column: 2, label: 'BUILD' };
 }
 
-function ProcessNavigatorPanel({ state, dispatch }: {
-  state: SidecarState;
-  dispatch: Dispatch<SidecarMsg>;
-}) {
-  const projection = state.process;
-  const [search, setSearch] = useState('');
-  if (!projection) {
-    return <div className="sidecar-inspector__empty">Process projection is not loaded.</div>;
-  }
-  if (!projection.supported) {
-    return (
-      <div className="sidecar-process-navigator sidecar-process-navigator--unsupported">
-        <div className="sidecar-process-navigator__header">
-          <span className="panel__eyebrow">Process Navigator</span>
-          <h2>TypeScript process contract unavailable</h2>
-          <Pill kind="blocked">unsupported</Pill>
-        </div>
-        <p>{projection.unsupportedReason ?? 'This Project does not expose the odd_sdlc TypeScript process contract.'}</p>
-        <MetaGrid items={[
-          ['Required contract', `${projection.contractName} ${projection.contractVersion}`],
-          ['Project', projection.workspaceRoot || state.context?.project.root || '—'],
-          ['Generic workspace', 'Browse, pinned folders, recent paths, and shells remain available.'],
-        ]} />
-      </div>
-    );
-  }
-
-  const activeView = projection.views.find((view) => view.id === state.ui.activeProcessView) ?? projection.views[0] ?? null;
-  const viewRecords = activeView
-    ? projection.records.filter((record) => activeView.recordIds.includes(record.id))
-    : projection.records;
-  const normalizedSearch = search.trim().toLowerCase();
-  const records = normalizedSearch
-    ? viewRecords.filter((record) => processRecordMatchesSearch(record, normalizedSearch))
-    : viewRecords;
-  const selectedRecord = records.find((record) => record.id === state.ui.activeProcessRecordId)
-    ?? records[0]
-    ?? null;
-  const liveViewActive = state.ui.activeProcessMap === 'live_view';
-  const activeMap = liveViewActive
-    ? null
-    : projection.maps.find((map) => map.id === state.ui.activeProcessMap)
-      ?? projection.maps[0]
-      ?? null;
-  const workspaceRun = projection.workspaceRun ?? null;
-  const activeRecordIds = records.map((record) => record.id);
-  const openTracePath = (absolutePath: string) => {
-    const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
-    if (!relativePath) {
-      dispatch({ type: 'action/result', ok: false, error: 'Trace archive is outside the active Project.' });
-      return;
-    }
-    dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
-  };
-  const liveRefreshRoot = state.context?.project.root ?? projection.workspaceRoot ?? null;
-  const requestLiveRefresh = useCallback(() => {
-    if (!liveRefreshRoot || state.loading) return;
-    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-  }, [liveRefreshRoot, state.loading]);
-
-  useEffect(() => {
-    if (!liveViewActive || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
-    const refreshTimer = window.setInterval(() => {
-      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-    }, 30000);
-    return () => window.clearInterval(refreshTimer);
-  }, [liveViewActive, liveRefreshRoot, state.loading]);
-
-  return (
-    <div className="sidecar-process-navigator" aria-label="Sidecar Process Navigator">
-      <div className="sidecar-process-navigator__header">
-        <div>
-          <span className="panel__eyebrow">Process Navigator</span>
-          <h2>TypeScript graph maps</h2>
-        </div>
-        <div className="sidecar-process-navigator__badges">
-          <Pill kind="process">ts-v1</Pill>
-          <Pill kind="default">{projection.eventCount} events</Pill>
-          <Pill kind="default">{records.length} of {projection.records.length}</Pill>
-          <Pill kind="default">{projection.maps.length} maps</Pill>
-          {projection.catalog && (
-            <span aria-label={`${projection.catalog.executives.length} executives, ${projection.catalog.library.length} library functions`}>
-              <Pill kind="default">{projection.catalog.leaves.length} leaves</Pill>
-            </span>
-          )}
-          {projection.leafOverlays && projection.leafOverlays.length > 0 && (
-            <span aria-label={`${projection.leafOverlays.reduce((n, ov) => n + ov.tracedEvidence.length, 0)} traced invocations`}>
-              <Pill kind="active">{projection.leafOverlays.length} active overlays</Pill>
-            </span>
-          )}
-          {projection.liveAnalysis && (
-            <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>
-              {projection.liveAnalysis.telemetry.operatorRunCount} analyze runs
-            </Pill>
-          )}
-          {workspaceRun ? (
-            <Pill kind={workspaceRun.activeFeedbackLoopCount > 0 ? 'active' : 'default'}>
-              {workspaceRun.stageProcessCount} stage processes
-            </Pill>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="sidecar-process-map-stack">
-        <div className="sidecar-process-maps process-tab-grid" role="tablist" aria-label="Process maps">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={liveViewActive}
-            aria-controls="sidecar-process-map"
-            className={`sidecar-process-map-tab process-tab${liveViewActive ? ' is-selected' : ''}`}
-            onClick={() => dispatch({ type: 'process/select-map', map: 'live_view' })}
-          >
-            <div className="process-tab__meta">
-              <strong>Live View</strong>
-              <span className={`status-chip ${liveViewActive ? 'active' : 'default'}`}>{workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0}</span>
-            </div>
-            <p>Traversal timeline, stage CLIs, and active runtime liveness.</p>
-          </button>
-          {projection.maps.map((map) => {
-            const selected = activeMap?.id === map.id;
-            return (
-              <button
-                key={map.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls="sidecar-process-map"
-                className={`sidecar-process-map-tab process-tab${selected ? ' is-selected' : ''}`}
-                onClick={() => dispatch({ type: 'process/select-map', map: map.id })}
-              >
-                <div className="process-tab__meta">
-                  <strong>{map.label}</strong>
-                  <span className={`status-chip ${selected ? 'active' : 'default'}`}>{map.nodes.length}</span>
-                </div>
-                <p>{map.summary}</p>
-              </button>
-            );
-          })}
-        </div>
-
-        <section className="sidecar-process-map process-map-host" id="sidecar-process-map" aria-label={liveViewActive ? 'Live View' : activeMap?.label ?? 'Process graph'}>
-          {liveViewActive ? (
-            <ProcessLiveViewPanel
-              analysis={projection.liveAnalysis ?? null}
-              workspaceRun={workspaceRun}
-              projectRoot={liveRefreshRoot}
-              onOpenTracePath={openTracePath}
-              onRefresh={requestLiveRefresh}
-              refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
-              liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
-              onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
-              liveInternalRowCollapsed={state.ui.liveInternalRowCollapsed}
-              onLiveInternalRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-internal-row-collapsed', collapsed })}
-              liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
-              onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
-              liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
-              onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
-              liveGapRowCollapsed={state.ui.liveGapRowCollapsed}
-              onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
-              liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
-              onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
-              onLiveAllCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-all-collapsed', collapsed })}
-            />
-          ) : activeMap ? (
-            activeMap.id === 'process_flow' && projection.catalog ? (
-              <ProcessFlowMapVariantHost
-                map={activeMap}
-                catalog={projection.catalog}
-                overlays={projection.leafOverlays ?? []}
-                activeRecordIds={activeRecordIds}
-                selectedRecordId={selectedRecord?.id ?? null}
-                activeVariant={state.ui.activeProcessFlowVariant}
-                activeLeafName={state.ui.activeLeafName}
-                onSelectVariant={(variant) => dispatch({ type: 'process/select-variant', variant })}
-                onSelectRecord={(id) => dispatch({ type: 'process/select-record', id })}
-                onSelectLeaf={(leafName) => dispatch({ type: 'process/select-leaf', leafName })}
-                onOpenTracePath={openTracePath}
-              />
-            ) : (
-              <ProcessGraphMap
-                map={activeMap}
-                activeRecordIds={activeRecordIds}
-                selectedRecordId={selectedRecord?.id ?? null}
-                onSelectRecord={(id) => dispatch({ type: 'process/select-record', id })}
-                onOpenTracePath={openTracePath}
-              />
-            )
-          ) : (
-            <div className="sidecar-inspector__empty">No TypeScript process map is projected.</div>
-          )}
-        </section>
-      </div>
-
-      <div className="sidecar-process-navigator__views">
-        <div className="requirements-explorer__section-heading">
-          <span className="panel__eyebrow">Saved Views</span>
-        </div>
-        <div className="sidecar-process-views process-tab-grid" role="tablist" aria-label="Process views">
-          {projection.views.map((view) => {
-            const selected = activeView?.id === view.id;
-            return (
-              <button
-                key={view.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls="sidecar-process-map"
-                className={`sidecar-process-view process-tab${selected ? ' is-selected' : ''}`}
-                onClick={() => dispatch({ type: 'process/select-view', view: view.id })}
-              >
-                <div className="process-tab__meta">
-                  <strong>{view.label}</strong>
-                  <span className={`status-chip ${selected ? 'active' : 'default'}`}>{view.recordIds.length}</span>
-                </div>
-                <p>{view.summary}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="sidecar-process-query process-explorer__query" aria-live="polite">
-        <div className="process-explorer__query-heading">
-          <span className="panel__eyebrow">Active Query</span>
-          <span className={`status-chip ${activeView ? 'active' : 'pending'}`}>{activeView?.label ?? 'Process'}</span>
-        </div>
-        <strong>{describeProcessQueryHeadline(records.length, viewRecords.length)}</strong>
-        <p>{describeProcessQuerySummary(liveViewActive ? 'Live View' : activeMap?.label ?? null, selectedRecord, normalizedSearch)}</p>
-        <div className="inline-pills">
-          {normalizedSearch ? <Pill kind="attention">Search: {search.trim()}</Pill> : null}
-          {selectedRecord ? <Pill kind={selectedRecord.tone}>Focused: {selectedRecord.title}</Pill> : null}
-        </div>
-      </div>
-
-      <div className="sidecar-process-layout sidecar-process-layout--graph">
-        <section className="sidecar-process-records" aria-label="Process Explorer">
-          <div className="process-explorer__controls">
-            <div className="requirements-explorer__section-heading">
-              <span className="panel__eyebrow">Process Explorer</span>
-            </div>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search TypeScript process objects"
-              aria-label="Search process objects"
-            />
-          </div>
-          <div className="process-explorer__list">
-            <div className="list-stack">
-              {records.length ? records.map((record) => (
-                <button
-                  key={record.id}
-                  type="button"
-                  className={`sidecar-process-record list-row${selectedRecord?.id === record.id ? ' is-selected' : ''}`}
-                  onClick={() => dispatch({ type: 'process/select-record', id: record.id })}
-                >
-                  <div className="list-row__meta">
-                    <span className="panel__eyebrow">{record.kind}</span>
-                    <span className={`status-chip ${record.tone}`}>{record.status}</span>
-                  </div>
-                  <strong className="list-row__title">{record.title}</strong>
-                  <p className="list-row__summary">{record.summary}</p>
-                </button>
-              )) : (
-                <div className="empty-state">
-                  <strong>No process records match the current query.</strong>
-                  <p>Clear the search to restore the active process lane.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="sidecar-process-detail" aria-label="Selected process record">
-          {liveViewActive && projection.liveAnalysis ? (
-            <ProcessLiveAnalysisSummary analysis={projection.liveAnalysis} visibleRecordCount={records.length} />
-          ) : (
-            <ProcessMapSummary map={activeMap} activeViewLabel={activeView?.label ?? 'Process'} visibleRecordCount={records.length} />
-          )}
-          {selectedRecord ? <ProcessRecordDetail record={selectedRecord} projection={projection} /> : (
-            <div className="sidecar-inspector__empty">No process record selected.</div>
-          )}
-        </section>
-      </div>
-
-      {projection.catalog && (
-        <ProcessCatalogPicker
-          catalog={projection.catalog}
-          overlays={projection.leafOverlays ?? []}
-          activeLeafName={state.ui.activeLeafName}
-          onSelectLeaf={(leafName) => dispatch({ type: 'process/select-leaf', leafName })}
-        />
-      )}
-
-      {projection.catalog && state.ui.activeLeafName && (
-        <LeafWorkbenchPanel
-          catalog={projection.catalog}
-          overlays={projection.leafOverlays ?? []}
-          activeLeafName={state.ui.activeLeafName}
-          onClose={() => dispatch({ type: 'process/select-leaf', leafName: null })}
-          onOpenTracePath={openTracePath}
-        />
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// T-026: catalog picker. Shows executives + leaves grouped by catalog
-// (bootstrap / operational / triage) + library functions. Clicking a leaf
-// focuses it for the workbench. Read-only over admitted projection.
-// ---------------------------------------------------------------------------
-
-function ProcessCatalogPicker({
-  catalog,
-  overlays,
-  activeLeafName,
-  onSelectLeaf,
-}: {
-  catalog: NonNullable<SidecarProcessProjection['catalog']>;
-  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
-  activeLeafName: string | null;
-  onSelectLeaf: (leafName: string) => void;
-}) {
-  const leavesByCatalog = {
-    bootstrap: catalog.leaves.filter((l) => l.catalog === 'bootstrap'),
-    operational: catalog.leaves.filter((l) => l.catalog === 'operational'),
-    triage: catalog.leaves.filter((l) => l.catalog === 'triage'),
-  };
-  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
-
-  return (
-    <section className="sidecar-process-catalog" aria-label="Published TS module catalog">
-      <div className="requirements-explorer__section-heading">
-        <span className="panel__eyebrow">Catalog</span>
-        <span className="status-chip default">{catalog.leaves.length} leaves · {catalog.executives.length} executives · {catalog.library.length} library</span>
-      </div>
-      {(['bootstrap', 'operational', 'triage'] as const).map((catalogId) => {
-        const leaves = leavesByCatalog[catalogId];
-        if (leaves.length === 0) return null;
-        return (
-          <details key={catalogId} className="sidecar-process-catalog__group" open={catalogId !== 'triage'}>
-            <summary>
-              <strong>{catalogId === 'bootstrap' ? 'Bootstrap → Release' : catalogId === 'operational' ? 'Operational Cycle' : 'Triage Lane'}</strong>
-              <span className="status-chip default">{leaves.length}</span>
-            </summary>
-            <ul className="sidecar-process-catalog__leaves">
-              {leaves.map((leaf) => {
-                const overlay = overlayByLeaf.get(leaf.name);
-                const selected = leaf.name === activeLeafName;
-                return (
-                  <li key={leaf.name}>
-                    <button
-                      type="button"
-                      className={`sidecar-process-catalog__leaf list-row${selected ? ' is-selected' : ''}`}
-                      onClick={() => onSelectLeaf(leaf.name)}
-                      aria-pressed={selected}
-                    >
-                      <div className="sidecar-process-catalog__leaf-meta">
-                        <strong>{leaf.name}</strong>
-                        <span className="status-chip default">{overlay?.latestStatus ?? 'unattested'}</span>
-                      </div>
-                      <p>{leaf.intent}</p>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </details>
-        );
-      })}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// T-022 + T-026: per-leaf workbench. Shows leaf metadata, overlay status,
-// 7-dim assurance vector, and traced call-out evidence per supervised actor
-// invocation. All data flows from admitted carriers; nothing reads disk.
-// ---------------------------------------------------------------------------
-
-function LeafWorkbenchPanel({
-  catalog,
-  overlays,
-  activeLeafName,
-  onClose,
-  onOpenTracePath,
-}: {
-  catalog: NonNullable<SidecarProcessProjection['catalog']>;
-  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
-  activeLeafName: string;
-  onClose: () => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const leaf = catalog.leaves.find((l) => l.name === activeLeafName) ?? null;
-  const overlay = overlays.find((ov) => ov.leafName === activeLeafName) ?? null;
-
-  if (!leaf) {
-    return (
-      <section className="sidecar-leaf-workbench" aria-label="Leaf workbench">
-        <header>
-          <span className="panel__eyebrow">Leaf Workbench</span>
-          <button type="button" className="sidecar-leaf-workbench__close" onClick={onClose}>×</button>
-        </header>
-        <p>Leaf <code>{activeLeafName}</code> is not present in the published catalog.</p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="sidecar-leaf-workbench" aria-label={`Leaf workbench: ${leaf.name}`}>
-      <header className="sidecar-leaf-workbench__header">
-        <div>
-          <span className="panel__eyebrow">{leaf.catalog}</span>
-          <h3>{leaf.name}</h3>
-          <p>{leaf.intent}</p>
-        </div>
-        <button type="button" className="sidecar-leaf-workbench__close" onClick={onClose} aria-label="Close leaf workbench">×</button>
-      </header>
-
-      <MetaGrid items={[
-        ['Inputs', leaf.inputs.join(', ') || '—'],
-        ['Outputs', leaf.outputs.join(', ') || '—'],
-        ['Transform contract', leaf.transformContractRef],
-        ['Evaluation contract', leaf.evaluationContractRef],
-        ['Modulation', leaf.traversalModulationStrategy],
-        ['Operator', `${leaf.operator.name} (${leaf.operator.regime})`],
-        ['Evaluators', leaf.evaluators.map((e) => `${e.name} (${e.regime})`).join(', ')],
-        ['Requirement refs', leaf.requirementRefs.join(', ') || '—'],
-        ['Proof obligations', leaf.proofObligations.join(', ') || '—'],
-      ]} />
-
-      {overlay ? (
-        <>
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Op-run Overlay</span>
-            <span className="status-chip default">{overlay.latestStatus}</span>
-            <span className="status-chip default">{overlay.invocationCount} invocations</span>
-          </div>
-          {overlay.assuranceVector && (
-            <AssuranceVectorGrid vector={overlay.assuranceVector} />
-          )}
-          {overlay.edgeAssurance && (
-            <EdgeAssurancePanel assurance={overlay.edgeAssurance} onOpenTracePath={onOpenTracePath} />
-          )}
-          {overlay.tracedEvidence.length > 0 ? (
-            <ul className="sidecar-leaf-workbench__evidence">
-              {overlay.tracedEvidence.map((evidence) => (
-                <li key={evidence.invocationId} className="sidecar-leaf-workbench__evidence-row">
-                  <div className="sidecar-leaf-workbench__evidence-head">
-                    <Pill kind={evidence.outcome.kind === 'exited' && evidence.status === 0 ? 'process' : 'blocked'}>
-                      {evidence.outcome.kind}
-                    </Pill>
-                    <span className="status-chip default">{evidence.executorProfile}</span>
-                    <span className="status-chip default">{evidence.parser}</span>
-                    {evidence.status !== null && (
-                      <span className="status-chip default">status {evidence.status}</span>
-                    )}
-                    <button
-                      type="button"
-                      className="status-chip active"
-                      onClick={() => onOpenTracePath(evidence.traceArchiveRoot)}
-                    >
-                      Trace archive
-                    </button>
-                    <button
-                      type="button"
-                      className="status-chip default"
-                      onClick={() => onOpenTracePath(evidence.traceArchivePaths.result)}
-                    >
-                      Result
-                    </button>
-                    {evidence.traceArchivePaths.terminalTranscript && (
-                      <button
-                        type="button"
-                        className="status-chip default"
-                        onClick={() => onOpenTracePath(evidence.traceArchivePaths.terminalTranscript as string)}
-                      >
-                        Terminal transcript
-                      </button>
-                    )}
-                  </div>
-                  <MetaGrid items={[
-                    ['Invocation', evidence.invocationId],
-                    ['Stream model', evidence.streamModel],
-                    ['Structured events', String(evidence.structuredEventCount)],
-                    ['API retries', String(evidence.apiRetryCount)],
-                    ['Tool calls', String(evidence.toolCallCount)],
-                    ['Terminal session', evidence.terminalSessionId ?? '—'],
-                    ['Trace archive', evidence.traceArchiveRoot],
-                    ['Result', evidence.traceArchivePaths.result],
-                  ]} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="sidecar-inspector__empty">No traced evidence admitted yet for this leaf.</div>
-          )}
-        </>
-      ) : (
-        <div className="sidecar-inspector__empty">No active op-run overlay carries an invocation of this leaf yet.</div>
-      )}
-    </section>
-  );
-}
-
-function AssuranceVectorGrid({ vector }: {
-  vector: NonNullable<NonNullable<SidecarProcessProjection['leafOverlays']>[number]['assuranceVector']>;
-}) {
-  const cells: Array<[string, 'pass' | 'fail' | 'pending']> = [
-    ['materialization', vector.materialization],
-    ['semantic', vector.semanticConvergence],
-    ['obligation', vector.obligationCarry],
-    ['requirement', vector.requirementFulfillment],
-    ['ambiguity', vector.ambiguity],
-    ['capability', vector.capability],
-    ['shallow', vector.shallowRealization],
-  ];
-  return (
-    <div className="sidecar-leaf-workbench__assurance" role="group" aria-label="7-dim assurance vector">
-      {cells.map(([label, state]) => (
-        <span key={label} className={`status-chip ${state === 'pass' ? 'active' : state === 'fail' ? 'blocked' : 'pending'}`}>
-          {label}: {state}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function EdgeAssurancePanel({
-  assurance,
-  onOpenTracePath,
-}: {
-  assurance: NonNullable<NonNullable<SidecarProcessProjection['leafOverlays']>[number]['edgeAssurance']>;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const counts = assurance.counts;
-  const countText = counts
-    ? `${counts.fulfilled}/${counts.expected} fulfilled; ${counts.blocked + counts.unfulfilled + counts.missing} open`
-    : '—';
-  return (
-    <section className="sidecar-edge-assurance" aria-label="Edge assurance">
-      <div className="requirements-explorer__section-heading">
-        <span className="panel__eyebrow">Edge Assurance</span>
-        <span className={`status-chip ${assuranceCarrierKind(assurance.carrierState)}`}>{assurance.carrierState}</span>
-        <span className={`status-chip ${closureDispositionKind(assurance.closureDisposition, assurance.closeReady)}`}>
-          {assurance.closureDisposition ?? 'no closure'}
-        </span>
-        {assurance.closeReady && <span className="status-chip active">close ready</span>}
-      </div>
-      <MetaGrid items={[
-        ['Edge', assurance.edgeName],
-        ['Target', assurance.targetAssetType ?? '—'],
-        ['Vector', assurance.vectorIndex === null ? '—' : String(assurance.vectorIndex)],
-        ['Counts', countText],
-        ['Edge converged', assurance.edgeConverged === null ? '—' : assurance.edgeConverged ? 'yes' : 'no'],
-        ['Target certified', assurance.targetCertificationPassed === null ? '—' : assurance.targetCertificationPassed ? 'yes' : 'no'],
-        ['Contract', assurance.edgeAssuranceContractRef ?? '—'],
-        ['Gain', assurance.edgeGainRef ?? '—'],
-        ['Closure function', assurance.edgeClosureFunctionRef ?? '—'],
-        ['Next vector', assurance.nextGraphVectorRef ?? '—'],
-      ]} />
-      <div className="sidecar-edge-assurance__refs">
-        {assurance.ledgerRef && (
-          <button type="button" className="status-chip default" onClick={() => onOpenTracePath(`${assurance.opRunRoot}/sdlc_edge_fulfillment_ledger.json`)}>
-            Ledger
-          </button>
-        )}
-        {assurance.closureDecisionRef && (
-          <button type="button" className="status-chip default" onClick={() => onOpenTracePath(`${assurance.opRunRoot}/sdlc_edge_closure_decision.json`)}>
-            Closure
-          </button>
-        )}
-        {assurance.selectedActionRef && (
-          <button type="button" className="status-chip default" onClick={() => onOpenTracePath(`${assurance.opRunRoot}/sdlc_next_action_projection.json`)}>
-            Next action
-          </button>
-        )}
-      </div>
-      {assurance.edgeResidualPressureRefs.length > 0 && (
-        <Section title="Residual pressure">
-          <ul className="sidecar-criteria-list">
-            {assurance.edgeResidualPressureRefs.slice(0, 6).map((ref) => <li key={ref}>{ref}</li>)}
-          </ul>
-        </Section>
-      )}
-      {assurance.diagnostics.length > 0 && (
-        <Section title="Diagnostics">
-          <div className="inline-pills">
-            {assurance.diagnostics.map((diagnostic) => (
-              <Pill key={diagnostic} kind={diagnostic.includes('missing') || diagnostic.includes('without') ? 'blocked' : 'default'}>
-                {diagnostic}
-              </Pill>
-            ))}
-          </div>
-        </Section>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// T-026: process-flow-map variant host. V0 is canonical (the existing
-// ProcessGraphMap rendering). V1 / V2 / V4 ship under §13A scaffold-exemption
-// labels and are read-only renderings of the same admitted carriers.
-// ---------------------------------------------------------------------------
-
-type ProcessFlowMapVariantHostProps = {
-  map: SidecarProcessMap;
-  catalog: NonNullable<SidecarProcessProjection['catalog']>;
-  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
-  activeRecordIds: string[];
-  selectedRecordId: string | null;
-  activeVariant: 'v0' | 'v1' | 'v2' | 'v4';
-  activeLeafName: string | null;
-  onSelectVariant: (variant: 'v0' | 'v1' | 'v2' | 'v4') => void;
-  onSelectRecord: (id: string | null) => void;
-  onSelectLeaf: (leafName: string) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-};
-
-const PROCESS_FLOW_VARIANT_DESCRIPTORS: Array<{
-  id: 'v0' | 'v1' | 'v2' | 'v4';
-  label: string;
-  badge: 'canonical' | 'paydown' | 'scaffold';
-  hint: string;
-}> = [
-  { id: 'v0', label: 'V0 Baseline', badge: 'paydown', hint: 'Existing graph map retained as local paydown.' },
-  { id: 'v1', label: 'V1 Three-lane', badge: 'canonical', hint: 'Canonical process flow map.' },
-  { id: 'v2', label: 'V2 Asset-DAG', badge: 'scaffold', hint: 'Asset-surface-centric topology (§13A scaffold).' },
-  { id: 'v4', label: 'V4 Assurance Matrix', badge: 'scaffold', hint: '43-row × 7-col closure grid (§13A scaffold).' },
-];
-
-function ProcessFlowMapVariantHost(props: ProcessFlowMapVariantHostProps) {
-  const { map, catalog, overlays, activeRecordIds, selectedRecordId, activeVariant, activeLeafName, onSelectVariant, onSelectRecord, onSelectLeaf, onOpenTracePath } = props;
-  return (
-    <div className="sidecar-process-flow-variant-host">
-      <div className="sidecar-process-flow-variants" role="tablist" aria-label="Process flow map variants">
-        {PROCESS_FLOW_VARIANT_DESCRIPTORS.map((descriptor) => {
-          const selected = descriptor.id === activeVariant;
-          return (
-            <button
-              key={descriptor.id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              className={`sidecar-process-flow-variant-tab process-tab${selected ? ' is-selected' : ''}`}
-              onClick={() => onSelectVariant(descriptor.id)}
-              title={descriptor.hint}
-            >
-              <strong>{descriptor.label}</strong>
-              {descriptor.badge === 'canonical' && (
-                <span className="status-chip active" aria-label="Canonical process flow map">canonical</span>
-              )}
-              {descriptor.badge === 'paydown' && (
-                <span className="status-chip default" aria-label="Local paydown variant">paydown</span>
-              )}
-              {descriptor.badge === 'scaffold' && (
-                <span className="status-chip pending" aria-label="§13A scaffold (exploratory)">scaffold</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      {activeVariant === 'v0' && (
-        <ProcessGraphMap
-          map={map}
-          activeRecordIds={activeRecordIds}
-          selectedRecordId={selectedRecordId}
-          onSelectRecord={onSelectRecord}
-          onOpenTracePath={onOpenTracePath}
-        />
-      )}
-      {activeVariant === 'v1' && (
-        <ProcessFlowMapV1ThreeLane
-          catalog={catalog}
-          overlays={overlays}
-          activeLeafName={activeLeafName}
-          onSelectLeaf={onSelectLeaf}
-        />
-      )}
-      {activeVariant === 'v2' && (
-        <ProcessFlowMapV2AssetDag
-          catalog={catalog}
-          overlays={overlays}
-          activeLeafName={activeLeafName}
-          onSelectLeaf={onSelectLeaf}
-        />
-      )}
-      {activeVariant === 'v4' && (
-        <ProcessFlowMapV4AssuranceMatrix
-          catalog={catalog}
-          overlays={overlays}
-          activeLeafName={activeLeafName}
-          onSelectLeaf={onSelectLeaf}
-        />
-      )}
-    </div>
-  );
-}
-
-type VariantBaseProps = {
-  catalog: NonNullable<SidecarProcessProjection['catalog']>;
-  overlays: NonNullable<SidecarProcessProjection['leafOverlays']>;
-  activeLeafName: string | null;
-  onSelectLeaf: (leafName: string) => void;
-};
-
-// Helper: derive leaf-status class from overlay status.
-function leafStatusKind(status: string | undefined): 'active' | 'blocked' | 'pending' | 'default' {
-  if (!status) return 'default';
-  if (status === 'fd_postflight_passed' || status === 'fp_succeeded') return 'active';
-  if (status === 'failed') return 'blocked';
-  if (status === 'running' || status === 'queued') return 'pending';
-  return 'default';
-}
-
-function assuranceCarrierKind(state: string | undefined): 'active' | 'blocked' | 'pending' | 'default' {
-  if (state === 'complete') return 'active';
-  if (state === 'incomplete') return 'blocked';
-  if (state === 'absent') return 'pending';
-  return 'default';
-}
-
-function closureDispositionKind(
-  disposition: string | null | undefined,
-  closeReady = false,
-): 'active' | 'blocked' | 'pending' | 'default' {
-  if (closeReady || disposition === 'close') return 'active';
-  if (disposition === 'yield') return 'pending';
-  if (disposition === 'retry' || disposition === 'repair' || disposition === 're-enter' || disposition === 'reprice' || disposition === 'block') return 'blocked';
-  return 'default';
-}
-
-// V1 — three-lane structural map. Bootstrap chain | Operational chain | Triage lane.
-function ProcessFlowMapV1ThreeLane({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
-  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
-  const lanes: Array<{ id: 'bootstrap' | 'operational' | 'triage'; label: string; leaves: typeof catalog.leaves }> = [
-    { id: 'bootstrap', label: 'Bootstrap → Release', leaves: catalog.leaves.filter((l) => l.catalog === 'bootstrap') },
-    { id: 'operational', label: 'Operational Cycle', leaves: catalog.leaves.filter((l) => l.catalog === 'operational') },
-    { id: 'triage', label: 'Triage Lane', leaves: catalog.leaves.filter((l) => l.catalog === 'triage') },
-  ];
-  return (
-    <div className="sidecar-process-flow-v1" role="region" aria-label="Three-lane structural map">
-      <div className="sidecar-process-flow-v1__lanes">
-        {lanes.map((lane) => (
-          <section key={lane.id} className="sidecar-process-flow-v1__lane" aria-label={lane.label}>
-            <header><strong>{lane.label}</strong> <span className="status-chip default">{lane.leaves.length}</span></header>
-            <ol className="sidecar-process-flow-v1__chain">
-              {lane.leaves.map((leaf, index) => {
-                const overlay = overlayByLeaf.get(leaf.name);
-                const selected = leaf.name === activeLeafName;
-                return (
-                  <li key={leaf.name}>
-                    <button
-                      type="button"
-                      className={`sidecar-process-flow-v1__node list-row${selected ? ' is-selected' : ''}`}
-                      onClick={() => onSelectLeaf(leaf.name)}
-                      aria-pressed={selected}
-                    >
-                      <span className="sidecar-process-flow-v1__index">{index + 1}</span>
-                      <div className="sidecar-process-flow-v1__node-meta">
-                        <strong>{leaf.name}</strong>
-                        <span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>
-                          {overlay?.latestStatus ?? 'unattested'}
-                        </span>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-              {lane.leaves.length === 0 && (
-                <li><div className="sidecar-inspector__empty">No leaves in this lane.</div></li>
-              )}
-            </ol>
-          </section>
-        ))}
-      </div>
-      <details className="sidecar-process-flow-v1__library">
-        <summary><strong>Library functions</strong> <span className="status-chip default">{catalog.library.length}</span></summary>
-        <ul>
-          {catalog.library.map((fn) => (
-            <li key={fn.name}>
-              <strong>{fn.name}</strong>
-              <p>{fn.intent}</p>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </div>
-  );
-}
-
-// V2 — asset-DAG. Nodes are *_surface assets; group leaves by the surface they produce.
-function ProcessFlowMapV2AssetDag({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
-  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
-  // Each surface is produced by one leaf (each leaf has one primary output).
-  // Group leaves by their primary output surface and show producers + consumers.
-  const surfaceProducers = new Map<string, typeof catalog.leaves[number]>();
-  for (const leaf of catalog.leaves) {
-    const primary = leaf.outputs[0];
-    if (primary && !surfaceProducers.has(primary)) {
-      surfaceProducers.set(primary, leaf);
-    }
-  }
-  // Compute fan-in: for each surface, count how many other leaves consume it.
-  const surfaceFanIn = new Map<string, string[]>();
-  for (const leaf of catalog.leaves) {
-    for (const input of leaf.inputs) {
-      if (!surfaceFanIn.has(input)) surfaceFanIn.set(input, []);
-      surfaceFanIn.get(input)!.push(leaf.name);
-    }
-  }
-  const surfaces = Array.from(surfaceProducers.keys());
-  return (
-    <div className="sidecar-process-flow-v2" role="region" aria-label="Asset-DAG variant">
-      <div className="sidecar-process-flow-v1__scaffold-banner">
-        §13A scaffold — V2 asset-DAG (owning ticket: T-026)
-      </div>
-      <ul className="sidecar-process-flow-v2__surfaces">
-        {surfaces.map((surface) => {
-          const producer = surfaceProducers.get(surface)!;
-          const consumers = surfaceFanIn.get(surface) ?? [];
-          const overlay = overlayByLeaf.get(producer.name);
-          const selected = producer.name === activeLeafName;
-          return (
-            <li key={surface}>
-              <button
-                type="button"
-                className={`sidecar-process-flow-v2__surface list-row${selected ? ' is-selected' : ''}`}
-                onClick={() => onSelectLeaf(producer.name)}
-              >
-                <div className="sidecar-process-flow-v2__surface-head">
-                  <strong>{surface}</strong>
-                  <span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>
-                    {overlay?.latestStatus ?? 'unattested'}
-                  </span>
-                </div>
-                <p>produced by <code>{producer.name}</code> ({producer.catalog})</p>
-                <p className="sidecar-process-flow-v2__fan">
-                  {consumers.length === 0
-                    ? 'terminal surface (not consumed downstream)'
-                    : `feeds ${consumers.length} downstream leaf${consumers.length === 1 ? '' : 'es'}`}
-                </p>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-// V4 — assurance matrix. The assurance-vector columns stay intact; T-164 adds
-// ledger-derived edge close/gain/residual cells beside invocation status.
-function ProcessFlowMapV4AssuranceMatrix({ catalog, overlays, activeLeafName, onSelectLeaf }: VariantBaseProps) {
-  const overlayByLeaf = new Map(overlays.map((ov) => [ov.leafName, ov]));
-  const dims: Array<['materialization' | 'semanticConvergence' | 'obligationCarry' | 'requirementFulfillment' | 'ambiguity' | 'capability' | 'shallowRealization', string]> = [
-    ['materialization', 'mat'],
-    ['semanticConvergence', 'sem'],
-    ['obligationCarry', 'obl'],
-    ['requirementFulfillment', 'req'],
-    ['ambiguity', 'amb'],
-    ['capability', 'cap'],
-    ['shallowRealization', 'shal'],
-  ];
-  return (
-    <div className="sidecar-process-flow-v4" role="region" aria-label="Assurance-matrix variant">
-      <div className="sidecar-process-flow-v1__scaffold-banner">
-        §13A scaffold — V4 assurance matrix (owning ticket: T-026)
-      </div>
-      <table className="sidecar-process-flow-v4__matrix">
-        <thead>
-          <tr>
-            <th scope="col">Leaf</th>
-            <th scope="col">Catalog</th>
-            <th scope="col">Status</th>
-            <th scope="col">Close</th>
-            <th scope="col">Gain</th>
-            <th scope="col">Residual</th>
-            {dims.map(([key, label]) => (
-              <th key={key} scope="col">{label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {catalog.leaves.map((leaf) => {
-            const overlay = overlayByLeaf.get(leaf.name);
-            const assurance = overlay?.edgeAssurance ?? null;
-            const selected = leaf.name === activeLeafName;
-            return (
-              <tr
-                key={leaf.name}
-                className={selected ? 'is-selected' : ''}
-                onClick={() => onSelectLeaf(leaf.name)}
-                style={{ cursor: 'pointer' }}
-              >
-                <th scope="row">{leaf.name}</th>
-                <td>{leaf.catalog}</td>
-                <td><span className={`status-chip ${leafStatusKind(overlay?.latestStatus)}`}>{overlay?.latestStatus ?? 'unattested'}</span></td>
-                <td>
-                  <span className={`status-chip ${closureDispositionKind(assurance?.closureDisposition, assurance?.closeReady)}`}>
-                    {assurance?.closureDisposition ?? '—'}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-chip ${assurance?.edgeGainRef ? 'active' : 'default'}`}>
-                    {assurance?.edgeGainRef ? 'carried' : '—'}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-chip ${(assurance?.edgeResidualPressureRefs.length ?? 0) > 0 ? 'blocked' : 'default'}`}>
-                    {assurance?.edgeResidualPressureRefs.length ?? '—'}
-                  </span>
-                </td>
-                {dims.map(([key]) => {
-                  const cell = overlay?.assuranceVector?.[key];
-                  return (
-                    <td key={key}>
-                      <span className={`status-chip ${cell === 'pass' ? 'active' : cell === 'fail' ? 'blocked' : cell === 'pending' ? 'pending' : 'default'}`}>
-                        {cell ?? '—'}
-                      </span>
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function processRecordMatchesSearch(record: SidecarProcessRecord, normalizedSearch: string) {
-  const haystack = [
-    record.title,
-    record.summary,
-    record.kind,
-    record.status,
-    record.edge ?? '',
-    record.workKey ?? '',
-    record.graphFunctionId ?? '',
-    ...record.eventKinds,
-    ...record.evidenceRefs,
-  ].join(' ').toLowerCase();
-  return haystack.includes(normalizedSearch);
-}
-
-function describeProcessQueryHeadline(visibleCount: number, totalCount: number) {
-  const noun = totalCount === 1 ? 'process record' : 'process records';
-  return `Showing ${visibleCount} of ${totalCount} ${noun}.`;
-}
-
-function describeProcessQuerySummary(
-  activeCarrierLabel: string | null,
-  record: SidecarProcessRecord | null,
-  normalizedSearch: string,
-) {
-  const parts = [
-    activeCarrierLabel ? `${activeCarrierLabel} is the active carrier.` : null,
-    record ? `${record.title} anchors the workbench.` : 'No process object is focused.',
-    normalizedSearch ? 'Search is narrowing the active process lane.' : null,
-  ].filter(Boolean);
-  return parts.join(' ');
-}
 
 type SidecarLiveAnalysis = NonNullable<SidecarProcessProjection['liveAnalysis']>;
 type SidecarLiveAnalysisAttempt = SidecarLiveAnalysis['attempts'][number];
@@ -5442,6 +4556,27 @@ function ProcessLiveViewPanel({
         )}
       </ol>
 
+      {selectedAttempt ? (
+        <ProcessLiveRunDetail
+          attempt={selectedAttempt}
+          operatorRun={selectedOperatorRun}
+          projectRoot={projectRoot}
+          internalRowCollapsed={liveInternalRowCollapsed}
+          onInternalRowCollapsedChange={onLiveInternalRowCollapsedChange}
+          detailRowCollapsed={liveDetailRowCollapsed}
+          onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
+          gapRowCollapsed={liveGapRowCollapsed}
+          onGapRowCollapsedChange={onLiveGapRowCollapsedChange}
+          eventViewerCollapsed={liveEventViewerCollapsed}
+          onEventViewerCollapsedChange={onLiveEventViewerCollapsedChange}
+          transcriptCollapsed={liveTranscriptCollapsed}
+          onTranscriptCollapsedChange={onLiveTranscriptCollapsedChange}
+          onOpenTracePath={onOpenTracePath}
+        />
+      ) : selectedOperatorRun ? (
+        <ProcessSelectedRunSummary operatorRun={selectedOperatorRun} onOpenTracePath={onOpenTracePath} />
+      ) : null}
+
       <ProcessLiveRowGroup
         widgetNames={['Active Run', 'Diagnostics']}
         ariaLabel="active run and diagnostics row"
@@ -5490,26 +4625,46 @@ function ProcessLiveViewPanel({
           </section>
         </div>
       </ProcessLiveRowGroup>
-
-      {selectedAttempt ? (
-        <ProcessLiveRunDetail
-          attempt={selectedAttempt}
-          operatorRun={selectedOperatorRun}
-          projectRoot={projectRoot}
-          internalRowCollapsed={liveInternalRowCollapsed}
-          onInternalRowCollapsedChange={onLiveInternalRowCollapsedChange}
-          detailRowCollapsed={liveDetailRowCollapsed}
-          onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
-          gapRowCollapsed={liveGapRowCollapsed}
-          onGapRowCollapsedChange={onLiveGapRowCollapsedChange}
-          eventViewerCollapsed={liveEventViewerCollapsed}
-          onEventViewerCollapsedChange={onLiveEventViewerCollapsedChange}
-          transcriptCollapsed={liveTranscriptCollapsed}
-          onTranscriptCollapsedChange={onLiveTranscriptCollapsedChange}
-          onOpenTracePath={onOpenTracePath}
-        />
-      ) : null}
     </div>
+  );
+}
+
+function ProcessSelectedRunSummary({
+  operatorRun,
+  onOpenTracePath,
+}: {
+  operatorRun: SidecarSdlcOperatorRun;
+  onOpenTracePath: (absolutePath: string) => void;
+}) {
+  const stageCliCount = operatorRun.stages.reduce((total, stage) => total + stage.processInvocations.length, 0);
+  const closureLabel = operatorRun.closureDecision?.disposition ?? operatorRun.status ?? 'open';
+  const selectedRunStartedAt = operatorRun.startedAt ?? parseOperatorRunStartedAt(operatorRun.operatorRunPath);
+  return (
+    <section className="sidecar-live-view__run-detail" aria-label="Selected run detail">
+      <header className="sidecar-live-view__run-header">
+        <div>
+          <span className="panel__eyebrow">Selected Run</span>
+          <h4>{operatorRun.edge?.edgeName ?? operatorRun.edge?.graphFunctionName ?? operatorRun.operatorRunId}</h4>
+          <p>{operatorRun.operatorRunPath}</p>
+        </div>
+        <div className="sidecar-live-view__actions">
+          <span className={`status-chip ${operatorRun.activeFeedbackLoop ? 'active' : operatorRun.status === 'blocked' ? 'blocked' : 'pending'}`}>{closureLabel}</span>
+          <span className="status-chip default" title={selectedRunStartedAt ?? undefined}>
+            Started {formatLiveRunStartedAt(selectedRunStartedAt)}
+          </span>
+          <span className="status-chip default">{stageCliCount} stage CLIs</span>
+          <button type="button" className="status-chip default" onClick={() => onOpenTracePath(operatorRun.operatorRunPath)}>
+            Open archive
+          </button>
+        </div>
+      </header>
+      <MetaGrid items={[
+        ['Graph function', operatorRun.edge?.graphFunctionName ?? '—'],
+        ['Graph vector', operatorRun.edge?.graphVectorRef ?? operatorRun.nextActionProjection?.nextGraphVectorRef ?? '—'],
+        ['Target', operatorRun.edge?.targetAssetType ?? '—'],
+        ['Status', operatorRun.status ?? '—'],
+      ]} />
+    </section>
   );
 }
 
@@ -5574,8 +4729,9 @@ function ProcessLiveRunDetail({
   const closureLabel = activeFeedbackLoop
     ? 'retry feedback loop'
     : closure?.disposition ?? edge?.closureDisposition ?? attempt.closureDisposition ?? 'open';
+  const selectedRunStartedAt = operatorRun?.startedAt ?? parseOperatorRunStartedAt(attempt.operatorRunPath ?? attempt.operatorRunRef);
   return (
-    <section className="sidecar-live-view__run-detail" aria-label="Selected analyze-run detail">
+    <section className="sidecar-live-view__run-detail" aria-label="Selected run detail">
       <header className="sidecar-live-view__run-header">
         <div>
           <span className="panel__eyebrow">Selected Run</span>
@@ -5584,6 +4740,9 @@ function ProcessLiveRunDetail({
         </div>
         <div className="sidecar-live-view__actions">
           <span className={`status-chip ${ledgerTone}`}>{closureLabel}</span>
+          <span className="status-chip default" title={selectedRunStartedAt ?? undefined}>
+            Started {formatLiveRunStartedAt(selectedRunStartedAt)}
+          </span>
           {operatorRun ? (
             <span className="status-chip default">{operatorRun.stages.reduce((total, stage) => total + stage.processInvocations.length, 0)} stage CLIs</span>
           ) : null}
@@ -6697,35 +5856,6 @@ function LiveAnalysisDiagnosticRow({ diagnostic, onOpenTracePath }: {
   );
 }
 
-function ProcessLiveAnalysisSummary({ analysis, visibleRecordCount }: {
-  analysis: SidecarLiveAnalysis;
-  visibleRecordCount: number;
-}) {
-  return (
-    <div className="sidecar-process-map-summary">
-      <div>
-        <span className="panel__eyebrow">Live View</span>
-        <h3>Analyze-run detail</h3>
-        <p>{analysis.telemetry.graphEdgeSequence.length} unique graph edges observed across {analysis.telemetry.operatorRunCount} operator runs.</p>
-      </div>
-      <div className="sidecar-process-map-summary__stats">
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-          <strong>{analysis.attempts.length}</strong>
-          <small>attempts</small>
-        </span>
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--blocked">
-          <strong>{analysis.diagnostics.length}</strong>
-          <small>diagnostics</small>
-        </span>
-        <span className="sidecar-process-map-stat">
-          <strong>{visibleRecordCount}</strong>
-          <small>visible records</small>
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function ProcessGraphMap({ map, activeRecordIds, selectedRecordId, onSelectRecord, onOpenTracePath }: {
   map: SidecarProcessMap;
   activeRecordIds: string[];
@@ -6877,71 +6007,6 @@ function processEdgeGlyphLabel(edge: SidecarProcessMap['edges'][number]) {
   return `${edge.label}: ${outcome}; ${executor}. ${trace}`;
 }
 
-function ProcessMapSummary({ map, activeViewLabel, visibleRecordCount }: {
-  map: SidecarProcessMap | null;
-  activeViewLabel: string;
-  visibleRecordCount: number;
-}) {
-  if (!map) return null;
-  return (
-    <div className="sidecar-process-map-summary">
-      <div>
-        <span className="panel__eyebrow">{activeViewLabel}</span>
-        <h3>{map.label}</h3>
-        <p>{map.summary}</p>
-      </div>
-      <div className="sidecar-process-map-summary__stats">
-        {map.stats.map((stat) => (
-          <span key={`${stat.label}:${stat.value}`} className={`sidecar-process-map-stat sidecar-process-map-stat--${stat.tone}`}>
-            <strong>{stat.value}</strong>
-            <small>{stat.label}</small>
-          </span>
-        ))}
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-          <strong>{visibleRecordCount}</strong>
-          <small>visible records</small>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function ProcessRecordDetail({ record, projection }: {
-  record: SidecarProcessRecord;
-  projection: SidecarProcessProjection;
-}) {
-  return (
-    <div>
-      <div className="sidecar-inspector__id">{record.edge ?? record.kind}</div>
-      <h2 className="sidecar-inspector__title">{record.title}</h2>
-      <div className="inline-pills">
-        <Pill kind={record.tone}>{record.status}</Pill>
-        {record.vectorIndex !== null ? <Pill kind="default">vector {record.vectorIndex}</Pill> : null}
-        <Pill kind="default">{record.eventKinds.length} event kinds</Pill>
-      </div>
-      <p className="sidecar-body-text">{record.summary}</p>
-      <MetaGrid items={[
-        ['Contract', `${projection.contractName} ${projection.contractVersion}`],
-        ['Run', record.runId ?? '—'],
-        ['Work key', record.workKey ?? '—'],
-        ['Graph call', compactIdentity(record.graphCallId)],
-        ['Frame', compactIdentity(record.frameId)],
-      ]} />
-      <Section title="Observed Events">
-        <div className="inline-pills">
-          {record.eventKinds.map((kind) => <Pill key={kind} kind="default">{kind}</Pill>)}
-        </div>
-      </Section>
-      <Section title="Evidence">
-        {record.evidenceRefs.length === 0 ? <div className="sidecar-body-text">No evidence refs attached to this record.</div> : null}
-        <ul className="sidecar-criteria-list">
-          {record.evidenceRefs.slice(0, 8).map((ref) => <li key={ref}>{ref}</li>)}
-        </ul>
-      </Section>
-    </div>
-  );
-}
-
 function compactIdentity(value: string | null) {
   if (!value) return '—';
   if (value.length <= 72) return value;
@@ -7008,6 +6073,39 @@ function formatLiveRefreshTime(value: string | null | undefined) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function formatLiveRunStartedAt(value: string | null | undefined) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+function parseOperatorRunStartedAt(ref: string | null | undefined) {
+  if (!ref) return null;
+  const token = ref.split('/').filter(Boolean).at(-1) ?? ref;
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z(?:_|$)/.exec(token);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, fraction = ''] = match;
+  const date = new Date(Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(fraction.padEnd(3, '0') || '0'),
+  ));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function formatBytes(value: number) {
