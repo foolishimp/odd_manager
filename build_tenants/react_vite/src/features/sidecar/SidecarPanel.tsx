@@ -65,6 +65,7 @@ import {
   setActiveProject,
   unregisterProject,
 } from '../../lib/collaboration';
+import { projectDisplayNameFromRoot } from '../../lib/projectDisplay';
 import type { SurfaceData, SurfaceEntry } from '../../lib/types';
 import {
   INITIAL_SIDECAR_STATE,
@@ -1850,13 +1851,15 @@ function SelectionFlyout({
 
   useEffect(() => {
     if (surface !== 'projects') return;
-    const roots = state.projects
-      .map((project) => normalizePinnedPath(project.root))
-      .filter((root) => root && ((expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath)) === true));
+    const roots = Array.from(new Set([
+      ...state.projects.map((project) => normalizePinnedPath(project.root)),
+      projectRootPath,
+    ].filter((root): root is string => Boolean(root))))
+      .filter((root) => root && ((expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath || root === projectRootPath)) === true));
     for (const root of roots) {
       if (!folderLoads[root]) void loadFolder(root);
     }
-  }, [expandedProjectRoots, folderLoads, loadFolder, normalizedSelectedProjectRootPath, state.projects, surface]);
+  }, [expandedProjectRoots, folderLoads, loadFolder, normalizedSelectedProjectRootPath, projectRootPath, state.projects, surface]);
 
   if (activePinnedFolderPath && projectRoot) {
     const displayPath = folderDisplayPath(activePinnedFolderPath, projectRoot);
@@ -1934,6 +1937,31 @@ function SelectionFlyout({
     const browseState = state.ui.browse;
     const projectFavouriteCandidates = projectFavouriteCandidatesFromHistory(state.pathHistory, projectRoot, state.projects);
     const projectFavouriteRoots = state.projects.map((project) => normalizePinnedPath(project.root));
+    const normalizedCurrentProjectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
+    const currentProjectIsRegistered = Boolean(
+      normalizedCurrentProjectRootPath &&
+      projectFavouriteRoots.includes(normalizedCurrentProjectRootPath),
+    );
+    const currentProjectBrowserProject: ProjectRecord | null = normalizedCurrentProjectRootPath && !currentProjectIsRegistered
+      ? {
+        id: `current:${normalizedCurrentProjectRootPath}`,
+        name: projectDisplayNameFromRoot(normalizedCurrentProjectRootPath),
+        root: normalizedCurrentProjectRootPath,
+        odd_type: state.context?.project.root === normalizedCurrentProjectRootPath ? state.context.project.odd_type : 'unknown',
+        has_ai_workspace: false,
+        has_genesis: false,
+        installed_packages: [],
+        build_tenants: [],
+        registry_source: 'discovery',
+        registered_at: null,
+        updated_at: null,
+        tags: ['current'],
+        is_active: true,
+      }
+      : null;
+    const projectBrowserProjects = currentProjectBrowserProject
+      ? [currentProjectBrowserProject, ...state.projects]
+      : state.projects;
     const projectBrowserTabs: Array<{ id: ProjectBrowserTab; label: string; count: number }> = [
       { id: 'favourites', label: 'Favourite', count: state.projects.length },
       { id: 'recent', label: 'Recent', count: projectFavouriteCandidates.length },
@@ -1941,10 +1969,10 @@ function SelectionFlyout({
     ];
     const projectBrowserRootIsVisible = (root: string | null) => Boolean(
       root &&
-      state.projects.some((project) => normalizePinnedPath(project.root) === root) &&
-      (expandedProjectRoots[root] ?? root === normalizedSelectedProjectRootPath)
+      projectBrowserProjects.some((project) => normalizePinnedPath(project.root) === root) &&
+      (expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath || root === normalizedCurrentProjectRootPath))
     );
-    const visibleProjectBrowserRoots = state.projects
+    const visibleProjectBrowserRoots = projectBrowserProjects
       .map((project) => normalizePinnedPath(project.root))
       .filter((root) => projectBrowserRootIsVisible(root));
     const projectBrowserVisibleFolderPaths = (() => {
@@ -1967,26 +1995,42 @@ function SelectionFlyout({
       for (const root of visibleProjectBrowserRoots) collectFolder(root, false);
       return Array.from(visibleFolders);
     })();
-    const projectBrowserVisibleRefreshLoading = projectBrowserVisibleFolderPaths.some((path) => folderLoads[path]?.loading === true);
+    const projectBrowserRootPaths = projectBrowserProjects
+      .map((project) => normalizePinnedPath(project.root))
+      .filter(Boolean);
+    const projectBrowserRefreshFolderPaths = (() => {
+      const paths = new Set(projectBrowserVisibleFolderPaths);
+      for (const loadedPath of Object.keys(folderLoads)) {
+        const normalizedPath = normalizePinnedPath(loadedPath);
+        if (!normalizedPath) continue;
+        if (projectBrowserRootPaths.some((root) => isProjectFolderPath(normalizedPath, root))) {
+          paths.add(normalizedPath);
+        }
+      }
+      return Array.from(paths);
+    })();
+    const projectBrowserRefreshLoading = projectBrowserRefreshFolderPaths.some((path) => folderLoads[path]?.loading === true);
+    const refreshProjectBrowser = () => {
+      dispatch({ type: 'load/request', projectRoot, reason: 'session_refresh' });
+      for (const path of projectBrowserRefreshFolderPaths) void loadFolder(path);
+    };
     const projectBrowserRefreshAction = projectBrowserTab === 'pick'
       ? (
         <FolderRefreshButton
           label={browseState.currentPath ?? 'current folder'}
-          loading={browseState.loading}
-          disabled={!browseState.currentPath}
+          loading={browseState.loading || state.loading}
+          disabled={!browseState.currentPath && !projectRoot}
           onRefresh={() => {
             if (browseState.currentPath) dispatch({ type: 'browse/navigate-to', path: browseState.currentPath });
+            dispatch({ type: 'load/request', projectRoot, reason: 'session_refresh' });
           }}
         />
       )
       : (
         <FolderRefreshButton
-          label="Project Browser visible folders"
-          loading={projectBrowserVisibleRefreshLoading}
-          disabled={projectBrowserVisibleFolderPaths.length === 0}
-          onRefresh={() => {
-            for (const path of projectBrowserVisibleFolderPaths) void loadFolder(path);
-          }}
+          label="Project Browser"
+          loading={projectBrowserRefreshLoading || state.loading}
+          onRefresh={refreshProjectBrowser}
         />
       );
     const projectBrowserTabStrip = (
@@ -2022,12 +2066,14 @@ function SelectionFlyout({
           {projectBrowserTab === 'favourites' ? (
             <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Favourite">
               {sortToolbar}
-              {state.projects.length === 0 ? <NavigatorEmptyState>No Project favourites.</NavigatorEmptyState> : null}
-              {state.projects.map((project) => {
+              {projectBrowserProjects.length === 0 ? <NavigatorEmptyState>No Project favourites.</NavigatorEmptyState> : null}
+              {projectBrowserProjects.map((project) => {
                 const normalizedRoot = normalizePinnedPath(project.root);
-                const selected = state.selection.kind === 'project' && state.selection.id === project.id;
-                const expanded = expandedProjectRoots[normalizedRoot] ?? selected;
                 const activeRoot = projectRoot ? normalizePinnedPath(projectRoot) : null;
+                const registeredProject = projectFavouriteRoots.includes(normalizedRoot);
+                const selected = (state.selection.kind === 'project' && state.selection.id === project.id)
+                  || (activeRoot !== null && normalizedRoot === activeRoot);
+                const expanded = expandedProjectRoots[normalizedRoot] ?? selected;
                 const unfavouriteDisabled = normalizedRoot === activeRoot || project.is_active === true;
                 const unfavouriteTitle = unfavouriteDisabled
                   ? 'Open another Project before removing this favourite.'
@@ -2038,10 +2084,11 @@ function SelectionFlyout({
                       <button
                         type="button"
                         className="sidecar-project-browser__main"
-                        onClick={() => onProjectSelect(project)}
+                        onClick={() => (registeredProject ? onProjectSelect(project) : onProjectRootOpen(normalizedRoot))}
                       >
                         <div className="sidecar-row__title">{project.name || project.id}</div>
                         <div className="sidecar-row__meta">
+                          {!registeredProject ? <Pill kind="current">current</Pill> : null}
                           {project.odd_type !== 'unknown' && <Pill kind="odd-type">{project.odd_type}</Pill>}
                           {project.build_tenants.length > 0 && <span>{project.build_tenants.length} tenant{project.build_tenants.length === 1 ? '' : 's'}</span>}
                         </div>
@@ -2056,16 +2103,28 @@ function SelectionFlyout({
                         >
                           Browse
                         </button>
-                        <button
-                          type="button"
-                          className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-                          onClick={() => dispatch({ type: 'projects/unfavourite', projectId: project.id })}
-                          aria-label={`Unfavourite project ${project.name || project.id}`}
-                          title={unfavouriteTitle}
-                          disabled={unfavouriteDisabled}
-                        >
-                          [U]
-                        </button>
+                        {registeredProject ? (
+                          <button
+                            type="button"
+                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+                            onClick={() => dispatch({ type: 'projects/unfavourite', projectId: project.id })}
+                            aria-label={`Unfavourite project ${project.name || project.id}`}
+                            title={unfavouriteTitle}
+                            disabled={unfavouriteDisabled}
+                          >
+                            [U]
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
+                            onClick={() => dispatch({ type: 'browse/favourite-folder', path: normalizedRoot })}
+                            aria-label={`Add ${project.name || project.id} to Project Favourites`}
+                            title={`Add ${normalizedRoot} to Project Favourites`}
+                          >
+                            [+]
+                          </button>
+                        )}
                       </div>
                     </div>
                     {state.ui.browse.unfavouriteError && state.selection.kind === 'project' && state.selection.id === project.id ? (

@@ -130,6 +130,42 @@ test('discoverProjects still scans candidate roots without registering them', ()
   }
 });
 
+test('discoverProjects reaches nested timestamp run workspaces', () => {
+  const discoveryRoot = mkdtempSync(join(tmpdir(), 'odd-manager-discovery-'));
+  const scenarioRoot = join(discoveryRoot, 'scenario_t164_rust_hello_service_lite_live');
+  const runWorkspaceRoot = join(scenarioRoot, '20260605T173811390Z_pid11797', 'workspace');
+  try {
+    mkdirSync(join(scenarioRoot, '.ai-workspace'), { recursive: true });
+    mkdirSync(join(runWorkspaceRoot, '.ai-workspace'), { recursive: true });
+
+    const discovered = discoverProjects(discoveryRoot);
+    const roots = discovered.records.map((record) => record.root);
+    assert.ok(roots.includes(scenarioRoot), 'scenario workspace remains discoverable');
+    assert.ok(roots.includes(runWorkspaceRoot), 'nested run workspace is discoverable');
+    assert.equal(
+      discovered.records.find((record) => record.root === runWorkspaceRoot)?.name,
+      'scenario_t164_rust_hello_service_lite_live.pid11797.workspace',
+    );
+  } finally {
+    rmSync(discoveryRoot, { recursive: true, force: true });
+  }
+});
+
+test('discoverProjects scans children when the discovery root is also a workspace', () => {
+  const discoveryRoot = mkdtempSync(join(tmpdir(), 'odd-manager-discovery-'));
+  try {
+    mkdirSync(join(discoveryRoot, '.ai-workspace'), { recursive: true });
+    const childRoot = makeProject(discoveryRoot, 'child_project');
+
+    const discovered = discoverProjects(discoveryRoot);
+    const roots = discovered.records.map((record) => record.root);
+    assert.ok(roots.includes(discoveryRoot), 'root workspace remains discoverable');
+    assert.ok(roots.includes(childRoot), 'child workspace under a workspace-marked root is discoverable');
+  } finally {
+    rmSync(discoveryRoot, { recursive: true, force: true });
+  }
+});
+
 test('demo: print maintained Projects', () => {
   const managerRoot = join(process.cwd(), '../..');
   const surface = createProjectSurface(managerRoot);

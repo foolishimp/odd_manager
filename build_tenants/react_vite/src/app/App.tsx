@@ -55,7 +55,10 @@ export function App() {
       .then((registry) => {
         if (cancelled) return;
         const activeProject = registry.projects.find((project) => project.is_active);
-        const registryDefault = activeProject?.root || registry.diagnostic.manager_workspace_root || workspaceRoot;
+        const registryDefault = registry.diagnostic.active_project_root
+          || activeProject?.root
+          || registry.diagnostic.manager_workspace_root
+          || workspaceRoot;
         if (registryDefault && registryDefault !== workspaceRoot) {
           setWorkspaceRoot(registryDefault);
         }

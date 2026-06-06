@@ -26,6 +26,28 @@ const DEFAULT_MANAGER_WORKSPACE_ROOT = resolve(
 const DEFAULT_DISCOVERY_ROOT = resolve(DEFAULT_MANAGER_WORKSPACE_ROOT, '..');
 const PROJECT_REGISTRY_RELATIVE_PATH = '.ai-workspace/runtime/odd_manager/projects.local.json';
 const PROJECT_REGISTRY_VERSION = 1;
+const DISCOVERY_MAX_DEPTH = 10;
+const DISCOVERY_MAX_VISITED = 30000;
+const DISCOVERY_MAX_RECORDS = 500;
+const DISCOVERY_CARRIER_NAMES = new Set([
+  'build_tenants',
+  'examples',
+  'local_projects',
+  'sandboxes',
+  'test_runs',
+  'workspaces',
+]);
+const DISCOVERY_IGNORED_NAMES = new Set([
+  '.git',
+  '.venv',
+  '.pytest_cache',
+  '__pycache__',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  'site-packages',
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -43,6 +65,37 @@ function listDirNames(path) {
   if (!existsSync(path)) return [];
   try {
     return readdirSync(path).filter((name) => isDirectory(join(path, name)));
+  } catch {
+    return [];
+  }
+}
+
+function discoveryPriorityForName(name) {
+  if (DISCOVERY_CARRIER_NAMES.has(name)) return 0;
+  if (isTimestampRunFolderName(name)) return 1;
+  if (name.startsWith('odd_') || name.startsWith('odd-')) return 2;
+  return 3;
+}
+
+function isTimestampRunFolderName(name) {
+  return /^\d{8}T\d{9}Z_pid[A-Za-z0-9]+$/.test(name);
+}
+
+function discoveryDirectoryEntries(path, workspaceRoot) {
+  try {
+    return readdirSync(path, { withFileTypes: true })
+      .filter((entry) => {
+        if (!entry.isDirectory()) return false;
+        if (DISCOVERY_IGNORED_NAMES.has(entry.name)) return false;
+        if (entry.name.startsWith('.')) return false;
+        if (!workspaceRoot) return true;
+        return DISCOVERY_CARRIER_NAMES.has(entry.name) || isTimestampRunFolderName(entry.name);
+      })
+      .sort((left, right) => {
+        const priorityDiff = discoveryPriorityForName(left.name) - discoveryPriorityForName(right.name);
+        if (priorityDiff !== 0) return priorityDiff;
+        return left.name.localeCompare(right.name);
+      });
   } catch {
     return [];
   }
@@ -177,22 +230,39 @@ function describeProjectAt(name, root, registryEntry = null, activeProjectRoot =
   };
 }
 
-export function discoverProjects(discoveryRoot = process.env.PROJECT_REGISTRY_ROOT || DEFAULT_DISCOVERY_ROOT) {
+export function discoverProjects(discoveryRoot = process.env.PROJECT_REGISTRY_ROOT || DEFAULT_DISCOVERY_ROOT, options = {}) {
   const root = resolve(discoveryRoot);
   if (!existsSync(root)) {
     return { records: [], diagnostic: { discovery_root: root, scanned_count: 0, candidate_count: 0 } };
   }
-  const candidates = listDirNames(root);
+  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(0, Math.floor(options.maxDepth)) : DISCOVERY_MAX_DEPTH;
+  const maxVisited = Number.isFinite(options.maxVisited) ? Math.max(1, Math.floor(options.maxVisited)) : DISCOVERY_MAX_VISITED;
+  const maxRecords = Number.isFinite(options.maxRecords) ? Math.max(1, Math.floor(options.maxRecords)) : DISCOVERY_MAX_RECORDS;
   const records = [];
-  for (const name of candidates) {
-    if (name.startsWith('.')) continue;
-    const path = join(root, name);
-    if (!isDirectory(join(path, '.ai-workspace'))) continue;
-    records.push(describeProjectAt(name, path));
+  const seenRoots = new Set();
+  const queue = [{ path: root, depth: 0 }];
+  let cursor = 0;
+  let visited = 0;
+  while (cursor < queue.length && visited < maxVisited && records.length < maxRecords) {
+    const current = queue[cursor];
+    cursor += 1;
+    if (!current) continue;
+    visited += 1;
+    const hasAiWorkspace = isDirectory(join(current.path, '.ai-workspace'));
+    if (hasAiWorkspace && !seenRoots.has(current.path)) {
+      seenRoots.add(current.path);
+      records.push(describeProjectAt(basename(current.path), current.path));
+    }
+    if (current.depth >= maxDepth) continue;
+    const restrictNestedWorkspace = hasAiWorkspace && current.depth > 0;
+    for (const entry of discoveryDirectoryEntries(current.path, restrictNestedWorkspace)) {
+      queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
+    }
   }
+  records.sort((left, right) => String(right.updated_at ?? '').localeCompare(String(left.updated_at ?? '')));
   return {
     records,
-    diagnostic: { discovery_root: root, scanned_count: candidates.length, candidate_count: records.length },
+    diagnostic: { discovery_root: root, scanned_count: visited, candidate_count: records.length },
   };
 }
 

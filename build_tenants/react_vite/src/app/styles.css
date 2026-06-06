@@ -3571,6 +3571,14 @@ pre {
   box-shadow: none;
 }
 
+.sidecar-flyout .sidecar-pane__header-actions .sidecar-tree-control--refresh {
+  width: 2rem;
+  height: 2rem;
+  min-width: 2rem;
+  border-radius: var(--sidecar-radius-sm);
+  font-size: 0.82rem;
+}
+
 .sidecar-flyout .sidecar-pane {
   height: 100%;
   min-height: 0;
@@ -4484,11 +4492,11 @@ pre {
 }
 
 .sidecar-tree-control--refresh {
-  width: 1.18rem;
-  height: 1.18rem;
-  min-width: 1.18rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.78rem;
   font-weight: 900;
 }
 
