@@ -151,7 +151,11 @@ pre {
 }
 
 .shell--sidecar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
   padding: 0.5rem;
+  overflow: hidden;
 }
 
 .shell__header {
@@ -975,18 +979,20 @@ pre {
 .sidecar-panel--workbench {
   gap: 0;
   align-content: stretch;
-  height: calc(100vh - 4.9rem);
-  min-height: calc(100vh - 200px);
+  height: 100%;
+  min-height: 0;
 }
 
 .shell--sidecar .route-wrap {
   gap: 0;
+  min-height: 0;
 }
 
 .shell--sidecar .workspace-view--sidecar,
 .shell--sidecar .sidecar-panel--workbench,
 .shell--sidecar .sidecar-workbench {
-  min-height: calc(100vh - 4.9rem);
+  height: 100%;
+  min-height: 0;
 }
 
 .sidecar-workbench {
@@ -1004,13 +1010,13 @@ pre {
   grid-template-columns: 3.35rem minmax(0, 1fr) 3.25rem;
   grid-template-rows: minmax(10rem, 1fr) clamp(7.5rem, var(--sidecar-bottom-dock-height, 34rem), 72vh);
   gap: var(--sidecar-gap);
-  height: calc(100vh - 4.9rem);
-  min-height: calc(100vh - 200px);
+  height: 100%;
+  min-height: 0;
   min-width: 0;
 }
 
 .shell--sidecar .sidecar-workbench {
-  height: calc(100vh - 4.9rem);
+  height: 100%;
 }
 
 .shell--sidecar .sidecar-canvas {
@@ -3747,16 +3753,16 @@ pre {
   grid-template-rows: auto;
   max-height: none;
   overflow: visible;
-  padding: 0.45rem;
+  padding: 0.16rem 0.32rem;
 }
 
 .sidecar-bottom-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.55rem;
+  gap: 0.35rem;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .sidecar-bottom-bar__title {
@@ -3772,10 +3778,29 @@ pre {
 }
 
 .sidecar-bottom-tab {
-  min-height: 2.05rem;
-  border-radius: var(--sidecar-radius);
-  padding: 0.4rem 0.72rem;
-  font-size: 0.82rem;
+  min-height: 1.5rem;
+  border-radius: var(--sidecar-radius-sm);
+  padding: 0.14rem 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sidecar-bottom-bar .summary-pill {
+  min-width: 0;
+  min-height: 1.42rem;
+  overflow: hidden;
+  padding: 0.12rem 0.46rem;
+  font-size: 0.66rem;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.sidecar-bottom-bar .summary-pill:first-of-type {
+  flex: 1 1 auto;
+  justify-content: flex-start;
 }
 
 .sidecar-bottom-dock .sidecar-shell-manager {

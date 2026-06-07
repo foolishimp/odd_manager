@@ -279,6 +279,18 @@ test('terminal hide CSS reclaims the expanded bottom dock row', () => {
   const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(
     styles,
+    /\.shell--sidecar\s*\{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);[^}]*height:\s*100vh;[^}]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    styles,
+    /\.shell--sidecar\s+\.route-wrap\s*\{[^}]*gap:\s*0;[^}]*min-height:\s*0;/s,
+  );
+  assert.match(
+    styles,
+    /\.shell--sidecar\s+\.workspace-view--sidecar,\s*\.shell--sidecar\s+\.sidecar-panel--workbench,\s*\.shell--sidecar\s+\.sidecar-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s,
+  );
+  assert.match(
+    styles,
     /\.sidecar-workbench\.is-bottom-collapsed\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;/s,
   );
   assert.doesNotMatch(
@@ -1038,7 +1050,7 @@ test('sidecar design grammar keeps complexity in sidebars and work areas low-bor
   );
   assert.match(
     sidecarBlock,
-    /\.sidecar-workbench\s*\{[^}]*height:\s*calc\(100vh\s*-\s*4\.9rem\);[^}]*min-height:\s*calc\(100vh\s*-\s*200px\);/s,
+    /\.sidecar-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s,
   );
   assert.match(
     sidecarBlock,
