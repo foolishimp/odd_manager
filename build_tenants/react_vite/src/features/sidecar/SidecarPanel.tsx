@@ -3259,6 +3259,9 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
             onOpenTracePath={openTracePath}
             onRefresh={requestLiveRefresh}
             refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
+            terminalSessions={state.sessions.records}
+            activeTerminalSessionId={state.activeSessionId}
+            onOpenTerminalSession={(sessionId) => dispatch({ type: 'terminal/jump-to-session', sessionId })}
             liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
             onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
             liveInternalRowCollapsed={state.ui.liveInternalRowCollapsed}
@@ -4336,6 +4339,62 @@ type SidecarLiveAnalysisStageProcessInput = Partial<SidecarLiveAnalysisStageProc
 type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
 type SidecarSdlcWorkspaceRun = NonNullable<SidecarProcessProjection['workspaceRun']>;
 type SidecarSdlcOperatorRun = SidecarSdlcWorkspaceRun['operatorRuns'][number];
+type ProcessAttemptTerminalTarget = { session: SessionRecord; mode: 'active' | 'last-active' };
+
+function isLiveTerminalSession(session: SessionRecord) {
+  return session.status === 'running' || session.status === 'live';
+}
+
+function terminalSessionTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return 0;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function terminalSessionActivityTime(session: SessionRecord) {
+  const raw = session.raw ?? {};
+  const terminalSize = raw.terminalSize && typeof raw.terminalSize === 'object'
+    ? raw.terminalSize as Record<string, unknown>
+    : null;
+  const candidates = [
+    raw.lastOutputAt,
+    raw.updatedAt,
+    raw.updated_at,
+    raw.lastResizeAt,
+    terminalSize?.updatedAt,
+    raw.createdAt,
+    session.started_at,
+  ];
+  return candidates.reduce((latest, candidate) => Math.max(latest, terminalSessionTimestamp(candidate)), 0);
+}
+
+function latestTerminalSession(sessions: SessionRecord[], preferredSessionId: string | null = null) {
+  return sessions.reduce<SessionRecord | null>((latest, session) => {
+    if (!latest) return session;
+    const latestTime = terminalSessionActivityTime(latest);
+    const sessionTime = terminalSessionActivityTime(session);
+    if (sessionTime > latestTime) return session;
+    if (sessionTime === latestTime && preferredSessionId && session.id === preferredSessionId) return session;
+    return latest;
+  }, null);
+}
+
+function resolveActiveProcessTerminalSession(
+  sessions: SessionRecord[],
+  activeTerminalSessionId: string | null,
+): ProcessAttemptTerminalTarget | null {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const activeSession = activeTerminalSessionId ? byId.get(activeTerminalSessionId) ?? null : null;
+  if (activeSession && isLiveTerminalSession(activeSession)) {
+    return { session: activeSession, mode: 'active' };
+  }
+  const latestLiveSession = latestTerminalSession(sessions.filter(isLiveTerminalSession), activeTerminalSessionId);
+  if (latestLiveSession) {
+    return { session: latestLiveSession, mode: 'active' };
+  }
+  const latestSession = latestTerminalSession(sessions, activeTerminalSessionId);
+  return latestSession ? { session: latestSession, mode: 'last-active' } : null;
+}
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
   materialization: {
@@ -4428,6 +4487,9 @@ function ProcessLiveViewPanel({
   onOpenTracePath,
   onRefresh,
   refreshing,
+  terminalSessions,
+  activeTerminalSessionId,
+  onOpenTerminalSession,
   liveActiveRunRowCollapsed,
   onLiveActiveRunRowCollapsedChange,
   liveInternalRowCollapsed,
@@ -4448,6 +4510,9 @@ function ProcessLiveViewPanel({
   onOpenTracePath: (absolutePath: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  terminalSessions: SessionRecord[];
+  activeTerminalSessionId: string | null;
+  onOpenTerminalSession: (sessionId: string) => void;
   liveActiveRunRowCollapsed: boolean;
   onLiveActiveRunRowCollapsedChange: (collapsed: boolean) => void;
   liveInternalRowCollapsed: boolean;
@@ -4484,6 +4549,11 @@ function ProcessLiveViewPanel({
     : (analysis?.diagnostics.length ?? 0) > 0
       ? 'pending'
       : 'active';
+  const summaryElapsedMs =
+    workspaceRun?.stageProcessElapsedMs ??
+    analysis?.telemetry.totalWorkerElapsedMs ??
+    null;
+  const summaryElapsedLabel = workspaceRun ? 'stage time' : 'worker time';
 
   return (
     <div className="sidecar-live-view" aria-label="Live analyze-run view">
@@ -4551,8 +4621,8 @@ function ProcessLiveViewPanel({
           <small>feedback loops</small>
         </span>
         <span className="sidecar-process-map-stat sidecar-process-map-stat--converged">
-          <strong>{analysis ? formatDurationMs(analysis.telemetry.totalWorkerElapsedMs) : '—'}</strong>
-          <small>worker time</small>
+          <strong>{summaryElapsedMs === null ? '—' : formatDurationMs(summaryElapsedMs)}</strong>
+          <small>{summaryElapsedLabel}</small>
         </span>
         <span className="sidecar-process-map-stat">
           <strong>{analysis ? formatBytes(analysis.telemetry.archiveBytes.totalBytes) : '—'}</strong>
@@ -4590,10 +4660,15 @@ function ProcessLiveViewPanel({
           const dispositionLabel = operatorRun?.activeFeedbackLoop
             ? 'feedback loop'
             : operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open';
+          const terminalTarget = resolveActiveProcessTerminalSession(terminalSessions, activeTerminalSessionId);
+          const terminalLabel = terminalTarget
+            ? `${terminalTarget.mode === 'active' ? 'Open active PTY' : 'Open last active PTY'} for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${sessionLabel(terminalTarget.session)}`
+            : 'No active or recent PTY session is available for this runtime node';
           return (
             <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
               <button
                 type="button"
+                className="sidecar-live-view__attempt-main"
                 disabled={!canOpen && attempts.length === 0}
                 aria-pressed={selectedAttempt?.operatorRunRef === attempt.operatorRunRef}
                 onClick={() => setSelectedAttemptRef(attempt.operatorRunRef)}
@@ -4607,6 +4682,20 @@ function ProcessLiveViewPanel({
                   <span>{stageProcessCount} stages</span>
                   <span>{eventCount} events</span>
                 </span>
+              </button>
+              <button
+                type="button"
+                className="sidecar-live-view__attempt-terminal"
+                disabled={!terminalTarget}
+                onClick={() => {
+                  if (!terminalTarget) return;
+                  setSelectedAttemptRef(attempt.operatorRunRef);
+                  onOpenTerminalSession(terminalTarget.session.id);
+                }}
+                aria-label={terminalLabel}
+                title={terminalLabel}
+              >
+                <span aria-hidden="true">&gt;_</span>
               </button>
             </li>
           );
@@ -5765,6 +5854,8 @@ function normalizeLiveAnalysisStageProcess(stageProcess: SidecarLiveAnalysisStag
     operatorRunPath: typeof stageProcess.operatorRunPath === 'string' ? stageProcess.operatorRunPath : null,
     processStartedPath: typeof stageProcess.processStartedPath === 'string' ? stageProcess.processStartedPath : null,
     processEventsPath: typeof stageProcess.processEventsPath === 'string' ? stageProcess.processEventsPath : null,
+    terminalSessionId: typeof stageProcess.terminalSessionId === 'string' ? stageProcess.terminalSessionId : null,
+    elapsedMs: typeof stageProcess.elapsedMs === 'number' ? stageProcess.elapsedMs : null,
     transcriptSurfaces,
   };
 }
@@ -6211,8 +6302,142 @@ function isTailFollowSurfacePath(relativePath: string) {
   return (
     filename === 'terminal.transcript' ||
     filename === 'screenlog.0' ||
+    filename === 'stdout.log' ||
+    filename === 'stderr.log' ||
+    filename.endsWith('_stdout.log') ||
+    filename.endsWith('_stderr.log') ||
     filename.endsWith('.transcript')
   );
+}
+
+function formatTailSurfaceContent(content: string) {
+  const output: string[] = [];
+  let hiddenThinkingEvents = 0;
+  let formattedEvents = 0;
+
+  content.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const parsed = parseJsonRecord(trimmed);
+    if (!parsed) {
+      output.push(line);
+      return;
+    }
+    if (parsed.type === 'system' && parsed.subtype === 'thinking_tokens') {
+      hiddenThinkingEvents += 1;
+      return;
+    }
+    const formatted = formatTailJsonEvent(parsed);
+    output.push(formatted ?? line);
+    if (formatted) formattedEvents += 1;
+  });
+
+  if (hiddenThinkingEvents > 0) {
+    output.push(`[filtered ${hiddenThinkingEvents} thinking-token telemetry ${hiddenThinkingEvents === 1 ? 'event' : 'events'}]`);
+  }
+
+  if (formattedEvents === 0 && hiddenThinkingEvents === 0) return content;
+  return output.join('\n');
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  if (!value.startsWith('{') || !value.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatTailJsonEvent(event: Record<string, unknown>) {
+  const type = typeof event.type === 'string' ? event.type : 'event';
+  const subtype = typeof event.subtype === 'string' ? event.subtype : null;
+  const prefix = subtype ? `${type}:${subtype}` : type;
+  const message = parseJsonRecordField(event.message);
+  const content = message ? formatAgentMessageContent(message.content) : formatAgentMessageContent(event.content);
+  const summary = content || formatTailEventSummary(event);
+  return summary ? `[${prefix}] ${summary}` : `[${prefix}]`;
+}
+
+function parseJsonRecordField(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function formatAgentMessageContent(value: unknown): string | null {
+  if (typeof value === 'string') return preserveTailText(value);
+  if (!Array.isArray(value)) return null;
+  const parts = value
+    .map((part) => {
+      if (typeof part === 'string') return preserveTailText(part);
+      if (!part || typeof part !== 'object' || Array.isArray(part)) return null;
+      const record = part as Record<string, unknown>;
+      const kind = typeof record.type === 'string' ? record.type : 'part';
+      if (kind === 'thinking') {
+        const thinking = typeof record.thinking === 'string' ? compactTailText(record.thinking) : 'thinking block';
+        return `thinking ${thinking}`;
+      }
+      if (typeof record.text === 'string') return preserveTailText(record.text);
+      if (typeof record.content === 'string') return preserveTailText(record.content);
+      if (kind === 'tool_use') {
+        const name = typeof record.name === 'string' ? record.name : 'tool';
+        return `tool ${name}${record.input === undefined ? '' : ` ${compactJson(record.input)}`}`;
+      }
+      if (kind === 'tool_result') {
+        return `tool result${record.is_error === true ? ' error' : ''}${record.content === undefined ? '' : ` ${compactJson(record.content)}`}`;
+      }
+      return `${kind}${compactJson(record) ? ` ${compactJson(record)}` : ''}`;
+    })
+    .filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join('\n') : null;
+}
+
+function formatTailEventSummary(event: Record<string, unknown>) {
+  if (event.type === 'system' && event.subtype === 'init') {
+    return [
+      typeof event.cwd === 'string' ? `cwd ${event.cwd}` : null,
+      typeof event.model === 'string' ? `model ${event.model}` : null,
+      Array.isArray(event.tools) ? `tools ${event.tools.filter((tool): tool is string => typeof tool === 'string').join(', ')}` : null,
+    ].filter((part): part is string => Boolean(part)).join(' · ');
+  }
+  if (event.type === 'rate_limit_event') {
+    const info = parseJsonRecordField(event.rate_limit_info);
+    return info
+      ? `rate limit ${typeof info.status === 'string' ? info.status : 'updated'}${typeof info.rateLimitType === 'string' ? ` · ${info.rateLimitType}` : ''}`
+      : 'rate limit updated';
+  }
+  if (event.type === 'result') {
+    const headline = [
+      typeof event.subtype === 'string' ? event.subtype : null,
+      typeof event.duration_ms === 'number' ? `${event.duration_ms}ms` : null,
+    ].filter((part): part is string => Boolean(part)).join(' · ');
+    const result = typeof event.result === 'string' ? preserveTailText(event.result) : null;
+    return result ? `${headline}\n${result}` : headline;
+  }
+  const entries = Object.entries(event)
+    .filter(([key]) => !['type', 'subtype', 'uuid', 'session_id'].includes(key))
+    .slice(0, 4)
+    .map(([key, value]) => `${key}=${compactJson(value)}`);
+  return entries.join(' · ');
+}
+
+function compactTailText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function preserveTailText(value: string) {
+  return value.replace(/\r\n/g, '\n').trim();
+}
+
+function compactJson(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const encoded = typeof value === 'string' ? value : JSON.stringify(value);
+  const text = encoded === undefined ? String(value) : encoded;
+  return text.length > 220 ? `${text.slice(0, 217)}...` : text;
 }
 
 interface DirectorySurfaceLoad {
@@ -6469,6 +6694,13 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tailFollowSurface = isTailFollowSurfacePath(relativePath);
+  const [tailFollowEnabled, setTailFollowEnabled] = useState(tailFollowSurface);
+  const [rawTailSurface, setRawTailSurface] = useState(false);
+
+  useEffect(() => {
+    setTailFollowEnabled(tailFollowSurface);
+    setRawTailSurface(false);
+  }, [relativePath, tailFollowSurface]);
 
   useEffect(() => {
     if (!projectRoot) {
@@ -6499,14 +6731,14 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
         });
     };
     loadSurface(true);
-    if (tailFollowSurface && typeof window !== 'undefined') {
+    if (tailFollowSurface && tailFollowEnabled && typeof window !== 'undefined') {
       refreshTimer = window.setInterval(() => loadSurface(false), SIDECAR_TAIL_FOLLOW_REFRESH_MS);
     }
     return () => {
       cancelled = true;
       if (refreshTimer !== null) window.clearInterval(refreshTimer);
     };
-  }, [projectRoot, relativePath, tailFollowSurface]);
+  }, [projectRoot, relativePath, tailFollowSurface, tailFollowEnabled]);
 
   if (loading) {
     return <div className="sidecar-inspector__empty">Loading {relativePath}.</div>;
@@ -6522,20 +6754,29 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
     const sourceUrl = descriptor.format === 'pdf'
       ? surfaceRawUrl(projectRoot, surface.relative_path)
       : undefined;
+    const renderedContent = tailFollowSurface && !rawTailSurface
+      ? formatTailSurfaceContent(surface.content)
+      : surface.content;
     return (
       <div className="sidecar-surface-inspector">
         <DocumentViewer
           descriptor={descriptor}
-          content={surface.content}
+          content={renderedContent}
           sourceUrl={sourceUrl}
           state={viewerState}
           scrollMode="outer"
-          followAppends={tailFollowSurface}
+          followAppends={tailFollowSurface && tailFollowEnabled}
+          tailFollowAvailable={tailFollowSurface}
+          tailFollowEnabled={tailFollowEnabled}
+          rawModeAvailable={tailFollowSurface}
+          rawModeEnabled={rawTailSurface}
           onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
           onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
           onZoomBy={(delta) => dispatch({ type: 'document/zoom', tabId, delta })}
           onReset={() => dispatch({ type: 'document/reset', tabId })}
           onFitWidth={() => dispatch({ type: 'document/fit-width', tabId })}
+          onTailFollowToggle={() => setTailFollowEnabled((enabled) => !enabled)}
+          onRawModeToggle={() => setRawTailSurface((raw) => !raw)}
         />
       </div>
     );
@@ -6972,14 +7213,13 @@ function SessionTerminalWindow({ session, selected, onActivate, projectRoot }: {
   onActivate: () => void;
   projectRoot: string | null;
 }) {
-  const isLive = session.status === 'running' || session.status === 'live';
   return (
     <section className={`agent-console__terminal-shell sidecar-session-window${selected ? ' is-active' : ''}`} onClick={onActivate}>
-      {projectRoot && isLive ? (
+      {projectRoot ? (
         <SidecarTerminal session={session} projectRoot={projectRoot} />
       ) : (
         <div className="sidecar-terminal-placeholder">
-          <p className="muted">This shell is not live.</p>
+          <p className="muted">Select a Project to attach this shell.</p>
         </div>
       )}
     </section>

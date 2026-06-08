@@ -150,6 +150,7 @@ export interface SidecarSdlcWorkspaceRun {
   operatorRunRoot: string;
   operatorRunCount: number;
   stageProcessCount: number;
+  stageProcessElapsedMs: number;
   transcriptSurfaceCount: number;
   activeFeedbackLoopCount: number;
   terminalBlockCount: number;
@@ -211,6 +212,7 @@ export interface SidecarSdlcProcessInvocation {
   runSummaryPath: string | null;
   terminalTranscriptPath: string | null;
   status: string | null;
+  elapsedMs: number | null;
   pid: number | null;
   command: string | null;
   terminalSessionId: string | null;
@@ -722,6 +724,8 @@ export interface SidecarLiveAnalysisStageProcess {
   operatorRunPath: string | null;
   processStartedPath: string | null;
   processEventsPath: string | null;
+  terminalSessionId: string | null;
+  elapsedMs: number | null;
   transcriptSurfaces: SidecarLiveAnalysisCliTranscript[];
 }
 
@@ -1376,6 +1380,8 @@ export function isSidecarLiveAnalysisStageProcess(
     isNullableString(value.operatorRunPath) &&
     isNullableString(value.processStartedPath) &&
     isNullableString(value.processEventsPath) &&
+    isNullableString(value.terminalSessionId) &&
+    isNullableNumber(value.elapsedMs) &&
     Array.isArray(value.transcriptSurfaces) &&
     value.transcriptSurfaces.every(isSidecarLiveAnalysisCliTranscript)
   );

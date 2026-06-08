@@ -330,6 +330,7 @@ export type SidecarMsg =
   | { type: 'document/reset'; tabId: string }
   | { type: 'document/fit-width'; tabId: string }
   | { type: 'terminal/open'; sessionId: string; groupId?: SidecarTerminalGroupId }
+  | { type: 'terminal/jump-to-session'; sessionId: string }
   | { type: 'terminal/select-tab'; groupId: SidecarTerminalGroupId; tabId: string }
   | { type: 'terminal/close-tab'; groupId: SidecarTerminalGroupId; tabId: string }
   | { type: 'terminal/split'; split: SidecarTerminalSplit }
@@ -1787,6 +1788,22 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, activeSessionId),
         ui: {
           ...state.ui,
+          shellLayout: terminalWorkspace.split,
+          terminalWorkspace,
+        },
+      };
+    }
+    case 'terminal/jump-to-session': {
+      const terminalWorkspace = openTerminalTab(state.ui.terminalWorkspace, state.sessions.records, msg.sessionId);
+      const tab = activeTerminalTab(terminalWorkspace);
+      const activeSessionId = tab?.sessionId ?? state.activeSessionId;
+      return {
+        ...state,
+        activeSessionId,
+        secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, activeSessionId),
+        ui: {
+          ...state.ui,
+          shellCollapsed: false,
           shellLayout: terminalWorkspace.split,
           terminalWorkspace,
         },

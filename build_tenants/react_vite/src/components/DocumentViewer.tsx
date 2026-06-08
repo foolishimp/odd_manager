@@ -110,11 +110,17 @@ export function DocumentViewer({
   state = DOCUMENT_VIEWER_DEFAULT_STATE,
   scrollMode = "internal",
   followAppends = false,
+  tailFollowAvailable = false,
+  tailFollowEnabled = false,
+  rawModeAvailable = false,
+  rawModeEnabled = false,
   onZoomIn,
   onZoomOut,
   onZoomBy,
   onReset,
   onFitWidth,
+  onTailFollowToggle,
+  onRawModeToggle,
 }: {
   descriptor: DocumentDescriptor;
   content: string;
@@ -122,14 +128,27 @@ export function DocumentViewer({
   state?: DocumentViewerState;
   scrollMode?: DocumentViewerScrollMode;
   followAppends?: boolean;
+  tailFollowAvailable?: boolean;
+  tailFollowEnabled?: boolean;
+  rawModeAvailable?: boolean;
+  rawModeEnabled?: boolean;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomBy?: (delta: number) => void;
   onReset?: () => void;
   onFitWidth?: () => void;
+  onTailFollowToggle?: () => void;
+  onRawModeToggle?: () => void;
 }) {
   const zoom = Math.min(DOCUMENT_ZOOM_MAX, Math.max(DOCUMENT_ZOOM_MIN, state.zoom));
-  const hasControls = Boolean(onZoomIn || onZoomOut || onReset || onFitWidth);
+  const hasControls = Boolean(
+    onZoomIn ||
+    onZoomOut ||
+    onReset ||
+    onFitWidth ||
+    (tailFollowAvailable && onTailFollowToggle) ||
+    (rawModeAvailable && onRawModeToggle),
+  );
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const zoomAnchorRef = useRef<{ x: number; y: number; centerX: number; centerY: number } | null>(null);
@@ -267,6 +286,30 @@ export function DocumentViewer({
             <button type="button" className="navigator-mode-toggle document-viewer__control" onClick={onReset} aria-label="Reset document zoom">
               <span aria-hidden="true">1:1</span>
             </button>
+            {tailFollowAvailable && onTailFollowToggle ? (
+              <button
+                type="button"
+                className="navigator-mode-toggle document-viewer__control document-viewer__control--tail"
+                onClick={onTailFollowToggle}
+                aria-pressed={tailFollowEnabled}
+                aria-label={tailFollowEnabled ? "Pause tail follow" : "Resume tail follow"}
+                title={tailFollowEnabled ? "Pause tail follow" : "Resume tail follow"}
+              >
+                <span aria-hidden="true">Tail</span>
+              </button>
+            ) : null}
+            {rawModeAvailable && onRawModeToggle ? (
+              <button
+                type="button"
+                className="navigator-mode-toggle document-viewer__control document-viewer__control--raw"
+                onClick={onRawModeToggle}
+                aria-pressed={rawModeEnabled}
+                aria-label={rawModeEnabled ? "Show formatted log" : "Show raw log"}
+                title={rawModeEnabled ? "Show formatted log" : "Show raw log"}
+              >
+                <span aria-hidden="true">Raw</span>
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

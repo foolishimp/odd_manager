@@ -291,6 +291,16 @@ function loadSdlcWorkspaceRunProjection(root) {
     (total, run) => total + run.stages.reduce((stageTotal, stage) => stageTotal + stage.processInvocations.length, 0),
     0
   );
+  const stageProcessElapsedMs = operatorRuns.reduce(
+    (total, run) => total + run.stages.reduce(
+      (stageTotal, stage) => stageTotal + stage.processInvocations.reduce(
+        (processTotal, process) => processTotal + (process.elapsedMs ?? 0),
+        0
+      ),
+      0
+    ),
+    0
+  );
   const transcriptSurfaceCount = operatorRuns.reduce(
     (total, run) => total + run.stages.reduce(
       (stageTotal, stage) => stageTotal + stage.processInvocations.reduce(
@@ -307,6 +317,7 @@ function loadSdlcWorkspaceRunProjection(root) {
     operatorRunRoot,
     operatorRunCount: operatorRuns.length,
     stageProcessCount,
+    stageProcessElapsedMs,
     transcriptSurfaceCount,
     activeFeedbackLoopCount: operatorRuns.filter((run) => run.activeFeedbackLoop).length,
     terminalBlockCount: operatorRuns.filter((run) => run.status === "blocked" && !run.activeFeedbackLoop).length,
@@ -487,6 +498,7 @@ function readSdlcProcessInvocation(candidate) {
     status:
       stringOrNull(summary, "status") ??
       (numberOrNull(summary, "status") === null ? null : String(numberOrNull(summary, "status"))),
+    elapsedMs: numberOrNull(summary, "elapsedMs"),
     pid: numberOrNull(started, "pid"),
     command: stringOrNull(started, "command") ?? stringOrNull(summary, "command"),
     terminalSessionId:
@@ -1160,6 +1172,9 @@ function humanizeLiveAnalysisProcessPrefix(prefix) {
 }
 
 function readLiveAnalysisStageProcessCandidate(candidate) {
+  const started = readJsonFile(candidate.processStartedPath);
+  const summaryPath = sdlcRunSummaryPath(candidate);
+  const summary = summaryPath ? readJsonFile(summaryPath) : null;
   const transcriptSurfaces = discoverLiveAnalysisStageTranscriptSurfaceCandidates(candidate)
     .map((surface) => readLiveAnalysisCliTranscriptCandidate(surface))
     .filter((surface) => surface.sourceKind !== "missing");
@@ -1172,6 +1187,10 @@ function readLiveAnalysisStageProcessCandidate(candidate) {
     operatorRunPath: candidate.operatorRunPath,
     processStartedPath: candidate.processStartedPath,
     processEventsPath: existingFilePath(candidate.processEventsPath),
+    terminalSessionId:
+      stringOrNull(started, "terminalSessionId") ??
+      stringOrNull(summary, "terminalSessionId"),
+    elapsedMs: numberOrNull(summary, "elapsedMs"),
     transcriptSurfaces: Object.freeze(transcriptSurfaces)
   });
 }

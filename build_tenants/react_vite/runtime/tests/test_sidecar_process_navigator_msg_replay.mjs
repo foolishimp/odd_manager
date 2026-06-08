@@ -313,6 +313,8 @@ function fixtureLiveAnalysis() {
               operatorRunPath: '/fixture/archive',
               processStartedPath: '/fixture/archive/worker_process_started.json',
               processEventsPath: '/fixture/archive/worker_process_events.jsonl',
+              terminalSessionId: 'pty-fixture-1',
+              elapsedMs: 500,
               transcriptSurfaces: Object.freeze([
                 fixtureCliTranscript({
                   id: 'cli:/fixture/archive/terminal.transcript',
@@ -332,6 +334,8 @@ function fixtureLiveAnalysis() {
               operatorRunPath: '/fixture/archive',
               processStartedPath: '/fixture/archive/design_depth_fp_evaluator_process_started.json',
               processEventsPath: '/fixture/archive/design_depth_fp_evaluator_process_events.jsonl',
+              terminalSessionId: null,
+              elapsedMs: 2000,
               transcriptSurfaces: Object.freeze([
                 fixtureCliTranscript({
                   id: 'cli:/fixture/archive/design_depth_fp_evaluator_process_events.jsonl.trace/terminal.transcript',

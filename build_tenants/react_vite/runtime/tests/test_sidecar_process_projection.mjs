@@ -597,6 +597,11 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   writeFileSync(join(opRunPath, 'worker_stderr.log'), ['worker stderr line', ''].join('\n'));
   writeFileSync(join(opRunPath, 'worker_last_message.txt'), ['worker final message', ''].join('\n'));
   writeFileSync(join(opRunPath, 'worker_process_events.jsonl.trace', 'final_output.txt'), ['worker final output', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'worker_run.json'), {
+    kind: 'sdlc_worker_run_result',
+    status: 0,
+    elapsedMs: 500,
+  });
   writeJsonFile(join(opRunPath, 'worker_process_started_context.json'), {
     kind: 'sdlc_worker_process_started_context',
   });
@@ -624,6 +629,11 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   );
   writeFileSync(join(opRunPath, 'design_depth_fp_evaluator_stdout.log'), ['design depth stdout', ''].join('\n'));
   writeFileSync(join(opRunPath, 'design_depth_fp_evaluator_last_message.txt'), ['design depth final message', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'design_depth_fp_evaluator_run.json'), {
+    kind: 'sdlc_design_depth_fp_evaluator_run',
+    status: 0,
+    elapsedMs: 2000,
+  });
   writeJsonFile(join(opRunPath, 'review_grade_edge_fulfillment_process_started.json'), {
     kind: 'actor_process_started',
     detail: 'review grade evaluator process started',
@@ -639,6 +649,11 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   );
   writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_stdout.log'), ['review grade stdout', ''].join('\n'));
   writeFileSync(join(opRunPath, 'review_grade_edge_fulfillment_last_message.txt'), ['review grade final message', ''].join('\n'));
+  writeJsonFile(join(opRunPath, 'review_grade_edge_fulfillment_run.json'), {
+    kind: 'sdlc_review_grade_edge_fulfillment_run',
+    status: 0,
+    elapsedMs: 3000,
+  });
   writeJsonFile(join(opRunPath, 'postflight.json'), {
     kind: 'sdlc_operator_postflight_result',
     status: 'passed',
@@ -786,6 +801,8 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
   const projection = loadSidecarProcessProjection(root);
   assert.equal(projection.supported, true);
   assert.equal(projection.workspaceRun.operatorRuns[0].startedAt, '2026-05-18T01:00:00.000Z');
+  assert.equal(projection.workspaceRun.stageProcessCount, 4);
+  assert.equal(projection.workspaceRun.stageProcessElapsedMs, 5500);
   assert.equal(projection.liveAnalysis.kind, 'sidecar_live_analysis_projection');
   assert.equal(projection.liveAnalysis.sourceKind, 'sdlc_fd_run_analysis');
   assert.equal(projection.liveAnalysis.readOnly, true);
@@ -814,17 +831,20 @@ test('T-161 analyze-run output projects as Process Navigator Live View read mode
     ['transform_worker', 'design_depth_evaluator', 'review_grade_evaluator'],
   );
   assert.equal(runDetail.stageProcesses[0].label, 'transform.C/F_P worker');
+  assert.equal(runDetail.stageProcesses[0].elapsedMs, 500);
   assert.equal(runDetail.stageProcesses[0].processStartedPath, join(opRunPath, 'worker_process_started.json'));
   assert.equal(runDetail.stageProcesses[0].processEventsPath, join(opRunPath, 'worker_process_events.jsonl'));
   assert.equal(runDetail.stageProcesses[0].transcriptSurfaces.length, 6);
   assert.equal(runDetail.stageProcesses[0].transcriptSurfaces[0].label, 'transform.C/F_P worker terminal transcript');
   assert.equal(runDetail.stageProcesses[1].label, 'evaluate.C/F_P design depth');
+  assert.equal(runDetail.stageProcesses[1].elapsedMs, 2000);
   assert.equal(runDetail.stageProcesses[1].processStartedPath, join(opRunPath, 'design_depth_fp_evaluator_process_started.json'));
   assert.deepEqual(
     runDetail.stageProcesses[1].transcriptSurfaces.map((surface) => surface.sourceKind),
     ['terminal_transcript', 'worker_stdout', 'last_message'],
   );
   assert.equal(runDetail.stageProcesses[2].label, 'evaluate.C/F_P review grade');
+  assert.equal(runDetail.stageProcesses[2].elapsedMs, 3000);
   assert.deepEqual(
     runDetail.stageProcesses[2].transcriptSurfaces.map((surface) => surface.sourceKind),
     ['worker_stdout', 'last_message'],

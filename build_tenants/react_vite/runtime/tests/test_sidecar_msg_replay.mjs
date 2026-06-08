@@ -480,6 +480,10 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(source, /extension === "\.pdf"/);
   assert.match(source, /scrollMode = "internal"/);
   assert.match(source, /followAppends = false/);
+  assert.match(source, /tailFollowAvailable = false/);
+  assert.match(source, /tailFollowEnabled = false/);
+  assert.match(source, /rawModeAvailable = false/);
+  assert.match(source, /rawModeEnabled = false/);
   assert.match(source, /document-viewer--outer-scroll/);
   assert.match(source, /function HtmlDocumentContent/);
   assert.match(source, /sandbox="allow-same-origin"/);
@@ -516,6 +520,14 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(source, /nearestScrollableParent\(viewport\)/);
   assert.match(source, /window\.getComputedStyle\(element\)/);
   assert.match(source, /yScroller\.scrollTop = yScroller\.scrollHeight/);
+  assert.match(source, /aria-label=\{tailFollowEnabled \? "Pause tail follow" : "Resume tail follow"\}/);
+  assert.match(source, /className="navigator-mode-toggle document-viewer__control document-viewer__control--tail"/);
+  assert.match(source, /aria-label=\{rawModeEnabled \? "Show formatted log" : "Show raw log"\}/);
+  assert.match(source, /className="navigator-mode-toggle document-viewer__control document-viewer__control--raw"/);
+  assert.ok(
+    source.indexOf('document-viewer__control--tail') < source.indexOf('document-viewer__control--raw'),
+    'Raw mode toggle must sit immediately after Tail in the document toolbar.',
+  );
   assert.match(source, /viewport\.clientWidth \/ zoom/);
   assert.match(source, /--document-viewer-layout-width/);
   assert.match(source, /content\.offsetWidth \* \(zoom - 1\)/);
@@ -533,7 +545,20 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer__pdf-frame\s*\{/s);
   assert.match(styles, /\.document-viewer--outer-scroll\s*\{[^}]*grid-template-rows:\s*auto\s+auto;[^}]*align-content:\s*start;/s);
   assert.match(styles, /\.document-viewer--outer-scroll\s+\.document-viewer__viewport\s*\{[^}]*overflow:\s*visible;/s);
+  assert.match(styles, /\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--tail,\s*\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--raw\s*\{[^}]*width:\s*2\.7rem;/s);
+  assert.match(styles, /\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--tail\[aria-pressed="true"\],\s*\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--raw\[aria-pressed="true"\]\s*\{/s);
   assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
+  assert.match(sidecarSource, /const \[tailFollowEnabled,\s*setTailFollowEnabled\] = useState\(tailFollowSurface\)/);
+  assert.match(sidecarSource, /const \[rawTailSurface,\s*setRawTailSurface\] = useState\(false\)/);
+  assert.match(sidecarSource, /setRawTailSurface\(false\)/);
+  assert.match(sidecarSource, /tailFollowSurface && tailFollowEnabled && typeof window !== 'undefined'/);
+  assert.match(sidecarSource, /const renderedContent = tailFollowSurface && !rawTailSurface[\s\S]*\? formatTailSurfaceContent\(surface\.content\)[\s\S]*: surface\.content;/);
+  assert.match(sidecarSource, /followAppends=\{tailFollowSurface && tailFollowEnabled\}/);
+  assert.match(sidecarSource, /tailFollowAvailable=\{tailFollowSurface\}/);
+  assert.match(sidecarSource, /rawModeAvailable=\{tailFollowSurface\}/);
+  assert.match(sidecarSource, /rawModeEnabled=\{rawTailSurface\}/);
+  assert.match(sidecarSource, /onTailFollowToggle=\{\(\) => setTailFollowEnabled\(\(enabled\) => !enabled\)\}/);
+  assert.match(sidecarSource, /onRawModeToggle=\{\(\) => setRawTailSurface\(\(raw\) => !raw\)\}/);
   assert.match(sidecarSource, /onZoomBy=\{\(delta\) => dispatch\(\{ type: 'document\/zoom', tabId, delta \}\)\}/);
   assert.match(sidecarSource, /descriptor\.format === 'pdf'[\s\S]*?surfaceRawUrl\(projectRoot,\s*surface\.relative_path\)/);
   assert.match(sidecarSource, /sourceUrl=\{sourceUrl\}/);
@@ -546,9 +571,21 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(sidecarSource, /function isTailFollowSurfacePath/);
   assert.match(sidecarSource, /filename === 'terminal\.transcript'/);
   assert.match(sidecarSource, /filename === 'screenlog\.0'/);
+  assert.match(sidecarSource, /filename === 'stdout\.log'/);
+  assert.match(sidecarSource, /filename === 'stderr\.log'/);
+  assert.match(sidecarSource, /filename\.endsWith\('_stdout\.log'\)/);
+  assert.match(sidecarSource, /filename\.endsWith\('_stderr\.log'\)/);
   assert.match(sidecarSource, /filename\.endsWith\('\.transcript'\)/);
+  assert.match(sidecarSource, /function formatTailSurfaceContent\(content: string\)/);
+  assert.match(sidecarSource, /parsed\.type === 'system' && parsed\.subtype === 'thinking_tokens'/);
+  assert.match(sidecarSource, /kind === 'thinking'/);
+  assert.match(sidecarSource, /return `thinking \$\{thinking\}`/);
+  assert.match(sidecarSource, /function preserveTailText\(value: string\)/);
+  assert.match(sidecarSource, /return result \? `\$\{headline\}\\n\$\{result\}` : headline;/);
+  assert.match(sidecarSource, /\[filtered \$\{hiddenThinkingEvents\} thinking-token telemetry/);
+  assert.match(serverSource, /updatedAt: session\.lastOutputAt \?\? session\.lastResizeAt \?\? session\.createdAt \?\? null/);
+  assert.match(serverSource, /lastOutputAt: session\.lastOutputAt/);
   assert.match(sidecarSource, /window\.setInterval\(\(\) => loadSurface\(false\), SIDECAR_TAIL_FOLLOW_REFRESH_MS\)/);
-  assert.match(sidecarSource, /followAppends=\{tailFollowSurface\}/);
   assert.match(styles, /\.document-viewer__content\s*\{[^}]*width:\s*var\(--document-viewer-layout-width,\s*100%\);[^}]*max-width:\s*var\(--document-viewer-layout-width,\s*100%\);/s);
   assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
   assert.match(styles, /\.markdown-viewer__table-wrap\s*\{[^}]*width:\s*min\(100%,\s*100cqw\);[^}]*max-width:\s*100cqw;[^}]*overflow-x:\s*auto;/s);
@@ -875,6 +912,32 @@ test('terminal tab open, select, split, and close replay without Cmd effects', a
   assert.equal(result.state.activeSessionId, 'sess-1');
 });
 
+test('process node terminal jump opens dock and selects target shell without Cmd effects', async () => {
+  const module = await loadStateModule();
+  const state = {
+    ...baseState(module),
+    sessions: {
+      records: [
+        { id: 'sess-1', agent_type: 'shell', cwd: '/workspace/odd_manager', status: 'running' },
+        { id: 'pty-fixture-1', agent_type: 'shell', cwd: '/workspace/odd_manager', status: 'stopped' },
+      ],
+      diagnostic: { backplane: 'registry' },
+    },
+    activeSessionId: 'sess-1',
+    ui: {
+      ...baseState(module).ui,
+      shellCollapsed: true,
+    },
+  };
+  const result = module.replaySidecarMessages(state, [
+    { type: 'terminal/jump-to-session', sessionId: 'pty-fixture-1' },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.ui.shellCollapsed, false);
+  assert.equal(result.state.activeSessionId, 'pty-fixture-1');
+  assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:pty-fixture-1');
+});
+
 test('terminal horizontal split resizes adjacent ratios without Cmd effects', async () => {
   const module = await loadStateModule();
   const state = {
@@ -1134,6 +1197,18 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /projection\.liveAnalysis/);
   assert.match(simpleProcessPanelSource, /<ProcessLiveViewPanel[\s\S]*analysis=\{projection\.liveAnalysis \?\? null\}/);
   assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\?\.workspaceRoot \?\? null;/);
+  assert.match(simpleProcessPanelSource, /terminalSessions=\{state\.sessions\.records\}/);
+  assert.match(simpleProcessPanelSource, /activeTerminalSessionId=\{state\.activeSessionId\}/);
+  assert.match(simpleProcessPanelSource, /onOpenTerminalSession=\{\(sessionId\) => dispatch\(\{ type: 'terminal\/jump-to-session', sessionId \}\)\}/);
+  assert.match(simpleProcessPanelSource, /resolveActiveProcessTerminalSession\(terminalSessions,\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /latestTerminalSession\(sessions\.filter\(isLiveTerminalSession\),\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /raw\.lastOutputAt/);
+  assert.match(simpleProcessPanelSource, /Open active PTY/);
+  assert.match(simpleProcessPanelSource, /Open last active PTY/);
+  assert.match(simpleProcessPanelSource, /className="sidecar-live-view__attempt-terminal"/);
+  assert.match(simpleProcessPanelSource, /onOpenTerminalSession\(terminalTarget\.session\.id\)/);
+  assert.doesNotMatch(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
+  assert.doesNotMatch(simpleProcessPanelSource, /resolveAttemptTailSurface/);
   assert.ok(
     simpleProcessPanelSource.indexOf('const requestLiveRefresh = useCallback') < simpleProcessPanelSource.indexOf('if (!projection)'),
     'Process navigator refresh hook must be declared before projection early returns.',
@@ -1283,7 +1358,8 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(styles, /\.sidecar-process-navigator\s*\{/);
   assert.match(styles, /\.sidecar-live-view\s*\{/);
   assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
-  assert.match(styles, /\.sidecar-live-view__attempt\s*>\s*button\s*\{[^}]*min-height:\s*6\.6rem;/s);
+  assert.match(styles, /\.sidecar-live-view__attempt-main\s*\{[^}]*min-height:\s*6\.6rem;/s);
+  assert.match(styles, /\.sidecar-live-view__attempt-terminal\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0\.46rem;[^}]*left:\s*0\.58rem;[^}]*width:\s*1\.38rem;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__attempt-metrics\s*\{[^}]*display:\s*inline-flex;[^}]*font-family:\s*var\(--font-mono\);/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group--internal\s*\{[^}]*order:\s*0;/s);
   assert.match(styles, /\.sidecar-live-view__detail-row-group--transcript\s*\{[^}]*order:\s*99;/s);
