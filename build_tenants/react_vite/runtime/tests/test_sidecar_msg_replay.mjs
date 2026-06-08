@@ -1200,15 +1200,18 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /terminalSessions=\{state\.sessions\.records\}/);
   assert.match(simpleProcessPanelSource, /activeTerminalSessionId=\{state\.activeSessionId\}/);
   assert.match(simpleProcessPanelSource, /onOpenTerminalSession=\{\(sessionId\) => dispatch\(\{ type: 'terminal\/jump-to-session', sessionId \}\)\}/);
-  assert.match(simpleProcessPanelSource, /resolveActiveProcessTerminalSession\(terminalSessions,\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /resolveAttemptTerminalTarget\(attempt,\s*operatorRun,\s*terminalSessions,\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /resolveActiveProcessTerminalSession\(sessions,\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /resolveAttemptTailSurface\(attempt,\s*operatorRun\)/);
   assert.match(simpleProcessPanelSource, /latestTerminalSession\(sessions\.filter\(isLiveTerminalSession\),\s*activeTerminalSessionId\)/);
+  assert.match(simpleProcessPanelSource, /projectedTerminalSessionIds\(attempt,\s*operatorRun\)/);
   assert.match(simpleProcessPanelSource, /raw\.lastOutputAt/);
   assert.match(simpleProcessPanelSource, /Open active PTY/);
   assert.match(simpleProcessPanelSource, /Open last active PTY/);
+  assert.match(simpleProcessPanelSource, /Open PTY tail/);
   assert.match(simpleProcessPanelSource, /className="sidecar-live-view__attempt-terminal"/);
   assert.match(simpleProcessPanelSource, /onOpenTerminalSession\(terminalTarget\.session\.id\)/);
-  assert.doesNotMatch(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
-  assert.doesNotMatch(simpleProcessPanelSource, /resolveAttemptTailSurface/);
+  assert.match(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
   assert.ok(
     simpleProcessPanelSource.indexOf('const requestLiveRefresh = useCallback') < simpleProcessPanelSource.indexOf('if (!projection)'),
     'Process navigator refresh hook must be declared before projection early returns.',

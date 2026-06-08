@@ -4339,7 +4339,9 @@ type SidecarLiveAnalysisStageProcessInput = Partial<SidecarLiveAnalysisStageProc
 type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
 type SidecarSdlcWorkspaceRun = NonNullable<SidecarProcessProjection['workspaceRun']>;
 type SidecarSdlcOperatorRun = SidecarSdlcWorkspaceRun['operatorRuns'][number];
-type ProcessAttemptTerminalTarget = { session: SessionRecord; mode: 'active' | 'last-active' };
+type ProcessAttemptTerminalTarget =
+  | { kind: 'session'; session: SessionRecord; mode: 'active' | 'last-active' }
+  | { kind: 'surface'; path: string; label: string; mode: 'tail' };
 
 function isLiveTerminalSession(session: SessionRecord) {
   return session.status === 'running' || session.status === 'live';
@@ -4379,21 +4381,82 @@ function latestTerminalSession(sessions: SessionRecord[], preferredSessionId: st
   }, null);
 }
 
+function projectedTerminalSessionIds(
+  attempt: SidecarLiveAnalysisAttempt,
+  operatorRun: SidecarSdlcOperatorRun | null,
+) {
+  return [
+    ...(attempt.detail.stageProcesses ?? []).map((process) => process.terminalSessionId),
+    ...(operatorRun?.stages.flatMap((stage) => stage.processInvocations.map((process) => process.terminalSessionId)) ?? []),
+  ].filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+}
+
+function resolveAttemptTailSurface(
+  attempt: SidecarLiveAnalysisAttempt,
+  operatorRun: SidecarSdlcOperatorRun | null,
+) {
+  const stageTranscriptSurfaces = [...(attempt.detail.stageProcesses ?? [])]
+    .reverse()
+    .flatMap((process) => process.transcriptSurfaces ?? [])
+    .filter((transcript) => typeof transcript.sourcePath === 'string' && transcript.sourcePath.trim().length > 0);
+  const primaryTranscript = stageTranscriptSurfaces.find((transcript) => isTailFollowSurfacePath(transcript.sourcePath as string))
+    ?? stageTranscriptSurfaces[0]
+    ?? null;
+  if (primaryTranscript?.sourcePath) {
+    return {
+      path: primaryTranscript.sourcePath,
+      label: primaryTranscript.label,
+    };
+  }
+  const processInvocationPath = operatorRun?.stages
+    .flatMap((stage) => stage.processInvocations)
+    .reverse()
+    .map((process) => process.terminalTranscriptPath ?? process.stdoutPath ?? process.stderrPath)
+    .find((path): path is string => typeof path === 'string' && path.trim().length > 0);
+  return processInvocationPath
+    ? { path: processInvocationPath, label: 'stage process terminal tail' }
+    : null;
+}
+
 function resolveActiveProcessTerminalSession(
+  sessions: SessionRecord[],
+  activeTerminalSessionId: string | null,
+): Extract<ProcessAttemptTerminalTarget, { kind: 'session' }> | null {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const activeSession = activeTerminalSessionId ? byId.get(activeTerminalSessionId) ?? null : null;
+  if (activeSession && isLiveTerminalSession(activeSession)) {
+    return { kind: 'session', session: activeSession, mode: 'active' };
+  }
+  const latestLiveSession = latestTerminalSession(sessions.filter(isLiveTerminalSession), activeTerminalSessionId);
+  if (latestLiveSession) {
+    return { kind: 'session', session: latestLiveSession, mode: 'active' };
+  }
+  const latestSession = latestTerminalSession(sessions, activeTerminalSessionId);
+  return latestSession ? { kind: 'session', session: latestSession, mode: 'last-active' } : null;
+}
+
+function resolveAttemptTerminalTarget(
+  attempt: SidecarLiveAnalysisAttempt,
+  operatorRun: SidecarSdlcOperatorRun | null,
   sessions: SessionRecord[],
   activeTerminalSessionId: string | null,
 ): ProcessAttemptTerminalTarget | null {
   const byId = new Map(sessions.map((session) => [session.id, session]));
-  const activeSession = activeTerminalSessionId ? byId.get(activeTerminalSessionId) ?? null : null;
-  if (activeSession && isLiveTerminalSession(activeSession)) {
-    return { session: activeSession, mode: 'active' };
+  const projectedSessions = projectedTerminalSessionIds(attempt, operatorRun)
+    .map((id) => byId.get(id) ?? null)
+    .filter((session): session is SessionRecord => Boolean(session));
+  const projectedLiveSession = latestTerminalSession(projectedSessions.filter(isLiveTerminalSession), activeTerminalSessionId);
+  if (projectedLiveSession) {
+    return { kind: 'session', session: projectedLiveSession, mode: 'active' };
   }
-  const latestLiveSession = latestTerminalSession(sessions.filter(isLiveTerminalSession), activeTerminalSessionId);
-  if (latestLiveSession) {
-    return { session: latestLiveSession, mode: 'active' };
+  const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);
+  if (activeSession) return activeSession;
+  const projectedSession = latestTerminalSession(projectedSessions, activeTerminalSessionId);
+  if (projectedSession) {
+    return { kind: 'session', session: projectedSession, mode: 'last-active' };
   }
-  const latestSession = latestTerminalSession(sessions, activeTerminalSessionId);
-  return latestSession ? { session: latestSession, mode: 'last-active' } : null;
+  const surface = resolveAttemptTailSurface(attempt, operatorRun);
+  return surface ? { kind: 'surface', path: surface.path, label: surface.label, mode: 'tail' } : null;
 }
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
@@ -4660,10 +4723,12 @@ function ProcessLiveViewPanel({
           const dispositionLabel = operatorRun?.activeFeedbackLoop
             ? 'feedback loop'
             : operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open';
-          const terminalTarget = resolveActiveProcessTerminalSession(terminalSessions, activeTerminalSessionId);
+          const terminalTarget = resolveAttemptTerminalTarget(attempt, operatorRun, terminalSessions, activeTerminalSessionId);
           const terminalLabel = terminalTarget
-            ? `${terminalTarget.mode === 'active' ? 'Open active PTY' : 'Open last active PTY'} for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${sessionLabel(terminalTarget.session)}`
-            : 'No active or recent PTY session is available for this runtime node';
+            ? terminalTarget.kind === 'session'
+              ? `${terminalTarget.mode === 'active' ? 'Open active PTY' : 'Open last active PTY'} for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${sessionLabel(terminalTarget.session)}`
+              : `Open PTY tail for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${terminalTarget.label}`
+            : 'No active or recent PTY session or tail surface is available for this runtime node';
           return (
             <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
               <button
@@ -4690,7 +4755,11 @@ function ProcessLiveViewPanel({
                 onClick={() => {
                   if (!terminalTarget) return;
                   setSelectedAttemptRef(attempt.operatorRunRef);
-                  onOpenTerminalSession(terminalTarget.session.id);
+                  if (terminalTarget.kind === 'session') {
+                    onOpenTerminalSession(terminalTarget.session.id);
+                  } else {
+                    onOpenTracePath(terminalTarget.path);
+                  }
                 }}
                 aria-label={terminalLabel}
                 title={terminalLabel}
