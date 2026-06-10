@@ -475,6 +475,7 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
 
   assert.match(source, /export type DocumentViewerScrollMode = "internal" \| "outer"/);
   assert.match(source, /export type DocumentViewerFormat = "markdown" \| "code" \| "html" \| "pdf" \| "text"/);
+  assert.match(source, /export interface DocumentViewerSurfacePicker/);
   assert.match(source, /mediaType:\s*mediaTypeForDocumentFormat\(format,\s*extension\)/);
   assert.match(source, /extension === "\.html" \|\| extension === "\.htm"/);
   assert.match(source, /extension === "\.pdf"/);
@@ -524,9 +525,15 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(source, /className="navigator-mode-toggle document-viewer__control document-viewer__control--tail"/);
   assert.match(source, /aria-label=\{rawModeEnabled \? "Show formatted log" : "Show raw log"\}/);
   assert.match(source, /className="navigator-mode-toggle document-viewer__control document-viewer__control--raw"/);
+  assert.match(source, /className="document-viewer__surface-picker"/);
+  assert.match(source, /aria-label="Select terminal surface"/);
   assert.ok(
     source.indexOf('document-viewer__control--tail') < source.indexOf('document-viewer__control--raw'),
     'Raw mode toggle must sit immediately after Tail in the document toolbar.',
+  );
+  assert.ok(
+    source.indexOf('document-viewer__control--raw') < source.indexOf('document-viewer__surface-picker'),
+    'Surface picker must sit after Tail and Raw in the document toolbar.',
   );
   assert.match(source, /viewport\.clientWidth \/ zoom/);
   assert.match(source, /--document-viewer-layout-width/);
@@ -547,7 +554,16 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer--outer-scroll\s+\.document-viewer__viewport\s*\{[^}]*overflow:\s*visible;/s);
   assert.match(styles, /\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--tail,\s*\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--raw\s*\{[^}]*width:\s*2\.7rem;/s);
   assert.match(styles, /\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--tail\[aria-pressed="true"\],\s*\.document-viewer__toolbar\s+\.navigator-mode-toggle\.document-viewer__control--raw\[aria-pressed="true"\]\s*\{/s);
+  assert.match(styles, /\.document-viewer__surface-picker\s*\{[^}]*display:\s*inline-flex;[^}]*font-size:\s*0\.68rem;/s);
+  assert.match(styles, /\.document-viewer__surface-picker\s+select\s*\{[^}]*width:\s*clamp\(9rem,\s*18vw,\s*17rem\);/s);
   assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
+  assert.match(sidecarSource, /processProjection=\{state\.process\}/);
+  assert.match(sidecarSource, /function buildProcessSurfacePicker/);
+  assert.match(sidecarSource, /if \(!input\.enabled \|\| !input\.processProjection\?\.liveAnalysis\) return null;/);
+  assert.match(sidecarSource, /attempt\.detail\.stageProcesses/);
+  assert.match(sidecarSource, /const surfacePicker = useMemo\(\(\) => buildProcessSurfacePicker/);
+  assert.match(sidecarSource, /enabled: tailFollowSurface/);
+  assert.match(sidecarSource, /dispatch\(\{ type: 'viewer\/open', kind: 'surface', id: nextPath \}\)/);
   assert.match(sidecarSource, /const \[tailFollowEnabled,\s*setTailFollowEnabled\] = useState\(tailFollowSurface\)/);
   assert.match(sidecarSource, /const \[rawTailSurface,\s*setRawTailSurface\] = useState\(false\)/);
   assert.match(sidecarSource, /setRawTailSurface\(false\)/);
@@ -557,6 +573,7 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(sidecarSource, /tailFollowAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeEnabled=\{rawTailSurface\}/);
+  assert.match(sidecarSource, /surfacePicker=\{surfacePicker\}/);
   assert.match(sidecarSource, /onTailFollowToggle=\{\(\) => setTailFollowEnabled\(\(enabled\) => !enabled\)\}/);
   assert.match(sidecarSource, /onRawModeToggle=\{\(\) => setRawTailSurface\(\(raw\) => !raw\)\}/);
   assert.match(sidecarSource, /onZoomBy=\{\(delta\) => dispatch\(\{ type: 'document\/zoom', tabId, delta \}\)\}/);
@@ -1212,6 +1229,11 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /className="sidecar-live-view__attempt-terminal"/);
   assert.match(simpleProcessPanelSource, /onOpenTerminalSession\(terminalTarget\.session\.id\)/);
   assert.match(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
+  const terminalButtonSource = simpleProcessPanelSource.slice(
+    simpleProcessPanelSource.indexOf('className="sidecar-live-view__attempt-terminal"'),
+    simpleProcessPanelSource.indexOf('aria-label={terminalLabel}'),
+  );
+  assert.doesNotMatch(terminalButtonSource, /setSelectedAttemptRef/);
   assert.ok(
     simpleProcessPanelSource.indexOf('const requestLiveRefresh = useCallback') < simpleProcessPanelSource.indexOf('if (!projection)'),
     'Process navigator refresh hook must be declared before projection early returns.',

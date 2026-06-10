@@ -6108,6 +6108,30 @@ button.sidecar-project-picker__segment:hover {
   color: var(--accent-strong);
 }
 
+.document-viewer__surface-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.document-viewer__surface-picker select {
+  width: clamp(9rem, 18vw, 17rem);
+  min-width: 0;
+  height: 1.92rem;
+  padding: 0 1.45rem 0 0.52rem;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-strong) 86%, var(--sidecar-inset-bg) 14%);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
 .document-viewer__viewport {
   container-type: inline-size;
   min-width: 0;

@@ -23,6 +23,25 @@ export interface DocumentDescriptor {
   language: string | null;
 }
 
+export interface DocumentViewerSurfacePickerOption {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface DocumentViewerSurfacePickerGroup {
+  id: string;
+  label: string;
+  options: DocumentViewerSurfacePickerOption[];
+}
+
+export interface DocumentViewerSurfacePicker {
+  value: string;
+  options: DocumentViewerSurfacePickerOption[];
+  groups: DocumentViewerSurfacePickerGroup[];
+  onChange: (value: string) => void;
+}
+
 export const DOCUMENT_VIEWER_DEFAULT_STATE: DocumentViewerState = {
   zoom: 1,
   fit: "none",
@@ -114,6 +133,7 @@ export function DocumentViewer({
   tailFollowEnabled = false,
   rawModeAvailable = false,
   rawModeEnabled = false,
+  surfacePicker,
   onZoomIn,
   onZoomOut,
   onZoomBy,
@@ -132,6 +152,7 @@ export function DocumentViewer({
   tailFollowEnabled?: boolean;
   rawModeAvailable?: boolean;
   rawModeEnabled?: boolean;
+  surfacePicker?: DocumentViewerSurfacePicker | null;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomBy?: (delta: number) => void;
@@ -141,13 +162,15 @@ export function DocumentViewer({
   onRawModeToggle?: () => void;
 }) {
   const zoom = Math.min(DOCUMENT_ZOOM_MAX, Math.max(DOCUMENT_ZOOM_MIN, state.zoom));
+  const visibleSurfacePicker = surfacePicker && surfacePicker.options.length > 1 ? surfacePicker : null;
   const hasControls = Boolean(
     onZoomIn ||
     onZoomOut ||
     onReset ||
     onFitWidth ||
     (tailFollowAvailable && onTailFollowToggle) ||
-    (rawModeAvailable && onRawModeToggle),
+    (rawModeAvailable && onRawModeToggle) ||
+    visibleSurfacePicker,
   );
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -309,6 +332,34 @@ export function DocumentViewer({
               >
                 <span aria-hidden="true">Raw</span>
               </button>
+            ) : null}
+            {visibleSurfacePicker ? (
+              <label className="document-viewer__surface-picker">
+                <span>Surface</span>
+                <select
+                  value={visibleSurfacePicker.value}
+                  onChange={(event) => visibleSurfacePicker.onChange(event.target.value)}
+                  aria-label="Select terminal surface"
+                >
+                  {visibleSurfacePicker.groups.length ? (
+                    visibleSurfacePicker.groups.map((group) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {group.options.map((option) => (
+                          <option key={option.id} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))
+                  ) : (
+                    visibleSurfacePicker.options.map((option) => (
+                      <option key={option.id} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
             ) : null}
           </div>
         </div>

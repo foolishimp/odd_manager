@@ -48,6 +48,7 @@ import 'xterm/css/xterm.css';
 import {
   DocumentViewer,
   documentDescriptorForPath,
+  type DocumentViewerSurfacePicker,
 } from '../../components/DocumentViewer';
 import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
@@ -3036,6 +3037,7 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
       <Inspector>
         <SurfaceInspector
           projectRoot={state.context?.project.root ?? null}
+          processProjection={state.process}
           tabId={tab.id}
           relativePath={tab.objectId}
           viewerState={state.ui.documentViewers[tab.id]}
@@ -4754,7 +4756,6 @@ function ProcessLiveViewPanel({
                 disabled={!terminalTarget}
                 onClick={() => {
                   if (!terminalTarget) return;
-                  setSelectedAttemptRef(attempt.operatorRunRef);
                   if (terminalTarget.kind === 'session') {
                     onOpenTerminalSession(terminalTarget.session.id);
                   } else {
@@ -6752,8 +6753,90 @@ function DirectorySurfaceNode({ relativePath, label, depth, groupStates, directo
   );
 }
 
-function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispatch }: {
+function canonicalSurfaceRelativePath(value: string | null | undefined) {
+  return typeof value === 'string'
+    ? value.trim().replace(/^\.\/+/, '').replace(/\/+/g, '/')
+    : '';
+}
+
+function transcriptSurfaceRelativePath(projectRoot: string | null, sourcePath: string | null) {
+  if (!sourcePath) return null;
+  const absolute = projectPathRefToAbsolutePath(projectRoot, sourcePath);
+  if (absolute) return relativeProjectPath(projectRoot, absolute);
+  const trimmed = sourcePath.trim();
+  return trimmed && !trimmed.startsWith('/') && !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+    ? trimmed
+    : null;
+}
+
+function buildSurfacePickerFromStageProcesses(input: {
+  stageProcesses: SidecarLiveAnalysisStageProcess[];
   projectRoot: string | null;
+  relativePath: string;
+  onSelect: (relativePath: string) => void;
+}): DocumentViewerSurfacePicker | null {
+  const currentPath = canonicalSurfaceRelativePath(input.relativePath);
+  const seen = new Set<string>();
+  const groups = input.stageProcesses
+    .map((process) => {
+      const options = process.transcriptSurfaces
+        .map((surface) => {
+          const relativePath = transcriptSurfaceRelativePath(input.projectRoot, surface.sourcePath);
+          const canonicalPath = canonicalSurfaceRelativePath(relativePath);
+          if (!canonicalPath || seen.has(canonicalPath)) return null;
+          seen.add(canonicalPath);
+          return {
+            id: `${process.id}:${canonicalPath}`,
+            label: surface.label,
+            value: canonicalPath,
+          };
+        })
+        .filter((option): option is NonNullable<typeof option> => Boolean(option));
+      return options.length ? { id: process.id, label: process.label, options } : null;
+    })
+    .filter((group): group is NonNullable<typeof group> => Boolean(group));
+  const options = groups.flatMap((group) => group.options);
+  if (options.length <= 1 || !options.some((option) => option.value === currentPath)) return null;
+  return {
+    value: currentPath,
+    options,
+    groups,
+    onChange: input.onSelect,
+  };
+}
+
+function buildProcessSurfacePicker(input: {
+  projectRoot: string | null;
+  processProjection: SidecarProcessProjection | null;
+  relativePath: string;
+  enabled: boolean;
+  onSelect: (relativePath: string) => void;
+}): DocumentViewerSurfacePicker | null {
+  if (!input.enabled || !input.processProjection?.liveAnalysis) return null;
+  const currentPath = canonicalSurfaceRelativePath(input.relativePath);
+  for (const attempt of input.processProjection.liveAnalysis.attempts) {
+    const stageProcesses = (attempt.detail.stageProcesses ?? [])
+      .map(normalizeLiveAnalysisStageProcess)
+      .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process));
+    const ownsSurface = stageProcesses.some((process) => process.transcriptSurfaces.some((surface) => {
+      const relativePath = transcriptSurfaceRelativePath(input.projectRoot, surface.sourcePath);
+      return canonicalSurfaceRelativePath(relativePath) === currentPath;
+    }));
+    if (ownsSurface) {
+      return buildSurfacePickerFromStageProcesses({
+        stageProcesses,
+        projectRoot: input.projectRoot,
+        relativePath: input.relativePath,
+        onSelect: input.onSelect,
+      });
+    }
+  }
+  return null;
+}
+
+function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath, viewerState, dispatch }: {
+  projectRoot: string | null;
+  processProjection: SidecarProcessProjection | null;
   tabId: string;
   relativePath: string;
   viewerState: SidecarDocumentViewerState | undefined;
@@ -6763,6 +6846,13 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tailFollowSurface = isTailFollowSurfacePath(relativePath);
+  const surfacePicker = useMemo(() => buildProcessSurfacePicker({
+    projectRoot,
+    processProjection,
+    relativePath,
+    enabled: tailFollowSurface,
+    onSelect: (nextPath) => dispatch({ type: 'viewer/open', kind: 'surface', id: nextPath }),
+  }), [dispatch, processProjection, projectRoot, relativePath, tailFollowSurface]);
   const [tailFollowEnabled, setTailFollowEnabled] = useState(tailFollowSurface);
   const [rawTailSurface, setRawTailSurface] = useState(false);
 
@@ -6839,6 +6929,7 @@ function SurfaceInspector({ projectRoot, tabId, relativePath, viewerState, dispa
           tailFollowEnabled={tailFollowEnabled}
           rawModeAvailable={tailFollowSurface}
           rawModeEnabled={rawTailSurface}
+          surfacePicker={surfacePicker}
           onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
           onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
           onZoomBy={(delta) => dispatch({ type: 'document/zoom', tabId, delta })}
