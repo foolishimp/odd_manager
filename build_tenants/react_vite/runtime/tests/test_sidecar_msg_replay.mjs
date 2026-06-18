@@ -1225,10 +1225,24 @@ test('process navigator source is right-rail selected and object-viewer hosted',
   assert.match(simpleProcessPanelSource, /raw\.lastOutputAt/);
   assert.match(simpleProcessPanelSource, /Open active PTY/);
   assert.match(simpleProcessPanelSource, /Open last active PTY/);
-  assert.match(simpleProcessPanelSource, /Open PTY tail/);
+  assert.match(simpleProcessPanelSource, /Open run tail/);
   assert.match(simpleProcessPanelSource, /className="sidecar-live-view__attempt-terminal"/);
   assert.match(simpleProcessPanelSource, /onOpenTerminalSession\(terminalTarget\.session\.id\)/);
   assert.match(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
+  const terminalTargetResolverSource = simpleProcessPanelSource.slice(
+    simpleProcessPanelSource.indexOf('function resolveAttemptTerminalTarget'),
+    simpleProcessPanelSource.indexOf('const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS'),
+  );
+  assert.ok(
+    terminalTargetResolverSource.indexOf('const projectedSession = latestTerminalSession(projectedSessions, activeTerminalSessionId);') <
+      terminalTargetResolverSource.indexOf('const surface = resolveAttemptTailSurface(attempt, operatorRun);'),
+    'projected terminal sessions should be considered before archived tail surfaces.',
+  );
+  assert.ok(
+    terminalTargetResolverSource.indexOf('const surface = resolveAttemptTailSurface(attempt, operatorRun);') <
+      terminalTargetResolverSource.indexOf('const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);'),
+    'run-owned tail surfaces should be considered before unrelated active terminal sessions.',
+  );
   const terminalButtonSource = simpleProcessPanelSource.slice(
     simpleProcessPanelSource.indexOf('className="sidecar-live-view__attempt-terminal"'),
     simpleProcessPanelSource.indexOf('aria-label={terminalLabel}'),

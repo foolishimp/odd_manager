@@ -4451,14 +4451,16 @@ function resolveAttemptTerminalTarget(
   if (projectedLiveSession) {
     return { kind: 'session', session: projectedLiveSession, mode: 'active' };
   }
-  const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);
-  if (activeSession) return activeSession;
   const projectedSession = latestTerminalSession(projectedSessions, activeTerminalSessionId);
   if (projectedSession) {
     return { kind: 'session', session: projectedSession, mode: 'last-active' };
   }
   const surface = resolveAttemptTailSurface(attempt, operatorRun);
-  return surface ? { kind: 'surface', path: surface.path, label: surface.label, mode: 'tail' } : null;
+  if (surface) {
+    return { kind: 'surface', path: surface.path, label: surface.label, mode: 'tail' };
+  }
+  const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);
+  return activeSession;
 }
 
 const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
@@ -4729,8 +4731,8 @@ function ProcessLiveViewPanel({
           const terminalLabel = terminalTarget
             ? terminalTarget.kind === 'session'
               ? `${terminalTarget.mode === 'active' ? 'Open active PTY' : 'Open last active PTY'} for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${sessionLabel(terminalTarget.session)}`
-              : `Open PTY tail for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${terminalTarget.label}`
-            : 'No active or recent PTY session or tail surface is available for this runtime node';
+              : `Open run tail for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${terminalTarget.label}`
+            : 'No active or recent terminal session or tail surface is available for this runtime node';
           return (
             <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
               <button
