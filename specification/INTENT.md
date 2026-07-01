@@ -61,9 +61,9 @@ The project is constrained by these rules:
   constitution
 - `.genesis/docs/standards/GRAPH_METHOD.md` is the stronger method surface for
   graph-native work
-- the current source project is authored as an `odd_sdlc`-governed software
-  product project under `SPEC_METHOD.md`, but the shipped manager boundary must
-  not collapse into one permanent `odd_sdlc`-only UI
+- the current source project is authored as the `odd_manager` control-plane
+  product under `SPEC_METHOD.md`; workspace-local `odd_sdlc` runtime installs
+  are legacy provenance and must not define manager identity
 - `abiogenesis` remains canonical truth for GTL and ABG objects, boundaries,
   runtime law, and projection law
 - `odd_method` remains methodology, not the one and only domain package the

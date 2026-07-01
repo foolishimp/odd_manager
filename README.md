@@ -26,11 +26,11 @@ Start here:
 
 Current repo posture:
 
-- the project is initialized with the ABG installer and governed as an
-  `odd_sdlc` workspace
+- the project is initialized with the ABG/GTL substrate and is governed by its
+  own `odd_manager` specification boundary
 - the design package lives under `build_tenants/common/design/`
 - the shared design package publishes the shell, inspector, board, and
   graph-workspace visual language that future UI carriers must preserve
 - the active UI implementation carrier is `build_tenants/react_vite/`
-- the installed `.genesis/odd_sdlc/` package is the workspace-local domain
-  runtime source used for query composition
+- `odd_manager` observes `odd_sdlc` and other `odd_` products through their
+  published GTL/ABG ledgers, catalogs, projections, and compatible domain packs

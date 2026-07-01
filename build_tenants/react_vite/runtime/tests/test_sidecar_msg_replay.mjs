@@ -77,6 +77,41 @@ function baseState(module) {
   };
 }
 
+function observationFor(projectRoot, featureState = 'present') {
+  return {
+    kind: 'ai_workspace_observation',
+    version: 1,
+    generatedAt: '2026-07-01T00:00:00.000Z',
+    projectRoot,
+    aiWorkspaceRoot: `${projectRoot}/.ai-workspace`,
+    readOnly: true,
+    features: [
+      {
+        id: 'ai_workspace',
+        label: '.ai-workspace',
+        state: featureState,
+        relativePath: '.ai-workspace',
+        sourceRefs: featureState === 'present' ? ['.ai-workspace'] : [],
+        artifactCount: 0,
+        capabilities: featureState === 'present' ? ['browse.raw'] : [],
+        diagnostics: [],
+      },
+    ],
+    artifacts: [],
+    capabilities: featureState === 'present' ? ['browse.raw'] : [],
+    diagnostics: {
+      projectRoot,
+      aiWorkspaceRoot: `${projectRoot}/.ai-workspace`,
+      scannedDirectoryCount: 0,
+      scannedFileCount: 0,
+      maxDirectories: 1,
+      maxArtifacts: 1,
+      truncated: false,
+      ignoredNames: [],
+    },
+  };
+}
+
 function readSidecarCssBlock() {
   const styles = readFileSync(stylesPath, 'utf-8');
   const start = styles.indexOf('.sidecar-panel');
@@ -115,11 +150,13 @@ test('stale project load result cannot overwrite a newer requested root', async 
         session: null,
       },
       tickets: [{ id: 'STALE', title: 'stale ticket', lane: 'active', status: 'active' }],
+      aiWorkspaceObservation: observationFor('/workspace/odd_manager'),
     },
   });
   assert.equal(stale.context.project.root, '/workspace/odd_manager');
   assert.equal(stale.activeLoadRoot, '/workspace/data_mapper');
   assert.deepEqual(stale.tickets, requested.tickets);
+  assert.equal(stale.aiWorkspaceObservation, requested.aiWorkspaceObservation);
 
   const current = module.updateSidecarState(stale, {
     type: 'load/done',
@@ -131,11 +168,14 @@ test('stale project load result cannot overwrite a newer requested root', async 
         session: null,
       },
       tickets: [{ id: 'CURRENT', title: 'current ticket', lane: 'active', status: 'active' }],
+      aiWorkspaceObservation: observationFor('/workspace/data_mapper'),
     },
   });
   assert.equal(current.context.project.root, '/workspace/data_mapper');
   assert.equal(current.activeLoadRoot, null);
   assert.equal(current.tickets[0].id, 'CURRENT');
+  assert.equal(current.aiWorkspaceObservation.projectRoot, '/workspace/data_mapper');
+  assert.equal(current.aiWorkspaceObservation.features[0].state, 'present');
 });
 
 test('ticket transition request and result replay exposes transition Cmd and reload intent', async () => {

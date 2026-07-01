@@ -37,17 +37,24 @@ That stable contract is:
 - ambiguity register, ambiguity policy, and capability-gated stop-state overlays
 - ABG runtime facts and aggregates
 - direct ABG event and projector access for runtime state
+- ABG 4.2 system-ledger and catalog projections, including registry entries,
+  graph-function selections, node-type satisfaction, payload facts, and
+  construction-action catalog entries
 - domain-package query-library overlays for domain understanding that ABG does
   not own
 
-The first supported concrete pack is the observed `odd_sdlc` query-domain line
-currently carried as `odd_sdlc.query-domain v16`.
+The live core observation path is ABG/GTL first. ABG system-ledger and catalog
+projection remains available even when no compatible domain pack is installed
+or selected.
 
-That first pack is expected to project generated requirement, scenario,
-design, test, release, operational-cycle, execution-contract, start-target,
-asset-ownership, capability, and gap-dossier surfaces like those emitted by
-the observed `data_mapper.test38` workspace. Those remain domain overlays over
-the manager's shared core ontology rather than new GTL/ABG runtime primitives.
+The first concrete domain overlay remains the `odd_sdlc` delivery line where a
+compatible contract is published. Historical `odd_sdlc.query-domain v16`
+surfaces are pre-release adapter evidence, not manager identity and not a
+workspace-local runtime authority. Generated requirement, scenario, design,
+test, release, operational-cycle, execution-contract, start-target,
+asset-ownership, capability, and gap-dossier surfaces remain domain overlays
+over the manager's shared core ontology rather than new GTL/ABG runtime
+primitives.
 
 It is not:
 
@@ -123,7 +130,7 @@ source-project truth.
 
 A governance identity and custom UX suite — concretely an `odd_*` package such
 as `odd_sdlc`, `odd_world_model`, or a future `odd_*` domain. The Workspace
-defines the methodology, the installed query contract, the enabled UX widgets,
+defines the methodology, the published domain contract, the enabled UX widgets,
 and the policy overlays applied while operating over a Project. The Workspace
 is the lens; the Project is the thing viewed through it.
 
@@ -131,12 +138,13 @@ is the lens; the Project is the thing viewed through it.
 
 The runtime binding `Context = Project × Workspace`. Context is the operational
 unit the manager and any agent execute under. It scopes the filesystem root
-(from Project), the installed query contract (from Workspace, e.g.
-`odd_sdlc.query_contract` v16), the enabled UX widgets, and the MCP resources
-exposed to the agent. An agent execution binds to a Context — not to a
-Workspace or a Project alone. Embedding semantics default to local-by-default:
-a Context selection within an embedded widget scopes only that pane; explicit
-pinning promotes the local selection to the global active Context.
+(from Project), the published domain contract where available (from Workspace,
+for example an `odd_sdlc` query contract), the enabled UX widgets, and the MCP
+resources exposed to the agent. An agent execution binds to a Context — not to
+a Workspace or a Project alone. Embedding semantics default to
+local-by-default: a Context selection within an embedded widget scopes only
+that pane; explicit pinning promotes the local selection to the global active
+Context.
 
 ### Core System Page
 
@@ -273,12 +281,13 @@ flow, and execution posture rather than around a selected requirement.
 
 During the forward-only pre-release line, the live process surface is the
 Sidecar `Process Navigator`. It is an object-viewer workspace surface selected
-from the Sidecar right rail. It supports the `odd_sdlc` TypeScript tenant event
-and query contract only: `odd_sdlc.query-domain` `ts-v1` over ABG event truth.
-Its primary sections are derived from the current `odd_sdlc` runtime and
-domain projection: runtime state, projected graph overlays, the function
-catalog, and typed asset-node relationships appear only when their backing
-carrier is present.
+from the Sidecar right rail. It supports ABG system-ledger and catalog
+projection first, with the `odd_sdlc` TypeScript tenant event and query
+contract acting as a compatible domain overlay when present. Its primary
+sections are derived from ABG event truth and compatible domain projection:
+runtime state, projected graph overlays, the function catalog, registry facts,
+payload facts, and typed asset-node relationships appear only when their
+backing carrier is present.
 Python SDLC process projections are historical compatibility material and do
 not define the live Sidecar process contract.
 
@@ -436,8 +445,11 @@ The current product definition of `odd_manager` is:
 The current active implementation target is:
 
 - `build_tenants/react_vite/`
-- current first supported domain contract: `odd_sdlc.query-domain`
-- immediate next control-plane repricing: treat `odd_sdlc` requirement-first and
-  process-first pages as one domain pack, and treat `odd_world_model` landing
-  and future world-model pages as a separate domain pack selected by primary
-  workspace identity
+- current core observation contract: ABG 4.2 system-ledger and catalog
+  projection
+- current first domain overlay target: compatible `odd_sdlc` delivery contracts
+  where published
+- immediate next control-plane repricing: treat `odd_sdlc` requirement-first
+  and process-first pages as one domain pack, and treat `odd_world_model`
+  landing and future world-model pages as a separate domain pack selected by
+  primary workspace identity

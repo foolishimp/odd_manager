@@ -116,6 +116,144 @@ export interface SidecarProcessProjection {
   // `.ai-workspace/runtime/odd_sdlc/operator-runs/<operator-run-id>/`.
   // It models one traversal/operator run with multiple compute-stage processes.
   workspaceRun?: SidecarSdlcWorkspaceRun | null;
+  // ABG 4.2+ system projection over emitted runtime truth. This is the generic
+  // observer path for registry/catalog, payload-ledger source facts, and
+  // node-type satisfaction; domain packs remain overlays above it.
+  abgSystem?: SidecarAbgSystemProjection | null;
+}
+
+export type SidecarAbgRegistryLibraryScope = 'system' | 'product';
+
+export type SidecarAbgRegistryEntryKind =
+  | 'graph_function'
+  | 'node_type'
+  | 'overlay'
+  | 'candidate_family'
+  | 'public_start'
+  | 'plugin';
+
+export interface SidecarAbgRegistryEntry {
+  kind: 'sidecar_abg_registry_entry';
+  entryRef: string;
+  declarationRef: string;
+  declarationDigest: string;
+  libraryScope: SidecarAbgRegistryLibraryScope;
+  entryKind: SidecarAbgRegistryEntryKind;
+  namespace: string;
+  ownerRef: string;
+  version: string;
+  graphFunctionRef: string;
+  interfaceRef: string;
+  sourceContractRef: string;
+  targetContractRef: string;
+  contextRefs: string[];
+  authorityRefs: string[];
+  overlayRefs: string[];
+  provenanceRefs: string[];
+  readinessRefs: string[];
+  proofRefs: string[];
+  policyRefs: string[];
+  refinementOfEntryRef: string | null;
+  overrideOfEntryRef: string | null;
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgRejectedRegistryEntry {
+  kind: 'sidecar_abg_rejected_registry_entry';
+  declarationRef: string;
+  declarationDigest: string;
+  libraryScope: SidecarAbgRegistryLibraryScope;
+  entryKind: SidecarAbgRegistryEntryKind;
+  namespace: string;
+  ownerRef: string;
+  rejectionReason: string;
+  conflictingEntryRefs: string[];
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgGraphFunctionSelection {
+  kind: 'sidecar_abg_graph_function_selection';
+  selectionRef: string;
+  selectedEntryRef: string;
+  selectedEntryKind: 'graph_function';
+  selectedGraphFunctionRef: string;
+  lookupResultRef: string;
+  eligibilityDecisionRefs: string[];
+  adviceRefs: string[];
+  fhResponseRefs: string[];
+  rationaleRef: string;
+  runtimeBasisRef: string;
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgGraphFunctionSelectionRejection {
+  kind: 'sidecar_abg_graph_function_selection_rejection';
+  lookupResultRef: string;
+  rejectionReason: string;
+  rejectedCandidateRefs: string[];
+  pressureDispositionRef: string | null;
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgRuntimeRegistryProjection {
+  kind: 'sidecar_abg_runtime_registry_projection';
+  entries: SidecarAbgRegistryEntry[];
+  rejectedEntries: SidecarAbgRejectedRegistryEntry[];
+  selections: SidecarAbgGraphFunctionSelection[];
+  selectionRejections: SidecarAbgGraphFunctionSelectionRejection[];
+}
+
+export interface SidecarAbgNodeTypeSatisfaction {
+  kind: 'sidecar_abg_node_type_satisfaction';
+  satisfactionRef: string;
+  nodeRef: string;
+  targetTypeRef: string;
+  sourceNodeTypeRef: string | null;
+  satisfied: boolean;
+  rejectionReason: string | null;
+  typeNodeRef: string | null;
+  nodeTypeGraphFunctionRefs: string[];
+  satisfactionDigest: string;
+  sourceEventRefs: string[];
+  sourceProjectionRefs: string[];
+}
+
+export interface SidecarAbgPayloadLedgerSummary {
+  kind: 'sidecar_abg_payload_ledger_summary';
+  observedPayloadCount: number;
+  validatedPayloadCount: number;
+  rejectedPayloadCount: number;
+  authoritySnapshotCount: number;
+  evidenceRowCount: number;
+  ambiguityObservationCount: number;
+  closureInputCount: number;
+  payloadRefs: string[];
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgConstructionActionCatalog {
+  kind: 'sidecar_abg_construction_action_catalog';
+  catalogRef: string;
+  episodeId: string;
+  hookResolutionRef: string;
+  fallbackConfigDigest: string;
+  traversalPublicationRefs: string[];
+  sourceEventRefs: string[];
+}
+
+export interface SidecarAbgSystemProjection {
+  kind: 'sidecar_abg_system_projection';
+  sourceKind: 'abg-runtime-events';
+  readOnly: true;
+  generatedAt: string;
+  workspaceRoot: string;
+  sourcePaths: string[];
+  eventCount: number;
+  eventKinds: string[];
+  registry: SidecarAbgRuntimeRegistryProjection;
+  nodeTypeSatisfactions: SidecarAbgNodeTypeSatisfaction[];
+  payloadLedger: SidecarAbgPayloadLedgerSummary;
+  constructionActionCatalogs: SidecarAbgConstructionActionCatalog[];
 }
 
 export type SidecarSdlcComputeStageKind =
@@ -472,7 +610,7 @@ export interface SidecarLeafOverlay {
 
 // ---------------------------------------------------------------------------
 // T-161 live analysis — compact read model over `sdlc_fd_run_analysis`.
-// The backend maps the installed odd_sdlc analysis payload into this stable
+// The backend maps the published odd_sdlc analysis payload into this stable
 // Sidecar contract so the Process Navigator can render live run detail without
 // re-declaring the upstream analyzer's full internal type surface.
 // ---------------------------------------------------------------------------
@@ -1018,6 +1156,20 @@ const LIVE_ANALYSIS_EVENT_TONES: readonly SidecarLiveAnalysisEventTone[] = [
   'blocked',
 ];
 
+const ABG_REGISTRY_LIBRARY_SCOPES: readonly SidecarAbgRegistryLibraryScope[] = [
+  'system',
+  'product',
+];
+
+const ABG_REGISTRY_ENTRY_KINDS: readonly SidecarAbgRegistryEntryKind[] = [
+  'graph_function',
+  'node_type',
+  'overlay',
+  'candidate_family',
+  'public_start',
+  'plugin',
+];
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -1523,6 +1675,179 @@ export function isSidecarLiveAnalysisProjection(
   return true;
 }
 
+export function isSidecarAbgRegistryEntry(value: unknown): value is SidecarAbgRegistryEntry {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_registry_entry' &&
+    typeof value.entryRef === 'string' &&
+    typeof value.declarationRef === 'string' &&
+    typeof value.declarationDigest === 'string' &&
+    isOneOf(value.libraryScope, ABG_REGISTRY_LIBRARY_SCOPES) &&
+    isOneOf(value.entryKind, ABG_REGISTRY_ENTRY_KINDS) &&
+    typeof value.namespace === 'string' &&
+    typeof value.ownerRef === 'string' &&
+    typeof value.version === 'string' &&
+    typeof value.graphFunctionRef === 'string' &&
+    typeof value.interfaceRef === 'string' &&
+    typeof value.sourceContractRef === 'string' &&
+    typeof value.targetContractRef === 'string' &&
+    isStringArray(value.contextRefs) &&
+    isStringArray(value.authorityRefs) &&
+    isStringArray(value.overlayRefs) &&
+    isStringArray(value.provenanceRefs) &&
+    isStringArray(value.readinessRefs) &&
+    isStringArray(value.proofRefs) &&
+    isStringArray(value.policyRefs) &&
+    isNullableString(value.refinementOfEntryRef) &&
+    isNullableString(value.overrideOfEntryRef) &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgRejectedRegistryEntry(
+  value: unknown,
+): value is SidecarAbgRejectedRegistryEntry {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_rejected_registry_entry' &&
+    typeof value.declarationRef === 'string' &&
+    typeof value.declarationDigest === 'string' &&
+    isOneOf(value.libraryScope, ABG_REGISTRY_LIBRARY_SCOPES) &&
+    isOneOf(value.entryKind, ABG_REGISTRY_ENTRY_KINDS) &&
+    typeof value.namespace === 'string' &&
+    typeof value.ownerRef === 'string' &&
+    typeof value.rejectionReason === 'string' &&
+    isStringArray(value.conflictingEntryRefs) &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgGraphFunctionSelection(
+  value: unknown,
+): value is SidecarAbgGraphFunctionSelection {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_graph_function_selection' &&
+    typeof value.selectionRef === 'string' &&
+    typeof value.selectedEntryRef === 'string' &&
+    value.selectedEntryKind === 'graph_function' &&
+    typeof value.selectedGraphFunctionRef === 'string' &&
+    typeof value.lookupResultRef === 'string' &&
+    isStringArray(value.eligibilityDecisionRefs) &&
+    isStringArray(value.adviceRefs) &&
+    isStringArray(value.fhResponseRefs) &&
+    typeof value.rationaleRef === 'string' &&
+    typeof value.runtimeBasisRef === 'string' &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgGraphFunctionSelectionRejection(
+  value: unknown,
+): value is SidecarAbgGraphFunctionSelectionRejection {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_graph_function_selection_rejection' &&
+    typeof value.lookupResultRef === 'string' &&
+    typeof value.rejectionReason === 'string' &&
+    isStringArray(value.rejectedCandidateRefs) &&
+    isNullableString(value.pressureDispositionRef) &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgRuntimeRegistryProjection(
+  value: unknown,
+): value is SidecarAbgRuntimeRegistryProjection {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_runtime_registry_projection' &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isSidecarAbgRegistryEntry) &&
+    Array.isArray(value.rejectedEntries) &&
+    value.rejectedEntries.every(isSidecarAbgRejectedRegistryEntry) &&
+    Array.isArray(value.selections) &&
+    value.selections.every(isSidecarAbgGraphFunctionSelection) &&
+    Array.isArray(value.selectionRejections) &&
+    value.selectionRejections.every(isSidecarAbgGraphFunctionSelectionRejection)
+  );
+}
+
+export function isSidecarAbgNodeTypeSatisfaction(
+  value: unknown,
+): value is SidecarAbgNodeTypeSatisfaction {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_node_type_satisfaction' &&
+    typeof value.satisfactionRef === 'string' &&
+    typeof value.nodeRef === 'string' &&
+    typeof value.targetTypeRef === 'string' &&
+    isNullableString(value.sourceNodeTypeRef) &&
+    typeof value.satisfied === 'boolean' &&
+    isNullableString(value.rejectionReason) &&
+    isNullableString(value.typeNodeRef) &&
+    isStringArray(value.nodeTypeGraphFunctionRefs) &&
+    typeof value.satisfactionDigest === 'string' &&
+    isStringArray(value.sourceEventRefs) &&
+    isStringArray(value.sourceProjectionRefs)
+  );
+}
+
+export function isSidecarAbgPayloadLedgerSummary(
+  value: unknown,
+): value is SidecarAbgPayloadLedgerSummary {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_payload_ledger_summary' &&
+    typeof value.observedPayloadCount === 'number' &&
+    typeof value.validatedPayloadCount === 'number' &&
+    typeof value.rejectedPayloadCount === 'number' &&
+    typeof value.authoritySnapshotCount === 'number' &&
+    typeof value.evidenceRowCount === 'number' &&
+    typeof value.ambiguityObservationCount === 'number' &&
+    typeof value.closureInputCount === 'number' &&
+    isStringArray(value.payloadRefs) &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgConstructionActionCatalog(
+  value: unknown,
+): value is SidecarAbgConstructionActionCatalog {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_construction_action_catalog' &&
+    typeof value.catalogRef === 'string' &&
+    typeof value.episodeId === 'string' &&
+    typeof value.hookResolutionRef === 'string' &&
+    typeof value.fallbackConfigDigest === 'string' &&
+    isStringArray(value.traversalPublicationRefs) &&
+    isStringArray(value.sourceEventRefs)
+  );
+}
+
+export function isSidecarAbgSystemProjection(
+  value: unknown,
+): value is SidecarAbgSystemProjection {
+  if (!isObject(value)) return false;
+  return (
+    value.kind === 'sidecar_abg_system_projection' &&
+    value.sourceKind === 'abg-runtime-events' &&
+    value.readOnly === true &&
+    typeof value.generatedAt === 'string' &&
+    typeof value.workspaceRoot === 'string' &&
+    isStringArray(value.sourcePaths) &&
+    typeof value.eventCount === 'number' &&
+    isStringArray(value.eventKinds) &&
+    isSidecarAbgRuntimeRegistryProjection(value.registry) &&
+    Array.isArray(value.nodeTypeSatisfactions) &&
+    value.nodeTypeSatisfactions.every(isSidecarAbgNodeTypeSatisfaction) &&
+    isSidecarAbgPayloadLedgerSummary(value.payloadLedger) &&
+    Array.isArray(value.constructionActionCatalogs) &&
+    value.constructionActionCatalogs.every(isSidecarAbgConstructionActionCatalog)
+  );
+}
+
 export function isSidecarLeafEvaluator(value: unknown): value is SidecarLeafEvaluator {
   if (!isObject(value)) return false;
   return (
@@ -1675,6 +2000,12 @@ export function isSidecarProcessProjection(
     value.liveAnalysis !== undefined &&
     value.liveAnalysis !== null &&
     !isSidecarLiveAnalysisProjection(value.liveAnalysis)
+  )
+    return false;
+  if (
+    value.abgSystem !== undefined &&
+    value.abgSystem !== null &&
+    !isSidecarAbgSystemProjection(value.abgSystem)
   )
     return false;
   return true;

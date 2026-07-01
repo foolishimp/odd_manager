@@ -3,6 +3,7 @@ import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
 import type { SidecarProcessProjection } from '../../contracts/process';
+import type { AiWorkspaceObservation } from '../../contracts/ai-workspace-observation';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -233,6 +234,7 @@ export interface SidecarState {
   tickets: TicketRecord[];
   comments: CommentRecord[];
   sessions: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
+  aiWorkspaceObservation: AiWorkspaceObservation | null;
   process: SidecarProcessProjection | null;
   selection: Selection;
   pathHistory: SidecarPathHistoryEntry[];
@@ -282,6 +284,7 @@ export type SidecarMsg =
         comments?: CommentRecord[];
         tickets?: TicketRecord[];
         sessions?: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
+        aiWorkspaceObservation?: AiWorkspaceObservation | null;
         pathHistory?: SidecarPathHistoryEntry[];
         unreadIds?: string[];
         process?: SidecarProcessProjection | null;
@@ -389,6 +392,7 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   tickets: [],
   comments: [],
   sessions: { records: [], diagnostic: null },
+  aiWorkspaceObservation: null,
   process: null,
   selection: { kind: null, id: null },
   pathHistory: [],
@@ -1296,6 +1300,7 @@ function hasLoadProjectionPayload(payload: SidecarMsg & { type: 'load/done' }['p
     || payload.comments !== undefined
     || payload.tickets !== undefined
     || payload.sessions !== undefined
+    || payload.aiWorkspaceObservation !== undefined
     || payload.pathHistory !== undefined
     || payload.unreadIds !== undefined
     || payload.process !== undefined
@@ -1347,6 +1352,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             comments: [],
             projects: [],
             pathHistory: [],
+            aiWorkspaceObservation: null,
             unreadIds: [],
             selection: { kind: null, id: null },
           };

@@ -1,8 +1,8 @@
 # Goals
 
 **Status**: Active
-**Date**: 2026-04-23
-**Derived From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/context/project_bootstrap.md`
+**Date**: 2026-07-01
+**Derived From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
 ## Position
 
@@ -15,54 +15,51 @@ turning temporary implementation choices into accidental law.
 
 ## Current Goals
 
-### G-001 - Close the first observed `odd_sdlc` observation contract
+### G-001 - Establish the ABG 4.2 system observation contract
 
-Use the observed `data_mapper.test38` workspace as the first concrete example
-of the artifact family that an `odd_sdlc` domain pack must supervise.
-
-**Orients**:
-- generated requirement inventory and requirement-closure surfaces
-- ambiguity register and operational-capability stop-state surfaces
-- start-target catalog, asset-ownership index, admitted execution-contract,
-  and gap-dossier surfaces
-- generated scenario, testcase-authority, design, test-run-archive, release,
-  and operational-cycle surfaces
-- FP ledger, manifest, and result surfaces
-
-### G-002 - Publish the first `odd_sdlc` domain UI pack boundary
-
-Keep manager-owned GTL/ABG pages cross-domain while defining the first
-domain-specific pack around the observed `odd_sdlc` delivery artifacts.
+Make ABG/GTL system truth the manager-owned observation core before any
+domain-specific overlay is applied.
 
 **Orients**:
-- `Requirements View` over generated requirements, closure, and testcase
-  authority
-- `Process View` over workflow, constructive ledgers, generated design, and
-  release posture
-- explicit compatibility between `odd_manager.domain-world v1` and
-  `odd_sdlc.query-domain v16`
+- ABG runtime event truth and replay-derived projections
+- ABG 4.2 system ledgers and catalogs
+- registry entries, graph-function selections, node-type satisfaction, payload
+  facts, and construction-action catalog entries
+- explicit unsupported-domain state when a domain overlay is absent
 
-### G-003 - Reprice the shared domain model and dashboard design against observed artifacts
+### G-002 - Keep domain UI packs separate from the core system projection
 
-Replace earlier `odd_method`-first observer framing with an artifact-driven
-description of what an observed `odd_sdlc` workspace actually publishes after
-the `test38` semantic revision.
+Keep manager-owned GTL/ABG pages cross-domain while admitting domain-specific
+surfaces only through compatible domain UI packs.
 
 **Orients**:
-- `specification/domain/DOMAIN_MODEL.md`
-- `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
-- manager-side composition of ABG runtime truth and `odd_sdlc` query overlays
+- core runtime, history, provenance, evidence, and traceability pages
+- explicit compatibility state for `odd_sdlc`, `odd_world_model`, and future
+  `odd_*` packs
+- no domain package redefining ABG run, graph-call, frame, continuation, or
+  event truth
 
-### G-004 - Materialize the generated `odd_sdlc` governance surfaces in this workspace
+### G-003 - Preserve delivery entry lenses as domain overlays
 
-Repair the local constitutional surface so the installed `odd_sdlc` contract
-can generate and carry the governed bootstrap, scenario, test, and release
-artifacts that the manager is meant to observe.
+Preserve requirements-first and process-first entry lenses without making their
+current `odd_sdlc` shape permanent manager ontology.
 
 **Orients**:
-- `# Goals`, `# Intent`, and `# Product` materialization contracts
-- generated requirement surface under `specification/requirements/`
-- generated scenario and release surfaces under `specification/scenarios/` and
-  `build_tenants/`
-- truthful gap closure over the current workspace rather than hand-waved design
-  intent
+- `Requirements View` over compatible domain requirement and proof overlays
+- `Process View` over ABG system projection plus compatible domain process
+  overlays
+- honest absence or incompatibility state where a selected project lacks a
+  supported domain pack
+
+### G-004 - Keep the manager workspace free of legacy local odd_sdlc runtime authority
+
+Prevent the manager source project from being defined by the removed
+workspace-local `odd_sdlc` Python runtime install or its generated local
+read models.
+
+**Orients**:
+- no active runtime contract under `.genesis/odd_sdlc/`
+- no live manager authority from `.ai-workspace/runtime/odd_sdlc-*`
+- local bootstrap text names `odd_manager` as the product boundary
+- observed `odd_sdlc` projects remain external managed products, not the
+  manager workspace runtime

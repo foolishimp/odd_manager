@@ -164,6 +164,23 @@ Acceptance Criteria
 - domain-contract compatibility state is itself projected as explicit world
   information
 
+### REQ-OM-PROJ-017 - ABG 4.2 system ledgers and catalogs are core projections
+
+`odd_manager` shall project ABG 4.2 system-ledger and catalog truth as
+manager-owned core system information, not as an `odd_sdlc`-specific domain
+overlay.
+
+Acceptance Criteria
+- the manager can project ABG registry entries, graph-function selections,
+  node-type satisfaction facts, payload facts, and construction-action catalog
+  entries where the managed project publishes them
+- those projections remain available without a workspace-local `odd_sdlc`
+  runtime install
+- unsupported or missing domain overlays do not suppress available ABG system
+  projection
+- operator-visible ABG system facts remain traceable to source event or catalog
+  records
+
 ### REQ-OM-PROJ-014 - Domain UI-pack resolution is explicit and versioned
 
 `odd_manager` shall resolve domain-specific pages and actions through an

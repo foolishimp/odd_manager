@@ -41,8 +41,9 @@ requirement.
 
 For the current pre-release line, the conforming process-first surface is the
 Sidecar `Process Navigator`. It is selected from the Sidecar right rail and
-occupies an object-viewer workspace pane. It reads the `odd_sdlc` TypeScript
-tenant/ABG event-query format only.
+occupies an object-viewer workspace pane. It reads ABG system-ledger and
+catalog projection first, and reads the `odd_sdlc` TypeScript tenant/query
+format only as a compatible domain overlay when present.
 
 Acceptance Criteria
 - the primary explorer surface can start from process or build-activity
@@ -51,19 +52,20 @@ Acceptance Criteria
   implementation, proof, work, and discussion surfaces where relevant
 - process-first framing does not require duplicating those downstream widgets
   into a second unrelated architecture
-- the Sidecar Process Navigator exposes sections derived from the current
-  `odd_sdlc` node-management projection: runtime state is always the first
-  process posture section, and graph overlays, function catalog entries, and
-  asset-node relationships appear only when the TypeScript projection supplies
-  those carriers
+- the Sidecar Process Navigator exposes sections derived from ABG system
+  projection and compatible domain overlays: runtime state is always the first
+  process posture section, and graph overlays, function catalog entries,
+  registry facts, payload facts, and asset-node relationships appear only when
+  the projection supplies those carriers
 - the Sidecar Process Navigator body is graph-first for graph and asset-node
   carriers, while runtime state remains an operator-run and stage-process
   projection over the same TypeScript truth
-- the Sidecar Process Navigator accepts the TypeScript query contract
-  `odd_sdlc.query-domain` `ts-v1` and rejects or ignores legacy Python SDLC
-  process projection shapes with an explicit unsupported-format state
-- the manager projects process state from ABG/odd_sdlc TypeScript truth and
-  does not choose traversal, continuation, next edge, or gap closure
+- the Sidecar Process Navigator accepts ABG 4.2 system-ledger/catalog truth and
+  compatible TypeScript domain overlays, and rejects or ignores legacy Python
+  SDLC process projection shapes with an explicit unsupported-format state
+- the manager projects process state from ABG truth and compatible domain
+  overlays; it does not choose traversal, continuation, next edge, or gap
+  closure
 
 ### REQ-OM-LNS-004 - Shared widget architecture is reusable across entry lenses
 

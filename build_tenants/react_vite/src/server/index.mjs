@@ -18,6 +18,7 @@ import { createTicketSurface } from "./ticket-asset-surface-service.mjs";
 import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
+import { loadAiWorkspaceObservation } from "./ai-workspace-observation-service.mjs";
 import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
 import {
   readWorkspaceSurface,
@@ -1365,6 +1366,10 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/api/projects/discover") {
       writeJson(response, 200, projectSurface.discover());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/observation") {
+      writeJson(response, 200, loadAiWorkspaceObservation(surfaceProjectRoot));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/projects/register") {

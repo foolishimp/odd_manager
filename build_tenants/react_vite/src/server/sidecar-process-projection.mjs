@@ -96,8 +96,30 @@ const SUPPORTED_TS_EVENT_KINDS = new Set([
   "continuation_reopened"
 ]);
 
+const ABG_SYSTEM_EVENT_KINDS = new Set([
+  "registry_entry_admitted",
+  "registry_entry_rejected",
+  "registry_plugin_advice_admitted",
+  "registry_plugin_advice_rejected",
+  "graph_function_selected",
+  "graph_function_selection_rejected",
+  "node_type_satisfaction_projected",
+  "payload_observed",
+  "payload_validated",
+  "payload_rejected",
+  "authority_snapshot_admitted",
+  "evidence_admitted",
+  "ambiguity_observation_admitted",
+  "closure_input_published",
+  "construction_action_catalog_projected",
+  "workspace_obligation_ledger_admitted",
+  "requirement_route_fact_projected",
+  "executive_pressure_fact_projected"
+]);
+
 const SIDECAR_PROCESS_MAX_EVENT_LOG_BYTES = 1024 * 1024;
 const SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS = 1200;
+const SIDECAR_ABG_SYSTEM_MAX_OPERATOR_RUNS = 120;
 const LIVE_ANALYSIS_MAX_ATTEMPTS = 24;
 const LIVE_ANALYSIS_MAX_DIAGNOSTICS = 240;
 const LIVE_ANALYSIS_MAX_RUNTIME_GAPS = 360;
@@ -112,8 +134,21 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     return unsupportedProcessProjection("", "workspace root is required");
   }
 
+  const abgSystem = loadAbgSystemProjection(root);
   const installValidation = validateTypeScriptInstall(root);
   if (!installValidation.ok) {
+    if (abgSystem !== null) {
+      return {
+        ...baseProjection(root),
+        supported: true,
+        eventCount: abgSystem.eventCount,
+        eventKinds: abgSystem.eventKinds,
+        views: materializeViews([]),
+        records: [],
+        maps: [],
+        abgSystem
+      };
+    }
     return unsupportedProcessProjection(root, installValidation.reason);
   }
   const queryDomain = loadInstalledQueryDomain(root, installValidation.manifest);
@@ -141,7 +176,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
       catalog,
       leafOverlays,
       liveAnalysis,
-      workspaceRun
+      workspaceRun,
+      abgSystem
     };
   }
 
@@ -150,7 +186,9 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     maxEvents: SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS
   });
   if (eventRead.events.length > 0 && !eventRead.events.some(isTypeScriptRuntimeEvent)) {
-    return unsupportedProcessProjection(root, "event log does not contain odd_sdlc TypeScript runtime basis");
+    if (abgSystem === null) {
+      return unsupportedProcessProjection(root, "event log does not contain odd_sdlc TypeScript runtime basis");
+    }
   }
 
   const records = projectProcessRecords(eventRead.events);
@@ -166,7 +204,8 @@ export function loadSidecarProcessProjection(workspaceRoot) {
     catalog,
     leafOverlays,
     liveAnalysis,
-    workspaceRun
+    workspaceRun,
+    abgSystem
   };
 }
 
@@ -215,9 +254,9 @@ function decorateMapsWithOverlays(maps, leafOverlays) {
 
 // ---------------------------------------------------------------------------
 // T-026: catalog loader. Invokes `odd-sdlc-ts catalog` (sibling of
-// query-domain) on the active workspace's installed TS tenant. Returns
-// SidecarProcessCatalog or null when the install is unreachable / the
-// payload contract is unrecognised.
+// query-domain) for the active workspace's published TS tenant projection.
+// Returns SidecarProcessCatalog or null when the projection is unreachable or
+// the payload contract is unrecognised.
 // ---------------------------------------------------------------------------
 
 function loadInstalledCatalog(root, manifest) {
@@ -2972,7 +3011,7 @@ function validateTypeScriptInstall(root) {
     return { ok: false, reason: "odd_sdlc TypeScript install manifest has unsupported kind" };
   }
   if (manifest?.packageName !== "@odd-sdlc/typescript-tenant") {
-    return { ok: false, reason: "workspace is not installed from @odd-sdlc/typescript-tenant" };
+    return { ok: false, reason: "workspace does not publish @odd-sdlc/typescript-tenant" };
   }
   return { ok: true, projection, manifest };
 }
@@ -3062,6 +3101,321 @@ function readRuntimeEvents(path, options = {}) {
     }
   });
   return { events, malformed, truncated, byteSize };
+}
+
+function loadAbgSystemProjection(root) {
+  const read = readAbgSystemEvents(root);
+  const systemEvents = read.events.filter(isAbgSystemEvent);
+  if (systemEvents.length === 0) return null;
+  return projectAbgSystemProjection(root, systemEvents, read.sourcePaths);
+}
+
+function readAbgSystemEvents(root) {
+  const sourcePaths = [];
+  const events = [];
+  const addEvents = (sourcePath, sourceEvents) => {
+    if (!Array.isArray(sourceEvents) || sourceEvents.length === 0) return;
+    sourcePaths.push(sourcePath);
+    sourceEvents.forEach((event, index) => {
+      if (!isObject(event)) return;
+      events.push(Object.freeze({
+        ...event,
+        __sourcePath: sourcePath,
+        __eventIndex: numberField(event, "__eventIndex") ?? index
+      }));
+    });
+  };
+
+  const eventPath = join(root, SIDECAR_PROCESS_EVENT_LOG_RELATIVE_PATH);
+  if (existsSync(eventPath)) {
+    const read = readRuntimeEvents(eventPath, {
+      maxBytes: SIDECAR_PROCESS_MAX_EVENT_LOG_BYTES,
+      maxEvents: SIDECAR_PROCESS_MAX_EVENT_LOG_EVENTS
+    });
+    addEvents(eventPath, read.events);
+  }
+
+  const operatorRunRoot = join(root, SIDECAR_OPERATOR_RUNS_RELATIVE_PATH);
+  let operatorRuns;
+  try {
+    operatorRuns = readdirSync(operatorRunRoot, { withFileTypes: true });
+  } catch {
+    operatorRuns = [];
+  }
+  operatorRuns
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .slice(-SIDECAR_ABG_SYSTEM_MAX_OPERATOR_RUNS)
+    .forEach((entry) => {
+      const runtimeEventsPath = join(operatorRunRoot, entry.name, "runtime_events.json");
+      const read = readBoundedJsonFile(runtimeEventsPath, LIVE_ANALYSIS_MAX_JSON_PARSE_BYTES);
+      if (read.skipped || !Array.isArray(read.payload?.events)) return;
+      addEvents(runtimeEventsPath, read.payload.events);
+    });
+
+  return Object.freeze({
+    sourcePaths: Object.freeze(uniqueStringList(sourcePaths)),
+    events: Object.freeze(events)
+  });
+}
+
+function isAbgSystemEvent(event) {
+  return ABG_SYSTEM_EVENT_KINDS.has(eventKind(event));
+}
+
+function eventKind(event) {
+  return stringField(event, "kind") || stringField(event, "event_type");
+}
+
+function eventSourceRef(event) {
+  return stringField(event, "eventId") ||
+    stringField(event, "event_id") ||
+    stringField(event, "entryRef") ||
+    stringField(event, "declarationRef") ||
+    stringField(event, "selectionRef") ||
+    stringField(event, "satisfactionRef") ||
+    stringField(event, "payloadRef") ||
+    stringField(event, "validationRef") ||
+    stringField(event, "catalogRef") ||
+    `${stringField(event, "__sourcePath") || "abg-event"}#${numberField(event, "__eventIndex") ?? 0}`;
+}
+
+function projectAbgSystemProjection(root, events, sourcePaths) {
+  const entries = new Map();
+  const rejectedEntries = [];
+  const selections = [];
+  const selectionRejections = [];
+  const nodeTypeSatisfactions = [];
+  const constructionActionCatalogs = [];
+  const payloadSourceEventRefs = [];
+  const payloadRefs = [];
+  let observedPayloadCount = 0;
+  let validatedPayloadCount = 0;
+  let rejectedPayloadCount = 0;
+  let authoritySnapshotCount = 0;
+  let evidenceRowCount = 0;
+  let ambiguityObservationCount = 0;
+  let closureInputCount = 0;
+
+  for (const event of events) {
+    const kind = eventKind(event);
+    if (kind === "registry_entry_admitted") {
+      const entry = mapAbgRegistryEntry(event);
+      if (entry) entries.set(entry.entryRef, entry);
+      continue;
+    }
+    if (kind === "registry_entry_rejected") {
+      const rejected = mapAbgRejectedRegistryEntry(event);
+      if (rejected) rejectedEntries.push(rejected);
+      continue;
+    }
+    if (kind === "graph_function_selected") {
+      const selection = mapAbgGraphFunctionSelection(event);
+      if (selection) selections.push(selection);
+      continue;
+    }
+    if (kind === "graph_function_selection_rejected") {
+      const rejection = mapAbgGraphFunctionSelectionRejection(event);
+      if (rejection) selectionRejections.push(rejection);
+      continue;
+    }
+    if (kind === "node_type_satisfaction_projected") {
+      const satisfaction = mapAbgNodeTypeSatisfaction(event);
+      if (satisfaction) nodeTypeSatisfactions.push(satisfaction);
+      continue;
+    }
+    if (kind === "construction_action_catalog_projected") {
+      const catalog = mapAbgConstructionActionCatalog(event);
+      if (catalog) constructionActionCatalogs.push(catalog);
+      continue;
+    }
+
+    if (isAbgPayloadLedgerSourceKind(kind)) {
+      payloadSourceEventRefs.push(eventSourceRef(event));
+      const payloadRef = stringField(event, "payloadRef");
+      if (payloadRef) payloadRefs.push(payloadRef);
+      if (kind === "payload_observed") observedPayloadCount += 1;
+      if (kind === "payload_validated") validatedPayloadCount += 1;
+      if (kind === "payload_rejected") rejectedPayloadCount += 1;
+      if (kind === "authority_snapshot_admitted") authoritySnapshotCount += 1;
+      if (kind === "evidence_admitted") evidenceRowCount += 1;
+      if (kind === "ambiguity_observation_admitted") ambiguityObservationCount += 1;
+      if (kind === "closure_input_published") closureInputCount += 1;
+    }
+  }
+
+  return Object.freeze({
+    kind: "sidecar_abg_system_projection",
+    sourceKind: "abg-runtime-events",
+    readOnly: true,
+    generatedAt: new Date().toISOString(),
+    workspaceRoot: root,
+    sourcePaths: Object.freeze([...sourcePaths]),
+    eventCount: events.length,
+    eventKinds: Object.freeze(uniqueSorted(events.map(eventKind).filter(Boolean))),
+    registry: Object.freeze({
+      kind: "sidecar_abg_runtime_registry_projection",
+      entries: Object.freeze([...entries.values()].sort((left, right) => left.entryRef.localeCompare(right.entryRef))),
+      rejectedEntries: Object.freeze(rejectedEntries),
+      selections: Object.freeze(selections),
+      selectionRejections: Object.freeze(selectionRejections)
+    }),
+    nodeTypeSatisfactions: Object.freeze(nodeTypeSatisfactions),
+    payloadLedger: Object.freeze({
+      kind: "sidecar_abg_payload_ledger_summary",
+      observedPayloadCount,
+      validatedPayloadCount,
+      rejectedPayloadCount,
+      authoritySnapshotCount,
+      evidenceRowCount,
+      ambiguityObservationCount,
+      closureInputCount,
+      payloadRefs: Object.freeze(uniqueStringList(payloadRefs)),
+      sourceEventRefs: Object.freeze(uniqueStringList(payloadSourceEventRefs))
+    }),
+    constructionActionCatalogs: Object.freeze(constructionActionCatalogs)
+  });
+}
+
+function isAbgPayloadLedgerSourceKind(kind) {
+  return kind === "payload_observed" ||
+    kind === "payload_validated" ||
+    kind === "payload_rejected" ||
+    kind === "authority_snapshot_admitted" ||
+    kind === "evidence_admitted" ||
+    kind === "ambiguity_observation_admitted" ||
+    kind === "closure_input_published";
+}
+
+function mapAbgRegistryEntry(event) {
+  const entryRef = stringField(event, "entryRef");
+  if (!entryRef) return null;
+  return Object.freeze({
+    kind: "sidecar_abg_registry_entry",
+    entryRef,
+    declarationRef: stringField(event, "declarationRef"),
+    declarationDigest: stringField(event, "declarationDigest"),
+    libraryScope: abgRegistryLibraryScope(stringField(event, "libraryScope")),
+    entryKind: abgRegistryEntryKind(stringField(event, "entryKind")),
+    namespace: stringField(event, "namespace"),
+    ownerRef: stringField(event, "ownerRef"),
+    version: stringField(event, "version"),
+    graphFunctionRef: stringField(event, "graphFunctionRef"),
+    interfaceRef: stringField(event, "interfaceRef"),
+    sourceContractRef: stringField(event, "sourceContractRef"),
+    targetContractRef: stringField(event, "targetContractRef"),
+    contextRefs: Object.freeze(stringArray(event.contextRefs)),
+    authorityRefs: Object.freeze(stringArray(event.authorityRefs)),
+    overlayRefs: Object.freeze(stringArray(event.overlayRefs)),
+    provenanceRefs: Object.freeze(stringArray(event.provenanceRefs)),
+    readinessRefs: Object.freeze(stringArray(event.readinessRefs)),
+    proofRefs: Object.freeze(stringArray(event.proofRefs)),
+    policyRefs: Object.freeze(stringArray(event.policyRefs)),
+    refinementOfEntryRef: stringOrNull(event, "refinementOfEntryRef"),
+    overrideOfEntryRef: stringOrNull(event, "overrideOfEntryRef"),
+    sourceEventRefs: Object.freeze([eventSourceRef(event)])
+  });
+}
+
+function mapAbgRejectedRegistryEntry(event) {
+  const declarationRef = stringField(event, "declarationRef");
+  if (!declarationRef) return null;
+  return Object.freeze({
+    kind: "sidecar_abg_rejected_registry_entry",
+    declarationRef,
+    declarationDigest: stringField(event, "declarationDigest"),
+    libraryScope: abgRegistryLibraryScope(stringField(event, "libraryScope")),
+    entryKind: abgRegistryEntryKind(stringField(event, "entryKind")),
+    namespace: stringField(event, "namespace"),
+    ownerRef: stringField(event, "ownerRef"),
+    rejectionReason: stringField(event, "rejectionReason"),
+    conflictingEntryRefs: Object.freeze(stringArray(event.conflictingEntryRefs)),
+    sourceEventRefs: Object.freeze([eventSourceRef(event)])
+  });
+}
+
+function mapAbgGraphFunctionSelection(event) {
+  const selectionRef = stringField(event, "selectionRef");
+  if (!selectionRef || stringField(event, "selectedEntryKind") !== "graph_function") return null;
+  return Object.freeze({
+    kind: "sidecar_abg_graph_function_selection",
+    selectionRef,
+    selectedEntryRef: stringField(event, "selectedEntryRef"),
+    selectedEntryKind: "graph_function",
+    selectedGraphFunctionRef: stringField(event, "selectedGraphFunctionRef"),
+    lookupResultRef: stringField(event, "lookupResultRef"),
+    eligibilityDecisionRefs: Object.freeze(stringArray(event.eligibilityDecisionRefs)),
+    adviceRefs: Object.freeze(stringArray(event.adviceRefs)),
+    fhResponseRefs: Object.freeze(stringArray(event.fhResponseRefs)),
+    rationaleRef: stringField(event, "rationaleRef"),
+    runtimeBasisRef: stringField(event, "runtimeBasisRef"),
+    sourceEventRefs: Object.freeze([eventSourceRef(event)])
+  });
+}
+
+function mapAbgGraphFunctionSelectionRejection(event) {
+  const lookupResultRef = stringField(event, "lookupResultRef");
+  if (!lookupResultRef) return null;
+  return Object.freeze({
+    kind: "sidecar_abg_graph_function_selection_rejection",
+    lookupResultRef,
+    rejectionReason: stringField(event, "rejectionReason"),
+    rejectedCandidateRefs: Object.freeze(stringArray(event.rejectedCandidateRefs)),
+    pressureDispositionRef: stringOrNull(event, "pressureDispositionRef"),
+    sourceEventRefs: Object.freeze([eventSourceRef(event)])
+  });
+}
+
+function mapAbgNodeTypeSatisfaction(event) {
+  const satisfactionRef = stringField(event, "satisfactionRef");
+  if (!satisfactionRef) return null;
+  return Object.freeze({
+    kind: "sidecar_abg_node_type_satisfaction",
+    satisfactionRef,
+    nodeRef: stringField(event, "nodeRef"),
+    targetTypeRef: stringField(event, "targetTypeRef"),
+    sourceNodeTypeRef: stringOrNull(event, "sourceNodeTypeRef"),
+    satisfied: Boolean(event.satisfied),
+    rejectionReason: stringOrNull(event, "rejectionReason"),
+    typeNodeRef: stringOrNull(event, "typeNodeRef"),
+    nodeTypeGraphFunctionRefs: Object.freeze(stringArray(event.nodeTypeGraphFunctionRefs)),
+    satisfactionDigest: stringField(event, "satisfactionDigest"),
+    sourceEventRefs: Object.freeze(stringArray(event.sourceEventRefs)),
+    sourceProjectionRefs: Object.freeze(stringArray(event.sourceProjectionRefs))
+  });
+}
+
+function mapAbgConstructionActionCatalog(event) {
+  const catalogRef = stringField(event, "catalogRef");
+  if (!catalogRef) return null;
+  return Object.freeze({
+    kind: "sidecar_abg_construction_action_catalog",
+    catalogRef,
+    episodeId: stringField(event, "episodeId"),
+    hookResolutionRef: stringField(event, "hookResolutionRef"),
+    fallbackConfigDigest: stringField(event, "fallbackConfigDigest"),
+    traversalPublicationRefs: Object.freeze(stringArray(event.traversalPublicationRefs)),
+    sourceEventRefs: Object.freeze([eventSourceRef(event)])
+  });
+}
+
+function abgRegistryLibraryScope(value) {
+  return value === "system" || value === "product" ? value : "product";
+}
+
+function abgRegistryEntryKind(value) {
+  return value === "graph_function" ||
+    value === "node_type" ||
+    value === "overlay" ||
+    value === "candidate_family" ||
+    value === "public_start" ||
+    value === "plugin"
+    ? value
+    : "graph_function";
+}
+
+function uniqueStringList(values) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
 }
 
 function readFileHead(path, maxBytes) {

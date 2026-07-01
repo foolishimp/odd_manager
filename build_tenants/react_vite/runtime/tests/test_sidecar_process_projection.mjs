@@ -374,6 +374,138 @@ test('missing TypeScript odd_sdlc install fails closed while preserving generic 
   assert.equal(projection.maps.length, 0);
 });
 
+test('ABG 4.2 system registry, node-type, payload, and action catalog events project without odd_sdlc install', () => {
+  const root = mkdtempSync(join(tmpdir(), 'odd-manager-abg42-'));
+  mkdirSync(join(root, '.ai-workspace/events'), { recursive: true });
+  writeFileSync(
+    join(root, '.ai-workspace/events/events.jsonl'),
+    [
+      {
+        kind: 'registry_entry_admitted',
+        entryRef: 'registry-entry://abg/system/generic-review',
+        declarationRef: 'gtl-declaration://abg/system/generic-review',
+        declarationDigest: 'sha256:system-review',
+        libraryScope: 'system',
+        entryKind: 'graph_function',
+        namespace: 'abg.system',
+        ownerRef: 'owner://abg',
+        version: '4.2.0-rc.1',
+        graphFunctionRef: 'graph-function://abg/generic-review',
+        interfaceRef: 'interface://abg/review',
+        sourceContractRef: 'contract://abg/review-input',
+        targetContractRef: 'contract://abg/review-output',
+        contextRefs: ['context://abg/project'],
+        authorityRefs: ['authority://abg/runtime'],
+        overlayRefs: ['overlay://abg/default'],
+        provenanceRefs: ['provenance://abg/system'],
+        readinessRefs: ['readiness://abg/ready'],
+        proofRefs: ['proof://abg/system'],
+        policyRefs: ['policy://abg/default'],
+        refinementOfEntryRef: null,
+        overrideOfEntryRef: null,
+      },
+      {
+        kind: 'registry_entry_admitted',
+        entryRef: 'registry-entry://odd_glc/node-type/review-document',
+        declarationRef: 'gtl-declaration://odd_glc/node-type/review-document',
+        declarationDigest: 'sha256:node-type-review',
+        libraryScope: 'product',
+        entryKind: 'node_type',
+        namespace: 'odd_glc',
+        ownerRef: 'owner://odd_glc',
+        version: '4.2.0-rc.1',
+        graphFunctionRef: 'graph-function://odd_glc/node-type/review-document',
+        interfaceRef: 'interface://odd_glc/node-type/review-document',
+        sourceContractRef: 'contract://odd_glc/review-document',
+        targetContractRef: 'contract://odd_glc/review-document',
+        contextRefs: ['context://odd_glc/review'],
+        authorityRefs: ['authority://gtl/typecheck'],
+        overlayRefs: ['overlay://odd_glc/type-library'],
+        provenanceRefs: ['provenance://odd_glc/node-type'],
+        readinessRefs: ['readiness://odd_glc/ready'],
+        proofRefs: ['proof://odd_glc/node-type'],
+        policyRefs: ['policy://odd_glc/typecheck-only'],
+        refinementOfEntryRef: null,
+        overrideOfEntryRef: null,
+      },
+      {
+        kind: 'graph_function_selected',
+        selectionRef: 'selection://abg/system/generic-review',
+        selectedEntryRef: 'registry-entry://abg/system/generic-review',
+        selectedEntryKind: 'graph_function',
+        selectedGraphFunctionRef: 'graph-function://abg/generic-review',
+        lookupResultRef: 'registry-lookup-result://abg/review',
+        eligibilityDecisionRefs: ['candidate-eligibility://abg/review'],
+        adviceRefs: [],
+        fhResponseRefs: [],
+        rationaleRef: 'rationale://abg/system-selection',
+        runtimeBasisRef: 'runtime-basis://abg/review',
+      },
+      {
+        kind: 'graph_function_selection_rejected',
+        lookupResultRef: 'registry-lookup-result://odd_glc/node-type',
+        rejectionReason: 'selected_candidate_not_graph_function',
+        rejectedCandidateRefs: ['registry-entry://odd_glc/node-type/review-document'],
+        pressureDispositionRef: null,
+      },
+      {
+        kind: 'node_type_satisfaction_projected',
+        satisfactionRef: 'node-type-satisfaction://odd_glc/review-document',
+        nodeRef: 'node://odd_glc/review-document',
+        targetTypeRef: 'node-type://odd_glc/ReviewDocument',
+        sourceNodeTypeRef: 'node-type://odd_glc/ReviewDocument',
+        satisfied: true,
+        rejectionReason: null,
+        typeNodeRef: 'node://odd_glc/type/review-document',
+        nodeTypeGraphFunctionRefs: ['graph-function://odd_glc/node-type/review-document'],
+        satisfactionDigest: 'sha256:satisfaction',
+        sourceEventRefs: ['registry-entry://odd_glc/node-type/review-document'],
+        sourceProjectionRefs: ['runtime-registry-projection://abg/test'],
+      },
+      {
+        kind: 'payload_observed',
+        payloadRef: 'payload://abg/review-output',
+      },
+      {
+        kind: 'payload_validated',
+        payloadRef: 'payload://abg/review-output',
+        validationRef: 'validation://abg/review-output',
+      },
+      {
+        kind: 'construction_action_catalog_projected',
+        catalogRef: 'catalog://abg/construction-actions',
+        episodeId: 'episode://abg/review',
+        hookResolutionRef: 'hook-resolution://abg/default',
+        fallbackConfigDigest: 'sha256:fallback',
+        traversalPublicationRefs: ['graph-function://abg/generic-review'],
+      },
+    ].map((event) => JSON.stringify(event)).join('\n'),
+  );
+
+  const projection = loadSidecarProcessProjection(root);
+  assert.equal(projection.supported, true);
+  assert.equal(projection.contractName, SIDECAR_PROCESS_CONTRACT_NAME);
+  assert.equal(projection.contractVersion, SIDECAR_PROCESS_CONTRACT_VERSION);
+  assert.equal(projection.abgSystem.kind, 'sidecar_abg_system_projection');
+  assert.deepEqual(
+    projection.abgSystem.registry.entries.map((entry) => [entry.entryKind, entry.entryRef]),
+    [
+      ['graph_function', 'registry-entry://abg/system/generic-review'],
+      ['node_type', 'registry-entry://odd_glc/node-type/review-document'],
+    ],
+  );
+  assert.equal(projection.abgSystem.registry.selections.length, 1);
+  assert.equal(projection.abgSystem.registry.selectionRejections[0].rejectionReason, 'selected_candidate_not_graph_function');
+  assert.equal(projection.abgSystem.nodeTypeSatisfactions[0].satisfied, true);
+  assert.equal(projection.abgSystem.payloadLedger.observedPayloadCount, 1);
+  assert.equal(projection.abgSystem.payloadLedger.validatedPayloadCount, 1);
+  assert.deepEqual(projection.abgSystem.payloadLedger.payloadRefs, ['payload://abg/review-output']);
+  assert.equal(projection.abgSystem.constructionActionCatalogs[0].catalogRef, 'catalog://abg/construction-actions');
+  assert.deepEqual(projection.views, []);
+  assert.deepEqual(projection.records, []);
+  assert.deepEqual(projection.maps, []);
+});
+
 test('legacy non-TypeScript process event shape is explicitly unsupported', () => {
   const root = installedTempWorkspace();
   writeFileSync(

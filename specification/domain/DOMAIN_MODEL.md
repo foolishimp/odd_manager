@@ -31,25 +31,28 @@ It gives one shared vocabulary for:
 - UI and operator-facing panels
 - audit, provenance, admission, and closure explanations
 
-The observed workspace listed above is evidence for the active `odd_sdlc`
-semantic contract. It does not define project identity for `odd_manager`.
+The observed workspace listed above is historical evidence for the first
+`odd_sdlc` adapter line. It does not define project identity for
+`odd_manager`, and it does not define the live ABG/GTL system observation
+contract.
 
 ## Position
 
 `odd_manager` owns a cross-domain supervisory core.
 
-That core is extended by domain-specific overlays published by the active
-domain package contract.
+That core is grounded in ABG/GTL system truth and extended by domain-specific
+overlays published by the active domain package contract.
 
-The live observed `odd_sdlc` contract baseline is:
-- manager contract: `odd_manager.domain-world v1`
-- source contract: `odd_sdlc.query-domain v16`
+The live core observation boundary is ABG 4.2 system-ledger and catalog truth.
+It includes ABG runtime events, registry entries, graph-function selections,
+node-type satisfaction facts, payload facts, and construction-action catalog
+entries where the managed project publishes them.
 
-The current reference observation boundary is therefore a concrete
-`odd_sdlc`-governed workspace like `data_mapper.test38`, not an abstract
-builder sketch and not the older `data_mapper.test35` read model.
+The `data_mapper.test38` / `odd_sdlc.query-domain v16` baseline remains
+pre-release adapter evidence for the first `odd_sdlc` delivery overlay. It is
+not a workspace-local runtime authority for `odd_manager`.
 
-## Observed Semantic Revision
+## Legacy odd_sdlc Adapter Evidence
 
 The prior observed standard was `data_mapper.test35` carrying
 `odd_sdlc.query-domain v10`.
@@ -82,6 +85,9 @@ Across supported domain packages, `odd_manager` supervises:
 - workorders and backing GTL graph-function carriers
 - jobs and roles
 - ABG runtime aggregates: run, graph call, frame, continuation, runtime fact
+- ABG system catalog and ledger facts: registry entries, graph-function
+  selections, node-type satisfaction, payload facts, and construction-action
+  catalog entries
 - policy, ambiguity, capability, execution-admission, provenance, and closure
   surfaces
 
@@ -113,10 +119,11 @@ It must not redefine:
 
 Those remain ABG-native.
 
-## First Supported odd_sdlc Artifact Family
+## Pre-Release odd_sdlc Adapter Artifact Family
 
-The first live `odd_sdlc` domain pack is defined against the artifact family
-observed in `data_mapper.test38`.
+The first `odd_sdlc` domain adapter evidence is defined against the artifact
+family observed in `data_mapper.test38`. It remains useful for adapter shape
+and migration comparison, but it is not the live core system contract.
 
 ### Constitutional And Runtime Inputs
 
@@ -280,10 +287,10 @@ For `odd_sdlc.query-domain v10`, this is sourced directly from the published
 For `odd_sdlc.query-domain v16`, this is derived from `gap_dossier` so current
 manager widgets can remain stable while the upstream model evolves.
 
-## odd_sdlc Extension Objects
+## odd_sdlc Adapter Extension Objects
 
-The current `odd_sdlc` pack extends the core ontology with domain objects that
-stay query-derived rather than becoming manager primitives.
+A compatible `odd_sdlc` adapter may extend the core ontology with domain
+objects that stay query-derived rather than becoming manager primitives.
 
 ### RequirementInventory
 
@@ -292,8 +299,8 @@ The generated requirement authority carried by
 
 ### RequirementClosureRegister
 
-The current carry and fulfillment status over admitted requirements, as
-published in `.ai-workspace/runtime/odd_sdlc-requirement-closure.json`.
+The carry and fulfillment status over admitted requirements, as published by a
+compatible `odd_sdlc` adapter.
 
 ### ScenarioSurface
 
@@ -363,7 +370,7 @@ or incompatibility state.
 - event emission and replay-derived runtime projection
 - proof and closure enforcement
 
-### odd_sdlc-Owned For The Current Pack
+### odd_sdlc-Owned For A Compatible Adapter
 
 - generated requirement, scenario, testcase-authority, design, test, release,
   and operational-cycle artifact families
@@ -385,13 +392,14 @@ or incompatibility state.
 ## Publishing Rules
 
 1. Core GTL/ABG runtime objects remain stable across domain packages.
-2. The current `odd_sdlc` pack is defined against observed published artifacts
-   and query surfaces, not against older `odd_method`-first assumptions.
+2. A compatible `odd_sdlc` adapter is defined against observed published
+   artifacts and query surfaces, not against older `odd_method`-first
+   assumptions.
 3. Domain overlays extend the core ontology without replacing it.
 4. Generated delivery artifacts remain domain overlays rather than new runtime
    primitives.
 5. Start-addressability, admitted execution, operational capability, and gap
-   dossiers are first-class domain publications in the current `odd_sdlc`
-   model.
+   dossiers are first-class domain publications where a compatible `odd_sdlc`
+   model publishes them.
 6. Unsupported or stale domain contracts degrade to explicit compatibility
    state while leaving core GTL/ABG projections available.

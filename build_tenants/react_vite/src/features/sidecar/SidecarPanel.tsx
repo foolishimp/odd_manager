@@ -55,6 +55,10 @@ import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
 import type {
+  AiWorkspaceArtifactRecord,
+  AiWorkspaceObservation,
+} from '../../contracts/ai-workspace-observation';
+import type {
   SidecarProcessMap,
   SidecarProcessProjection,
   SidecarProcessTone,
@@ -76,6 +80,18 @@ import {
   reduceSidecarState,
   sidecarLayoutProfileFromState,
 } from './sidecar-state';
+import {
+  aiWorkspaceArtifactLabel,
+  aiWorkspaceBrowserSummary,
+  aiWorkspacePrimaryCapability,
+  isAiWorkspaceObservationForProject,
+} from './ai-workspace-browser';
+import {
+  aiWorkspaceArtifactForRelativePath,
+  inspectAiWorkspaceArtifact,
+} from './ai-workspace-artifact-inspection';
+import type { AiWorkspaceArtifactInspection } from './ai-workspace-artifact-inspection';
+import { asAiWorkspaceObservation } from './ai-workspace-observation-validation';
 import type {
   ContextRecord,
   PendingSidecarCmd,
@@ -293,7 +309,7 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
   const { backend, viewerAgent, dispatch } = options;
   if (cmd.type === 'load') {
     dispatch({ type: 'load/start', projectRoot: cmd.projectRoot });
-    const [ctx, projects, tickets, comments, sessions, unread, processProjection] = await Promise.all([
+    const [ctx, projects, tickets, comments, sessions, unread, processProjection, aiWorkspaceObservation] = await Promise.all([
       settleSurface('context', async () => asRecord(await fetchJson(apiUrl(backend, '/api/context', cmd.projectRoot)), 'context') as unknown as ContextRecord),
       settleSurface('projects', async () => asArray<ProjectRecord>(await fetchJson(`${backend}/api/projects`), 'projects')),
       settleSurface('tickets', async () => asArray<TicketRecord>(await fetchJson(apiUrl(backend, '/api/tickets', cmd.projectRoot)), 'tickets')),
@@ -301,6 +317,7 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       settleSurface('sessions', async () => asSessionCollection(await fetchJson(apiUrl(backend, '/api/sidecar/sessions', cmd.projectRoot)))),
       settleSurface('unread comments', async () => unreadIdsFrom(await fetchJson(apiUrl(backend, '/api/comments/unread', cmd.projectRoot, { agent: viewerAgent })))),
       settleSurface('process', async () => asProcessProjection(await fetchJson(apiUrl(backend, '/api/sidecar/process', cmd.projectRoot)))),
+      settleSurface('ai-workspace observation', async () => asAiWorkspaceObservation(await fetchJson(apiUrl(backend, '/api/ai-workspace/observation', cmd.projectRoot)))),
     ]);
     const payload: Extract<SidecarMsg, { type: 'load/done' }>['payload'] = {};
     const errors: string[] = [];
@@ -332,6 +349,11 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
     else {
       payload.process = null;
       errors.push(processProjection.error);
+    }
+    if (aiWorkspaceObservation.ok) payload.aiWorkspaceObservation = aiWorkspaceObservation.value;
+    else {
+      payload.aiWorkspaceObservation = null;
+      errors.push(aiWorkspaceObservation.error);
     }
     if (errors.length > 0) {
       payload.lastAction = { ok: false, error: `load partial: ${errors.join('; ')}` };
@@ -1807,6 +1829,10 @@ function SelectionFlyout({
       dispatch({ type: 'browse/scope-set', scope: 'cross-project' });
     }
   };
+  const handleArtifactSurfaceOpen = (artifact: AiWorkspaceArtifactRecord) => {
+    onSurfaceSelect(artifact.relativePath, artifact.absolutePath, 'browse');
+    dispatch({ type: 'viewer/open', kind: 'surface', id: artifact.relativePath });
+  };
 
   const sortToolbar = (
     <NavigatorSortToolbar
@@ -2034,6 +2060,9 @@ function SelectionFlyout({
           onRefresh={refreshProjectBrowser}
         />
       );
+    const activeObservation = isAiWorkspaceObservationForProject(state.aiWorkspaceObservation, projectRoot)
+      ? state.aiWorkspaceObservation
+      : null;
     const projectBrowserTabStrip = (
       <div
         className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header"
@@ -2063,6 +2092,12 @@ function SelectionFlyout({
         actions={actionsWithRefresh(projectBrowserRefreshAction)}
         titleAddon={projectBrowserTabStrip}
       >
+        {activeObservation ? (
+          <AiWorkspaceObservationSummary
+            observation={activeObservation}
+            onArtifactOpen={handleArtifactSurfaceOpen}
+          />
+        ) : null}
         <div className="sidecar-project-browser sidecar-project-browser--tabbed">
           {projectBrowserTab === 'favourites' ? (
             <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Favourite">
@@ -2516,6 +2551,90 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
         );
       })}
     </nav>
+  );
+}
+
+function AiWorkspaceObservationSummary({
+  observation,
+  onArtifactOpen,
+}: {
+  observation: AiWorkspaceObservation;
+  onArtifactOpen: (artifact: AiWorkspaceArtifactRecord) => void;
+}) {
+  const summary = aiWorkspaceBrowserSummary(observation);
+  const visibleArtifactGroups = summary.artifactGroups.slice(0, 6);
+  const hiddenArtifactGroupCount = summary.artifactGroups.length - visibleArtifactGroups.length;
+  return (
+    <section className="sidecar-ai-workspace-summary" aria-label=".ai-workspace observation summary">
+      <div className="sidecar-ai-workspace-summary__header">
+        <div>
+          <div className="sidecar-row__title">.ai-workspace</div>
+          <div className="sidecar-row__meta" title={summary.aiWorkspaceRoot}>{summary.aiWorkspaceRoot}</div>
+        </div>
+        <div className="sidecar-ai-workspace-summary__stats" aria-label="Observation counts">
+          <Pill kind="active">{summary.presentFeatureCount} present</Pill>
+          <Pill kind="artifact">{summary.artifactCount} artifacts</Pill>
+          <Pill kind="capability">{summary.capabilityCount} capabilities</Pill>
+        </div>
+      </div>
+      <div className="sidecar-ai-workspace-summary__features" aria-label=".ai-workspace feature states">
+        {summary.features.map((feature) => {
+          const title = `${feature.label}: ${feature.state}, ${feature.artifactCount} artifact${feature.artifactCount === 1 ? '' : 's'}`;
+          return (
+            <span
+              key={feature.id}
+              className={`sidecar-ai-workspace-summary__feature sidecar-ai-workspace-summary__feature--${safeClassSuffix(feature.state)}`}
+              title={title}
+            >
+              <span>{feature.label}</span>
+              <strong>{feature.state}</strong>
+            </span>
+          );
+        })}
+      </div>
+      {summary.artifactGroups.length > 0 ? (
+        <div className="sidecar-ai-workspace-summary__artifact-groups" aria-label=".ai-workspace artifact groups">
+          {visibleArtifactGroups.map((group) => {
+            const visibleArtifacts = group.artifacts.slice(0, 3);
+            const hiddenArtifactCount = group.artifactCount - visibleArtifacts.length;
+            return (
+              <div key={group.featureId} className="sidecar-ai-workspace-summary__artifact-group">
+                <div className="sidecar-ai-workspace-summary__artifact-group-header">
+                  <span>{group.label}</span>
+                  <strong>{group.artifactCount}</strong>
+                </div>
+                <small>{group.artifactKinds.join(', ')}</small>
+                <div className="sidecar-ai-workspace-summary__artifact-list">
+                  {visibleArtifacts.map((artifact) => (
+                    <button
+                      key={artifact.artifactId}
+                      type="button"
+                      className="sidecar-ai-workspace-summary__artifact-row"
+                      title={artifact.relativePath}
+                      onClick={() => onArtifactOpen(artifact)}
+                    >
+                      <span>{aiWorkspaceArtifactLabel(artifact)}</span>
+                      <small>{artifact.artifactKind}</small>
+                      <strong>{aiWorkspacePrimaryCapability(artifact)}</strong>
+                    </button>
+                  ))}
+                  {hiddenArtifactCount > 0 ? (
+                    <div className="sidecar-ai-workspace-summary__artifact-more">
+                      +{hiddenArtifactCount} more
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {hiddenArtifactGroupCount > 0 ? (
+            <div className="sidecar-ai-workspace-summary__artifact-group-more">
+              +{hiddenArtifactGroupCount} feature group{hiddenArtifactGroupCount === 1 ? '' : 's'}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -3037,6 +3156,7 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
       <Inspector>
         <SurfaceInspector
           projectRoot={state.context?.project.root ?? null}
+          aiWorkspaceObservation={state.aiWorkspaceObservation}
           processProjection={state.process}
           tabId={tab.id}
           relativePath={tab.objectId}
@@ -3157,10 +3277,18 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
   }
 
   const catalog = projection.catalog ?? null;
+  const abgSystem = projection.abgSystem ?? null;
   const traversalOverlays = projection.traversalOverlays ?? [];
   const graphTabCount = traversalOverlays.length;
   const assetRelationships = catalog ? processAssetRelationships(catalog) : [];
   const functionItems = catalog ? processFunctionItems(catalog) : [];
+  const abgRegistryEntryCount = abgSystem?.registry.entries.length ?? 0;
+  const abgNodeTypeCount = abgSystem?.registry.entries.filter((entry) => entry.entryKind === 'node_type').length ?? 0;
+  const abgPayloadCount = abgSystem
+    ? abgSystem.payloadLedger.observedPayloadCount +
+      abgSystem.payloadLedger.validatedPayloadCount +
+      abgSystem.payloadLedger.rejectedPayloadCount
+    : 0;
   const workspaceRun = projection.workspaceRun ?? null;
   const liveAttemptCount = workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0;
   const processSections = buildProcessNavigatorSections({
@@ -3231,6 +3359,9 @@ function ProcessNavigatorSimplePanel({ state, dispatch }: {
           <Pill kind="default">{graphTabCount} overlays</Pill>
           <Pill kind="default">{catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0} functions</Pill>
           <Pill kind="default">{assetRelationships.length} assets</Pill>
+          {abgSystem ? <Pill kind="process">{abgRegistryEntryCount} ABG registry</Pill> : null}
+          {abgNodeTypeCount > 0 ? <Pill kind="default">{abgNodeTypeCount} node types</Pill> : null}
+          {abgPayloadCount > 0 ? <Pill kind="default">{abgPayloadCount} payload facts</Pill> : null}
           {workspaceRun ? <Pill kind={workspaceRun.activeFeedbackLoopCount > 0 ? 'active' : 'default'}>{workspaceRun.stageProcessCount} stage processes</Pill> : null}
           {projection.liveAnalysis && <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>{projection.liveAnalysis.telemetry.operatorRunCount} analyze runs</Pill>}
         </div>
@@ -6836,8 +6967,9 @@ function buildProcessSurfacePicker(input: {
   return null;
 }
 
-function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath, viewerState, dispatch }: {
+function SurfaceInspector({ projectRoot, aiWorkspaceObservation, processProjection, tabId, relativePath, viewerState, dispatch }: {
   projectRoot: string | null;
+  aiWorkspaceObservation: AiWorkspaceObservation | null;
   processProjection: SidecarProcessProjection | null;
   tabId: string;
   relativePath: string;
@@ -6848,6 +6980,10 @@ function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tailFollowSurface = isTailFollowSurfacePath(relativePath);
+  const activeAiWorkspaceObservation = useMemo(
+    () => isAiWorkspaceObservationForProject(aiWorkspaceObservation, projectRoot) ? aiWorkspaceObservation : null,
+    [aiWorkspaceObservation, projectRoot],
+  );
   const surfacePicker = useMemo(() => buildProcessSurfacePicker({
     projectRoot,
     processProjection,
@@ -6857,6 +6993,16 @@ function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath,
   }), [dispatch, processProjection, projectRoot, relativePath, tailFollowSurface]);
   const [tailFollowEnabled, setTailFollowEnabled] = useState(tailFollowSurface);
   const [rawTailSurface, setRawTailSurface] = useState(false);
+  const aiWorkspaceArtifact = useMemo(() => (
+    surface?.kind === 'file'
+      ? aiWorkspaceArtifactForRelativePath(activeAiWorkspaceObservation, surface.relative_path)
+      : null
+  ), [activeAiWorkspaceObservation, surface]);
+  const artifactInspection = useMemo(() => (
+    surface?.kind === 'file' && aiWorkspaceArtifact
+      ? inspectAiWorkspaceArtifact(aiWorkspaceArtifact, surface.content)
+      : null
+  ), [aiWorkspaceArtifact, surface]);
 
   useEffect(() => {
     setTailFollowEnabled(tailFollowSurface);
@@ -6920,6 +7066,7 @@ function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath,
       : surface.content;
     return (
       <div className="sidecar-surface-inspector">
+        {artifactInspection ? <AiWorkspaceArtifactInspectionPanel inspection={artifactInspection} /> : null}
         <DocumentViewer
           descriptor={descriptor}
           content={renderedContent}
@@ -6959,6 +7106,53 @@ function SurfaceInspector({ projectRoot, processProjection, tabId, relativePath,
     );
   }
   return <div className="sidecar-inspector__empty">Surface not found: {surface.relative_path}</div>;
+}
+
+function AiWorkspaceArtifactInspectionPanel({ inspection }: { inspection: AiWorkspaceArtifactInspection }) {
+  const statusKind = inspection.parseKind === 'error'
+    ? 'error'
+    : inspection.supported
+      ? 'active'
+      : 'default';
+  return (
+    <section className="sidecar-ai-artifact-inspection" aria-label=".ai-workspace artifact inspection">
+      <div className="sidecar-ai-artifact-inspection__header">
+        <div>
+          <div className="sidecar-row__title">{inspection.title}</div>
+          <div className="sidecar-row__meta">{inspection.summary}</div>
+        </div>
+        <div className="sidecar-ai-artifact-inspection__pills">
+          <Pill kind={statusKind}>{inspection.parseKind}</Pill>
+          <Pill kind="artifact">{inspection.artifactKind}</Pill>
+          <Pill kind="default">{inspection.featureId}</Pill>
+        </div>
+      </div>
+      {inspection.facts.length > 0 ? <MetaGrid items={inspection.facts.map((fact) => [fact.label, fact.value])} /> : null}
+      {inspection.eventKinds.length > 0 ? (
+        <div className="sidecar-ai-artifact-inspection__event-kinds" aria-label="Event kind counts">
+          {inspection.eventKinds.map((entry) => (
+            <span key={entry.kind} className="status-chip default">
+              {entry.kind}
+              <strong>{entry.count}</strong>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {inspection.topLevelKeys.length > 0 ? (
+        <div className="sidecar-ai-artifact-inspection__keys">
+          {inspection.topLevelKeys.slice(0, 16).join(', ')}
+          {inspection.topLevelKeys.length > 16 ? `, +${inspection.topLevelKeys.length - 16} more` : ''}
+        </div>
+      ) : null}
+      {inspection.diagnostics.length > 0 ? (
+        <div className="sidecar-ai-artifact-inspection__diagnostics">
+          {inspection.diagnostics.map((diagnostic) => (
+            <div key={diagnostic}>{diagnostic}</div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function surfaceRawUrl(projectRoot: string, relativePath: string) {
