@@ -130,6 +130,6 @@ test('isAiWorkspaceObservationForProject ignores trailing slashes and rejects st
   const current = observation();
 
   assert.equal(module.isAiWorkspaceObservationForProject(current, '/workspace/odd_glc/'), true);
-  assert.equal(module.isAiWorkspaceObservationForProject(current, '/workspace/odd_sdlc'), false);
+  assert.equal(module.isAiWorkspaceObservationForProject(current, '/workspace/odd_other'), false);
   assert.equal(module.isAiWorkspaceObservationForProject(null, '/workspace/odd_glc'), false);
 });

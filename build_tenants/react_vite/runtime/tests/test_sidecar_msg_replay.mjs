@@ -15,6 +15,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
+const developerControlHostPath = resolve(here, '../../src/capabilities/host/DeveloperControlHost.tsx');
+const buildPortfolioViewPath = resolve(here, '../../src/capabilities/build-portfolio/view.tsx');
+const buildPortfolioStatePath = resolve(here, '../../src/capabilities/build-portfolio/state.ts');
+const buildPortfolioRuntimePath = resolve(here, '../../src/effects/command-runtime/build-portfolio-command-runtime.ts');
 const appShellPath = resolve(here, '../../src/layout/AppShell.tsx');
 const serverIndexPath = resolve(here, '../../src/server/index.mjs');
 const collaborationPath = resolve(here, '../../src/lib/collaboration.ts');
@@ -39,27 +43,27 @@ function baseState(module) {
     ...module.INITIAL_SIDECAR_STATE,
     loading: false,
     context: {
-      project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'odd_sdlc' },
-      workspace: { id: 'react_vite', profile: 'odd_sdlc' },
+      project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'unknown' },
+      workspace: { id: 'react_vite', profile: 'unknown' },
       session: null,
     },
     projects: [
       {
         id: 'odd_manager',
         root: '/workspace/odd_manager',
-        odd_type: 'odd_sdlc',
+        odd_type: 'unknown',
         has_ai_workspace: true,
         has_genesis: true,
-        installed_packages: ['odd_sdlc'],
+        installed_packages: [],
         build_tenants: ['react_vite'],
       },
       {
         id: 'data_mapper',
         root: '/workspace/data_mapper',
-        odd_type: 'odd_sdlc',
+        odd_type: 'unknown',
         has_ai_workspace: true,
         has_genesis: true,
-        installed_packages: ['odd_sdlc'],
+        installed_packages: [],
         build_tenants: ['scala_sbt'],
       },
     ],
@@ -145,8 +149,8 @@ test('stale project load result cannot overwrite a newer requested root', async 
     projectRoot: '/workspace/odd_manager',
     payload: {
       context: {
-        project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'odd_sdlc' },
-        workspace: { id: 'react_vite', profile: 'odd_sdlc' },
+        project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'unknown' },
+        workspace: { id: 'react_vite', profile: 'unknown' },
         session: null,
       },
       tickets: [{ id: 'STALE', title: 'stale ticket', lane: 'active', status: 'active' }],
@@ -163,8 +167,8 @@ test('stale project load result cannot overwrite a newer requested root', async 
     projectRoot: '/workspace/data_mapper',
     payload: {
       context: {
-        project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'odd_sdlc' },
-        workspace: { id: 'scala_sbt', profile: 'odd_sdlc' },
+        project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+        workspace: { id: 'scala_sbt', profile: 'unknown' },
         session: null,
       },
       tickets: [{ id: 'CURRENT', title: 'current ticket', lane: 'active', status: 'active' }],
@@ -215,7 +219,7 @@ test('path history copy request appends recent path and emits clipboard Cmd', as
     absolutePath: '/workspace/odd_manager/specification/PRODUCT.md',
     projectRoot: '/workspace/odd_manager',
     relativePath: 'specification/PRODUCT.md',
-    source: 'browse',
+    source: 'provider',
     timestamp: '2026-04-29T00:00:00.000Z',
   };
   const result = module.replaySidecarMessages(baseState(module), [
@@ -269,7 +273,7 @@ test('session spawn and kill replay exposes session Cmds with current project ro
     { type: 'action/result', ok: true, message: 'killed sess-1', reload: true },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'main' },
+    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'main', cwd: null, label: null },
     { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
     { type: 'session.kill', id: 'sess-1', projectRoot: '/workspace/odd_manager' },
     { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
@@ -290,6 +294,16 @@ test('workspace collapse replay changes UI state without Cmd effects', async () 
   assert.equal(result.state.ui.infoCollapsed, false);
   assert.equal(result.state.ui.infoPinned, false);
   assert.equal(result.state.ui.shellCollapsed, true);
+});
+
+test('fresh Sidecar state keeps the terminal dock collapsed until explicitly restored', async () => {
+  const module = await loadStateModule();
+  assert.equal(module.INITIAL_SIDECAR_STATE.ui.shellCollapsed, true);
+  const restored = module.replaySidecarMessages(module.INITIAL_SIDECAR_STATE, [
+    { type: 'ui/toggle-workspace', workspace: 'shell', collapsed: false },
+  ]);
+  assert.deepEqual(restored.commands, []);
+  assert.equal(restored.state.ui.shellCollapsed, false);
 });
 
 test('selection flyout pin replay opens the browser without Cmd effects', async () => {
@@ -349,7 +363,6 @@ test('section chrome commands are consolidated into the right rail', () => {
   assert.doesNotMatch(source, /sidecar-section-controls/);
   assert.doesNotMatch(styles, /\.sidecar-section-controls\s*\{/);
   assert.doesNotMatch(railSource, /Restore info browser|Minimize info browser/);
-  assert.match(railSource, /<ContextRailCommand[\s\S]*label="Open Process Navigator"/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label=\{state\.ui\.shellCollapsed \? 'Restore shell workspace' : 'Minimize shell workspace'\}/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
   assert.match(styles, /\.sidecar-context-rail__command\s*\{/);
@@ -424,14 +437,6 @@ test('layout profile load validates and applies persisted workbench state withou
     { type: 'ui/resize-preview', target: 'contextRail', valuePx: 128 },
     { type: 'ui/select-info-surface', surface: 'comments' },
     { type: 'ui/set-info-pinned', pinned: true },
-    { type: 'process/select-record', id: 'process-record-1' },
-    { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
-    { type: 'process/set-live-internal-row-collapsed', collapsed: true },
-    { type: 'process/set-live-transcript-collapsed', collapsed: true },
-    { type: 'process/set-live-detail-row-collapsed', collapsed: true },
-    { type: 'process/set-live-gap-row-collapsed', collapsed: true },
-    { type: 'process/set-live-event-viewer-collapsed', collapsed: true },
-    { type: 'process/set-graph-mode', mode: 'compressed' },
     { type: 'session/select', id: 'sess-1' },
   ]).state;
   const profile = module.sidecarLayoutProfileFromState(persistedState, contextKey);
@@ -443,14 +448,6 @@ test('layout profile load validates and applies persisted workbench state withou
   assert.equal(result.state.ui.workbenchLayout.contextRailWidthPx, 128);
   assert.equal(result.state.ui.activeInfoSurface, 'comments');
   assert.equal(result.state.ui.infoPinned, true);
-  assert.equal(result.state.ui.activeProcessRecordId, 'process-record-1');
-  assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
-  assert.equal(result.state.ui.liveInternalRowCollapsed, true);
-  assert.equal(result.state.ui.liveTranscriptCollapsed, true);
-  assert.equal(result.state.ui.liveDetailRowCollapsed, true);
-  assert.equal(result.state.ui.liveGapRowCollapsed, true);
-  assert.equal(result.state.ui.liveEventViewerCollapsed, true);
-  assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
 });
 
@@ -471,6 +468,26 @@ test('layout profile load preserves the actively selected viewer object', async 
   assert.equal(result.state.selection.id, 'odd_manager');
   assert.equal(result.state.ui.viewerWorkspace.groups[0].activeTabId, 'project:odd_manager');
   assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'project:odd_manager'));
+});
+
+test('layout profile migration drops retired viewer tabs without erasing operator layout', async () => {
+  const module = await loadStateModule();
+  const contextKey = '/workspace/odd_manager::react_vite';
+  const profile = module.sidecarLayoutProfileFromState(baseState(module), contextKey);
+  profile.ui.workbenchLayout.explorerWidthPx = 512;
+  profile.ui.viewerWorkspace.tabs.push({ id: 'process:navigator', kind: 'process', objectId: 'navigator' });
+  profile.ui.viewerWorkspace.groups[0].tabIds.push('process:navigator');
+  profile.ui.viewerWorkspace.groups[0].activeTabId = 'process:navigator';
+
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'layout/profile-loaded', contextKey, payload: profile },
+  ]);
+
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.lastAction, null);
+  assert.equal(result.state.ui.workbenchLayout.explorerWidthPx, 512);
+  assert.equal(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'process:navigator'), false);
+  assert.equal(result.state.ui.viewerWorkspace.groups[0].activeTabId, null);
 });
 
 test('document viewer zoom state is scoped to surface tabs and persists in layout profiles', async () => {
@@ -597,13 +614,6 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer__surface-picker\s*\{[^}]*display:\s*inline-flex;[^}]*font-size:\s*0\.68rem;/s);
   assert.match(styles, /\.document-viewer__surface-picker\s+select\s*\{[^}]*width:\s*clamp\(9rem,\s*18vw,\s*17rem\);/s);
   assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
-  assert.match(sidecarSource, /processProjection=\{state\.process\}/);
-  assert.match(sidecarSource, /function buildProcessSurfacePicker/);
-  assert.match(sidecarSource, /if \(!input\.enabled \|\| !input\.processProjection\?\.liveAnalysis\) return null;/);
-  assert.match(sidecarSource, /attempt\.detail\.stageProcesses/);
-  assert.match(sidecarSource, /const surfacePicker = useMemo\(\(\) => buildProcessSurfacePicker/);
-  assert.match(sidecarSource, /enabled: tailFollowSurface/);
-  assert.match(sidecarSource, /dispatch\(\{ type: 'viewer\/open', kind: 'surface', id: nextPath \}\)/);
   assert.match(sidecarSource, /const \[tailFollowEnabled,\s*setTailFollowEnabled\] = useState\(tailFollowSurface\)/);
   assert.match(sidecarSource, /const \[rawTailSurface,\s*setRawTailSurface\] = useState\(false\)/);
   assert.match(sidecarSource, /setRawTailSurface\(false\)/);
@@ -613,7 +623,6 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(sidecarSource, /tailFollowAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeEnabled=\{rawTailSurface\}/);
-  assert.match(sidecarSource, /surfacePicker=\{surfacePicker\}/);
   assert.match(sidecarSource, /onTailFollowToggle=\{\(\) => setTailFollowEnabled\(\(enabled\) => !enabled\)\}/);
   assert.match(sidecarSource, /onRawModeToggle=\{\(\) => setRawTailSurface\(\(raw\) => !raw\)\}/);
   assert.match(sidecarSource, /onZoomBy=\{\(delta\) => dispatch\(\{ type: 'document\/zoom', tabId, delta \}\)\}/);
@@ -660,12 +669,14 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*overflow:\s*visible;/s);
 });
 
-test('Sidecar load keeps Projects visible when a workspace-scoped surface fails', () => {
+test('Sidecar load keeps registry context available when a workspace-scoped surface fails', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const stateSource = readFileSync(stateModulePath, 'utf-8');
   assert.match(source, /settleSurface\('projects'/);
   assert.match(source, /payload\.projects = projects\.value/);
   assert.match(source, /load partial:/);
   assert.doesNotMatch(source, /const error = `load failed:/);
+  assert.doesNotMatch(stateSource, /\{ id: 'projects', label: 'Projects'/);
 });
 
 test('Sidecar browser requests uncapped filesystem entries while generic browse stays bounded', () => {
@@ -704,16 +715,21 @@ test('directory surface tabs reuse the Sidecar folder browser and open entries a
   assert.match(styles, /\.sidecar-folder-tree--surface-tab\s*\{[^}]*gap:\s*0\.1rem;/s);
 });
 
-test('sidecar project selection promotes one active Project root across shell and browser', () => {
+test('Build Portfolio activation promotes one active Project root while Sidecar stays on that Context', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
   const routeSource = readFileSync(workspaceRoutePath, 'utf-8');
+  const hostSource = readFileSync(developerControlHostPath, 'utf-8');
   const appShellSource = readFileSync(appShellPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(source, /const currentProjectRoot = state\.activeLoadRoot \?\? state\.context\?\.project\.root \?\? projectRoot \?\? null;/);
   assert.match(source, /await setActiveProject\(project\.id\)/);
-  assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
-  assert.match(routeSource, /<SidecarPanel[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onContextChange=\{\(ctx\) => \{/);
-  assert.match(routeSource, /if \(ctx\.project\.root !== workspaceRoot\) \{[\s\S]*onProjectRootChange\(ctx\.project\.root\);/);
+  assert.doesNotMatch(source, /registerIfMissing: false/);
+  assert.match(routeSource, /<DeveloperControlHost[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onProjectRootChange=\{onProjectRootChange\}/);
+  assert.match(hostSource, /if \(!portfolioState\.activatedProjectRoot\) return;/);
+  assert.match(hostSource, /dispatchPortfolio\(\{ type: "portfolio\/project-activation-consumed" \}\);/);
+  assert.match(hostSource, /if \(nextRoot !== projectRoot\) onProjectRootChange\(nextRoot\);/);
+  assert.match(hostSource, /<SidecarPanel[\s\S]*projectRoot=\{projectRoot\}[\s\S]*onContextChange=\{\(context\) => \{/);
+  assert.match(hostSource, /if \(context\.project\.root !== projectRoot\) \{[\s\S]*onProjectRootChange\(context\.project\.root\);/);
   assert.doesNotMatch(routeSource, /selectedPage|ManagerWorld|RequirementsWorkspace|ProcessWorkspace|RuntimePanel|BuilderPanel|GraphWorkspace|HomePanel|InspectorPanel|WorldModelPanel|OddBoardWidget|OddTermWorkspaceWidget/);
   assert.doesNotMatch(appShellSource, /manager-nav|shell__control-card--status|Single STDO-UX workbench|<strong>Sidecar<\/strong>/);
   assert.match(appShellSource, /className="secondary shell__icon-button"/);
@@ -752,7 +768,7 @@ test('layout profile reset and save failure replay without product Cmd effects',
   ]);
   assert.deepEqual(result.commands, []);
   assert.equal(result.state.ui.workbenchLayout.explorerWidthPx, 384);
-  assert.equal(result.state.ui.shellCollapsed, false);
+  assert.equal(result.state.ui.shellCollapsed, true);
   assert.equal(result.state.ui.terminalWorkspace.groups[0].activeTabId, 'session:sess-1');
   assert.equal(result.state.lastAction.ok, false);
   assert.match(result.state.lastAction.error, /layout profile save failed/);
@@ -762,7 +778,9 @@ test('rail flyout surface selection replays without Cmd effects', async () => {
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'ui/toggle-workspace', workspace: 'info', collapsed: true },
-    { type: 'ui/select-info-surface', surface: 'projects' },
+    { type: 'ui/select-info-surface', surface: 'browse' },
+    { type: 'ui/select-info-surface', surface: 'specification' },
+    { type: 'ui/select-info-surface', surface: 'build-tenants' },
     { type: 'ui/select-info-surface', surface: 'comments', open: false },
   ]);
   assert.deepEqual(result.commands, []);
@@ -770,11 +788,11 @@ test('rail flyout surface selection replays without Cmd effects', async () => {
   assert.equal(result.state.ui.infoCollapsed, true);
 });
 
-test('explorer provider registry omits sessions while session selection replays without Cmd effects', async () => {
+test('explorer provider registry omits Projects and sessions while session selection replays without Cmd effects', async () => {
   const module = await loadStateModule();
   assert.deepEqual(
     module.SIDECAR_EXPLORER_PROVIDERS.map((provider) => provider.id),
-    ['projects', 'tickets', 'comments', 'browse', 'history'],
+    ['tickets', 'comments', 'specification', 'build-tenants', 'browse', 'history'],
   );
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'select', kind: 'session', id: 'sess-1' },
@@ -784,6 +802,14 @@ test('explorer provider registry omits sessions while session selection replays 
   assert.equal(result.state.selection.kind, 'session');
   assert.equal(result.state.selection.id, 'sess-1');
   assert.equal(result.state.activeSessionId, 'sess-1');
+});
+
+test('Tickets folder navigator projects canonical lane counts without a second ticket store', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  assert.match(source, /const ticketFolderCounts = useMemo/);
+  assert.match(source, /state\.tickets\.filter\(\(ticket\) => ticket\.lane === lane\)\.length/);
+  assert.match(source, /count=\{folderCounts\?\.\[normalizedPath\] \?\? entries\.length\}/);
+  assert.match(source, /folderCounts=\{ticketFolderCounts\}/);
 });
 
 test('viewer tab open, select, split, and close replay without Cmd effects', async () => {
@@ -811,62 +837,6 @@ test('viewer tab open, select, split, and close replay without Cmd effects', asy
   assert.equal(result.state.ui.viewerWorkspace.activeGroupId, 'main');
   assert.equal(result.state.selection.kind, 'comment');
   assert.equal(result.state.selection.id, 'codex/20260427T010101Z_REVIEW_note');
-});
-
-test('process navigator opens as an object viewer tab and keeps record selection in reducer state', async () => {
-  const module = await loadStateModule();
-  const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'viewer/open', kind: 'process', id: 'navigator' },
-    { type: 'process/select-record', id: 'process-record-1' },
-    { type: 'process/select-record', id: 'process-record-2' },
-    { type: 'process/set-live-active-run-row-collapsed', collapsed: true },
-    { type: 'process/set-live-internal-row-collapsed', collapsed: true },
-    { type: 'process/set-live-transcript-collapsed', collapsed: true },
-    { type: 'process/set-live-detail-row-collapsed', collapsed: true },
-    { type: 'process/set-live-gap-row-collapsed', collapsed: true },
-    { type: 'process/set-live-event-viewer-collapsed', collapsed: true },
-    { type: 'process/set-graph-mode', mode: 'compressed' },
-  ]);
-  assert.deepEqual(result.commands, []);
-  assert.equal(result.state.selection.kind, 'process');
-  assert.equal(result.state.selection.id, 'navigator');
-  assert.equal(result.state.ui.activeProcessRecordId, 'process-record-2');
-  assert.equal(result.state.ui.liveActiveRunRowCollapsed, true);
-  assert.equal(result.state.ui.liveInternalRowCollapsed, true);
-  assert.equal(result.state.ui.liveTranscriptCollapsed, true);
-  assert.equal(result.state.ui.liveDetailRowCollapsed, true);
-  assert.equal(result.state.ui.liveGapRowCollapsed, true);
-  assert.equal(result.state.ui.liveEventViewerCollapsed, true);
-  assert.equal(result.state.ui.activeProcessGraphMode, 'compressed');
-  assert.deepEqual(
-    result.state.ui.viewerWorkspace.tabs.map((tab) => [tab.id, tab.kind, tab.objectId]),
-    [['process:navigator', 'process', 'navigator']],
-  );
-});
-
-test('process navigator collapse-all replay owns every Live View row', async () => {
-  const module = await loadStateModule();
-  const collapsed = module.replaySidecarMessages(baseState(module), [
-    { type: 'process/set-live-all-collapsed', collapsed: true },
-  ]);
-  assert.deepEqual(collapsed.commands, []);
-  assert.equal(collapsed.state.ui.liveActiveRunRowCollapsed, true);
-  assert.equal(collapsed.state.ui.liveInternalRowCollapsed, true);
-  assert.equal(collapsed.state.ui.liveTranscriptCollapsed, true);
-  assert.equal(collapsed.state.ui.liveDetailRowCollapsed, true);
-  assert.equal(collapsed.state.ui.liveGapRowCollapsed, true);
-  assert.equal(collapsed.state.ui.liveEventViewerCollapsed, true);
-
-  const expanded = module.replaySidecarMessages(collapsed.state, [
-    { type: 'process/set-live-all-collapsed', collapsed: false },
-  ]);
-  assert.deepEqual(expanded.commands, []);
-  assert.equal(expanded.state.ui.liveActiveRunRowCollapsed, false);
-  assert.equal(expanded.state.ui.liveInternalRowCollapsed, false);
-  assert.equal(expanded.state.ui.liveTranscriptCollapsed, false);
-  assert.equal(expanded.state.ui.liveDetailRowCollapsed, false);
-  assert.equal(expanded.state.ui.liveGapRowCollapsed, false);
-  assert.equal(expanded.state.ui.liveEventViewerCollapsed, false);
 });
 
 test('viewer split reset keeps main group and emits no Cmd effects', async () => {
@@ -969,7 +939,7 @@ test('terminal tab open, select, split, and close replay without Cmd effects', a
   assert.equal(result.state.activeSessionId, 'sess-1');
 });
 
-test('process node terminal jump opens dock and selects target shell without Cmd effects', async () => {
+test('terminal jump-to-session opens dock and selects target shell without Cmd effects', async () => {
   const module = await loadStateModule();
   const state = {
     ...baseState(module),
@@ -1087,7 +1057,7 @@ test('empty terminal split group can be targeted for session select and spawn', 
     },
   ]);
   assert.deepEqual(spawned.commands, [
-    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'secondary' },
+    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'secondary', cwd: null, label: null },
   ]);
   const spawnedSecondary = spawned.state.ui.terminalWorkspace.groups.find((group) => group.id === 'secondary');
   assert.equal(spawnedSecondary.activeTabId, 'session:sess-3');
@@ -1188,11 +1158,6 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
   assert.match(railSource, /<ContextRailItem[\s\S]*symbol="O"[\s\S]*label="Selection"/);
   assert.match(railSource, /<ContextRailCommand[\s\S]*label="Reset sidecar layout"/);
   assert.doesNotMatch(railSource, /symbol="N0"/);
-  assert.doesNotMatch(railSource, /Open Process Navigator N0/);
-  assert.ok(
-    railSource.indexOf('label="Open Process Navigator"') < railSource.indexOf("label={state.ui.shellCollapsed ? 'Restore shell workspace' : 'Minimize shell workspace'}"),
-    'Process Navigator is the first right-rail command',
-  );
   assert.doesNotMatch(railSource, /ResizeHandle/);
   assert.doesNotMatch(railSource, /target="contextRail"/);
 
@@ -1210,309 +1175,6 @@ test('sidecar right rail is a narrow sweep-out context affordance', () => {
     sidecarBlock,
     /\.sidecar-context-rail__item:hover\s+\.sidecar-context-rail__detail,\s*\.sidecar-context-rail__item:focus\s+\.sidecar-context-rail__detail,\s*\.sidecar-context-rail__item:focus-visible\s+\.sidecar-context-rail__detail\s*\{[^}]*opacity:\s*1;/s,
   );
-});
-
-test('process navigator source is right-rail selected and object-viewer hosted', () => {
-  const source = readFileSync(sidecarPanelPath, 'utf-8');
-  const styles = readFileSync(stylesPath, 'utf-8');
-  const railSource = source.slice(
-    source.indexOf('<aside className="sidecar-context-rail"'),
-    source.indexOf('<section className="sidecar-bottom-dock"'),
-  );
-  const processPanelStart = source.indexOf('function buildProcessNavigatorSections');
-  const processPanelSource = source.slice(
-    processPanelStart,
-    source.indexOf('function compactIdentity'),
-  );
-  const simpleProcessPanelSource = processPanelSource;
-  const activeArchiveActionIndex = processPanelSource.indexOf('Active archive');
-  const processNavigatorVisibilityIndex = processPanelSource.indexOf('aria-label="Process Navigator row visibility"');
-
-  assert.match(railSource, /<ContextRailCommand[\s\S]*symbol="N"[\s\S]*label="Open Process Navigator"[\s\S]*type: 'viewer\/open', kind: 'process', id: 'navigator'/);
-  assert.doesNotMatch(railSource, /symbol="N0"/);
-  assert.doesNotMatch(railSource, /navigator-simple/);
-  assert.match(railSource, /type: 'ui\/toggle-workspace', workspace: 'info', collapsed: true/);
-  assert.match(source, /state\.ui\.infoPinned\) return;/);
-  assert.match(source, /type: 'ui\/set-info-pinned'/);
-  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-main-area\s*\{[^}]*grid-template-columns:\s*min\(var\(--sidecar-explorer-width,\s*24rem\),\s*42%\)\s+minmax\(0,\s*1fr\);/s);
-  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-flyout\s*\{[^}]*position:\s*relative;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
-  assert.match(styles, /\.sidecar-workbench\.is-left-pinned\s+\.sidecar-canvas\s*\{[^}]*grid-column:\s*2;/s);
-  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*return <ProcessNavigatorSimplePanel state=\{state\} dispatch=\{dispatch\} \/>;/);
-  assert.match(source, /if \(tab\.kind === 'process'\) \{[\s\S]*return 'Process Navigator';/);
-  assert.doesNotMatch(source, /Process Navigator N0|Use N0/);
-  assert.match(simpleProcessPanelSource, /Graph Overlays/);
-  assert.doesNotMatch(source, /function ProcessNavigatorPanel/);
-  assert.match(simpleProcessPanelSource, /Function Catalog/);
-  assert.match(simpleProcessPanelSource, /Asset Nodes/);
-  assert.match(simpleProcessPanelSource, /Runtime State/);
-  assert.match(simpleProcessPanelSource, /useState<ProcessNavigatorSimpleTab>\('live'\)/);
-  assert.match(simpleProcessPanelSource, /buildProcessNavigatorSections/);
-  assert.match(simpleProcessPanelSource, /tab:\s*'live', label:\s*'Runtime State'/);
-  assert.match(simpleProcessPanelSource, /input\.graphTabCount > 0/);
-  assert.match(simpleProcessPanelSource, /input\.functionCount > 0/);
-  assert.match(simpleProcessPanelSource, /input\.assetCount > 0/);
-  assert.match(simpleProcessPanelSource, /projection\.liveAnalysis/);
-  assert.match(simpleProcessPanelSource, /<ProcessLiveViewPanel[\s\S]*analysis=\{projection\.liveAnalysis \?\? null\}/);
-  assert.match(simpleProcessPanelSource, /const liveRefreshRoot = state\.context\?\.project\.root \?\? projection\?\.workspaceRoot \?\? null;/);
-  assert.match(simpleProcessPanelSource, /terminalSessions=\{state\.sessions\.records\}/);
-  assert.match(simpleProcessPanelSource, /activeTerminalSessionId=\{state\.activeSessionId\}/);
-  assert.match(simpleProcessPanelSource, /onOpenTerminalSession=\{\(sessionId\) => dispatch\(\{ type: 'terminal\/jump-to-session', sessionId \}\)\}/);
-  assert.match(simpleProcessPanelSource, /resolveAttemptTerminalTarget\(attempt,\s*operatorRun,\s*terminalSessions,\s*activeTerminalSessionId\)/);
-  assert.match(simpleProcessPanelSource, /resolveActiveProcessTerminalSession\(sessions,\s*activeTerminalSessionId\)/);
-  assert.match(simpleProcessPanelSource, /resolveAttemptTailSurface\(attempt,\s*operatorRun\)/);
-  assert.match(simpleProcessPanelSource, /latestTerminalSession\(sessions\.filter\(isLiveTerminalSession\),\s*activeTerminalSessionId\)/);
-  assert.match(simpleProcessPanelSource, /projectedTerminalSessionIds\(attempt,\s*operatorRun\)/);
-  assert.match(simpleProcessPanelSource, /raw\.lastOutputAt/);
-  assert.match(simpleProcessPanelSource, /Open active PTY/);
-  assert.match(simpleProcessPanelSource, /Open last active PTY/);
-  assert.match(simpleProcessPanelSource, /Open run tail/);
-  assert.match(simpleProcessPanelSource, /className="sidecar-live-view__attempt-terminal"/);
-  assert.match(simpleProcessPanelSource, /onOpenTerminalSession\(terminalTarget\.session\.id\)/);
-  assert.match(simpleProcessPanelSource, /onOpenTracePath\(terminalTarget\.path\)/);
-  const terminalTargetResolverSource = simpleProcessPanelSource.slice(
-    simpleProcessPanelSource.indexOf('function resolveAttemptTerminalTarget'),
-    simpleProcessPanelSource.indexOf('const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS'),
-  );
-  assert.ok(
-    terminalTargetResolverSource.indexOf('const projectedSession = latestTerminalSession(projectedSessions, activeTerminalSessionId);') <
-      terminalTargetResolverSource.indexOf('const surface = resolveAttemptTailSurface(attempt, operatorRun);'),
-    'projected terminal sessions should be considered before archived tail surfaces.',
-  );
-  assert.ok(
-    terminalTargetResolverSource.indexOf('const surface = resolveAttemptTailSurface(attempt, operatorRun);') <
-      terminalTargetResolverSource.indexOf('const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);'),
-    'run-owned tail surfaces should be considered before unrelated active terminal sessions.',
-  );
-  const terminalButtonSource = simpleProcessPanelSource.slice(
-    simpleProcessPanelSource.indexOf('className="sidecar-live-view__attempt-terminal"'),
-    simpleProcessPanelSource.indexOf('aria-label={terminalLabel}'),
-  );
-  assert.doesNotMatch(terminalButtonSource, /setSelectedAttemptRef/);
-  assert.ok(
-    simpleProcessPanelSource.indexOf('const requestLiveRefresh = useCallback') < simpleProcessPanelSource.indexOf('if (!projection)'),
-    'Process navigator refresh hook must be declared before projection early returns.',
-  );
-  assert.match(simpleProcessPanelSource, /projectRoot=\{liveRefreshRoot\}/);
-  assert.match(simpleProcessPanelSource, /window\.setInterval\(\(\) => \{[\s\S]*type: 'load\/request'[\s\S]*reason: 'action_completed'[\s\S]*\}, 30000\)/);
-  assert.match(simpleProcessPanelSource, /onRefresh=\{requestLiveRefresh\}/);
-  assert.match(simpleProcessPanelSource, /refreshing=\{state\.loading && state\.activeLoadRoot === liveRefreshRoot\}/);
-  assert.match(simpleProcessPanelSource, /liveActiveRunRowCollapsed=\{state\.ui\.liveActiveRunRowCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-active-run-row-collapsed/);
-  assert.match(simpleProcessPanelSource, /liveInternalRowCollapsed=\{state\.ui\.liveInternalRowCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-internal-row-collapsed/);
-  assert.match(simpleProcessPanelSource, /liveTranscriptCollapsed=\{state\.ui\.liveTranscriptCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-transcript-collapsed/);
-  assert.match(simpleProcessPanelSource, /liveDetailRowCollapsed=\{state\.ui\.liveDetailRowCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-detail-row-collapsed/);
-  assert.match(simpleProcessPanelSource, /liveGapRowCollapsed=\{state\.ui\.liveGapRowCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-gap-row-collapsed/);
-  assert.match(simpleProcessPanelSource, /liveEventViewerCollapsed=\{state\.ui\.liveEventViewerCollapsed\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-live-event-viewer-collapsed/);
-  assert.match(simpleProcessPanelSource, /onLiveAllCollapsedChange=\{\(collapsed\) => dispatch\(\{ type: 'process\/set-live-all-collapsed', collapsed \}\)\}/);
-  assert.match(simpleProcessPanelSource, /traversalOverlays/);
-  assert.match(simpleProcessPanelSource, /ProcessOverlayCard/);
-  assert.match(simpleProcessPanelSource, /ProcessSimpleGraphPanel/);
-  assert.match(simpleProcessPanelSource, /ProcessCompressedNavigator/);
-  assert.match(simpleProcessPanelSource, /buildProcessRailModel/);
-  assert.match(simpleProcessPanelSource, /graphMode=\{state\.ui\.activeProcessGraphMode\}/);
-  assert.match(simpleProcessPanelSource, /process\/set-graph-mode/);
-  assert.match(simpleProcessPanelSource, /aria-expanded=\{graphMode === 'expanded'\}/);
-  assert.match(simpleProcessPanelSource, /graphMode === 'compressed' \? \([\s\S]*<ProcessCompressedNavigator[\s\S]*\) : \([\s\S]*<ProcessGraphMap/);
-  assert.match(simpleProcessPanelSource, /dispatch\(\{ type: 'process\/select-record', id \}\)/);
-  assert.doesNotMatch(simpleProcessPanelSource, /operate-nav/);
-  assert.match(simpleProcessPanelSource, /buildSimpleOverlayGraph/);
-  assert.match(simpleProcessPanelSource, /buildSimpleFunctionGraph/);
-  assert.match(simpleProcessPanelSource, /buildSimpleAssetGraph/);
-  assert.doesNotMatch(simpleProcessPanelSource, /Use N0 for the legacy process maps/);
-  assert.match(simpleProcessPanelSource, /processAssetRelationships/);
-  assert.doesNotMatch(processPanelSource, /Observed SDLC Surfaces|Recent Failures|Recent Activity|Tests \/ Qualification/);
-  assert.match(processPanelSource, /ProcessGraphMap/);
-  assert.match(processPanelSource, /Runtime State/);
-  assert.match(processPanelSource, /ProcessLiveViewPanel/);
-  assert.match(processPanelSource, /ProcessLiveCliTranscriptWidget/);
-  assert.match(processPanelSource, /ProcessLiveRowGroup/);
-  assert.match(processPanelSource, /projectRoot=\{liveRefreshRoot\}/);
-  assert.match(processPanelSource, /formatLiveRunStartedAt/);
-  assert.match(processPanelSource, /parseOperatorRunStartedAt/);
-  assert.match(processPanelSource, /Started \{formatLiveRunStartedAt\(selectedRunStartedAt\)\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Active Run', 'Diagnostics'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Internal State', 'Run Assets'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Ledger State', 'Assurance Ledgers'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Gap Analysis', 'Requirement \/ Stage State'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Event Viewer'\]\}/);
-  assert.match(processPanelSource, /widgetNames=\{\['Stage Processes', 'Transcript Surfaces'\]\}/);
-  assert.match(processPanelSource, /stageProcesses=\{attempt\.detail\.stageProcesses \?\? \[\]\}/);
-  assert.match(processPanelSource, /cliTranscripts\?\.length \? attempt\.detail\.cliTranscripts : \[attempt\.detail\.cliTranscript\]/);
-  assert.match(processPanelSource, /function normalizeLiveAnalysisCliTranscript/);
-  assert.match(processPanelSource, /function normalizeLiveAnalysisStageProcess/);
-  assert.match(processPanelSource, /const role = typeof transcript\.role === 'string' && transcript\.role\.trim\(\)[\s\S]*: 'transform';/);
-  assert.match(processPanelSource, /function defaultLiveCliTranscriptLabel/);
-  assert.match(processPanelSource, /selectedTranscriptId/);
-  assert.match(processPanelSource, /aria-label="Select transcript surface"/);
-  assert.match(processPanelSource, /ProcessLiveInternalStateWidget/);
-  assert.match(processPanelSource, /ariaLabel="internal state and run assets row"/);
-  assert.match(processPanelSource, /plugin\.transform\.C/);
-  assert.match(processPanelSource, /system admission\/write transform result/);
-  assert.match(processPanelSource, /plugin\.evaluate\.C\.rule\[\*\]/);
-  assert.match(processPanelSource, /system assurance \/ closure fold/);
-  assert.match(processPanelSource, /plugin\.consequence\.C/);
-  assert.match(processPanelSource, /aria-label="Selected run internal boundary state"/);
-  assert.match(processPanelSource, /aria-label="Run asset links"/);
-  assert.match(processPanelSource, /aria-label="Product file links"/);
-  assert.match(processPanelSource, /projectPathRefToAbsolutePath/);
-  assert.match(processPanelSource, /\{isTailFollowSurfacePath\(transcript\.sourcePath\) \? 'Tail raw' : 'Open raw'\}/);
-  assert.ok(
-    processPanelSource.indexOf('<ProcessLiveRunDetail') <
-      processPanelSource.indexOf("widgetNames={['Active Run', 'Diagnostics']}"),
-    'Selected Run detail must appear ahead of Active Run / Diagnostics',
-  );
-  assert.ok(
-    processPanelSource.indexOf('<ProcessLiveInternalStateWidget') <
-      processPanelSource.indexOf("widgetNames={['Ledger State', 'Assurance Ledgers']}"),
-    'Internal State / Run Assets must be the first selected-run detail widget',
-  );
-  assert.ok(
-    processPanelSource.indexOf('<ProcessLiveEventViewer') <
-      processPanelSource.indexOf('<ProcessLiveCliTranscriptWidget'),
-    'Transcript Surfaces must be the final selected-run detail widget, after Event Viewer',
-  );
-  assert.match(processPanelSource, /detailRowCollapsed=\{liveDetailRowCollapsed\}/);
-  assert.match(processPanelSource, /onDetailRowCollapsedChange=\{onLiveDetailRowCollapsedChange\}/);
-  assert.match(processPanelSource, /internalRowCollapsed=\{liveInternalRowCollapsed\}/);
-  assert.match(processPanelSource, /onInternalRowCollapsedChange=\{onLiveInternalRowCollapsedChange\}/);
-  assert.match(processPanelSource, /gapRowCollapsed=\{liveGapRowCollapsed\}/);
-  assert.match(processPanelSource, /onGapRowCollapsedChange=\{onLiveGapRowCollapsedChange\}/);
-  assert.match(processPanelSource, /eventViewerCollapsed=\{liveEventViewerCollapsed\}/);
-  assert.match(processPanelSource, /onEventViewerCollapsedChange=\{onLiveEventViewerCollapsedChange\}/);
-  assert.match(processPanelSource, /transcriptCollapsed=\{liveTranscriptCollapsed\}/);
-  assert.match(processPanelSource, /onTranscriptCollapsedChange=\{onLiveTranscriptCollapsedChange\}/);
-  assert.match(processPanelSource, /formatLiveRefreshTime\(analysis\.generatedAt\)/);
-  assert.match(processPanelSource, /last refresh/);
-  assert.match(processPanelSource, /sidecar-live-view__refresh-button/);
-  assert.match(processPanelSource, /force refresh/);
-  assert.match(processPanelSource, /LIVE_ASSURANCE_LEDGER_DESCRIPTIONS/);
-  assert.match(processPanelSource, /Checks that declared product files were produced with valid paths, roles, and file evidence\./);
-  assert.match(processPanelSource, /Rejects placeholder, stub, constant-success, identity-only, or trace-only output\./);
-  assert.match(processPanelSource, /Checks prior retry obligations were closed, carried forward, or repriced\./);
-  assert.match(processPanelSource, /sidecar-live-view__ledger-info/);
-  assert.match(processPanelSource, /sidecar-live-view__ledger-description/);
-  assert.match(processPanelSource, /ProcessLiveEventViewer/);
-  assert.match(processPanelSource, /aria-label="Stage event viewer"/);
-  assert.match(processPanelSource, /Filtered to \{attempt\.graphFunctionName/);
-  assert.match(processPanelSource, /className=\{`process-tab sidecar-live-view__event-filter\$\{sourceFilter === filter\.id \? ' is-selected' : ''\}`\}/);
-  assert.match(processPanelSource, /aria-label="Process Navigator row visibility"/);
-  assert.match(processPanelSource, /aria-label="Collapse all Process Navigator rows"/);
-  assert.match(processPanelSource, /aria-label="Expand all Process Navigator rows"/);
-  assert.match(processPanelSource, /onClick=\{\(\) => onLiveAllCollapsedChange\(true\)\}/);
-  assert.match(processPanelSource, /onClick=\{\(\) => onLiveAllCollapsedChange\(false\)\}/);
-  assert.ok(activeArchiveActionIndex !== -1 && processNavigatorVisibilityIndex !== -1 && activeArchiveActionIndex < processNavigatorVisibilityIndex);
-  assert.match(processPanelSource, /const visibleEventKeys = visibleEvents\.map\(liveAnalysisEventKey\);/);
-  assert.match(processPanelSource, /setVisibleEventsCollapsed/);
-  assert.match(processPanelSource, /aria-label="Event row visibility"/);
-  assert.match(processPanelSource, /aria-label="Collapse all event rows"/);
-  assert.match(processPanelSource, /aria-label="Expand all event rows"/);
-  assert.match(processPanelSource, /collapsed=\{collapsedEventKeys\.has\(key\)\}/);
-  assert.match(processPanelSource, /onCollapsedChange=\{\(collapsed\) => setEventCollapsed\(key, collapsed\)\}/);
-  assert.match(processPanelSource, /className="sidecar-live-view__event-ticket-toggle"/);
-  assert.match(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Expand' : 'Collapse'\} \$\{event\.title\} details`\}/);
-  assert.match(processPanelSource, /className="status-chip default sidecar-live-view__event-source"[\s\S]*>\s*Source\s*<\/button>/);
-  assert.doesNotMatch(processPanelSource, /Open source/);
-  assert.doesNotMatch(processPanelSource, /aria-label=\{`\$\{collapsed \? 'Show' : 'Hide'\} \$\{event\.title\} details`\}/);
-  assert.match(processPanelSource, /ariaLabel="ledger state and assurance row"/);
-  assert.match(processPanelSource, /ariaLabel="gap analysis and requirement state row"/);
-  assert.match(processPanelSource, /ariaLabel="event viewer row"/);
-  assert.match(processPanelSource, /ariaLabel="stage process transcript surfaces row"/);
-  assert.match(processPanelSource, /sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary/);
-  assert.match(processPanelSource, /aria-label="Scrollable stage event tickets"/);
-  assert.match(processPanelSource, /Raw event payload/);
-  assert.match(processPanelSource, /sidecar-live-view__detail--transcript/);
-  assert.match(processPanelSource, /sidecar-live-view__detail-row-group--transcript/);
-  assert.match(processPanelSource, /aria-label="Scrollable transcript surface"/);
-  assert.match(processPanelSource, /projection\.liveAnalysis/);
-  assert.match(processPanelSource, /<line[\s\S]*className=\{`sidecar-process-map__edge/);
-  assert.match(processPanelSource, /const primaryRecordId = node\.recordIds\.find\(\(id\) => activeRecordSet\.has\(id\)\) \?\? null;/);
-  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Saved Views/);
-  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Active Query/);
-  assert.doesNotMatch(processPanelSource, /panel__eyebrow">Process Explorer/);
-  assert.match(styles, /\.sidecar-process-navigator\s*\{/);
-  assert.match(styles, /\.sidecar-live-view\s*\{/);
-  assert.match(styles, /\.sidecar-live-view__timeline\s*\{[^}]*overflow-x:\s*auto;/s);
-  assert.match(styles, /\.sidecar-live-view__attempt-main\s*\{[^}]*min-height:\s*6\.6rem;/s);
-  assert.match(styles, /\.sidecar-live-view__attempt-terminal\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0\.46rem;[^}]*left:\s*0\.58rem;[^}]*width:\s*1\.38rem;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__attempt-metrics\s*\{[^}]*display:\s*inline-flex;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__detail-row-group--internal\s*\{[^}]*order:\s*0;/s);
-  assert.match(styles, /\.sidecar-live-view__detail-row-group--transcript\s*\{[^}]*order:\s*99;/s);
-  assert.match(styles, /\.sidecar-live-view__refresh-button\s*\{[^}]*font:\s*inherit;[^}]*text-align:\s*left;/s);
-  assert.match(styles, /\.sidecar-live-view__refresh-button:hover:not\(:disabled\),\s*\.sidecar-live-view__refresh-button:focus-visible\s*\{/s);
-  assert.match(styles, /\.sidecar-live-view__ledger-head\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.28rem;/s);
-  assert.match(styles, /\.sidecar-live-view__ledger-info\s*\{[^}]*border-radius:\s*999px;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__ledger-description\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*overflow-wrap:\s*anywhere;/s);
-  assert.match(styles, /\.sidecar-live-view__event-viewer\s*>\s*\.requirements-explorer__section-heading\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between;/s);
-  assert.match(styles, /\.sidecar-live-view__internal-layout\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
-  assert.match(styles, /\.sidecar-live-view__internal-step\s*\{[^}]*grid-template-columns:\s*2rem\s+minmax\(0,\s*1fr\)\s+auto;/s);
-  assert.match(styles, /\.sidecar-live-view__internal-step-actions,\s*\.sidecar-live-view__asset-links\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s);
-  assert.match(styles, /\.sidecar-live-view__event-filters\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/s);
-  assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*width:\s*auto;[^}]*min-width:\s*max-content;[^}]*min-height:\s*1\.45rem;[^}]*padding:\s*0\.16rem\s+0\.42rem;/s);
-  assert.match(styles, /\.sidecar-live-view__event-filter\.process-tab\s*>\s*span:first-child\s*\{[^}]*white-space:\s*nowrap;/s);
-  assert.match(styles, /\.sidecar-live-view__detail-row-group\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.5rem;/s);
-  assert.match(styles, /\.sidecar-live-view__detail-row-group--wide\s*\{[^}]*width:\s*100%;/s);
-  assert.match(styles, /\.sidecar-live-view__actions\s*\{[^}]*justify-content:\s*flex-end;[^}]*justify-self:\s*end;/s);
-  assert.match(styles, /\.sidecar-live-view__row-collapse-toggle\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*1\.9rem;/s);
-  assert.match(styles, /\.sidecar-live-view__row-label\s*\{[^}]*display:\s*inline-flex;[^}]*white-space:\s*nowrap;/s);
-  assert.match(styles, /\.sidecar-live-view__row-label-item\s*\{[^}]*text-overflow:\s*ellipsis;/s);
-  assert.match(styles, /\.sidecar-live-view__row-collapse-symbol\s*\{[^}]*display:\s*inline-grid;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__global-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
-  assert.match(styles, /\.sidecar-live-view__global-row-toggle\.status-chip\s*\{[^}]*display:\s*inline-grid;[^}]*width:\s*1\.65rem;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__event-row-actions\s*\{[^}]*display:\s*inline-flex;[^}]*min-width:\s*max-content;/s);
-  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip\s*\{[^}]*min-height:\s*1\.45rem;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(styles, /\.sidecar-live-view__event-row-toggle\.status-chip\s*\{[^}]*width:\s*1\.45rem;[^}]*min-width:\s*1\.45rem;/s);
-  assert.match(styles, /\.sidecar-live-view__event-ticket-toggle\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*cursor:\s*pointer;/s);
-  assert.match(styles, /\.sidecar-live-view__event-source\.status-chip\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--panel-strong\)\s*82%,\s*var\(--sidecar-inset-bg\)\);[^}]*color:\s*var\(--ink\);/s);
-  assert.match(styles, /\.sidecar-live-view__event-ticket\.is-collapsed\s*\{[^}]*gap:\s*0;/s);
-  assert.match(styles, /\.sidecar-live-view__event-ticket-body\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.48rem;/s);
-  assert.match(styles, /\.sidecar-live-view__event-list\s*\{[^}]*max-height:\s*clamp\(20rem,\s*54vh,\s*42rem\);[^}]*overflow:\s*auto;/s);
-  assert.match(styles, /\.sidecar-live-view__event-ticket\s*\{[^}]*display:\s*grid;[^}]*border:/s);
-  assert.match(styles, /\.sidecar-live-view__event-fields\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
-  assert.match(styles, /\.sidecar-live-view__event-raw\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
-  assert.match(styles, /\.sidecar-live-view__transcript-body-wrap\s*\{[^}]*display:\s*grid;[^}]*gap:\s*0\.58rem;/s);
-  assert.match(styles, /\.sidecar-live-view__transcript-selector\s*\{[^}]*display:\s*inline-flex;[^}]*max-width:\s*100%;/s);
-  assert.match(styles, /\.sidecar-live-view__transcript-selector\s+select\s*\{[^}]*min-width:\s*8rem;[^}]*border-radius:\s*var\(--sidecar-radius-xs\);/s);
-  assert.match(styles, /\.sidecar-live-view__transcript\s*\{[^}]*overflow:\s*auto;/s);
-  assert.match(styles, /\.sidecar-live-view__transcript\s+pre\s*\{[^}]*white-space:\s*pre-wrap;/s);
-  assert.match(styles, /\.sidecar-process-simple\s*\{/);
-  assert.match(styles, /\.sidecar-process-simple__tabs\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.28rem;/s);
-  assert.match(styles, /\.sidecar-process-simple__tab\.process-tab\s*\{[^}]*display:\s*inline-flex;[^}]*min-height:\s*1\.55rem;[^}]*padding:\s*0\.2rem\s+0\.44rem;/s);
-  assert.match(styles, /\.sidecar-process-simple__graph\s*\{[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\);/s);
-  assert.match(styles, /\.sidecar-process-simple__graph--compressed\s*\{[^}]*min-height:\s*0;/s);
-  assert.match(styles, /\.sidecar-process-simple__mode-toggle\s*\{[^}]*width:\s*1\.85rem;[^}]*height:\s*1\.85rem;/s);
-  assert.match(styles, /\.sidecar-process-compressed\s*\{[^}]*display:\s*grid;[^}]*border-bottom:/s);
-  assert.match(styles, /\.sidecar-process-simple__graph--compressed\s+\.sidecar-process-compressed\s*\{[^}]*border-bottom:\s*0;/s);
-  assert.match(styles, /\.sidecar-process-compressed__lane\s*\{[^}]*overflow-x:\s*auto;/s);
-  assert.match(styles, /\.sidecar-process-compressed__stop\s*\{[^}]*border-radius:\s*var\(--sidecar-radius-sm\);/s);
-  assert.match(styles, /\.sidecar-process-compressed__connector\s*\{[^}]*position:\s*absolute;/s);
-  assert.match(styles, /\.sidecar-process-simple__live\s*\{[^}]*min-height:\s*clamp\(22rem,\s*46vh,\s*36rem\);/s);
-  assert.match(styles, /\.sidecar-process-simple__graph\s+\.sidecar-process-map__viewport\s*\{/);
-  assert.match(styles, /\.sidecar-process-overlay-card\s*,\s*\.sidecar-process-function-card\s*,\s*\.sidecar-process-asset-card\s*\{/);
-  assert.match(styles, /\.sidecar-process-overlay-card\.is-selected,\s*\.sidecar-process-function-card\.is-selected,\s*\.sidecar-process-asset-card\.is-selected\s*\{/);
-  assert.match(styles, /\.sidecar-process-map__viewport\s*\{/);
-  assert.match(styles, /\.sidecar-process-map__edge\s*\{[^}]*stroke-width:\s*8px;[^}]*opacity:\s*0\.24;/s);
-  assert.match(styles, /\.sidecar-process-map__edge\.is-selected\s*\{[^}]*stroke-width:\s*14px;/s);
-  assert.match(styles, /\.sidecar-process-map-node\.is-muted\s*\{[^}]*background:[^}]*var\(--panel\)[^}]*filter:\s*saturate\(0\.72\);/s);
-});
-
-test('process map edges use intrinsic canvas coordinates so line endpoints stay attached to nodes', () => {
-  const source = readFileSync(sidecarPanelPath, 'utf-8');
-  const styles = readFileSync(stylesPath, 'utf-8');
-  const processPanelSource = source.slice(
-    source.indexOf('function ProcessGraphMap'),
-    source.indexOf('function processMapEdgeAnchor'),
-  );
-
-  assert.match(processPanelSource, /<svg[\s\S]*className="sidecar-process-map__edges"[\s\S]*width=\{width\}[\s\S]*height=\{height\}[\s\S]*viewBox=\{`0 0 \$\{width\} \$\{height\}`\}/);
-  assert.match(styles, /\.sidecar-process-map__edges\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0\s+auto\s+auto\s+0;[^}]*pointer-events:\s*none;/s);
-  assert.doesNotMatch(styles, /\.sidecar-process-map__edges\s*\{[^}]*width:\s*100%;/s);
-  assert.doesNotMatch(styles, /\.sidecar-process-map__edges\s*\{[^}]*height:\s*100%;/s);
-  assert.match(styles, /\.sidecar-process-map-node\s*\{[^}]*width:\s*176px;[^}]*height:\s*86px;/s);
 });
 
 test('sidecar viewer and terminal tabs share one visual grammar and theme token surface', () => {
@@ -1735,231 +1397,686 @@ test('sidecar split targeting markup exposes empty groups and compact action fee
   );
 });
 
-test('Sidecar Project Favourites owns outside-project picking while Browse stays project-local', () => {
-  const source = readFileSync(sidecarPanelPath, 'utf-8');
-  const projectsStart = source.indexOf("if (surface === 'projects') {");
-  const historyStart = source.indexOf("if (surface === 'history')", projectsStart);
-  const browseStart = source.indexOf("if (surface === 'browse') {");
-  const browseEnd = source.indexOf('return null;', browseStart);
-  assert.notEqual(projectsStart, -1);
-  assert.notEqual(historyStart, -1);
+test('Build Portfolio owns Project discovery and registry mutation while Sidecar Browse stays Project-local', () => {
+  const sidecarSource = readFileSync(sidecarPanelPath, 'utf-8');
+  const sidecarStateSource = readFileSync(stateModulePath, 'utf-8');
+  const portfolioViewSource = readFileSync(buildPortfolioViewPath, 'utf-8');
+  const portfolioStateSource = readFileSync(buildPortfolioStatePath, 'utf-8');
+  const portfolioRuntimeSource = readFileSync(buildPortfolioRuntimePath, 'utf-8');
+  const styles = readFileSync(stylesPath, 'utf-8');
+
+  const browseStart = sidecarSource.indexOf("if (surface === 'browse') {");
+  const browseEnd = sidecarSource.indexOf('return null;', browseStart);
   assert.notEqual(browseStart, -1);
   assert.notEqual(browseEnd, -1);
-  const folderTreeStart = source.indexOf('function FolderTreeNode');
-  const folderTreeEnd = source.indexOf('function sessionLabel', folderTreeStart);
-  assert.notEqual(folderTreeStart, -1);
-  assert.notEqual(folderTreeEnd, -1);
-  const projectsSource = source.slice(projectsStart, historyStart);
-  const browseSource = source.slice(browseStart, browseEnd);
-  const folderTreeSource = source.slice(
-    folderTreeStart,
-    folderTreeEnd,
-  );
-  assert.match(source, /const load = \{ \.\.\.asNavigatorFolderLoad\(payload\), loadedAt: Date\.now\(\) \};/);
-  assert.match(source, /if \(!nextCollapsed && !folderLoads\[path\]\?\.loading\) \{[\s\S]*?void loadFolder\(path\);/);
-  assert.match(source, /if \(nextExpanded && !folderLoads\[normalizedRoot\]\?\.loading\) \{[\s\S]*?void loadFolder\(normalizedRoot\);/);
-  assert.doesNotMatch(source, /activeProjectBrowserRefreshRoot/);
-  assert.match(projectsSource, /const projectFavouriteRoots = state\.projects\.map\(\(project\) => normalizePinnedPath\(project\.root\)\);/);
-  assert.match(projectsSource, /const currentProjectBrowserProject: ProjectRecord \| null = normalizedCurrentProjectRootPath && !currentProjectIsRegistered/);
-  assert.match(projectsSource, /const projectBrowserProjects = currentProjectBrowserProject[\s\S]*?\? \[currentProjectBrowserProject, \.\.\.state\.projects\][\s\S]*?: state\.projects;/);
-  assert.match(projectsSource, /const visibleProjectBrowserRoots = projectBrowserProjects[\s\S]*?\.filter\(\(root\) => projectBrowserRootIsVisible\(root\)\);/);
-  assert.match(projectsSource, /const projectBrowserVisibleFolderPaths = \(\(\) => \{/);
-  assert.match(projectsSource, /const collectFolder = \(folderPath: string, defaultCollapsed: boolean\) => \{/);
-  assert.match(projectsSource, /visibleFolders\.add\(normalizedPath\);[\s\S]*?if \(group\.collapsed\) return;/);
-  assert.match(projectsSource, /for \(const entry of load\?\.entries \?\? \[\]\) \{[\s\S]*?collectFolder\(entry\.absolutePath, true\);/);
-  assert.match(projectsSource, /for \(const root of visibleProjectBrowserRoots\) collectFolder\(root, false\);/);
-  assert.match(projectsSource, /const projectBrowserRefreshFolderPaths = \(\(\) => \{/);
-  assert.match(projectsSource, /projectBrowserRefreshFolderPaths\.some\(\(path\) => folderLoads\[path\]\?\.loading === true\)/);
-  assert.match(projectsSource, /label="Project Browser"/);
-  assert.match(projectsSource, /dispatch\(\{ type: 'load\/request', projectRoot, reason: 'session_refresh' \}\);/);
-  assert.match(projectsSource, /for \(const path of projectBrowserRefreshFolderPaths\) void loadFolder\(path\);/);
-  assert.doesNotMatch(projectsSource, /normalizedSelectedProjectRootPath \?\? firstExpandedProjectRoot/);
-  assert.doesNotMatch(source, /!nextCollapsed && \(!folderLoads\[path\] \|\| folderLoads\[path\]\.error\)/);
-  assert.match(source, /function FolderRefreshButton/);
-  assert.doesNotMatch(folderTreeSource, /<FolderRefreshButton/);
-  assert.doesNotMatch(projectsSource, /<FolderRefreshButton[\s\S]*?label=\{project\.name \|\| project\.id\}/);
-  assert.match(folderTreeSource, /projectBrowser && depth > 0 && onProjectFavourite/);
-  assert.match(folderTreeSource, /title=\{isProjectFavourite \? 'Already a Project Favourite\.' : `Add \$\{normalizedPath\} to Project Favourites`\}/);
-  assert.match(projectsSource, /<Pane\s+title="Project Browser"/);
-  assert.match(projectsSource, /actions=\{actionsWithRefresh\(projectBrowserRefreshAction\)\}/);
-  assert.match(projectsSource, /const projectBrowserTabStrip = \(/);
-  assert.match(projectsSource, /titleAddon=\{projectBrowserTabStrip\}/);
-  assert.match(source, /sidecar-pane__header--with-title-addon/);
-  assert.match(source, /sidecar-pane__title-row--with-addon/);
-  assert.match(projectsSource, /role="tablist"[\s\S]*aria-label="Project Browser views"/);
-  assert.match(projectsSource, /onWheel=\{scrollHorizontalOverflowOnWheel\}/);
-  assert.match(source, /function scrollHorizontalOverflowOnWheel/);
-  assert.match(source, /target\.scrollLeft \+= event\.deltaY;/);
-  assert.match(projectsSource, /sidecar-project-browser__tabs sidecar-project-browser__tabs--header/);
-  assert.match(projectsSource, /label: 'Favourite'/);
-  assert.match(projectsSource, /label: 'Recent'/);
-  assert.match(projectsSource, /label: 'Browse'/);
-  assert.doesNotMatch(projectsSource, /label: 'Pick'/);
-  assert.match(projectsSource, /aria-label="Recent folders"/);
-  assert.match(projectsSource, /aria-label="Browse Project Favourite"/);
-  assert.match(projectsSource, /<FolderPathBreadcrumb/);
-  assert.doesNotMatch(projectsSource, /Navigate to parent folder/);
-  assert.doesNotMatch(projectsSource, /browse\/navigate-up/);
-  assert.match(source, /function FolderPathBreadcrumb/);
-  assert.match(source, /type: 'browse\/navigate-to', path/);
-  assert.match(projectsSource, /\[U\]/);
-  assert.match(projectsSource, /projectFavouriteRoots=\{projectFavouriteRoots\}/);
-  assert.match(projectsSource, /onProjectFavourite=\{\(path\) => dispatch\(\{ type: 'browse\/favourite-folder', path \}\)\}/);
-  assert.match(projectsSource, /className="sidecar-project-picker__workspace-button"/);
-  assert.match(projectsSource, /title=\{`Open workspace \$\{entry\.absolutePath\}`\}/);
-  assert.match(projectsSource, />\s*wspace\s*<\/button>/);
-  assert.match(source, /await setActiveProject\(root, \{ registerIfMissing: false \}\)/);
-  assert.doesNotMatch(projectsSource, />\s*\(w\)\s*<\/button>/);
-  assert.doesNotMatch(projectsSource, /<Pill kind="odd-type">workspace<\/Pill>/);
-  assert.match(source, /const selectProjectBrowserTab = \(tab: ProjectBrowserTab\)/);
-  assert.match(source, /type: 'browse\/scope-set', scope: 'cross-project'/);
-  assert.match(projectsSource, /className="sidecar-row__actions"/);
-  assert.match(projectsSource, /label=\{browseState\.currentPath \?\? 'current folder'\}/);
-  assert.match(projectsSource, /disabled=\{!browseState\.currentPath && !projectRoot\}/);
-  assert.match(projectsSource, /dispatch\(\{ type: 'browse\/navigate-to', path: browseState\.currentPath \}\)/);
+  const browseSource = sidecarSource.slice(browseStart, browseEnd);
+
+  assert.doesNotMatch(sidecarStateSource, /id: 'projects'/);
+  assert.doesNotMatch(sidecarStateSource, /browse\/scope-set|browse\/favourite-folder|projects\/unfavourite/);
+  assert.doesNotMatch(sidecarSource, /surface === 'projects'|Project Browser|Project Favourites/);
+  assert.doesNotMatch(sidecarSource, /registerProject|unregisterProject/);
+  assert.doesNotMatch(sidecarSource, /projectBrowser|projectFavouriteRoots|onProjectFavourite/);
   assert.match(browseSource, /<Pane\s+title="Browse"/);
-  assert.match(browseSource, /actions=\{actionsWithRefresh\(folderRefreshAction\(projectRootPath, 'Browse root'\)\)\}/);
-  assert.doesNotMatch(browseSource, /cross-project/);
-  assert.doesNotMatch(browseSource, /Project Favourites/);
+  assert.match(browseSource, /projectRootPath/);
+  assert.doesNotMatch(browseSource, /cross-project|state\.projects/);
 
-  const sidecarBlock = readSidecarCssBlock();
-  assert.match(sidecarBlock, /\.sidecar-pane__title-row\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*flex:\s*1\s+1\s+auto;/s);
-  assert.match(sidecarBlock, /\.sidecar-pane__title-row--with-addon\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
-  assert.match(sidecarBlock, /\.sidecar-pane__title-addon\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*1\s+1\s+auto;[^}]*overflow:\s*hidden;/s);
-  assert.match(sidecarBlock, /\.sidecar-pane__title-row--with-addon\s+\.sidecar-pane__title-addon\s*\{[^}]*width:\s*100%;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser--tabbed\s*\{[^}]*gap:\s*0\.12rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.18rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s*\{[^}]*flex:\s*1\s+1\s+auto;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;[^}]*scrollbar-width:\s*thin;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tab\s*\{[^}]*min-height:\s*1\.5rem;[^}]*font-size:\s*0\.68rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-browser__tabs--header\s+\.sidecar-project-browser__tab\s*\{[^}]*flex:\s*0\s+0\s+auto;[^}]*min-height:\s*1\.32rem;[^}]*font-size:\s*0\.64rem;[^}]*white-space:\s*nowrap;/s);
-  assert.match(sidecarBlock, /\.sidecar-row__actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*0\.18rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-tree-control--compact\s*\{[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);/s);
-  assert.match(sidecarBlock, /\.sidecar-tree-control--refresh\s*\{[^}]*width:\s*1\.75rem;[^}]*height:\s*1\.75rem;[^}]*min-width:\s*1\.75rem;[^}]*font-family:\s*var\(--font-mono\);[^}]*font-size:\s*0\.78rem;[^}]*font-weight:\s*900;/s);
-  assert.match(sidecarBlock, /\.sidecar-flyout\s+\.sidecar-pane__header-actions\s+\.sidecar-tree-control--refresh\s*\{[^}]*width:\s*2rem;[^}]*height:\s*2rem;[^}]*min-width:\s*2rem;[^}]*font-size:\s*0\.82rem;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-picker__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
-  assert.match(sidecarBlock, /\.sidecar-project-picker__breadcrumb\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-picker__segment\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-picker__meta\s*\{[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*normal;/s);
-  assert.match(sidecarBlock, /\.sidecar-project-picker__workspace-button\s*\{[^}]*min-width:\s*1\.35rem;[^}]*white-space:\s*nowrap;/s);
+  assert.match(portfolioViewSource, /<table className="build-portfolio__table" aria-label="Build Portfolio Projects">/);
+  assert.match(portfolioViewSource, /aria-label="Add Project browser"/);
+  assert.match(portfolioViewSource, /type: "portfolio\/project-register-requested"/);
+  assert.match(portfolioViewSource, /type: "portfolio\/project-activate-requested"/);
+  assert.match(portfolioViewSource, /type: "portfolio\/project-unregister-requested"/);
+  assert.match(portfolioStateSource, /type: "portfolio\.browse"/);
+  assert.match(portfolioStateSource, /type: "portfolio\.register"/);
+  assert.match(portfolioStateSource, /type: "portfolio\.unregister"/);
+  assert.match(portfolioStateSource, /type: "portfolio\.activate"/);
+  assert.match(portfolioRuntimeSource, /browsePath,/);
+  assert.match(portfolioRuntimeSource, /registerProject,/);
+  assert.match(portfolioRuntimeSource, /setActiveProject,/);
+  assert.match(portfolioRuntimeSource, /unregisterProject,/);
+
+  assert.doesNotMatch(styles, /\.sidecar-project-browser|\.sidecar-project-picker/);
+  assert.match(styles, /\.build-portfolio__table\s*\{/);
+  assert.match(styles, /\.build-portfolio__browser\s*\{/);
+  assert.match(styles, /\.sidecar-folder-breadcrumb\s*\{/);
 });
 
-test('project-favourite browse starts outside the current Project root', async () => {
+// Traversal View (sprint W7) — Msg-replay proofs for the traversal family.
+// Deterministic payloads are injected; no network, DOM, or timers.
+
+function traversalSummaryFor(workspaceRoot) {
+  return {
+    kind: 'traversal_projection',
+    version: 1,
+    state: 'ready',
+    runRoot: `${workspaceRoot}-run`,
+    workspaceRoot,
+    scenario: {
+      scenarioId: 'SCN-TEST',
+      scenarioKind: 'test_kind',
+      proofClass: 'full_lifecycle_graph_traversal_compliance',
+      durationMs: 1000,
+    },
+    substrate: {
+      productId: 'abiogenesis',
+      packageName: '@abiogenesis/typescript-tenant',
+      packageVersion: '4.6.0-rc.1',
+      releaseTag: 'v4.6.0-rc.1',
+      sourceCommit: 'deadbeef',
+    },
+    eventCounts: { frame_opened: 2, vector_traversal_planned: 2, novel_event_kind: 3 },
+    unknownEventKinds: ['novel_event_kind'],
+    frames: [
+      { frameOrdinal: 0, graphFunctionRef: null, edge: 'edge-a', vectorIndex: 0, openedAt: '2026-07-09T18:00:00.000Z' },
+      { frameOrdinal: 1, graphFunctionRef: null, edge: 'edge-b', vectorIndex: 1, openedAt: '2026-07-09T18:01:00.000Z' },
+    ],
+    vectors: [
+      {
+        vectorIndex: 0,
+        edge: 'edge-a',
+        stage: 'stage-a',
+        attemptCount: 1,
+        hasEvaluator: true,
+        accepted: true,
+        durationMs: 60000,
+        plannedAt: '2026-07-09T18:00:00.000Z',
+        evaluatedAt: '2026-07-09T18:01:00.000Z',
+        frameOrdinal: 0,
+      },
+      {
+        vectorIndex: 1,
+        edge: 'edge-b',
+        stage: 'stage-b',
+        attemptCount: 2,
+        hasEvaluator: false,
+        accepted: null,
+        durationMs: null,
+        plannedAt: '2026-07-09T18:01:00.000Z',
+        evaluatedAt: null,
+        frameOrdinal: 1,
+      },
+    ],
+    currentVectorIndex: 1,
+    requirementLineage: [
+      {
+        requirementId: 'REQ-TEST-1',
+        spanIds: ['span://test/1'],
+        vectorIndexes: [0],
+        reachedVectorIndexes: [0],
+        enteringPromptRefCounts: [1],
+        coverageStatuses: ['eligible'],
+        foldStates: ['satisfied'],
+        residualPressureRefs: [],
+      },
+    ],
+    diagnostics: [],
+  };
+}
+
+function traversalDetailFor(index, attempt = 1, variant = 'primary') {
+  return {
+    kind: 'traversal_vector_detail',
+    version: 1,
+    vectorIndex: index,
+    variant,
+    attempt,
+    edge: `edge-${index}`,
+    stage: `stage-${index}`,
+    stagePlan: {
+      sourceTypeRef: 'test.type.source',
+      targetTypeRef: 'test.type.target',
+      vectorId: `graph-vector://test/${index}`,
+      filesToProduce: ['out.md'],
+      executeBeforeAssessment: false,
+    },
+    assessment: { accepted: true, reason: 'deterministic test assessment', nodeTypesUsed: ['test.type.source'] },
+    materializedFiles: [{ path: 'out.md', sha256: 'sha256:abc', byteLength: 10, lineCount: 2 }],
+    contentPreviews: [{ path: 'out.md', contentPreview: '# out' }],
+    timing: { startedAt: '2026-07-09T18:00:00.000Z', endedAt: '2026-07-09T18:00:30.000Z', durationMs: 30000 },
+    availableVariants: [{ variant: 'primary', attempt: 1 }],
+    sourcePath: `/runs/vector-${index}-artifact.json`,
+  };
+}
+
+function runObservationFor(projectRoot, selectedRunId = 'run-a') {
+  const runs = ['run-a', 'run-b'].map((runId, index) => ({
+    runId,
+    runRoot: `${projectRoot}/test_runs/${runId}`,
+    workspaceRoot: `${projectRoot}/test_runs/${runId}/instance`,
+    scenarioId: `SCN-${runId.toUpperCase()}`,
+    scenarioKind: 'fixture',
+    proofClass: 'fixture-proof',
+    graphFunctionRef: 'graph-function://fixture/full',
+    status: 'converged',
+    modifiedAt: `2026-07-10T00:0${index}:00.000Z`,
+    lastEventAt: `2026-07-10T00:0${index}:30.000Z`,
+    eventCount: 10 + index,
+  }));
+  return {
+    kind: 'abg_run_observation',
+    version: 2,
+    generatedAt: '2026-07-10T00:02:00.000Z',
+    state: 'ready',
+    projectRoot,
+    identity: { id: 'fixture', label: 'Fixture', kind: 'source_project', version: null, sourceRef: 'specification/PRODUCT.md', confidence: 'high', governancePackages: [] },
+    runs,
+    selectedRunId,
+    selectedRunRoot: runs.find((run) => run.runId === selectedRunId)?.runRoot ?? null,
+    selectedWorkspaceRoot: runs.find((run) => run.runId === selectedRunId)?.workspaceRoot ?? null,
+    systemReferences: [],
+    substrate: null,
+    activity: null,
+    functions: [],
+    catalog: {
+      state: 'missing',
+      sourceKind: 'abg_runtime_events',
+      sourceRef: null,
+      admissionEventCount: 0,
+      unparsedAdmissionCount: 0,
+      rejectedEventCount: 0,
+      constructionCatalogEventCount: 0,
+      entryCount: 0,
+      entryKindCounts: [],
+      entries: [],
+      rejectedEntries: [],
+      constructionCatalogs: [],
+      truncated: false,
+    },
+    assets: [],
+    assurance: null,
+    eventKinds: [],
+    events: [],
+    stages: [],
+    transcripts: [],
+    artifacts: [],
+    diagnostics: [],
+  };
+}
+
+test('traversal load replay emits summary Cmd and absorbs the ready projection', async () => {
   const module = await loadStateModule();
+  const summary = traversalSummaryFor('/workspace/odd_manager');
   const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'browse/scope-set', scope: 'cross-project' },
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'browse.path', path: '/workspace', scope: 'cross-project' },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
   ]);
-  assert.equal(result.state.ui.browse.scope, 'cross-project');
-  assert.equal(result.state.ui.browse.loading, true);
+  assert.equal(result.state.traversal.status, 'ready');
+  assert.equal(result.state.traversal.workspaceRoot, '/workspace/odd_manager');
+  assert.equal(result.state.traversal.summary, summary);
+  assert.equal(result.state.traversal.error, null);
 });
 
-test('browse navigate-up replay emits browse.path Cmd to parent and clears loading on result', async () => {
+test('traversal load failure replay lands in an honest error state and can retry', async () => {
   const module = await loadStateModule();
-  const seeded = {
-    ...baseState(module),
-    ui: {
-      ...baseState(module).ui,
-      browse: {
-        ...module.INITIAL_SIDECAR_BROWSE_STATE,
-        scope: 'cross-project',
-        currentPath: '/workspace/odd_manager/build_tenants',
-        parent: '/workspace/odd_manager',
-        entries: [],
-        truncated: false,
-        loading: false,
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-failed', workspaceRoot: '/workspace/odd_manager', error: 'proof unreadable' },
+  ]);
+  assert.equal(result.state.traversal.status, 'error');
+  assert.equal(result.state.traversal.error, 'proof unreadable');
+  assert.equal(result.state.traversal.summary, null);
+
+  const retried = module.replaySidecarMessages(result.state, [
+    { type: 'traversal/load', workspaceRoot: '/workspace/odd_manager' },
+  ]);
+  assert.equal(retried.state.traversal.status, 'loading');
+  assert.deepEqual(retried.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+  ]);
+});
+
+test('stale traversal summary for another root cannot overwrite the requested root', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', workspaceRoot: '/workspace/data_mapper' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+  ]);
+  assert.equal(result.state.traversal.status, 'loading');
+  assert.equal(result.state.traversal.summary, null);
+});
+
+test('run observation replay admits the selected Project run and section changes stay pure', async () => {
+  const module = await loadStateModule();
+  const observation = runObservationFor('/workspace/odd_manager');
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation },
+    { type: 'run/select-section', section: 'catalog' },
+  ]);
+  assert.equal(result.state.traversal.runStatus, 'ready');
+  assert.equal(result.state.traversal.selectedRunId, 'run-a');
+  assert.equal(result.state.traversal.section, 'catalog');
+  assert.equal(result.state.traversal.runObservation, observation);
+  assert.deepEqual(result.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+  ]);
+});
+
+test('Run Inspector focus preserves originating execution, run, revision, and evidence source', async () => {
+  const module = await loadStateModule();
+  const focus = {
+    projectRoot: '/workspace/odd_manager',
+    executionId: 'execution-42',
+    runRef: 'run://odd_manager/42',
+    revision: 'revision-42',
+    sourceRef: 'build-evidence://execution-42/tests',
+  };
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'run/focus-admitted', focus },
+    { type: 'traversal/load' },
+  ]);
+  assert.deepEqual(result.state.runFocus, focus);
+  assert.deepEqual(result.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+  ]);
+});
+
+test('run selection emits both projections and rejects stale same-Project run responses', async () => {
+  const module = await loadStateModule();
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation: runObservationFor('/workspace/odd_manager') },
+  ]);
+  const selected = module.replaySidecarMessages(primed.state, [
+    { type: 'run/select', runId: 'run-b' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', observation: runObservationFor('/workspace/odd_manager', 'run-a') },
+  ]);
+  assert.equal(selected.state.traversal.selectedRunId, 'run-b');
+  assert.equal(selected.state.traversal.runStatus, 'loading');
+  assert.deepEqual(selected.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false },
+  ]);
+});
+
+test('Project switch clears all run-scoped state without requiring a traversal reload', async () => {
+  const module = await loadStateModule();
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation: runObservationFor('/workspace/odd_manager') },
+  ]).state;
+  const switched = module.replaySidecarMessages(primed, [
+    { type: 'load/request', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+    {
+      type: 'load/done',
+      projectRoot: '/workspace/data_mapper',
+      payload: {
+        context: { project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'fixture' }, workspace: { id: 'scala_sbt', profile: 'fixture' }, session: null },
       },
     },
-  };
+  ]);
+  assert.equal(switched.state.traversal.workspaceRoot, null);
+  assert.equal(switched.state.traversal.runObservation, null);
+  assert.equal(switched.state.traversal.summary, null);
+  assert.equal(switched.state.traversal.selectedRunId, null);
+});
+
+test('run shell targeting emits a Project-owned session command with admitted cwd', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'session/spawn/request', cwd: '/workspace/odd_manager/test_runs/run-a/instance', label: 'SCN-RUN-A shell' },
+  ]);
+  assert.deepEqual(result.commands, [{
+    type: 'session.spawn',
+    projectRoot: '/workspace/odd_manager',
+    groupId: 'main',
+    cwd: '/workspace/odd_manager/test_runs/run-a/instance',
+    label: 'SCN-RUN-A shell',
+  }]);
+});
+
+test('traversal vector selection replays a lazy detail Cmd and success fills the pane', async () => {
+  const module = await loadStateModule();
+  const summary = traversalSummaryFor('/workspace/odd_manager');
+  const detail = traversalDetailFor(1);
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/select-vector', index: 1 },
+    { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail },
+  ]);
+  assert.deepEqual(result.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'traversal.loadVectorDetail', workspaceRoot: '/workspace/odd_manager', runId: null, index: 1, variant: 'primary', attempt: null },
+  ]);
+  assert.deepEqual(result.state.traversal.selectedVector, { index: 1, variant: 'primary', attempt: null });
+  assert.equal(result.state.traversal.detailStatus, 'ready');
+  assert.equal(result.state.traversal.details.length, 1);
+  assert.equal(result.state.traversal.details[0].detail, detail);
+
+  // Re-selecting a cached vector must NOT emit another fetch Cmd.
+  const reselected = module.replaySidecarMessages(result.state, [
+    { type: 'traversal/select-vector', index: 1 },
+  ]);
+  assert.deepEqual(reselected.commands, []);
+  assert.equal(reselected.state.traversal.detailStatus, 'ready');
+});
+
+test('traversal vector detail failure replays to an honest detail error', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/select-vector', index: 0 },
+    { type: 'traversal/vector-failed', workspaceRoot: '/workspace/odd_manager', index: 0, variant: 'primary', attempt: null, error: 'artifact unreadable' },
+  ]);
+  assert.equal(result.state.traversal.detailStatus, 'error');
+  assert.equal(result.state.traversal.detailError, 'artifact unreadable');
+  assert.equal(result.state.traversal.details.length, 0);
+});
+
+test('traversal detail cache keeps at most 8 entries and evicts the oldest first', async () => {
+  const module = await loadStateModule();
   const messages = [
-    { type: 'browse/navigate-up' },
-    {
-      type: 'browse/loaded',
-      result: {
-        path: '/workspace/odd_manager',
-        parent: '/workspace',
-        entries: [
-          { name: 'build_tenants', absolutePath: '/workspace/odd_manager/build_tenants', kind: 'directory', hasWorkspace: false },
-        ],
-        truncated: false,
-      },
-    },
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
   ];
-  const result = module.replaySidecarMessages(seeded, messages);
-  assert.deepEqual(result.commands, [
-    { type: 'browse.path', path: '/workspace/odd_manager', scope: 'cross-project' },
+  for (let index = 0; index < 9; index += 1) {
+    messages.push({ type: 'traversal/select-vector', index });
+    messages.push({
+      type: 'traversal/vector-succeeded',
+      workspaceRoot: '/workspace/odd_manager',
+      index,
+      variant: 'primary',
+      attempt: null,
+      detail: traversalDetailFor(index),
+    });
+  }
+  const result = module.replaySidecarMessages(baseState(module), messages);
+  assert.equal(result.state.traversal.details.length, 8, 'cache is capped at 8 entries');
+  const cachedIndexes = result.state.traversal.details.map((entry) => entry.detail.vectorIndex);
+  assert.deepEqual(cachedIndexes, [1, 2, 3, 4, 5, 6, 7, 8], 'oldest entry (vector 0) was evicted');
+
+  // Selecting the evicted vector must fetch again; a cached one must not.
+  const evicted = module.replaySidecarMessages(result.state, [
+    { type: 'traversal/select-vector', index: 0 },
   ]);
-  assert.equal(result.state.ui.browse.currentPath, '/workspace/odd_manager');
-  assert.equal(result.state.ui.browse.parent, '/workspace');
-  assert.equal(result.state.ui.browse.loading, false);
-  assert.equal(result.state.ui.browse.entries.length, 1);
+  assert.deepEqual(evicted.commands, [
+    { type: 'traversal.loadVectorDetail', workspaceRoot: '/workspace/odd_manager', runId: null, index: 0, variant: 'primary', attempt: null },
+  ]);
+  assert.equal(evicted.state.traversal.detailStatus, 'loading');
 });
 
-test('project browser breadcrumb navigate-to replay can jump directly to an ancestor folder', async () => {
+test('late traversal responses cannot evict the selected vector detail', async () => {
   const module = await loadStateModule();
-  const seeded = {
-    ...baseState(module),
-    ui: {
-      ...baseState(module).ui,
-      browse: {
-        ...module.INITIAL_SIDECAR_BROWSE_STATE,
-        scope: 'cross-project',
-        currentPath: '/workspace/odd_manager/build_tenants/typescript/test_env/test_runs',
-        parent: '/workspace/odd_manager/build_tenants/typescript/test_env',
-        entries: [],
-        truncated: false,
-        loading: false,
+  const messages = [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+  ];
+  for (let index = 0; index < 8; index += 1) {
+    messages.push({ type: 'traversal/select-vector', index });
+    messages.push({
+      type: 'traversal/vector-succeeded',
+      workspaceRoot: '/workspace/odd_manager',
+      index,
+      variant: 'primary',
+      attempt: null,
+      detail: traversalDetailFor(index),
+    });
+  }
+  const primed = module.replaySidecarMessages(baseState(module), messages).state;
+  const late = module.replaySidecarMessages(primed, [8, 9].map((index) => ({
+    type: 'traversal/vector-succeeded',
+    workspaceRoot: '/workspace/odd_manager',
+    index,
+    variant: 'primary',
+    attempt: null,
+    detail: traversalDetailFor(index),
+  })));
+
+  assert.equal(late.state.traversal.details.length, 8);
+  assert.equal(late.state.traversal.selectedVector.index, 7);
+  assert.ok(late.state.traversal.details.some((entry) => entry.detail.vectorIndex === 7));
+  assert.equal(late.state.traversal.detailStatus, 'ready');
+});
+
+test('summary refresh invalidates latest detail cache entries but preserves explicit attempts', async () => {
+  const module = await loadStateModule();
+  const summary = traversalSummaryFor('/workspace/odd_manager');
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/select-vector', index: 1 },
+    { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail: traversalDetailFor(1) },
+    { type: 'traversal/select-vector', index: 2, attempt: 1 },
+    { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 2, variant: 'primary', attempt: 1, detail: traversalDetailFor(2) },
+    { type: 'traversal/select-vector', index: 1 },
+  ]).state;
+
+  const refreshed = module.replaySidecarMessages(primed, [
+    { type: 'traversal/load', refresh: true },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+  ]);
+
+  assert.equal(refreshed.state.traversal.selectedVector, null);
+  assert.equal(refreshed.state.traversal.detailStatus, 'idle');
+  assert.equal(refreshed.state.traversal.details.some((entry) => entry.key.endsWith(':latest')), false);
+  assert.ok(refreshed.state.traversal.details.some((entry) => entry.key.endsWith(':1')));
+});
+
+test('traversal variant switch replays a distinct lazy Cmd per variant/attempt', async () => {
+  const module = await loadStateModule();
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/select-vector', index: 1 },
+    { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail: traversalDetailFor(1) },
+  ]);
+  const switched = module.replaySidecarMessages(primed.state, [
+    { type: 'traversal/select-vector', index: 1, variant: 'evaluator', attempt: 1 },
+  ]);
+  assert.deepEqual(switched.commands, [
+    { type: 'traversal.loadVectorDetail', workspaceRoot: '/workspace/odd_manager', runId: null, index: 1, variant: 'evaluator', attempt: 1 },
+  ]);
+  assert.deepEqual(switched.state.traversal.selectedVector, { index: 1, variant: 'evaluator', attempt: 1 });
+  assert.equal(switched.state.traversal.detailStatus, 'loading');
+});
+
+test('traversal clear replays back to the initial slice', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/select-vector', index: 0 },
+    { type: 'traversal/clear' },
+  ]);
+  assert.equal(result.state.traversal.status, 'idle');
+  assert.equal(result.state.traversal.summary, null);
+  assert.equal(result.state.traversal.selectedVector, null);
+  assert.deepEqual(result.state.traversal.details, []);
+});
+
+// Ticket Board (sprint W8) — Msg-replay proofs for the ticket-board/select
+// family over the shared Drill View instantiation. Records ride the batch
+// surface load; selection is reducer-owned product state.
+
+test('ticket board open and card select replay to reducer-owned selection without Cmd effects', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'ticket-board', id: '/workspace/odd_manager' },
+    { type: 'ticket-board/select', id: 'T-100' },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'ticket-board');
+  assert.equal(result.state.selection.id, '/workspace/odd_manager');
+  assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'ticket-board:/workspace/odd_manager'));
+  assert.deepEqual(result.state.ticketBoard, {
+    workspaceRoot: '/workspace/odd_manager',
+    selectedTicketId: 'T-100',
+  });
+});
+
+test('ticket board selection survives viewer tab switches away and back', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'ticket-board', id: '/workspace/odd_manager' },
+    { type: 'ticket-board/select', id: 'T-100' },
+    { type: 'select', kind: 'ticket', id: 'T-100' },
+    { type: 'viewer/select-tab', groupId: 'main', tabId: 'ticket-board:/workspace/odd_manager' },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'ticket-board');
+  assert.equal(result.state.ticketBoard.selectedTicketId, 'T-100');
+});
+
+test('ticket board select null clears the board selection', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'ticket-board/select', id: 'T-100' },
+    { type: 'ticket-board/select', id: null },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.deepEqual(result.state.ticketBoard, {
+    workspaceRoot: '/workspace/odd_manager',
+    selectedTicketId: null,
+  });
+});
+
+test('ticket board rejects an unknown ticket id at reduce time', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'ticket-board/select', id: 'T-404' },
+  ]);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.ticketBoard.selectedTicketId, null);
+});
+
+test('ticket board selection clears when a different workspace root loads (stale-root guard)', async () => {
+  const module = await loadStateModule();
+  const selected = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'ticket-board', id: '/workspace/odd_manager' },
+    { type: 'ticket-board/select', id: 'T-100' },
+    { type: 'select', kind: 'project', id: 'data_mapper' },
+  ]);
+  assert.deepEqual(selected.commands, [
+    { type: 'load', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+  ]);
+  assert.equal(selected.state.ticketBoard.selectedTicketId, 'T-100');
+
+  const loaded = module.replaySidecarMessages(selected.state, [
+    { type: 'load/request', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+    {
+      type: 'load/done',
+      projectRoot: '/workspace/data_mapper',
+      payload: {
+        context: {
+          project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+          workspace: { id: 'scala_sbt', profile: 'unknown' },
+          session: null,
+        },
+        // Same ticket id existing in the new workspace must NOT keep the
+        // stale selection: the root changed, so the selection clears.
+        tickets: [{ id: 'T-100', title: 'Same id, different workspace', lane: 'active', status: 'active' }],
       },
     },
-  };
-  const result = module.replaySidecarMessages(seeded, [
-    { type: 'browse/navigate-to', path: '/workspace/odd_manager' },
   ]);
-  assert.deepEqual(result.commands, [
-    { type: 'browse.path', path: '/workspace/odd_manager', scope: 'cross-project' },
-  ]);
-  assert.equal(result.state.ui.browse.loading, true);
+  assert.deepEqual(loaded.state.ticketBoard, {
+    workspaceRoot: '/workspace/data_mapper',
+    selectedTicketId: null,
+  });
 });
 
-test('browse favourite-folder replay emits projects.register Cmd and absorbs returned projects list', async () => {
+test('ticket board selection survives a same-root reload that still carries the ticket', async () => {
   const module = await loadStateModule();
-  const newProject = {
-    id: 'demo_project',
-    root: '/workspace/demo_project',
-    odd_type: 'odd_sdlc',
-    has_ai_workspace: true,
-    has_genesis: false,
-    installed_packages: [],
-    build_tenants: [],
-  };
   const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'browse/favourite-folder', path: '/workspace/demo_project' },
+    { type: 'ticket-board/select', id: 'T-100' },
+    { type: 'load/request', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
     {
-      type: 'browse/favourite-succeeded',
-      project: newProject,
-      projects: [...baseState(module).projects, newProject],
+      type: 'load/done',
+      projectRoot: '/workspace/odd_manager',
+      payload: {
+        tickets: [
+          { id: 'T-100', title: 'Fix mapping', lane: 'completed', status: 'done' },
+          { id: 'T-101', title: 'New ticket', lane: 'active', status: 'active' },
+        ],
+      },
     },
   ]);
-  assert.deepEqual(result.commands, [
-    { type: 'projects.register', path: '/workspace/demo_project' },
+  assert.equal(result.state.ticketBoard.selectedTicketId, 'T-100');
+
+  // A reload that drops the selected ticket clears the selection honestly.
+  const dropped = module.replaySidecarMessages(result.state, [
+    { type: 'load/request', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
+    {
+      type: 'load/done',
+      projectRoot: '/workspace/odd_manager',
+      payload: { tickets: [{ id: 'T-101', title: 'New ticket', lane: 'active', status: 'active' }] },
+    },
   ]);
-  assert.equal(result.state.ui.browse.favouriteError, null);
-  assert.equal(result.state.projects.length, baseState(module).projects.length + 1);
-  assert.equal(result.state.projects[result.state.projects.length - 1].id, 'demo_project');
+  assert.equal(dropped.state.ticketBoard.selectedTicketId, null);
 });
 
-test('projects unfavourite replay emits projects.unregister Cmd and prunes projects list on success', async () => {
+// AI Workspace viewer — Msg-replay proofs for promoting the .ai-workspace
+// observation summary to a first-class viewer tab. The observation rides the batch surface load
+// (state.aiWorkspaceObservation); opening the tab is a pure viewer action.
+
+test('ai-workspace viewer open replays to a first-class canvas tab without Cmd effects', async () => {
   const module = await loadStateModule();
-  const remainingProjects = baseState(module).projects.filter((project) => project.id !== 'data_mapper');
   const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'projects/unfavourite', projectId: 'data_mapper' },
-    { type: 'projects/unfavourite-succeeded', projectId: 'data_mapper', projects: remainingProjects },
+    { type: 'viewer/open', kind: 'ai-workspace', id: '/workspace/odd_manager' },
   ]);
-  assert.deepEqual(result.commands, [
-    { type: 'projects.unregister', projectId: 'data_mapper' },
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'ai-workspace');
+  assert.equal(result.state.selection.id, '/workspace/odd_manager');
+  assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'ai-workspace:/workspace/odd_manager'));
+  assert.equal(result.state.ui.viewerWorkspace.groups[0].activeTabId, 'ai-workspace:/workspace/odd_manager');
+});
+
+test('ai-workspace tab survives viewer tab switches away and back', async () => {
+  const module = await loadStateModule();
+  const result = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'ai-workspace', id: '/workspace/odd_manager' },
+    { type: 'select', kind: 'ticket', id: 'T-100' },
+    { type: 'viewer/select-tab', groupId: 'main', tabId: 'ai-workspace:/workspace/odd_manager' },
   ]);
-  assert.equal(result.state.ui.browse.unfavouriteError, null);
-  assert.equal(result.state.projects.length, remainingProjects.length);
-  assert.equal(result.state.projects.find((project) => project.id === 'data_mapper'), undefined);
+  assert.deepEqual(result.commands, []);
+  assert.equal(result.state.selection.kind, 'ai-workspace');
+  assert.equal(result.state.selection.id, '/workspace/odd_manager');
+  assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'ticket:T-100'));
+  assert.ok(result.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'ai-workspace:/workspace/odd_manager'));
+});
+
+test('layout profile restore accepts a persisted ai-workspace viewer tab', async () => {
+  const module = await loadStateModule();
+  const contextKey = '/workspace/odd_manager::react_vite';
+  const persisted = module.replaySidecarMessages(baseState(module), [
+    { type: 'viewer/open', kind: 'ai-workspace', id: '/workspace/odd_manager' },
+  ]).state;
+  const profile = module.sidecarLayoutProfileFromState(persisted, contextKey);
+  assert.ok(profile.ui.viewerWorkspace.tabs.some((tab) => tab.kind === 'ai-workspace'));
+
+  const restored = module.replaySidecarMessages(baseState(module), [
+    { type: 'layout/profile-loaded', contextKey, payload: profile },
+  ]);
+  assert.deepEqual(restored.commands, []);
+  assert.equal(restored.state.lastAction, null, 'profile carrying an ai-workspace tab is not rejected');
+  assert.ok(restored.state.ui.viewerWorkspace.tabs.some((tab) => tab.id === 'ai-workspace:/workspace/odd_manager'));
+  assert.equal(restored.state.ui.viewerWorkspace.groups[0].activeTabId, 'ai-workspace:/workspace/odd_manager');
+});
+
+test('ai-workspace viewer guards against an observation for a different root (stale-root guard)', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const summary = source.slice(
+    source.indexOf('function AiWorkspaceObservationSummary('),
+    source.indexOf('function FolderTreeNode('),
+  );
+  const inspector = source.slice(
+    source.indexOf('function AiWorkspaceInspector('),
+    source.indexOf('function terminalTabTitle('),
+  );
+  assert.match(inspector, /isAiWorkspaceObservationForProject\(state\.aiWorkspaceObservation,\s*projectRoot\)/);
+  assert.match(inspector, /carries no feature-detected \.ai-workspace observation/);
+  assert.match(inspector, /<AiWorkspaceObservationSummary/);
+  assert.match(inspector, /onInfoSurfaceSelect\(featureId\)/);
+  assert.match(inspector, /expanded/);
+  assert.match(summary, /group\.featureId !== 'tickets'/);
+  assert.match(summary, /group\.featureId !== 'comments'/);
+  assert.match(summary, /Open \$\{feature\.label\} navigator/);
 });

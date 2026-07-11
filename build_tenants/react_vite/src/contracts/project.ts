@@ -5,7 +5,7 @@
 // Realized by: build_tenants/react_vite/src/server/project-asset-surface-service.mjs
 // Adopted via: T-017 (read + switcher pane)
 
-export type OddType = 'odd_sdlc' | 'odd_world_model' | 'unknown' | string;
+export type OddType = 'unknown' | string;
 
 export interface ProjectRecord {
   id: string;          // stable registry identity

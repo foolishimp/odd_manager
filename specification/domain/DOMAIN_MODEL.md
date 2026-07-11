@@ -1,405 +1,402 @@
-# Domain Model — odd_manager
+# Domain Model - odd_manager
 
-**Version**: 0.3.0
-**Date**: 2026-04-23
+**Version**: 0.5.0
+**Date**: 2026-07-11
 **Status**: Active
 **Derives From**:
 - `specification/INTENT.md`
 - `specification/PRODUCT.md`
 - `specification/requirements/02-canonical-ontology.md`
 - `specification/requirements/03-read-model-and-projection.md`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/context/project_bootstrap.md`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/query_contract.py`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/query.py`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/start_targeting.py`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/execution_contract.py`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.genesis/odd_sdlc/python/code/odd_sdlc/project_profile.py`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-ambiguity-register.json`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-requirement-closure.json`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-execution-contract.json`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-gap-dossiers.json`
-- `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test38/.ai-workspace/runtime/odd_sdlc-workspace-state.json`
+- `specification/requirements/06-operator-workbench.md`
+- `specification/requirements/10-entry-lenses-and-delivery-workspaces.md`
 
 ## Purpose
 
-This document publishes the domain model that `odd_manager` observes, projects,
-and supervises.
-
-It gives one shared vocabulary for:
-- runtime readers and projector code
-- API and transport surfaces
-- UI and operator-facing panels
-- audit, provenance, admission, and closure explanations
-
-The observed workspace listed above is historical evidence for the first
-`odd_sdlc` adapter line. It does not define project identity for
-`odd_manager`, and it does not define the live ABG/GTL system observation
-contract.
+This document defines the cross-domain objects that `odd_manager` coordinates,
+commands, observes, and projects. It defines manager product semantics, not GTL
+language law or ABG runtime law, and it does not promote one domain product's
+labels into manager ontology.
 
 ## Position
 
-`odd_manager` owns a cross-domain supervisory core.
+`odd_manager` is a developer-facing control plane over a portfolio of selected
+Projects. Its core model is:
 
-That core is grounded in ABG/GTL system truth and extended by domain-specific
-overlays published by the active domain package contract.
+```text
+DeveloperOperator
+  -> ProjectPortfolio
+  -> Context(Project, Workspace)
+  -> ProjectRevision
+  -> ProjectWorkbench
+       -> SpecificationProposal
+       -> BuildRequest
+            -> BuildExecution
+                 -> AdmittedRun[]
+                 -> GateAssessment[]
+                 -> AssetDelivery[]
+                 -> AttentionItem[]
+       -> RunObservation
+```
 
-The live core observation boundary is ABG 4.2 system-ledger and catalog truth.
-It includes ABG runtime events, registry entries, graph-function selections,
-node-type satisfaction facts, payload facts, and construction-action catalog
-entries where the managed project publishes them.
+The manager owns portfolio coordination, command admission, bounded queue and
+external process lifecycle, correlation, operator decisions, and projections.
+A Build Request invokes only a published semantic carrier. GTL owns that
+carrier's declared program and ABG owns traversal, continuation, runtime event
+truth, evidence admission, and closure.
 
-The `data_mapper.test38` / `odd_sdlc.query-domain v16` baseline remains
-pre-release adapter evidence for the first `odd_sdlc` delivery overlay. It is
-not a workspace-local runtime authority for `odd_manager`.
+The current reference evidence is the `odd_glc` data-mapper run family. That
+reference proves the generic model; it does not create an `odd_glc`-specific
+manager lane.
 
-## Legacy odd_sdlc Adapter Evidence
+Historical Process Navigator and `odd_sdlc.query-domain` carriers are retired
+pre-release material. They do not define a live compatibility contract.
 
-The prior observed standard was `data_mapper.test35` carrying
-`odd_sdlc.query-domain v10`.
+## Core Control And Observation Contract
 
-`data_mapper.test38` revises that contract materially:
-- `analysis_manifest` is no longer a stable top-level query-domain surface for
-  manager consumers; it remains provenance feeding other published read models
-- `gaps` is no longer the first-class odd_sdlc publication boundary; the
-  stable surface is now `gap_dossier`
-- the domain package now publishes start-addressability and dispatch truth
-  explicitly through `start_target_catalog`, `asset_ownership_index`, and
-  `execution_contract_surface`
-- execution gating is now first-class through
-  `operational_capabilities`
-- the manager may continue to project a compact `Gap` overlay for UI
-  continuity, but that overlay is now derived from `gap_dossier` when the
-  upstream source contract is `v16`
+Across Projects, the manager may coordinate:
 
-This revision changes the meaning of the observed domain pack. It is not just a
-file-count increase.
+- registered Project selection and portfolio attention
+- immutable source/specification revision identity
+- attributable specification proposals and explicit acceptance or rejection
+- typed build requests over published semantic carriers
+- bounded build queue, concurrency, and external process lifecycle
+- correlation between manager commands, build executions, and ABG-owned runs
+- explicit operator decisions, cancellation, retry requests, and lawful
+  constitutional re-entry
 
-## Core Observation Contract
+The manager does not infer or author graph traversal, runtime continuation,
+evidence admission, or closure policy while coordinating that work.
 
-Across supported domain packages, `odd_manager` supervises:
-- published domain-package identity
-- published query-contract identity and version
-- graph sets
-- assets, asset types, asset families, asset collections, and asset nodes
-- asset bindings
-- workorders and backing GTL graph-function carriers
-- jobs and roles
-- ABG runtime aggregates: run, graph call, frame, continuation, runtime fact
-- ABG system catalog and ledger facts: registry entries, graph-function
-  selections, node-type satisfaction, payload facts, and construction-action
-  catalog entries
-- policy, ambiguity, capability, execution-admission, provenance, and closure
-  surfaces
+Across Projects, the manager may observe:
 
-These objects are stable enough to remain part of the shared manager ontology.
+- published product identity and separately published governance packages
+- Project-owned `.ai-workspace` features and artifacts
+- run carrier roots, timestamped run roots, and generated run workspaces
+- proof and identity carriers that admit a run
+- graph, graph-function, overlay, and startup references
+- runs, graph calls, frames, traversal vectors, retries, and continuations
+- payload, evidence, witness, assurance, and terminal facts
+- event-kind counts, bounded event rows, and digest-pinned event ledgers
+- materialized assets and the vector/stage that produced them
+- test execution, requirement lineage, depth proof, and mutation outcomes
+- bounded transcripts, process traces, and source artifact references
+- product/domain overlays that add labels without redefining runtime truth
+- specification readiness and proposal posture
+- build requests, queue/process lifecycle, correlation, and freshness
+- published gate requirements and evidence-backed gate assessments
+- required and delivered asset relations
+- attention conditions and their bounded lawful reactions
 
-## Runtime And Domain Query Boundary
-
-The composition rule is strict:
-- ABG owns runtime event truth and runtime aggregate projections
-- the active domain package owns read-only domain overlays and domain-specific
-  explanations
-- `odd_manager` composes both into one supervisory world
-
-The domain side may provide:
-- asset and binding views
-- function catalog, program, edge-contract, and work-act-type views
-- ambiguity-register and operational-capability views
-- start-addressability and asset-ownership views
-- admitted execution-contract and per-edge gap-dossier views
-- generated delivery artifacts such as requirement, scenario, design, test,
-  release, and operational-cycle surfaces
-
-It must not redefine:
-- `Run`
-- `GraphCall`
-- `Frame`
-- `Continuation`
-- `RuntimeFact`
-
-Those remain ABG-native.
-
-## Pre-Release odd_sdlc Adapter Artifact Family
-
-The first `odd_sdlc` domain adapter evidence is defined against the artifact
-family observed in `data_mapper.test38`. It remains useful for adapter shape
-and migration comparison, but it is not the live core system contract.
-
-### Constitutional And Runtime Inputs
-
-- `specification/GOALS.md`
-- `specification/INTENT.md`
-- `specification/PRODUCT.md`
-- `specification/requirements/10-generated-bootstrap.md`
-- `.ai-workspace/runtime/odd_sdlc-requirement-closure.json`
-- `.ai-workspace/runtime/odd_sdlc-ambiguity-register.json`
-- `.ai-workspace/runtime/odd_sdlc-execution-contract.json`
-- `.ai-workspace/runtime/odd_sdlc-gap-dossiers.json`
-- `.ai-workspace/runtime/odd_sdlc-workspace-state.json`
-
-### Domain-Specific Delivery Evidence
-
-- `specification/scenarios/20-generated-uat-testcases.md`
-- `specification/scenarios/30-generated-testcase-authority.md`
-- `specification/scenarios/40-generated-scenarios.md`
-- `build_tenants/<tenant>/design/20-generated-feature-decomp.md`
-- `build_tenants/<tenant>/design/30-generated-odd-design.md`
-- `build_tenants/<tenant>/design/40-generated-implementation-design.md`
-- `build_tenants/<tenant>/design/40-generated-implementation-modules.md`
-- `build_tenants/<tenant>/design/40-generated-test-design.md`
-- `build_tenants/<tenant>/design/60-generated-retrofit-plan.md`
-- `build_tenants/<tenant>/test_env/tests/40-generated-test-modules.md`
-- `build_tenants/<tenant>/release/60-generated-release-surface.md`
-- `docs/45-generated-build-execution.md`
-- `docs/46-generated-build-execution-result.md`
-- `docs/47-generated-test-execution.md`
-- `docs/48-generated-test-execution-result.md`
-- `docs/50-generated-deployment.md`
-- `docs/55-generated-deployment-result.md`
-- `docs/60-generated-runtime-observation.md`
-- `.ai-workspace/fp_ledgers/*`
-- `.ai-workspace/fp_manifests/*`
-- `.ai-workspace/fp_results/*`
-
-`odd_manager` treats this artifact family as a domain overlay over the shared
-core ontology, not as a replacement ontology.
+Missing features are lawful. They are represented as missing, incomplete,
+unsupported, or error states at the relevant lens while the Project remains
+browseable.
 
 ## Core Objects
 
-### DomainContract
+### DeveloperOperator
 
-The published identity of the active domain package and query-contract version.
+The first primary actor: a developer who manages multiple governed software
+Projects, reviews and proposes specification change, submits admitted semantic
+builds, supervises execution, and assesses gate/asset delivery.
 
-This object governs compatibility and domain-pack selection inside the manager.
+### ProjectPortfolio
 
-### GraphSet
+The manager-owned bounded projection over registered Projects. It carries
+published identity, selected revision, specification readiness, build/run
+posture, gate and asset posture, freshness, participants, and attention. It
+does not consolidate Project-owned truth into a new central authority.
 
-A workspace-scoped set of one or more observed graphs.
+### Project
 
-### Asset
+A filesystem and version-control root selected by the operator. The Project is
+the ownership boundary for source, specification, `.ai-workspace`, build
+outputs, observation, commands, and shells.
 
-A durable surface of truth or produced delivery state identified by URI.
+### Context
 
-### AssetType
+The operational binding of one Project and one admitted Workspace/domain lens.
+Context determines available domain semantics and capability contributions. It
+does not replace Project identity or source revision identity.
 
-The semantic role an asset fulfills in the domain.
+### ProjectRevision
 
-### AssetFamily
+The admitted immutable source and specification basis for a proposal, build,
+run correlation, gate assessment, or asset-delivery claim. Commit, worktree,
+dirty-state, and snapshot posture remain explicit.
 
-A named semantic grouping over related asset types and lifecycle lanes.
+### ManagerCapability
 
-### AssetCollection
+An independently evolvable manager capability with declared product inputs,
+actions, projections, availability states, STDO-UX interaction algebra, and
+proof. Manager capabilities share Context and product contracts but do not read
+or mutate one another's internal state.
 
-A named working set of assets treated as one bound scope.
+The initial capability family is:
 
-### AssetNode
+- Build Portfolio
+- Project Workbench
+- Specification Proposal
+- Build Control
+- Assurance and Attention
+- Run Observation
 
-A typed locus in a graph that receives one asset or one asset-collection
-binding.
+### ProjectWorkbench
 
-### AssetGraph
+The thin composition surface for one selected Project and its developer goal.
+It arranges capability contributions around `Review -> Tune -> Build -> Assure`
+without becoming their semantic owner or orchestration engine.
 
-The dependency topology over typed asset nodes.
+### PublishedIdentity
 
-### AssetBinding
+The primary product identity read from published product or install carriers.
+Governance-package identities are separate attributes. Repository basename and
+hard-coded product lists are not identity authority.
 
-The mapping from one concrete asset or asset collection into one typed asset
-node at call time.
+### ProjectObservationTopology
 
-### WorkOrder
+The bounded relation between one Project and its observable carriers:
 
-The manager-facing published callable transformation over typed asset nodes.
+```text
+ProjectObservationTopology
+  = PublishedIdentity
+  + ProjectAiWorkspaceRoot
+  + RunCarrierRoot[]
+  + AdmittedRun[]
+  + Diagnostic[]
+```
 
-A `WorkOrder` remains traceable to the underlying domain function and GTL
-`GraphFunction`. It is not a second executor.
+A run workspace below a timestamped run root remains part of the owning
+Project. It is not a second Project merely because it can host a shell.
 
-### Job
+### AdmittedRun
 
-A durable semantic work contract over published callable carriers and declared
-roles.
-
-### Role
-
-A semantic capability class required to perform, supervise, or approve work.
+A run discovered from a bounded proof or identity carrier. It records run id,
+run root, workspace root, scenario identity, proof class, graph-function ref,
+status, event count, and source artifacts.
 
 ### Run
 
-One engine-owned execution attempt over semantic work.
+One engine-owned execution attempt. The manager observes run state and does not
+advance it.
 
 ### GraphCall
 
-One engine-owned realization of one published GTL `GraphFunction` boundary.
+One engine-owned invocation of a published graph-function boundary.
 
 ### Frame
 
-One recursive invocation aggregate inside a graph call.
+The engine-owned invocation context in which traversal vectors are evaluated.
+Frame lineage is shown only when published; absence is explicit.
+
+### TraversalVector
+
+One observed vector evaluation within a frame, including edge, attempt,
+assessment, stage plan, evidence, and source artifact where available.
 
 ### Continuation
 
-One engine-owned durable open governance obligation or unresolved runtime
-condition derived from prior event truth.
+Engine-owned state describing lawful re-entry or termination after an
+evaluation. The manager projects continuation facts but never chooses them.
 
-### RuntimeFact
+### EventCarrier
 
-An emitted ABG event or replay-derived runtime truth surface.
+A source-attributed event sequence or event ledger. Large ledgers are never
+sent whole to the browser. The manager exposes complete published kind counts,
+bounded high-signal rows, file metadata, and SHA-256 verification against the
+proof-declared digest. Unknown event kinds remain visible.
 
-### AmbiguityRegister
+### ProofCarrier
 
-A query-derived domain surface that records major ambiguity, current status,
-policy action, affected assets, threatened invariants, and expected resolving
-boundary.
+A bounded artifact that admits run identity, runtime refs, event counts,
+event-ledger digest, substrate version, and assurance facts.
 
-### OperationalCapabilityProjection
+### Asset
 
-A published capability declaration surface describing whether build execution,
-test execution, deployment, and runtime observation are declared lawful
-operational families in the current workspace.
+A materialized output observed with path, producer vector, producer stage,
+target type, content digest, and source artifact.
 
-### StartTargetCatalog
+### Assurance
 
-A published list of manager-visible graph-function carriers that are
-start-addressable, including their carrier class, input and output surfaces,
-and execution binding posture.
+A projection over admitted evidence, payload validation, requirement lineage,
+test reports, depth proof, and mutation outcomes. Assurance is source-linked;
+it is not inferred from visual state.
 
-### AssetOwnershipIndex
+### DomainOverlay
 
-A published mapping from an asset surface to the governing start target or work
-item route that is responsible for advancing that asset.
+Product-owned meaning layered over admitted core truth. An overlay may label
+graphs, stages, assets, scenarios, or readiness. It must not redefine run,
+graph-call, frame, traversal, evidence, continuation, or event truth.
 
-### ExecutionContractSurface
+### AbgRunObservation
 
-The admitted dispatch contract for the next lawful constructive act, including
-scope, normalized target, `until` semantics, proof surface, and provenance of
-the admission basis.
+The manager-owned typed projection over one admitted run. It independently
+exposes:
 
-### GapDossier
+- overview
+- graph
+- traversal
+- functions
+- assets
+- diagnostics
+- assurance
+- events
+- stages
+- transcripts
+- artifacts
 
-A published per-edge gap-analysis register carrying gap truth, route state,
-triage evidence, resumption trigger, and current execution-contract context.
+The projection is bounded, versioned, source-attributed, and runtime-validated
+before reducer admission.
 
-### Gap
+### RuntimeTarget
 
-A compact manager projection over one unconverged edge or callable boundary.
+An admitted run workspace directory that may be used as the working directory
+for a Project-owned local shell. Runtime targeting changes shell location; it
+does not change Project identity.
 
-For `odd_sdlc.query-domain v10`, this is sourced directly from the published
-`gaps` payload.
+### SpecificationProposal
 
-For `odd_sdlc.query-domain v16`, this is derived from `gap_dossier` so current
-manager widgets can remain stable while the upstream model evolves.
+An attributable candidate change against named specification authority. It
+records Project, basis revision, attached context, participant, proposed diff,
+validation results, affected surfaces, and acceptance or rejection. Proposal
+generation does not mutate constitutional truth.
 
-## odd_sdlc Adapter Extension Objects
+### BuildRequest
 
-A compatible `odd_sdlc` adapter may extend the core ontology with domain
-objects that stay query-derived rather than becoming manager primitives.
+A manager-admitted command to execute a published Job, GraphFunction,
+workorder, or equivalent domain carrier against one Context and
+ProjectRevision. It records request identity, carrier reference, inputs,
+requester, resource posture, policy basis, and correlation identity. It is not
+an opaque shell command and contains no manager-authored graph policy.
 
-### RequirementInventory
+### BuildExecution
 
-The generated requirement authority carried by
-`specification/requirements/10-generated-bootstrap.md`.
+The manager-owned lifecycle record produced from one BuildRequest. It covers
+queue and external process state and may be:
 
-### RequirementClosureRegister
+- queued
+- starting
+- running
+- waiting_human
+- converged
+- failed
+- cancelled
+- stale
+- disconnected
 
-The carry and fulfillment status over admitted requirements, as published by a
-compatible `odd_sdlc` adapter.
+A BuildExecution correlates to zero or more engine-owned Runs. It does not
+replace run or event truth.
 
-### ScenarioSurface
+### BuildPortfolio
 
-The generated technical and acceptance scenario surfaces published under
-`specification/scenarios/`.
+The bounded projection over active and recent BuildRequests and
+BuildExecutions across registered Projects, including concurrency, resource,
+freshness, participant, correlation, and attention posture.
 
-### TestcaseAuthority
+### CommandCorrelation
 
-The published admission surface tying requirements to testcase and test-module
-coverage when the asset is materialized.
+The stable identity relation connecting operator intent, typed command,
+external process lifecycle, emitted runtime identity, resulting evidence, and
+the ProjectRevision on which the action was based.
 
-### GeneratedDesignSurface
+### GateRequirement
 
-One published generated design, decomposition, implementation-design,
-implementation-module, or test-design surface under
-`build_tenants/<tenant>/design/`.
+A product- or domain-published condition required for one named build outcome.
+The manager observes and groups this meaning but does not invent it.
 
-### OperationalCycleSurface
+### GateAssessment
 
-One published build execution, build result, test execution, test result,
-deployment, deployment result, or runtime-observation surface under `docs/`
-or the active tenant output tree.
+The source-attributed relation between one GateRequirement and one
+ProjectRevision/BuildExecution. Its posture is required, satisfied, failed,
+missing, stale, unsupported, or waiting for human authority. A satisfied state
+requires admitted evidence.
 
-### ReleaseSurface
+### AssetDelivery
 
-The published release posture surface under `build_tenants/<tenant>/release/`.
+The source-attributed relation between one required or expected asset and its
+materialized artifact, producer, ProjectRevision, content digest, freshness,
+and evidence.
 
-### FPArtifact
+### AttentionItem
 
-One constructive artifact in `.ai-workspace/fp_ledgers/`,
-`.ai-workspace/fp_manifests/`, or `.ai-workspace/fp_results/`.
-
-## Placeholder Policy
-
-Placeholder detail is lawful only where the active domain package has not yet
-published richer meaning.
-
-The following are not placeholder once published:
-- domain-contract identity
-- generated requirement inventory
-- requirement-closure register
-- ambiguity-register entries
-- operational-capability posture
-- start-target catalog and asset-ownership index
-- admitted execution-contract surface
-- gap-dossier entries
-- generated scenario, testcase-authority, design, release, and
-  operational-cycle surfaces
-
-Missing or stale publication must be represented honestly as absence, staleness,
-or incompatibility state.
+A manager projection of a condition requiring developer awareness or action.
+It records source, severity, affected Project and BuildExecution, reason,
+freshness, and bounded lawful reactions. It may route repair, cancellation,
+retry request, approval, escalation, or constitutional re-entry; it never
+silently performs them.
 
 ## Ownership Rules
 
 ### GTL-Owned
 
-- graph structure
-- typed nodes
-- graph functions
-- jobs
-- roles
+- typed graph nodes and edges
+- graph structure and graph functions
+- published callable carriers, jobs, roles, and declared input/output contracts
 
 ### ABG-Owned
 
-- run, graph-call, frame, and continuation aggregates
-- worker and backend identity binding
-- event emission and replay-derived runtime projection
-- proof and closure enforcement
+- runs, graph calls, frames, traversal, retries, and continuations
+- event emission, admission, ordering, and replay
+- payload, evidence, witness, fold, residual, and terminal truth
+- runtime lineage and provenance
 
-### odd_sdlc-Owned For A Compatible Adapter
+### Product-Owned
 
-- generated requirement, scenario, testcase-authority, design, test, release,
-  and operational-cycle artifact families
-- ambiguity and operational-capability overlays
-- start-target and asset-ownership publication
-- admitted execution-contract and per-edge gap-dossier publication
-- domain-specific explanations over software-delivery work
+- primary product identity
+- scenario and proof meaning
+- domain overlays
+- product-specific requirement, test, depth, mutation, and artifact meaning
+- published build carriers and their domain inputs
+- required gate and asset semantics
+- specification validation and acceptance semantics where product-specific
+
+### DeveloperOperator-Owned
+
+- proposal acceptance or rejection where human authority is required
+- explicit build submission, cancellation, approval, escalation, and re-entry
+  decisions within admitted policy
+- portfolio focus and prioritization
 
 ### odd_manager-Owned
 
-- cross-domain page and panel ownership
-- domain-pack compatibility selection
-- composition of ABG runtime truth with domain overlays
-- operator-facing grouping, drill-down, attention, and posture views
-- compatibility projection from source-domain surfaces to stable manager UI
-  slices
-- honest placeholder, absence, and incompatibility presentation
+- Project registry and selected Project context
+- Project Portfolio and Build Portfolio projections
+- admitted ProjectRevision and command-correlation identity
+- specification-proposal workflow and attribution, but not unreviewed
+  constitutional mutation
+- BuildRequest admission against a published carrier
+- bounded queue, concurrency, and external process lifecycle
+- correlation of BuildExecution to ABG-owned Runs
+- bounded run discovery and observation topology
+- typed read projections and runtime validation
+- operator grouping, drill-down, refresh, shell targeting, and attention routing
+- explicit submission of attributable operator decisions through admitted
+  command boundaries
+- honest missing, incomplete, unsupported, mismatch, and error states
+- source-reference preservation
 
 ## Publishing Rules
 
-1. Core GTL/ABG runtime objects remain stable across domain packages.
-2. A compatible `odd_sdlc` adapter is defined against observed published
-   artifacts and query surfaces, not against older `odd_method`-first
-   assumptions.
-3. Domain overlays extend the core ontology without replacing it.
-4. Generated delivery artifacts remain domain overlays rather than new runtime
-   primitives.
-5. Start-addressability, admitted execution, operational capability, and gap
-   dossiers are first-class domain publications where a compatible `odd_sdlc`
-   model publishes them.
-6. Unsupported or stale domain contracts degrade to explicit compatibility
-   state while leaving core GTL/ABG projections available.
+1. Core GTL/ABG truth remains stable across product overlays.
+2. Identity comes from published carriers, not path labels.
+3. Run discovery remains bounded and Project-scoped.
+4. No run projection is admitted without proof or identity evidence.
+5. No event digest is shown as verified until the observed carrier matches it.
+6. Unknown event kinds are surfaced, never silently discarded.
+7. Domain overlays extend core truth without replacing it.
+8. Large carriers produce bounded projections rather than browser payloads.
+9. Every operational row keeps a source reference where one is published.
+10. Every BuildRequest names Project, ProjectRevision, published semantic
+    carrier, requester, and correlation identity.
+11. The manager may schedule and supervise admitted external process lifecycle;
+    it does not choose graph traversal, continuation, evidence admission, or
+    runtime closure.
+12. Specification generation produces a proposal. Constitutional truth changes
+    only through explicit validated acceptance.
+13. Process exit, rendered UI state, or unstructured log text cannot establish
+    gate satisfaction or asset delivery without admitted evidence.
+14. Manager capabilities compose through shared Context, typed contracts,
+    commands, events, navigation, and evidence; they do not mutate one another's
+    internal state.
+15. The Project Workbench composes capability meaning but does not become a
+    hidden constructive carrier or orchestration engine.

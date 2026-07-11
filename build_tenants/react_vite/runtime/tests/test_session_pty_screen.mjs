@@ -43,7 +43,7 @@ test('spawnScreenSession launches detached screen session', { skip: screenSkip }
     const result = spawnScreenSession(fixtureRoot, {
       command: '/bin/sh',
       args: ['-c', 'sleep 60'],
-      contextAtSpawn: { project: 'test', workspace: 'react_vite', odd_type: 'odd_sdlc' },
+      contextAtSpawn: { project: 'test', workspace: 'react_vite', odd_type: 'unknown' },
     });
     assert.equal(result.ok, true, `spawn failed: ${result.error}`);
     id = result.id;

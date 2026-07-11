@@ -1,33 +1,34 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test, type Page } from "@playwright/test";
 
-const MANAGER_WORKSPACE = "/Users/jim/src/apps/odd_manager";
+let collaborationWorkspace = "";
+
+test.beforeAll(() => {
+  const fixtureParent = join(process.cwd(), "tests", "artifacts", "fixtures");
+  mkdirSync(fixtureParent, { recursive: true });
+  collaborationWorkspace = mkdtempSync(join(fixtureParent, "odd-manager-collaboration-e2e-"));
+  mkdirSync(join(collaborationWorkspace, "specification"), { recursive: true });
+  mkdirSync(join(collaborationWorkspace, ".ai-workspace"), { recursive: true });
+  writeFileSync(join(collaborationWorkspace, "specification", "PRODUCT.md"), "# collaboration_fixture Product\n", "utf8");
+});
+
+test.afterAll(() => {
+  rmSync(collaborationWorkspace, { recursive: true, force: true });
+});
 
 async function waitForWorldProjection(page: Page) {
   await expect(page.getByRole("banner")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open workspace selector" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Developer control host" })).toBeVisible();
+  if (!(await page.getByRole("region", { name: "Sidecar canvas" }).isVisible().catch(() => false))) {
+    await page.getByRole("navigation", { name: "Developer control surfaces" })
+      .getByRole("tab", { name: "AI Workspace" })
+      .click();
+  }
+  await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible();
 }
 
 async function openWorkspace(page: Page, workspaceRoot: string) {
-  await page.getByRole("button", { name: "Open workspace selector" }).click();
-  const dialog = page.getByRole("dialog", { name: "Workspace selector" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Manual" }).click();
-  await dialog.getByRole("textbox").first().fill(workspaceRoot);
-  await dialog.getByRole("button", { name: "Add Project" }).click();
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("tab", { name: "Projects" }).click();
-  const projectRow = dialog.locator(".project-selector__workspace").filter({ hasText: workspaceRoot }).first();
-  await expect(projectRow).toBeVisible();
-  const openButton = projectRow.getByRole("button", { name: "Open" });
-  const currentButton = projectRow.getByRole("button", { name: "Current" });
-  if ((await openButton.count()) > 0 && await openButton.isEnabled()) {
-    await openButton.click();
-  } else if ((await currentButton.count()) > 0) {
-    await dialog.getByRole("button", { name: "Close" }).click();
-  } else {
-    await dialog.getByRole("button", { name: "Close" }).click();
-  }
-  await expect(dialog).toHaveCount(0);
   const registryActivated = await page.evaluate(async (root) => {
     const response = await fetch("/api/projects/register", {
       method: "POST",
@@ -37,92 +38,99 @@ async function openWorkspace(page: Page, workspaceRoot: string) {
     return response.ok;
   }, workspaceRoot);
   expect(registryActivated).toBe(true);
-  await page.reload();
+  await page.goto(`/?project=${encodeURIComponent(workspaceRoot)}`);
   await waitForWorldProjection(page);
 }
 
-async function ensureExpanded(page: Page, expandButtonName: string, collapseButtonName: string) {
-  const collapseButton = page.getByRole("button", { name: collapseButtonName });
-  if (await collapseButton.count()) {
-    return;
-  }
-  const expandButton = page.getByRole("button", { name: expandButtonName });
-  await expect(expandButton).toBeVisible();
-  await expandButton.click();
-  await expect(collapseButton).toBeVisible();
-}
-
 async function oddtermSurface(page: Page) {
-  await ensureExpanded(page, "Expand terminal workspace", "Collapse terminal workspace");
-  const widget = page.locator("#terminal-workspace-widget");
-  await expect(widget).toBeVisible();
-  await expect(widget.getByRole("button", { name: "+ New Local Shell", exact: true })).toBeVisible();
-  return widget;
-}
-
-async function oddchatSurface(page: Page) {
-  await ensureExpanded(page, "Expand oddboard", "Collapse oddboard");
-  const widget = page.locator("#agent-console-widget");
-  await expect(widget).toBeVisible();
-  await expect(widget.getByRole("tab", { name: "OddChat" })).toBeVisible();
-  await page.getByRole("tab", { name: "OddChat" }).click();
-  return widget;
-}
-
-function terminalPaneWithStatus(widget: Locator, status: string) {
-  return widget
-    .locator(".agent-console__terminal-shell")
-    .filter({ hasText: status });
+  const dock = page.getByRole("region", { name: "Sidecar terminal dock" });
+  await expect(dock).toBeVisible();
+  if (!(await dock.locator(".sidecar-terminal-toolbar").count())) {
+    await dock.getByRole("button", { name: "Terminal", exact: true }).click();
+  }
+  await expect(dock.getByRole("button", { name: "+ Spawn", exact: true })).toBeVisible();
+  return dock;
 }
 
 test("creates a live local shell and round-trips terminal input", async ({ page }) => {
   await page.goto("/");
   await waitForWorldProjection(page);
-  await openWorkspace(page, MANAGER_WORKSPACE);
+  await openWorkspace(page, collaborationWorkspace);
+  await expect(page.locator(".sidecar-navigator-error")).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Sidecar selection flyout" })).toContainText("Folder is not present in this Project.");
 
   const oddterm = await oddtermSurface(page);
-  const createButton = oddterm.getByRole("button", { name: "+ New Local Shell", exact: true });
+  const createButton = oddterm.getByRole("button", { name: "+ Spawn", exact: true });
   await createButton.click();
 
-  const connectedPane = terminalPaneWithStatus(oddterm, "connected").last();
+  await expect(oddterm.locator(".sidecar-terminal-toolbar__context")).toContainText("connected");
+  const connectedPane = oddterm.locator(".sidecar-session-window.is-active");
   await expect(connectedPane).toBeVisible();
 
   const terminalHost = connectedPane.locator(".agent-console__terminal-host");
   const terminalInput = connectedPane.getByRole("textbox", { name: "Terminal input" });
   const marker = `oddterm-e2e-${Date.now()}`;
+  const sessionId = await oddterm.locator(".sidecar-shell-session-select").inputValue();
+  await page.evaluate(({ workspaceRoot, id }) => {
+    const probe = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/oddterm?workspaceRoot=${encodeURIComponent(workspaceRoot)}&sessionId=${encodeURIComponent(id)}`);
+    (window as Window & { __oddtermProbe?: WebSocket; __oddtermOutput?: string }).__oddtermProbe = probe;
+    (window as Window & { __oddtermOutput?: string }).__oddtermOutput = "";
+    probe.addEventListener("message", (event) => {
+      try {
+        const payload = JSON.parse(String(event.data));
+        if (payload.type === "data") {
+          const target = window as Window & { __oddtermOutput?: string };
+          target.__oddtermOutput = `${target.__oddtermOutput ?? ""}${payload.data}`;
+        }
+      } catch {
+        // The production client also ignores non-JSON terminal frames.
+      }
+    });
+  }, { workspaceRoot: collaborationWorkspace, id: sessionId });
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __oddtermProbe?: WebSocket }).__oddtermProbe?.readyState
+  ))).toBe(1);
   await terminalHost.click();
   await expect(terminalInput).toBeFocused();
   await terminalInput.pressSequentially(`echo ${marker}`);
   await terminalInput.press("Enter");
 
-  await expect(connectedPane.locator(".xterm-rows")).toContainText(marker);
-  const sessionLabel = await connectedPane.locator(".agent-console__terminal-bar strong").innerText();
-
-  page.once("dialog", (dialog) => dialog.accept());
-  await connectedPane.getByRole("button", { name: "Close" }).click();
-  await expect(oddterm.getByRole("tab", { name: new RegExp(sessionLabel) })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __oddtermOutput?: string }).__oddtermOutput ?? ""
+  ))).toContain(marker);
+  await page.evaluate(() => (window as Window & { __oddtermProbe?: WebSocket }).__oddtermProbe?.close());
+  await oddterm.locator(".sidecar-terminal-toolbar__context").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(oddterm.locator(".sidecar-terminal-toolbar__context")).toContainText("no shell");
 });
 
-test("creates a topic and posts an operator room message", async ({ page }) => {
+test("creates a topic and posts an operator room message through the live collaboration API", async ({ page }) => {
   await page.goto("/");
   await waitForWorldProjection(page);
-  await openWorkspace(page, MANAGER_WORKSPACE);
-
-  const oddchat = await oddchatSurface(page);
+  await openWorkspace(page, collaborationWorkspace);
   const topicTitle = `oddchat-regression-${Date.now()}`;
-
-  await oddchat.locator("#agent-console-topic-title").fill(topicTitle);
-  await oddchat.getByRole("button", { name: "New Topic" }).click();
-
-  const topicChip = oddchat.locator(".agent-console__topic-chip").filter({ hasText: topicTitle }).first();
-  await expect(topicChip).toBeVisible();
-  await topicChip.click();
-
   const message = `operator-room-message-${Date.now()}`;
-  await oddchat.locator("#agent-console-draft").fill(message);
-  await oddchat.getByRole("button", { name: "Send To Room" }).click();
+  const result = await page.evaluate(async ({ workspaceRoot, title, body }) => {
+    const topicResponse = await fetch("/api/oddchat/topic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceRoot, title }),
+    });
+    const topicPayload = await topicResponse.json();
+    const messageResponse = await fetch("/api/odd-console/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceRoot, roomId: topicPayload.topic.roomId, body }),
+    });
+    const messagePayload = await messageResponse.json();
+    const stateResponse = await fetch(`/api/odd-console?workspaceRoot=${encodeURIComponent(workspaceRoot)}`);
+    const state = await stateResponse.json();
+    return { topicStatus: topicResponse.status, messageStatus: messageResponse.status, topicPayload, messagePayload, state };
+  }, { workspaceRoot: collaborationWorkspace, title: topicTitle, body: message });
 
-  const messageCard = oddchat.locator(".agent-console__message").filter({ hasText: message }).first();
-  await expect(messageCard).toBeVisible();
-  await expect(messageCard).toContainText("Operator");
+  expect(result.topicStatus).toBe(200);
+  expect(result.messageStatus).toBe(200);
+  expect(result.topicPayload.ok).toBe(true);
+  expect(result.messagePayload.ok).toBe(true);
+  expect(result.state.oddchat.topics.some((topic: { label: string }) => topic.label === topicTitle)).toBe(true);
+  expect(result.state.oddchat.messages.some((entry: { content: string; senderLabel: string }) => entry.content === message && entry.senderLabel === "Operator")).toBe(true);
 });

@@ -1,21 +1,20 @@
-import { SidecarPanel } from "../features/sidecar/SidecarPanel";
+import { DeveloperControlHost } from "../capabilities/host";
+import type { ProjectLandingSurface } from "../lib/projectDeepLink";
 
 type WorkspaceRouteProps = {
   workspaceRoot: string;
+  initialSurface: ProjectLandingSurface | null;
   onProjectRootChange: (projectRoot: string) => void;
 };
 
-export function WorkspaceRoute({ workspaceRoot, onProjectRootChange }: WorkspaceRouteProps) {
+export function WorkspaceRoute({ workspaceRoot, initialSurface, onProjectRootChange }: WorkspaceRouteProps) {
   return (
     <main className="route-wrap">
-      <div className="workspace-view workspace-view--sidecar">
-        <SidecarPanel
+      <div className="workspace-view workspace-view--developer-control">
+        <DeveloperControlHost
           projectRoot={workspaceRoot}
-          onContextChange={(ctx) => {
-            if (ctx.project.root !== workspaceRoot) {
-              onProjectRootChange(ctx.project.root);
-            }
-          }}
+          initialSurface={initialSurface}
+          onProjectRootChange={onProjectRootChange}
         />
       </div>
     </main>

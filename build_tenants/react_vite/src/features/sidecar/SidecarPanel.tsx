@@ -1,6 +1,7 @@
 // SidecarPanel — the real React Project Agent Widget. Closes T-010.
 //
-// Realizes Projects, Tickets, Comments, pinned folder navigation, terminal
+// Realizes Project-local Tickets, Comments, Specification, Build Tenants,
+// user-pinned folder navigation, terminal
 // sessions, the Context bar, and the Inspector in React, governed by UX_METHOD §4 (Elm
 // process model: View = f(State), Msg → Update, Cmd at the effect membrane)
 // and ADR 0001 (stack: typed reducer + Cmd interpreter + shared contracts).
@@ -40,37 +41,34 @@ import {
   type PropsWithChildren,
   type ReactNode,
   type RefObject,
-  type WheelEvent,
 } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
 import 'xterm/css/xterm.css';
 import {
   DocumentViewer,
+  MarkdownDocumentContent,
   documentDescriptorForPath,
-  type DocumentViewerSurfacePicker,
 } from '../../components/DocumentViewer';
-import type { TicketRecord } from '../../contracts/ticket';
+import { DrillView } from './DrillView';
+import type { DrillLane, DrillTone } from './DrillView';
+import type { TicketLane, TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
 import type {
+  ProjectLandingSurface,
+  RunInspectorFocus,
+} from '../../lib/projectDeepLink';
+import type {
   AiWorkspaceArtifactRecord,
+  AiWorkspaceFeatureId,
   AiWorkspaceObservation,
 } from '../../contracts/ai-workspace-observation';
-import type {
-  SidecarProcessMap,
-  SidecarProcessProjection,
-  SidecarProcessTone,
-} from '../../contracts/process';
 import {
   PROJECT_REGISTRY_CHANGED_EVENT,
-  browsePath,
-  registerProject,
   setActiveProject,
-  unregisterProject,
 } from '../../lib/collaboration';
-import { projectDisplayNameFromRoot } from '../../lib/projectDisplay';
 import type { SurfaceData, SurfaceEntry } from '../../lib/types';
 import {
   INITIAL_SIDECAR_STATE,
@@ -79,8 +77,10 @@ import {
   SIDECAR_WORKBENCH_LAYOUT_LIMITS,
   reduceSidecarState,
   sidecarLayoutProfileFromState,
+  traversalDetailKey,
 } from './sidecar-state';
 import {
+  AI_WORKSPACE_SUMMARY_FEATURE_IDS,
   aiWorkspaceArtifactLabel,
   aiWorkspaceBrowserSummary,
   aiWorkspacePrimaryCapability,
@@ -92,21 +92,29 @@ import {
 } from './ai-workspace-artifact-inspection';
 import type { AiWorkspaceArtifactInspection } from './ai-workspace-artifact-inspection';
 import { asAiWorkspaceObservation } from './ai-workspace-observation-validation';
+import { asAbgRunObservation } from './abg-run-observation-validation';
+import { asTraversalProjection, asTraversalVectorDetail } from './traversal-validation';
+import type {
+  TraversalVectorDetail,
+  TraversalVectorRow,
+} from '../../contracts/traversal';
+import type {
+  AbgRunObservation,
+  AbgRunSection,
+} from '../../contracts/abg-run-observation';
 import type {
   ContextRecord,
   PendingSidecarCmd,
-  SidecarBrowseFsEntry,
-  SidecarBrowseLoaded,
   SidecarCmd,
   SidecarExplorerProviderId,
   SidecarInfoSurface,
   SidecarMsg,
   SidecarPathHistoryEntry,
   SidecarPathHistorySource,
-  SidecarProcessGraphMode,
   SidecarResizeGesture,
   SidecarResizeTarget,
   SidecarState,
+  SidecarTraversalState,
   SidecarTerminalGroup,
   SidecarTerminalGroupId,
   SidecarTerminalSplit,
@@ -129,8 +137,6 @@ const SIDECAR_PATH_HISTORY_STORAGE_KEY = 'oman-sidecar-path-history';
 const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500;
 
 type NavigatorSortMode = 'time' | 'alpha';
-type ProjectBrowserTab = 'favourites' | 'recent' | 'pick';
-
 interface NavigatorGroupState {
   collapsed: boolean;
   sort: NavigatorSortMode;
@@ -157,6 +163,7 @@ interface NavigatorFolderLoad {
   error: string | null;
   truncated: boolean;
   loadedAt: number | null;
+  state?: 'present' | 'missing' | 'not_directory';
 }
 
 function apiQuery(projectRoot?: string | null, extra: Record<string, string> = {}) {
@@ -267,14 +274,6 @@ function unreadIdsFrom(value: unknown) {
     : [];
 }
 
-function asProcessProjection(value: unknown) {
-  const payload = asRecord(value, 'process projection');
-  if (payload.kind !== 'sidecar_process_projection') {
-    throw new Error('process projection kind is unsupported');
-  }
-  return payload as unknown as SidecarProcessProjection;
-}
-
 async function fetchJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const response = await fetch(input, init);
   const payload = await response.json().catch(() => null) as unknown;
@@ -309,14 +308,13 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
   const { backend, viewerAgent, dispatch } = options;
   if (cmd.type === 'load') {
     dispatch({ type: 'load/start', projectRoot: cmd.projectRoot });
-    const [ctx, projects, tickets, comments, sessions, unread, processProjection, aiWorkspaceObservation] = await Promise.all([
+    const [ctx, projects, tickets, comments, sessions, unread, aiWorkspaceObservation] = await Promise.all([
       settleSurface('context', async () => asRecord(await fetchJson(apiUrl(backend, '/api/context', cmd.projectRoot)), 'context') as unknown as ContextRecord),
       settleSurface('projects', async () => asArray<ProjectRecord>(await fetchJson(`${backend}/api/projects`), 'projects')),
       settleSurface('tickets', async () => asArray<TicketRecord>(await fetchJson(apiUrl(backend, '/api/tickets', cmd.projectRoot)), 'tickets')),
       settleSurface('comments', async () => asArray<CommentRecord>(await fetchJson(apiUrl(backend, '/api/comments', cmd.projectRoot)), 'comments')),
       settleSurface('sessions', async () => asSessionCollection(await fetchJson(apiUrl(backend, '/api/sidecar/sessions', cmd.projectRoot)))),
       settleSurface('unread comments', async () => unreadIdsFrom(await fetchJson(apiUrl(backend, '/api/comments/unread', cmd.projectRoot, { agent: viewerAgent })))),
-      settleSurface('process', async () => asProcessProjection(await fetchJson(apiUrl(backend, '/api/sidecar/process', cmd.projectRoot)))),
       settleSurface('ai-workspace observation', async () => asAiWorkspaceObservation(await fetchJson(apiUrl(backend, '/api/ai-workspace/observation', cmd.projectRoot)))),
     ]);
     const payload: Extract<SidecarMsg, { type: 'load/done' }>['payload'] = {};
@@ -345,11 +343,6 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       payload.unreadIds = [];
       errors.push(unread.error);
     }
-    if (processProjection.ok) payload.process = processProjection.value;
-    else {
-      payload.process = null;
-      errors.push(processProjection.error);
-    }
     if (aiWorkspaceObservation.ok) payload.aiWorkspaceObservation = aiWorkspaceObservation.value;
     else {
       payload.aiWorkspaceObservation = null;
@@ -359,6 +352,71 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       payload.lastAction = { ok: false, error: `load partial: ${errors.join('; ')}` };
     }
     dispatch({ type: 'load/done', projectRoot: cmd.projectRoot, payload });
+    return;
+  }
+
+  if (cmd.type === 'traversal.loadSummary') {
+    const extra: Record<string, string> = {};
+    if (cmd.runId) extra.runId = cmd.runId;
+    if (cmd.refresh) extra.refresh = '1';
+    try {
+      const summary = asTraversalProjection(await fetchJson(apiUrl(backend, '/api/ai-workspace/traversal', cmd.workspaceRoot, extra)));
+      dispatch({ type: 'traversal/load-succeeded', workspaceRoot: cmd.workspaceRoot, requestedRunId: cmd.runId, summary });
+    } catch (err) {
+      dispatch({
+        type: 'traversal/load-failed',
+        workspaceRoot: cmd.workspaceRoot,
+        requestedRunId: cmd.runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'run.loadObservation') {
+    const extra: Record<string, string> = {};
+    if (cmd.runId) extra.runId = cmd.runId;
+    if (cmd.refresh) extra.refresh = '1';
+    try {
+      const observation = asAbgRunObservation(await fetchJson(apiUrl(backend, '/api/ai-workspace/run', cmd.workspaceRoot, extra)));
+      dispatch({ type: 'run/load-succeeded', workspaceRoot: cmd.workspaceRoot, requestedRunId: cmd.runId, observation });
+    } catch (err) {
+      dispatch({
+        type: 'run/load-failed',
+        workspaceRoot: cmd.workspaceRoot,
+        requestedRunId: cmd.runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'traversal.loadVectorDetail') {
+    const extra: Record<string, string> = { index: String(cmd.index), variant: cmd.variant };
+    if (cmd.attempt !== null) extra.attempt = String(cmd.attempt);
+    if (cmd.runId) extra.runId = cmd.runId;
+    try {
+      const detail = asTraversalVectorDetail(await fetchJson(apiUrl(backend, '/api/ai-workspace/traversal/vector', cmd.workspaceRoot, extra)));
+      dispatch({
+        type: 'traversal/vector-succeeded',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        index: cmd.index,
+        variant: cmd.variant,
+        attempt: cmd.attempt,
+        detail,
+      });
+    } catch (err) {
+      dispatch({
+        type: 'traversal/vector-failed',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        index: cmd.index,
+        variant: cmd.variant,
+        attempt: cmd.attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     return;
   }
 
@@ -445,7 +503,7 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       const result = asRecord(await fetchJson(apiUrl(backend, '/api/sidecar/sessions/spawn', cmd.projectRoot), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ selectedTrainId: 'sidecar', label: 'sidecar shell' }),
+        body: JSON.stringify({ selectedTrainId: 'sidecar', label: cmd.label ?? 'sidecar shell', cwd: cmd.cwd }),
       }), 'session spawn');
       const ok = result.ok === true;
       if (ok && typeof result.id === 'string' && typeof result.agent_type === 'string' && typeof result.cwd === 'string' && typeof result.status === 'string') {
@@ -456,7 +514,9 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
         ok,
         message: ok ? `spawned ${String(result.id ?? '')}` : undefined,
         error: ok ? undefined : actionError(result),
-        reload: ok,
+        // session/spawn/done already admits the authoritative response. A second
+        // full load can race a following spawn and replace both with a stale list.
+        reload: false,
       });
     } catch (err) {
       dispatch({ type: 'action/result', ok: false, error: String(err) });
@@ -481,100 +541,6 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
     return;
   }
 
-  if (cmd.type === 'browse.path') {
-    try {
-      const raw = await browsePath(cmd.path ?? undefined);
-      const validated = validateBrowseResult(raw);
-      dispatch({ type: 'browse/loaded', result: validated, scope: cmd.scope });
-    } catch (err) {
-      dispatch({ type: 'browse/load-failed', error: err instanceof Error ? err.message : String(err) });
-    }
-    return;
-  }
-
-  if (cmd.type === 'projects.register') {
-    try {
-      const result = await registerProject(cmd.path, { setActive: false });
-      if (!result.ok || !result.project) {
-        dispatch({ type: 'browse/favourite-failed', path: cmd.path, error: 'registry did not return a project' });
-        return;
-      }
-      dispatch({
-        type: 'browse/favourite-succeeded',
-        project: result.project,
-        projects: result.projects,
-      });
-      dispatch({ type: 'action/result', ok: true, message: `favourited ${cmd.path}` });
-    } catch (err) {
-      dispatch({
-        type: 'browse/favourite-failed',
-        path: cmd.path,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return;
-  }
-
-  if (cmd.type === 'projects.unregister') {
-    try {
-      const result = await unregisterProject(cmd.projectId);
-      if (!result.ok) {
-        dispatch({ type: 'projects/unfavourite-failed', projectId: cmd.projectId, error: 'unregister rejected' });
-        return;
-      }
-      dispatch({
-        type: 'projects/unfavourite-succeeded',
-        projectId: cmd.projectId,
-        projects: result.projects,
-      });
-      dispatch({ type: 'action/result', ok: true, message: `unfavourited ${cmd.projectId}` });
-    } catch (err) {
-      dispatch({
-        type: 'projects/unfavourite-failed',
-        projectId: cmd.projectId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-}
-
-// Validate filesystem browse payloads before they enter reducer-owned UI state.
-function validateBrowseResult(raw: unknown): SidecarBrowseLoaded {
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('browse response is not an object');
-  }
-  const record = raw as Record<string, unknown>;
-  if (typeof record.path !== 'string' || record.path.length === 0) {
-    throw new Error('browse response is missing path');
-  }
-  const parent = record.parent;
-  if (parent !== null && typeof parent !== 'string') {
-    throw new Error('browse response parent is not string|null');
-  }
-  if (!Array.isArray(record.entries)) {
-    throw new Error('browse response entries is not an array');
-  }
-  const entries: SidecarBrowseFsEntry[] = [];
-  for (const entry of record.entries) {
-    if (!entry || typeof entry !== 'object') continue;
-    const rec = entry as Record<string, unknown>;
-    if (typeof rec.name !== 'string' || typeof rec.absolutePath !== 'string') continue;
-    const kindValue = rec.kind;
-    const kind: 'directory' | 'file' | undefined =
-      kindValue === 'directory' || kindValue === 'file' ? kindValue : undefined;
-    entries.push(Object.freeze({
-      name: rec.name,
-      absolutePath: rec.absolutePath,
-      kind,
-      hasWorkspace: rec.hasWorkspace === true,
-    }));
-  }
-  return Object.freeze({
-    path: record.path,
-    parent,
-    entries: Object.freeze(entries),
-    truncated: record.truncated === true,
-  });
 }
 
 interface SidecarPanelProps {
@@ -582,9 +548,11 @@ interface SidecarPanelProps {
   backend?: string;
   viewerAgent?: string;
   projectRoot?: string | null;
+  initialSurface?: ProjectLandingSurface | null;
+  runFocus?: RunInspectorFocus | null;
 }
 
-export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewerAgent = 'operator', projectRoot = null }: SidecarPanelProps) {
+export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewerAgent = 'operator', projectRoot = null, initialSurface = null, runFocus = null }: SidecarPanelProps) {
   const [state, dispatch] = useReducer(update, { ...INITIAL_SIDECAR_STATE, viewerAgent });
   const processedCommandIds = useRef<Set<string>>(new Set());
   const loadedLayoutContextKeys = useRef<Set<string>>(new Set());
@@ -593,7 +561,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const suppressNextLayoutSave = useRef<Set<string>>(new Set());
   const lastSavedLayoutByContext = useRef<Map<string, string>>(new Map());
   const pendingProjectContextRoot = useRef<string | null>(null);
-  const pendingProjectSelection = useRef<{ root: string; projectId: string } | null>(null);
+  const openedInitialSurface = useRef(false);
   const runCommand = useCallback((entry: PendingSidecarCmd) => {
     void interpretSidecarCommand(entry.cmd, { backend, viewerAgent, dispatch });
   }, [backend, viewerAgent]);
@@ -602,6 +570,13 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   useEffect(() => {
     dispatch({ type: 'load/request', projectRoot, reason: 'initial' });
   }, [projectRoot]);
+
+  useEffect(() => {
+    dispatch({
+      type: 'run/focus-admitted',
+      focus: runFocus?.projectRoot === projectRoot ? runFocus : null,
+    });
+  }, [projectRoot, runFocus]);
 
   useEffect(() => {
     const pending = state.pendingCommands.filter((entry) => !processedCommandIds.current.has(entry.id));
@@ -675,12 +650,26 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   }, [layoutContextKey]);
 
   useEffect(() => {
-    const pending = pendingProjectSelection.current;
-    if (!pending || state.loading || !state.context) return;
-    if (normalizePinnedPath(state.context.project.root) !== normalizePinnedPath(pending.root)) return;
-    pendingProjectSelection.current = null;
-    dispatch({ type: 'select', kind: 'project', id: pending.projectId });
-  }, [state.context, state.loading]);
+    if (!initialSurface || state.loading || !state.context) return;
+    const contextRoot = state.context.project.root;
+    if (projectRoot && normalizePinnedPath(contextRoot) !== normalizePinnedPath(projectRoot)) return;
+    if (openedInitialSurface.current) return;
+    openedInitialSurface.current = true;
+    if (initialSurface === 'run-inspector') {
+      if (runFocus) {
+        dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
+        dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: true });
+      }
+      dispatch({ type: 'viewer/open', kind: 'traversal', id: contextRoot });
+      dispatch({ type: 'traversal/load', workspaceRoot: contextRoot });
+      return;
+    }
+    dispatch({
+      type: 'viewer/open',
+      kind: initialSurface === 'ticket-board' ? 'ticket-board' : 'ai-workspace',
+      id: contextRoot,
+    });
+  }, [initialSurface, projectRoot, runFocus, state.context, state.loading]);
 
   useEffect(() => {
     if (!layoutContextKey || !state.context || state.loading || typeof window === 'undefined') return;
@@ -780,32 +769,6 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     handleSurfaceSelect(relativePath, absolutePath, source);
   };
 
-  const handleProjectSelect = async (project: ProjectRecord) => {
-    pendingProjectSelection.current = { root: project.root, projectId: project.id };
-    try {
-      const result = await setActiveProject(project.id);
-      pendingProjectContextRoot.current = result.project.root;
-      pendingProjectSelection.current = { root: result.project.root, projectId: result.project.id };
-      dispatch({ type: 'select', kind: 'project', id: result.project.id });
-      if (currentProjectRoot && normalizePinnedPath(currentProjectRoot) === normalizePinnedPath(result.project.root)) {
-        pendingProjectSelection.current = null;
-      }
-    } catch (caught) {
-      pendingProjectSelection.current = null;
-      dispatch({ type: 'action/result', ok: false, error: caught instanceof Error ? caught.message : String(caught) });
-    }
-  };
-
-  const handleProjectRootOpen = async (root: string) => {
-    try {
-      const result = await setActiveProject(root, { registerIfMissing: false });
-      pendingProjectContextRoot.current = result.project.root;
-      dispatch({ type: 'load/request', projectRoot: result.project.root, reason: 'project_selected' });
-    } catch (caught) {
-      dispatch({ type: 'action/result', ok: false, error: caught instanceof Error ? caught.message : String(caught) });
-    }
-  };
-
   const handleTransition = (id: string, toLane: string) => {
     dispatch({ type: 'ticket/transition/request', id, toLane });
   };
@@ -832,6 +795,24 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     dispatch({ type: 'reply/submit/request', parentId, body });
   };
 
+  const handleOpenTraversal = () => {
+    dispatch({ type: 'viewer/open', kind: 'traversal', id: currentProjectRoot ?? 'workspace' });
+    dispatch({ type: 'traversal/load', workspaceRoot: currentProjectRoot });
+  };
+
+  // Ticket Board (sprint W8): records already ride the batch surface load, so
+  // opening the board is a pure viewer action — no Cmd needed.
+  const handleOpenTicketBoard = () => {
+    dispatch({ type: 'viewer/open', kind: 'ticket-board', id: currentProjectRoot ?? 'workspace' });
+  };
+
+  // AI Workspace: the observation already rides the batch surface load
+  // (state.aiWorkspaceObservation), so opening the viewer is a pure viewer
+  // action — no Cmd needed.
+  const handleOpenAiWorkspace = () => {
+    dispatch({ type: 'viewer/open', kind: 'ai-workspace', id: currentProjectRoot ?? 'workspace' });
+  };
+
   const handlePathCopyRequest = (entry: SidecarPathHistoryEntry) => {
     dispatch({
       type: 'path-history/copy-request',
@@ -844,10 +825,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   };
 
   const handleSurfaceSelect = (relativePath: string, absolutePath?: string, source: SidecarPathHistorySource = 'browse') => {
-    dispatch({ type: 'select', kind: 'surface', id: relativePath });
-    if (!currentProjectRoot || !absolutePath) return;
-    const entry = pathHistoryEntry(currentProjectRoot, absolutePath, source);
-    if (entry) handlePathCopyRequest(entry);
+    dispatchSurfaceSelection(dispatch, currentProjectRoot, relativePath, absolutePath, source);
   };
 
   const handleHistoryOpen = async (entry: SidecarPathHistoryEntry) => {
@@ -889,8 +867,6 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const selectedComment = state.selection.kind === 'comment' ? state.comments.find((c) => c.id === state.selection.id) : null;
   const selectedProject = state.selection.kind === 'project' ? state.projects.find((p) => p.id === state.selection.id) : null;
   const selectedSurfacePath = state.selection.kind === 'surface' ? state.selection.id : null;
-  const selectedProcessNavigator = state.selection.kind === 'process';
-  const selectedProcessNavigatorTitle = selectedProcessNavigator ? 'Process Navigator' : null;
   const activeInspectorSession = state.activeSessionId
     ? state.sessions.records.find((s) => s.id === state.activeSessionId) ?? null
     : null;
@@ -903,6 +879,12 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     : `${state.sessions.records.length} shell${state.sessions.records.length === 1 ? '' : 's'}${liveSessionCount ? ` · ${liveSessionCount} live` : ''}.`;
   const activeInfoSurface = state.ui.activeInfoSurface;
   const workbenchLayout = state.ui.workbenchLayout;
+  const railAiWorkspaceObservation = isAiWorkspaceObservationForProject(state.aiWorkspaceObservation, currentProjectRoot)
+    ? state.aiWorkspaceObservation
+    : null;
+  const aiWorkspaceRailValue = railAiWorkspaceObservation
+    ? `${railAiWorkspaceObservation.features.filter((feature) => feature.state === 'present').length}/${AI_WORKSPACE_SUMMARY_FEATURE_IDS.length}`
+    : 'none';
   const workbenchStyle = {
     '--sidecar-explorer-width': `${workbenchLayout.explorerWidthPx}px`,
     '--sidecar-bottom-dock-height': `${workbenchLayout.bottomDockHeightPx}px`,
@@ -913,7 +895,9 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     ?? selectedComment?.filename
     ?? selectedProject?.id
     ?? selectedSurfacePath
-    ?? selectedProcessNavigatorTitle
+    ?? (state.selection.kind === 'traversal' ? 'Traversal' : null)
+    ?? (state.selection.kind === 'ticket-board' ? 'Tickets Board' : null)
+    ?? (state.selection.kind === 'ai-workspace' ? 'AI Workspace' : null)
     ?? (selectedInspectorSession ? sessionLabel(selectedInspectorSession) : null)
     ?? 'No object selected';
   const selectedObjectKind = state.selection.kind ?? 'workspace';
@@ -1020,8 +1004,6 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                 projectRootOverride={currentProjectRoot}
                 onPinnedFoldersChange={handlePinnedFoldersChange}
                 onPinnedFolderUnpin={handlePinnedFolderUnpin}
-                onProjectSelect={handleProjectSelect}
-                onProjectRootOpen={handleProjectRootOpen}
                 onSurfaceSelect={handleFileSurfaceSelect}
                 onPathHistoryCopy={handlePathCopyRequest}
                 onPathHistoryOpen={handleHistoryOpen}
@@ -1055,6 +1037,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
               state={state}
               viewerAgent={viewerAgent}
               dispatch={dispatch}
+              onInfoSurfaceSelect={handleInfoSurfaceSelect}
               onTransition={handleTransition}
               onToggleRead={handleToggleRead}
               onReplyOpen={(id) => dispatch({ type: 'reply/open', parentId: id })}
@@ -1066,17 +1049,6 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
         </div>
 
         <aside className="sidecar-context-rail" aria-label="Sidecar context rail">
-          <ContextRailCommand
-            symbol="N"
-            label="Open Process Navigator"
-            value={state.process?.supported ? 'ts-v1' : 'unsupported'}
-            detail="Graph, function, asset, and live-run navigator"
-            active={state.selection.kind === 'process' && state.selection.id === 'navigator'}
-            onClick={() => {
-              dispatch({ type: 'viewer/open', kind: 'process', id: 'navigator' });
-              dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
-            }}
-          />
           <ContextRailCommand
             symbol="$"
             label={state.ui.shellCollapsed ? 'Restore shell workspace' : 'Minimize shell workspace'}
@@ -1091,6 +1063,30 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
             value="default"
             detail="Reset layout profile"
             onClick={() => dispatch({ type: 'layout/profile-reset' })}
+          />
+          <ContextRailCommand
+            symbol="G"
+            label="Open Run Inspector"
+            value={state.traversal.summary?.state === 'ready' ? `v${state.traversal.summary.currentVectorIndex ?? '·'}` : 'run'}
+            detail="Runtime, graph, traversal, evidence, and artifacts"
+            active={state.selection.kind === 'traversal'}
+            onClick={handleOpenTraversal}
+          />
+          <ContextRailCommand
+            symbol="T"
+            label="Open Ticket Board"
+            value={`${state.tickets.length}`}
+            detail="Drill View over the workspace tickets surface"
+            active={state.selection.kind === 'ticket-board'}
+            onClick={handleOpenTicketBoard}
+          />
+          <ContextRailCommand
+            symbol="A"
+            label="Open AI Workspace"
+            value={aiWorkspaceRailValue}
+            detail="Feature-detected .ai-workspace observation"
+            active={state.selection.kind === 'ai-workspace'}
+            onClick={handleOpenAiWorkspace}
           />
           <div className="sidecar-context-rail__divider" role="separator" aria-label="Context" />
           <ContextRailItem
@@ -1174,12 +1170,8 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
 // Subcomponents (pure projections of their props — UX_METHOD §4 / §9)
 // =============================================================================
 
-function defaultPinnedFolders(projectRoot: string | null) {
-  if (!projectRoot) return [];
-  return [
-    'specification',
-    'build_tenants',
-  ].map((relativePath) => absoluteProjectPath(projectRoot, relativePath));
+function defaultPinnedFolders(_projectRoot: string | null) {
+  return [];
 }
 
 function builtInNavigatorFolders(projectRoot: string | null) {
@@ -1187,6 +1179,8 @@ function builtInNavigatorFolders(projectRoot: string | null) {
   return [
     '.ai-workspace/tickets',
     '.ai-workspace/comments',
+    'specification',
+    'build_tenants',
   ].map((relativePath) => absoluteProjectPath(projectRoot, relativePath));
 }
 
@@ -1194,6 +1188,8 @@ function builtInNavigatorFolderForSurface(surface: SidecarInfoSurface, projectRo
   if (!projectRoot) return null;
   if (surface === 'tickets') return absoluteProjectPath(projectRoot, '.ai-workspace/tickets');
   if (surface === 'comments') return absoluteProjectPath(projectRoot, '.ai-workspace/comments');
+  if (surface === 'specification') return absoluteProjectPath(projectRoot, 'specification');
+  if (surface === 'build-tenants') return absoluteProjectPath(projectRoot, 'build_tenants');
   return null;
 }
 
@@ -1229,7 +1225,8 @@ function pinnedFolderRailLabel(path: string, projectRoot: string | null) {
 
 function pinnedFolderShortLabel(path: string, projectRoot: string | null) {
   const display = folderDisplayPath(path, projectRoot).replace(/^\.\//, '');
-  const leaf = display.split('/').filter(Boolean).at(-1) ?? display;
+  const displayParts = display.split('/').filter(Boolean);
+  const leaf = displayParts[displayParts.length - 1] ?? display;
   const initials = leaf
     .split(/[\s._-]+/)
     .filter(Boolean)
@@ -1248,15 +1245,6 @@ function relativeProjectPath(projectRoot: string | null, path: string) {
   if (target === root) return '.';
   if (target.startsWith(`${root}/`)) return target.slice(root.length + 1);
   return null;
-}
-
-function parentFolderPath(path: string | null) {
-  if (!path) return null;
-  const normalized = normalizePinnedPath(path);
-  if (!normalized || normalized === '/') return null;
-  const index = normalized.lastIndexOf('/');
-  if (index <= 0) return '/';
-  return normalized.slice(0, index);
 }
 
 interface FolderPathSegment {
@@ -1288,34 +1276,6 @@ function folderPathSegments(path: string | null): FolderPathSegment[] {
   return segments;
 }
 
-interface ProjectFavouriteCandidate {
-  path: string;
-  label: string;
-  meta: string;
-}
-
-function projectFavouriteCandidatesFromHistory(
-  entries: SidecarPathHistoryEntry[],
-  currentProjectRoot: string | null,
-  projects: ProjectRecord[],
-) {
-  const registeredRoots = new Set(projects.map((project) => normalizePinnedPath(project.root)));
-  const seen = new Set<string>();
-  const candidates: ProjectFavouriteCandidate[] = [];
-  for (const entry of entries) {
-    const candidate = parentFolderPath(entry.absolutePath);
-    if (!candidate || registeredRoots.has(candidate) || seen.has(candidate)) continue;
-    seen.add(candidate);
-    candidates.push({
-      path: candidate,
-      label: folderDisplayPath(candidate, currentProjectRoot),
-      meta: entry.relativePath,
-    });
-    if (candidates.length >= 6) break;
-  }
-  return candidates;
-}
-
 function pathHistoryEntry(projectRoot: string, absolutePath: string, source: SidecarPathHistorySource): SidecarPathHistoryEntry | null {
   const relativePath = relativeProjectPath(projectRoot, absolutePath);
   if (!relativePath || relativePath === '.') return null;
@@ -1328,7 +1288,21 @@ function pathHistoryEntry(projectRoot: string, absolutePath: string, source: Sid
   };
 }
 
+function dispatchSurfaceSelection(
+  dispatch: Dispatch<SidecarMsg>,
+  projectRoot: string | null,
+  relativePath: string,
+  absolutePath?: string,
+  source: SidecarPathHistorySource = 'browse',
+) {
+  dispatch({ type: 'select', kind: 'surface', id: relativePath });
+  if (!projectRoot || !absolutePath) return;
+  const entry = pathHistoryEntry(projectRoot, absolutePath, source);
+  if (entry) dispatch({ type: 'path-history/copy-request', entry });
+}
+
 function pathHistorySourceLabel(source: SidecarPathHistorySource) {
+  if (source === 'provider') return 'provider';
   if (source === 'pinned_folder') return 'pinned';
   if (source === 'history') return 'recent';
   return 'browse';
@@ -1343,11 +1317,11 @@ function navigatorGroupState(
   key: string,
   fallback: Partial<NavigatorGroupState> = {},
 ): NavigatorGroupState {
+  const stored = groups[key];
   return {
-    collapsed: fallback.collapsed ?? false,
-    sort: fallback.sort ?? 'time',
-    reverse: fallback.reverse ?? true,
-    ...groups[key],
+    collapsed: stored?.collapsed ?? fallback.collapsed ?? false,
+    sort: stored?.sort ?? fallback.sort ?? 'time',
+    reverse: stored?.reverse ?? fallback.reverse ?? true,
   };
 }
 
@@ -1438,31 +1412,25 @@ function asNavigatorFolderLoad(value: unknown): NavigatorFolderLoad {
     error: null,
     truncated: payload.truncated === true,
     loadedAt: null,
+    state: payload.state === 'missing' || payload.state === 'not_directory' ? payload.state : 'present',
   };
 }
 
 function infoSurfaceTitle(surface: SidecarExplorerProviderId) {
   if (surface === 'browse') return 'Browse';
   if (surface === 'history') return 'Recent Paths';
-  if (surface === 'projects') return 'Projects';
   if (surface === 'comments') return 'Comments';
+  if (surface === 'specification') return 'Specification';
+  if (surface === 'build-tenants') return 'Build Tenants';
   return 'Tickets';
 }
 
 function infoSurfaceCount(surface: SidecarExplorerProviderId, state: SidecarState) {
   if (surface === 'browse') return state.context ? 1 : 0;
   if (surface === 'history') return state.pathHistory.length;
-  if (surface === 'projects') return state.projects.length;
   if (surface === 'comments') return state.comments.length;
+  if (surface === 'specification' || surface === 'build-tenants') return 'dir';
   return state.tickets.length;
-}
-
-function scrollHorizontalOverflowOnWheel(event: WheelEvent<HTMLDivElement>) {
-  const target = event.currentTarget;
-  if (target.scrollWidth <= target.clientWidth) return;
-  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-  target.scrollLeft += event.deltaY;
-  event.preventDefault();
 }
 
 function RailButton({ label, shortLabel, count, selected, onClick }: {
@@ -1714,8 +1682,6 @@ function SelectionFlyout({
   projectRootOverride,
   onPinnedFoldersChange,
   onPinnedFolderUnpin,
-  onProjectSelect,
-  onProjectRootOpen,
   onSurfaceSelect,
   onPathHistoryCopy,
   onPathHistoryOpen,
@@ -1729,8 +1695,6 @@ function SelectionFlyout({
   projectRootOverride?: string | null;
   onPinnedFoldersChange: (paths: string[], activatePath?: string) => void;
   onPinnedFolderUnpin: (path: string) => void;
-  onProjectSelect: (project: ProjectRecord) => void;
-  onProjectRootOpen: (root: string) => void;
   onSurfaceSelect: (relativePath: string, absolutePath: string, source: SidecarPathHistorySource) => void;
   onPathHistoryCopy: (entry: SidecarPathHistoryEntry) => void;
   onPathHistoryOpen: (entry: SidecarPathHistoryEntry) => void;
@@ -1740,14 +1704,16 @@ function SelectionFlyout({
   const [navigatorSort, setNavigatorSort] = useState<NavigatorSortState>({ sort: 'time', reverse: true });
   const [pinDraft, setPinDraft] = useState('');
   const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
-  const [expandedProjectRoots, setExpandedProjectRoots] = useState<Record<string, boolean>>({});
-  const [projectBrowserTab, setProjectBrowserTab] = useState<ProjectBrowserTab>('favourites');
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
-  const selectedProjectRootPath = state.selection.kind === 'project'
-    ? state.projects.find((project) => project.id === state.selection.id)?.root ?? null
-    : null;
-  const normalizedSelectedProjectRootPath = selectedProjectRootPath ? normalizePinnedPath(selectedProjectRootPath) : null;
+  const ticketFolderCounts = useMemo(() => {
+    if (surface !== 'tickets' || !builtInFolderPath) return undefined;
+    const counts: Record<string, number> = {};
+    for (const lane of ['active', 'backlog', 'completed'] as TicketLane[]) {
+      counts[normalizePinnedPath(`${builtInFolderPath}/${lane}`)] = state.tickets.filter((ticket) => ticket.lane === lane).length;
+    }
+    return counts;
+  }, [builtInFolderPath, state.tickets, surface]);
 
   const patchGroup = useCallback((key: string, patch: Partial<NavigatorGroupState>) => {
     setGroupStates((current) => updateNavigatorGroup(current, key, patch));
@@ -1760,8 +1726,9 @@ function SelectionFlyout({
         entries: current[path]?.entries ?? [],
         truncated: current[path]?.truncated ?? false,
         loading: true,
-        error: null,
-        loadedAt: current[path]?.loadedAt ?? null,
+          error: null,
+          loadedAt: current[path]?.loadedAt ?? null,
+          state: current[path]?.state,
       },
     }));
     try {
@@ -1780,6 +1747,7 @@ function SelectionFlyout({
           loading: false,
           error: err instanceof Error ? err.message : String(err),
           loadedAt: current[path]?.loadedAt ?? null,
+          state: current[path]?.state,
         },
       }));
     }
@@ -1808,30 +1776,6 @@ function SelectionFlyout({
 
   const handleUnpin = (path: string) => {
     onPinnedFolderUnpin(path);
-  };
-
-  const toggleProjectBrowse = (root: string) => {
-    const normalizedRoot = normalizePinnedPath(root);
-    const currentlyExpanded = expandedProjectRoots[normalizedRoot] ?? (normalizedRoot === normalizedSelectedProjectRootPath);
-    const nextExpanded = !currentlyExpanded;
-    setExpandedProjectRoots((current) => ({
-      ...current,
-      [normalizedRoot]: nextExpanded,
-    }));
-    if (nextExpanded && !folderLoads[normalizedRoot]?.loading) {
-      void loadFolder(normalizedRoot);
-    }
-  };
-
-  const selectProjectBrowserTab = (tab: ProjectBrowserTab) => {
-    setProjectBrowserTab(tab);
-    if (tab === 'pick') {
-      dispatch({ type: 'browse/scope-set', scope: 'cross-project' });
-    }
-  };
-  const handleArtifactSurfaceOpen = (artifact: AiWorkspaceArtifactRecord) => {
-    onSurfaceSelect(artifact.relativePath, artifact.absolutePath, 'browse');
-    dispatch({ type: 'viewer/open', kind: 'surface', id: artifact.relativePath });
   };
 
   const sortToolbar = (
@@ -1876,18 +1820,6 @@ function SelectionFlyout({
     void loadFolder(activePinnedFolderPath);
   }, [activePinnedFolderPath, folderLoads, loadFolder]);
 
-  useEffect(() => {
-    if (surface !== 'projects') return;
-    const roots = Array.from(new Set([
-      ...state.projects.map((project) => normalizePinnedPath(project.root)),
-      projectRootPath,
-    ].filter((root): root is string => Boolean(root))))
-      .filter((root) => root && ((expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath || root === projectRootPath)) === true));
-    for (const root of roots) {
-      if (!folderLoads[root]) void loadFolder(root);
-    }
-  }, [expandedProjectRoots, folderLoads, loadFolder, normalizedSelectedProjectRootPath, projectRootPath, state.projects, surface]);
-
   if (activePinnedFolderPath && projectRoot) {
     const displayPath = folderDisplayPath(activePinnedFolderPath, projectRoot);
     return (
@@ -1914,6 +1846,7 @@ function SelectionFlyout({
             onPinFolder={handlePinFolder}
             onUnpinFolder={handleUnpin}
             navigatorSort={navigatorSort}
+            folderCounts={ticketFolderCounts}
           />
         </div>
       </Pane>
@@ -1941,11 +1874,12 @@ function SelectionFlyout({
             onPatchGroup={patchGroup}
             onToggle={handleFolderToggle}
             onSurfaceSelect={onSurfaceSelect}
-            pathSource="pinned_folder"
+            pathSource="provider"
             pinnedFolders={pinnedFolders}
             onPinFolder={handlePinFolder}
             onUnpinFolder={handleUnpin}
             navigatorSort={navigatorSort}
+            folderCounts={ticketFolderCounts}
           />
         </div>
       </Pane>
@@ -1956,344 +1890,6 @@ function SelectionFlyout({
     return (
       <Pane title={infoSurfaceTitle(surface)} count={0} actions={headerActions}>
         <NavigatorEmptyState>Select a Project to browse {infoSurfaceTitle(surface).toLowerCase()}.</NavigatorEmptyState>
-      </Pane>
-    );
-  }
-
-  if (surface === 'projects') {
-    const browseState = state.ui.browse;
-    const projectFavouriteCandidates = projectFavouriteCandidatesFromHistory(state.pathHistory, projectRoot, state.projects);
-    const projectFavouriteRoots = state.projects.map((project) => normalizePinnedPath(project.root));
-    const normalizedCurrentProjectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
-    const currentProjectIsRegistered = Boolean(
-      normalizedCurrentProjectRootPath &&
-      projectFavouriteRoots.includes(normalizedCurrentProjectRootPath),
-    );
-    const currentProjectBrowserProject: ProjectRecord | null = normalizedCurrentProjectRootPath && !currentProjectIsRegistered
-      ? {
-        id: `current:${normalizedCurrentProjectRootPath}`,
-        name: projectDisplayNameFromRoot(normalizedCurrentProjectRootPath),
-        root: normalizedCurrentProjectRootPath,
-        odd_type: state.context?.project.root === normalizedCurrentProjectRootPath ? state.context.project.odd_type : 'unknown',
-        has_ai_workspace: false,
-        has_genesis: false,
-        installed_packages: [],
-        build_tenants: [],
-        registry_source: 'discovery',
-        registered_at: null,
-        updated_at: null,
-        tags: ['current'],
-        is_active: true,
-      }
-      : null;
-    const projectBrowserProjects = currentProjectBrowserProject
-      ? [currentProjectBrowserProject, ...state.projects]
-      : state.projects;
-    const projectBrowserTabs: Array<{ id: ProjectBrowserTab; label: string; count: number }> = [
-      { id: 'favourites', label: 'Favourite', count: state.projects.length },
-      { id: 'recent', label: 'Recent', count: projectFavouriteCandidates.length },
-      { id: 'pick', label: 'Browse', count: browseState.entries.length },
-    ];
-    const projectBrowserRootIsVisible = (root: string | null) => Boolean(
-      root &&
-      projectBrowserProjects.some((project) => normalizePinnedPath(project.root) === root) &&
-      (expandedProjectRoots[root] ?? (root === normalizedSelectedProjectRootPath || root === normalizedCurrentProjectRootPath))
-    );
-    const visibleProjectBrowserRoots = projectBrowserProjects
-      .map((project) => normalizePinnedPath(project.root))
-      .filter((root) => projectBrowserRootIsVisible(root));
-    const projectBrowserVisibleFolderPaths = (() => {
-      const visibleFolders = new Set<string>();
-      const collectFolder = (folderPath: string, defaultCollapsed: boolean) => {
-        const normalizedPath = normalizePinnedPath(folderPath);
-        if (!normalizedPath || visibleFolders.has(normalizedPath)) return;
-        visibleFolders.add(normalizedPath);
-        const group = navigatorGroupState(
-          groupStates,
-          navigatorGroupKey('folder', normalizedPath),
-          { collapsed: defaultCollapsed, sort: 'time', reverse: true },
-        );
-        if (group.collapsed) return;
-        const load = folderLoads[normalizedPath] ?? null;
-        for (const entry of load?.entries ?? []) {
-          if ((entry.kind ?? 'directory') === 'directory') collectFolder(entry.absolutePath, true);
-        }
-      };
-      for (const root of visibleProjectBrowserRoots) collectFolder(root, false);
-      return Array.from(visibleFolders);
-    })();
-    const projectBrowserRootPaths = projectBrowserProjects
-      .map((project) => normalizePinnedPath(project.root))
-      .filter(Boolean);
-    const projectBrowserRefreshFolderPaths = (() => {
-      const paths = new Set(projectBrowserVisibleFolderPaths);
-      for (const loadedPath of Object.keys(folderLoads)) {
-        const normalizedPath = normalizePinnedPath(loadedPath);
-        if (!normalizedPath) continue;
-        if (projectBrowserRootPaths.some((root) => isProjectFolderPath(normalizedPath, root))) {
-          paths.add(normalizedPath);
-        }
-      }
-      return Array.from(paths);
-    })();
-    const projectBrowserRefreshLoading = projectBrowserRefreshFolderPaths.some((path) => folderLoads[path]?.loading === true);
-    const refreshProjectBrowser = () => {
-      dispatch({ type: 'load/request', projectRoot, reason: 'session_refresh' });
-      for (const path of projectBrowserRefreshFolderPaths) void loadFolder(path);
-    };
-    const projectBrowserRefreshAction = projectBrowserTab === 'pick'
-      ? (
-        <FolderRefreshButton
-          label={browseState.currentPath ?? 'current folder'}
-          loading={browseState.loading || state.loading}
-          disabled={!browseState.currentPath && !projectRoot}
-          onRefresh={() => {
-            if (browseState.currentPath) dispatch({ type: 'browse/navigate-to', path: browseState.currentPath });
-            dispatch({ type: 'load/request', projectRoot, reason: 'session_refresh' });
-          }}
-        />
-      )
-      : (
-        <FolderRefreshButton
-          label="Project Browser"
-          loading={projectBrowserRefreshLoading || state.loading}
-          onRefresh={refreshProjectBrowser}
-        />
-      );
-    const activeObservation = isAiWorkspaceObservationForProject(state.aiWorkspaceObservation, projectRoot)
-      ? state.aiWorkspaceObservation
-      : null;
-    const projectBrowserTabStrip = (
-      <div
-        className="sidecar-project-browser__tabs sidecar-project-browser__tabs--header"
-        role="tablist"
-        aria-label="Project Browser views"
-        onWheel={scrollHorizontalOverflowOnWheel}
-      >
-        {projectBrowserTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={projectBrowserTab === tab.id}
-            className={`sidecar-project-browser__tab${projectBrowserTab === tab.id ? ' is-active' : ''}`}
-            onClick={() => selectProjectBrowserTab(tab.id)}
-          >
-            <span>{tab.label}</span>
-            <span>{tab.count}</span>
-          </button>
-        ))}
-      </div>
-    );
-    return (
-      <Pane
-        title="Project Browser"
-        count={state.projects.length}
-        actions={actionsWithRefresh(projectBrowserRefreshAction)}
-        titleAddon={projectBrowserTabStrip}
-      >
-        {activeObservation ? (
-          <AiWorkspaceObservationSummary
-            observation={activeObservation}
-            onArtifactOpen={handleArtifactSurfaceOpen}
-          />
-        ) : null}
-        <div className="sidecar-project-browser sidecar-project-browser--tabbed">
-          {projectBrowserTab === 'favourites' ? (
-            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Favourite">
-              {sortToolbar}
-              {projectBrowserProjects.length === 0 ? <NavigatorEmptyState>No Project favourites.</NavigatorEmptyState> : null}
-              {projectBrowserProjects.map((project) => {
-                const normalizedRoot = normalizePinnedPath(project.root);
-                const activeRoot = projectRoot ? normalizePinnedPath(projectRoot) : null;
-                const registeredProject = projectFavouriteRoots.includes(normalizedRoot);
-                const selected = (state.selection.kind === 'project' && state.selection.id === project.id)
-                  || (activeRoot !== null && normalizedRoot === activeRoot);
-                const expanded = expandedProjectRoots[normalizedRoot] ?? selected;
-                const unfavouriteDisabled = normalizedRoot === activeRoot || project.is_active === true;
-                const unfavouriteTitle = unfavouriteDisabled
-                  ? 'Open another Project before removing this favourite.'
-                  : `Unfavourite project ${project.name || project.id}`;
-                return (
-                  <div key={project.id} className="sidecar-project-browser__entry">
-                    <div className={`sidecar-row sidecar-row--project${selected ? ' is-selected' : ''}`}>
-                      <button
-                        type="button"
-                        className="sidecar-project-browser__main"
-                        onClick={() => (registeredProject ? onProjectSelect(project) : onProjectRootOpen(normalizedRoot))}
-                      >
-                        <div className="sidecar-row__title">{project.name || project.id}</div>
-                        <div className="sidecar-row__meta">
-                          {!registeredProject ? <Pill kind="current">current</Pill> : null}
-                          {project.odd_type !== 'unknown' && <Pill kind="odd-type">{project.odd_type}</Pill>}
-                          {project.build_tenants.length > 0 && <span>{project.build_tenants.length} tenant{project.build_tenants.length === 1 ? '' : 's'}</span>}
-                        </div>
-                      </button>
-                      <div className="sidecar-row__actions">
-                        <button
-                          type="button"
-                          className={`sidecar-tree-control sidecar-tree-control--text${expanded ? ' is-active' : ''}`}
-                          onClick={() => toggleProjectBrowse(project.root)}
-                          aria-expanded={expanded}
-                          title={`Browse folders under ${project.root}`}
-                        >
-                          Browse
-                        </button>
-                        {registeredProject ? (
-                          <button
-                            type="button"
-                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-                            onClick={() => dispatch({ type: 'projects/unfavourite', projectId: project.id })}
-                            aria-label={`Unfavourite project ${project.name || project.id}`}
-                            title={unfavouriteTitle}
-                            disabled={unfavouriteDisabled}
-                          >
-                            [U]
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-                            onClick={() => dispatch({ type: 'browse/favourite-folder', path: normalizedRoot })}
-                            aria-label={`Add ${project.name || project.id} to Project Favourites`}
-                            title={`Add ${normalizedRoot} to Project Favourites`}
-                          >
-                            [+]
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {state.ui.browse.unfavouriteError && state.selection.kind === 'project' && state.selection.id === project.id ? (
-                      <div className="sidecar-row__error" role="alert">{state.ui.browse.unfavouriteError}</div>
-                    ) : null}
-                    {expanded ? (
-                      <div className="sidecar-project-browser__tree">
-                        <FolderTreeNode
-                          path={normalizedRoot}
-                          label="."
-                          depth={0}
-                          projectRoot={normalizedRoot}
-                          groupStates={groupStates}
-                          folderLoads={folderLoads}
-                          defaultCollapsed={false}
-                          onPatchGroup={patchGroup}
-                          onToggle={handleFolderToggle}
-                          onSurfaceSelect={onSurfaceSelect}
-                          pathSource="browse"
-                          pinnedFolders={[]}
-                          onPinFolder={() => undefined}
-                          onUnpinFolder={() => undefined}
-                          navigatorSort={navigatorSort}
-                          projectBrowser
-                          projectFavouriteRoots={projectFavouriteRoots}
-                          onProjectFavourite={(path) => dispatch({ type: 'browse/favourite-folder', path })}
-                          onProjectRootOpen={onProjectRootOpen}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {projectBrowserTab === 'recent' ? (
-            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Recent folders">
-              {projectFavouriteCandidates.length === 0 ? (
-                <NavigatorEmptyState>No recent folder candidates.</NavigatorEmptyState>
-              ) : null}
-              {projectFavouriteCandidates.map((candidate) => (
-                <div key={candidate.path} className="sidecar-row sidecar-row--project-candidate">
-                  <div className="sidecar-project-browser__main" title={candidate.path}>
-                    <div className="sidecar-row__title">{candidate.label}</div>
-                    <div className="sidecar-row__meta">{candidate.meta}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-                    onClick={() => dispatch({ type: 'browse/favourite-folder', path: candidate.path })}
-                    aria-label={`Add ${candidate.label} to Project Favourites`}
-                    title={`Add ${candidate.path} to Project Favourites`}
-                  >
-                    [+]
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {projectBrowserTab === 'pick' ? (
-            <div className="sidecar-project-browser__panel" role="tabpanel" aria-label="Browse Project Favourite">
-              <div className="sidecar-project-picker">
-                <div className="sidecar-project-picker__header">
-                  <FolderPathBreadcrumb
-                    currentPath={browseState.currentPath}
-                    loading={browseState.loading}
-                    onNavigate={(path) => dispatch({ type: 'browse/navigate-to', path })}
-                  />
-                </div>
-                {browseState.error ? (
-                  <div className="sidecar-row__error" role="alert">{browseState.error}</div>
-                ) : null}
-                {browseState.favouriteError ? (
-                  <div className="sidecar-row__error" role="alert">{browseState.favouriteError}</div>
-                ) : null}
-                {browseState.loading ? <NavigatorEmptyState>Loading folders...</NavigatorEmptyState> : null}
-                {!browseState.loading && browseState.entries.length === 0 && browseState.currentPath ? (
-                  <NavigatorEmptyState>No subfolders here.</NavigatorEmptyState>
-                ) : null}
-                {!browseState.loading && browseState.entries.length > 0 ? (
-                  <div className="sidecar-project-picker__entries">
-                    {browseState.entries.filter((entry) => entry.kind !== 'file').map((entry) => {
-                      const registered = state.projects.some((project) => normalizePinnedPath(project.root) === normalizePinnedPath(entry.absolutePath));
-                      return (
-                        <div key={entry.absolutePath} className="sidecar-row sidecar-row--project-candidate">
-                          <div className="sidecar-project-browser__main" title={entry.absolutePath}>
-                            <button
-                              type="button"
-                              className="sidecar-project-picker__name-button"
-                              onClick={() => dispatch({ type: 'browse/navigate-to', path: entry.absolutePath })}
-                              title={`Browse ${entry.absolutePath}`}
-                            >
-                              {entry.name}
-                            </button>
-                            <div className="sidecar-row__meta sidecar-project-picker__meta">
-                              {entry.hasWorkspace ? (
-                                <button
-                                  type="button"
-                                  className="sidecar-project-picker__workspace-button"
-                                  onClick={() => onProjectRootOpen(entry.absolutePath)}
-                                  aria-label={`Open workspace ${entry.name}`}
-                                  title={`Open workspace ${entry.absolutePath}`}
-                                >
-                                  wspace
-                                </button>
-                              ) : null}
-                              <span>{entry.absolutePath}</span>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-                            onClick={() => dispatch({ type: 'browse/favourite-folder', path: entry.absolutePath })}
-                            aria-label={`Add ${entry.name} to Project Favourites`}
-                            title={registered ? 'Already a Project Favourite.' : `Add ${entry.absolutePath} to Project Favourites`}
-                            disabled={registered}
-                          >
-                            [+]
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {browseState.truncated ? (
-                  <div className="sidecar-project-picker__notice">Listing truncated.</div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </div>
       </Pane>
     );
   }
@@ -2351,6 +1947,7 @@ function SelectionFlyout({
               onPinFolder={handlePinFolder}
               onUnpinFolder={handleUnpin}
               navigatorSort={navigatorSort}
+              folderCounts={ticketFolderCounts}
             />
           </div>
         ) : null}
@@ -2517,7 +2114,7 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
   const segments = folderPathSegments(currentPath);
   if (segments.length === 0) {
     return (
-      <span className="sidecar-project-picker__path" title={currentPath ?? ''}>
+      <span className="sidecar-folder-breadcrumb__path" title={currentPath ?? ''}>
         {loading ? 'Loading...' : 'No folder loaded'}
       </span>
     );
@@ -2525,21 +2122,21 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
   const normalizedCurrent = currentPath ? normalizePinnedPath(currentPath) : null;
   return (
     <nav
-      className="sidecar-project-picker__path sidecar-project-picker__breadcrumb"
+      className="sidecar-folder-breadcrumb__path sidecar-folder-breadcrumb"
       aria-label="Current folder path"
       title={currentPath ?? ''}
     >
       {segments.map((segment, index) => {
         const isCurrent = normalizedCurrent === segment.path;
         return (
-          <span key={segment.path} className="sidecar-project-picker__crumb">
-            {index > 0 ? <span className="sidecar-project-picker__separator" aria-hidden="true">/</span> : null}
+          <span key={segment.path} className="sidecar-folder-breadcrumb__crumb">
+            {index > 0 ? <span className="sidecar-folder-breadcrumb__separator" aria-hidden="true">/</span> : null}
             {isCurrent ? (
-              <span className="sidecar-project-picker__segment is-current">{segment.label}</span>
+              <span className="sidecar-folder-breadcrumb__segment is-current">{segment.label}</span>
             ) : (
               <button
                 type="button"
-                className="sidecar-project-picker__segment"
+                className="sidecar-folder-breadcrumb__segment"
                 onClick={() => onNavigate(segment.path)}
                 aria-label={`Navigate to ${segment.path}`}
                 title={`Navigate to ${segment.path}`}
@@ -2557,15 +2154,23 @@ function FolderPathBreadcrumb({ currentPath, loading, onNavigate }: {
 function AiWorkspaceObservationSummary({
   observation,
   onArtifactOpen,
+  onFeatureOpen,
+  expanded = false,
 }: {
   observation: AiWorkspaceObservation;
   onArtifactOpen: (artifact: AiWorkspaceArtifactRecord) => void;
+  onFeatureOpen?: (featureId: AiWorkspaceFeatureId) => void;
+  expanded?: boolean;
 }) {
   const summary = aiWorkspaceBrowserSummary(observation);
-  const visibleArtifactGroups = summary.artifactGroups.slice(0, 6);
-  const hiddenArtifactGroupCount = summary.artifactGroups.length - visibleArtifactGroups.length;
+  const artifactGroups = summary.artifactGroups.filter((group) => group.featureId !== 'tickets' && group.featureId !== 'comments');
+  const visibleArtifactGroups = expanded ? artifactGroups : artifactGroups.slice(0, 6);
+  const hiddenArtifactGroupCount = artifactGroups.length - visibleArtifactGroups.length;
   return (
-    <section className="sidecar-ai-workspace-summary" aria-label=".ai-workspace observation summary">
+    <section
+      className={`sidecar-ai-workspace-summary${expanded ? ' sidecar-ai-workspace-summary--expanded' : ''}`}
+      aria-label=".ai-workspace observation summary"
+    >
       <div className="sidecar-ai-workspace-summary__header">
         <div>
           <div className="sidecar-row__title">.ai-workspace</div>
@@ -2580,22 +2185,34 @@ function AiWorkspaceObservationSummary({
       <div className="sidecar-ai-workspace-summary__features" aria-label=".ai-workspace feature states">
         {summary.features.map((feature) => {
           const title = `${feature.label}: ${feature.state}, ${feature.artifactCount} artifact${feature.artifactCount === 1 ? '' : 's'}`;
-          return (
-            <span
-              key={feature.id}
-              className={`sidecar-ai-workspace-summary__feature sidecar-ai-workspace-summary__feature--${safeClassSuffix(feature.state)}`}
-              title={title}
-            >
+          const navigatorFeature = feature.id === 'tickets' || feature.id === 'comments';
+          const className = `sidecar-ai-workspace-summary__feature sidecar-ai-workspace-summary__feature--${safeClassSuffix(feature.state)}${navigatorFeature ? ' is-navigator' : ''}`;
+          const content = (
+            <>
               <span>{feature.label}</span>
               <strong>{feature.state}</strong>
-            </span>
+            </>
+          );
+          return navigatorFeature && onFeatureOpen ? (
+            <button
+              key={feature.id}
+              type="button"
+              className={className}
+              onClick={() => onFeatureOpen(feature.id)}
+              aria-label={`Open ${feature.label} navigator`}
+              title={`Open ${feature.label} navigator. ${title}`}
+            >
+              {content}
+            </button>
+          ) : (
+            <span key={feature.id} className={className} title={title}>{content}</span>
           );
         })}
       </div>
-      {summary.artifactGroups.length > 0 ? (
+      {artifactGroups.length > 0 ? (
         <div className="sidecar-ai-workspace-summary__artifact-groups" aria-label=".ai-workspace artifact groups">
           {visibleArtifactGroups.map((group) => {
-            const visibleArtifacts = group.artifacts.slice(0, 3);
+            const visibleArtifacts = expanded ? group.artifacts : group.artifacts.slice(0, 3);
             const hiddenArtifactCount = group.artifactCount - visibleArtifacts.length;
             return (
               <div key={group.featureId} className="sidecar-ai-workspace-summary__artifact-group">
@@ -2638,7 +2255,7 @@ function AiWorkspaceObservationSummary({
   );
 }
 
-function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, projectBrowser = false, projectFavouriteRoots = [], onProjectFavourite, canOpenProject = false, onProjectRootOpen }: {
+function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLoads, defaultCollapsed = true, onPatchGroup, onToggle, onSurfaceSelect, pathSource, pinnedFolders, onPinFolder, onUnpinFolder, navigatorSort, folderCounts }: {
   path: string;
   label: string;
   depth: number;
@@ -2654,50 +2271,19 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
   onPinFolder: (path: string) => void;
   onUnpinFolder: (path: string) => void;
   navigatorSort: NavigatorSortState;
-  projectBrowser?: boolean;
-  projectFavouriteRoots?: string[];
-  onProjectFavourite?: (path: string) => void;
-  canOpenProject?: boolean;
-  onProjectRootOpen?: (root: string) => void;
+  folderCounts?: Record<string, number>;
 }) {
   const key = navigatorGroupKey('folder', path);
   const group = navigatorGroupState(groupStates, key, { collapsed: defaultCollapsed, sort: 'time', reverse: true });
   const load = folderLoads[path] ?? null;
-  const visibleEntries = projectBrowser
-    ? (load?.entries ?? []).filter((entry) => (entry.kind ?? 'directory') === 'directory')
-    : load?.entries ?? [];
-  const entries = compareBySort(visibleEntries, { ...group, ...navigatorSort }, (entry) => entry.name, folderEntryTime);
+  const entries = compareBySort(load?.entries ?? [], { ...group, ...navigatorSort }, (entry) => entry.name, folderEntryTime);
   const normalizedPath = normalizePinnedPath(path);
   const isPinned = pinnedFolders.includes(normalizedPath);
-  const isProjectFavourite = projectFavouriteRoots.includes(normalizedPath);
   const isBuiltIn = builtInNavigatorFolders(projectRoot).map(normalizePinnedPath).includes(normalizedPath);
   const pinLabel = `${isPinned ? 'Unpin' : 'Pin'} ${label}`;
-  const projectFavouriteLabel = `Add ${label} to Project Favourites`;
   const controls = (
     <>
-      {canOpenProject && onProjectRootOpen ? (
-        <button
-          type="button"
-          className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--open"
-          onClick={() => onProjectRootOpen(normalizedPath)}
-          title={`Open Project ${normalizedPath}`}
-        >
-          Open
-        </button>
-      ) : null}
-      {projectBrowser && depth > 0 && onProjectFavourite ? (
-        <button
-          type="button"
-          className="sidecar-tree-control sidecar-tree-control--text sidecar-tree-control--compact"
-          onClick={() => onProjectFavourite(normalizedPath)}
-          aria-label={projectFavouriteLabel}
-          title={isProjectFavourite ? 'Already a Project Favourite.' : `Add ${normalizedPath} to Project Favourites`}
-          disabled={isProjectFavourite}
-        >
-          [+]
-        </button>
-      ) : null}
-      {!projectBrowser && !isBuiltIn ? (
+      {!isBuiltIn ? (
         <button
           type="button"
           className={`sidecar-tree-control${isPinned ? ' is-active' : ''}`}
@@ -2716,14 +2302,16 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
     <div className="sidecar-folder-node" style={{ '--sidecar-tree-depth': depth } as CSSProperties}>
       <NavigatorTreeGroup
         label={label}
-        count={entries.length}
+        count={folderCounts?.[normalizedPath] ?? entries.length}
         group={group}
         onToggle={() => onToggle(key, path, group.collapsed)}
         extraControls={controls}
       >
         {load?.loading ? <NavigatorEmptyState>Loading folders...</NavigatorEmptyState> : null}
         {load?.error ? <div className="sidecar-navigator-error">{load.error}</div> : null}
-        {load && !load.loading && !load.error && entries.length === 0 ? <NavigatorEmptyState>No child entries.</NavigatorEmptyState> : null}
+        {load?.state === 'missing' ? <NavigatorEmptyState>Folder is not present in this Project.</NavigatorEmptyState> : null}
+        {load?.state === 'not_directory' ? <NavigatorEmptyState>This Project path is not a folder.</NavigatorEmptyState> : null}
+        {load && !load.loading && !load.error && load.state === 'present' && entries.length === 0 ? <NavigatorEmptyState>No child entries.</NavigatorEmptyState> : null}
         {entries.map((entry) => {
           const entryKind = entry.kind ?? 'directory';
           if (entryKind === 'file') {
@@ -2761,11 +2349,7 @@ function FolderTreeNode({ path, label, depth, projectRoot, groupStates, folderLo
               onPinFolder={onPinFolder}
               onUnpinFolder={onUnpinFolder}
               navigatorSort={navigatorSort}
-              projectBrowser={projectBrowser}
-              projectFavouriteRoots={projectFavouriteRoots}
-              onProjectFavourite={onProjectFavourite}
-              canOpenProject={entry.hasWorkspace === true}
-              onProjectRootOpen={onProjectRootOpen}
+              folderCounts={folderCounts}
             />
           );
         })}
@@ -2897,11 +2481,17 @@ function safeClassSuffix(value: string) {
 }
 
 function viewerTabTitle(state: SidecarState, tab: SidecarViewerTab) {
-  if (tab.kind === 'process') {
-    return 'Process Navigator';
-  }
   if (tab.kind === 'surface') {
     return tab.objectId.split('/').filter(Boolean).pop() ?? tab.objectId;
+  }
+  if (tab.kind === 'traversal') {
+    return 'Run Inspector';
+  }
+  if (tab.kind === 'ticket-board') {
+    return 'Tickets Board';
+  }
+  if (tab.kind === 'ai-workspace') {
+    return 'AI Workspace';
   }
   if (tab.kind === 'ticket') {
     return state.tickets.find((ticket) => ticket.id === tab.objectId)?.title ?? tab.objectId;
@@ -2918,9 +2508,6 @@ function viewerTabTitle(state: SidecarState, tab: SidecarViewerTab) {
 }
 
 function resolveViewerTab(state: SidecarState, tab: SidecarViewerTab) {
-  if (tab.kind === 'process') {
-    return { kind: tab.kind, record: state.process };
-  }
   if (tab.kind === 'surface') {
     return { kind: tab.kind, record: tab.objectId };
   }
@@ -2978,10 +2565,11 @@ function ViewerLayoutToggle({ split, groupCount, onSplit, onAddVertical }: {
   );
 }
 
-function ViewerWorkspace({ state, viewerAgent, dispatch, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
+function ViewerWorkspace({ state, viewerAgent, dispatch, onInfoSurfaceSelect, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
   state: SidecarState;
   viewerAgent: string;
   dispatch: Dispatch<SidecarMsg>;
+  onInfoSurfaceSelect: (surface: SidecarInfoSurface) => void;
   onTransition: (id: string, lane: string) => void;
   onToggleRead: (id: string, currentlyUnread: boolean) => void;
   onReplyOpen: (id: string) => void;
@@ -3006,6 +2594,7 @@ function ViewerWorkspace({ state, viewerAgent, dispatch, onTransition, onToggleR
               viewerAgent={viewerAgent}
               active={viewerWorkspace.activeGroupId === group.id}
               dispatch={dispatch}
+              onInfoSurfaceSelect={onInfoSurfaceSelect}
               onTransition={onTransition}
               onToggleRead={onToggleRead}
               onReplyOpen={onReplyOpen}
@@ -3033,12 +2622,13 @@ function ViewerWorkspace({ state, viewerAgent, dispatch, onTransition, onToggleR
   );
 }
 
-function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
+function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onInfoSurfaceSelect, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
   group: SidecarViewerGroup;
   state: SidecarState;
   viewerAgent: string;
   active: boolean;
   dispatch: Dispatch<SidecarMsg>;
+  onInfoSurfaceSelect: (surface: SidecarInfoSurface) => void;
   onTransition: (id: string, lane: string) => void;
   onToggleRead: (id: string, currentlyUnread: boolean) => void;
   onReplyOpen: (id: string) => void;
@@ -3096,6 +2686,7 @@ function ViewerGroupPane({ group, state, viewerAgent, active, dispatch, onTransi
             state={state}
             viewerAgent={viewerAgent}
             dispatch={dispatch}
+            onInfoSurfaceSelect={onInfoSurfaceSelect}
             onTransition={onTransition}
             onToggleRead={onToggleRead}
             onReplyOpen={onReplyOpen}
@@ -3136,11 +2727,12 @@ function EmptyViewerPane({ canClose, onClose }: {
   );
 }
 
-function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
+function ViewerTabBody({ tab, state, viewerAgent, dispatch, onInfoSurfaceSelect, onTransition, onToggleRead, onReplyOpen, onReplyEdit, onReplyCancel, onReplySubmit }: {
   tab: SidecarViewerTab;
   state: SidecarState;
   viewerAgent: string;
   dispatch: Dispatch<SidecarMsg>;
+  onInfoSurfaceSelect: (surface: SidecarInfoSurface) => void;
   onTransition: (id: string, lane: string) => void;
   onToggleRead: (id: string, currentlyUnread: boolean) => void;
   onReplyOpen: (id: string) => void;
@@ -3148,21 +2740,38 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
   onReplyCancel: () => void;
   onReplySubmit: (parentId: string, body: string) => void;
 }) {
-  if (tab.kind === 'process') {
-    return <ProcessNavigatorSimplePanel state={state} dispatch={dispatch} />;
-  }
   if (tab.kind === 'surface') {
     return (
       <Inspector>
         <SurfaceInspector
           projectRoot={state.context?.project.root ?? null}
           aiWorkspaceObservation={state.aiWorkspaceObservation}
-          processProjection={state.process}
           tabId={tab.id}
           relativePath={tab.objectId}
           viewerState={state.ui.documentViewers[tab.id]}
           dispatch={dispatch}
         />
+      </Inspector>
+    );
+  }
+  if (tab.kind === 'traversal') {
+    return (
+      <Inspector>
+        <RunInspector state={state} dispatch={dispatch} />
+      </Inspector>
+    );
+  }
+  if (tab.kind === 'ticket-board') {
+    return (
+      <Inspector>
+        <TicketBoardInspector state={state} dispatch={dispatch} />
+      </Inspector>
+    );
+  }
+  if (tab.kind === 'ai-workspace') {
+    return (
+      <Inspector>
+        <AiWorkspaceInspector state={state} dispatch={dispatch} onInfoSurfaceSelect={onInfoSurfaceSelect} />
       </Inspector>
     );
   }
@@ -3195,3308 +2804,6 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onTransition, onTogg
     return <Inspector><SessionInspector s={resolved.record} /></Inspector>;
   }
   return <div className="sidecar-inspector__empty">Selected record is no longer available.</div>;
-}
-
-type ProcessNavigatorSimpleTab = 'graphs' | 'functions' | 'assets' | 'live';
-type ProcessNavigatorSection = {
-  tab: ProcessNavigatorSimpleTab;
-  label: string;
-  count: number;
-};
-type ProcessSimpleFunctionItem = {
-  id: string;
-  name: string;
-  eyebrow: string;
-  title: string;
-  summary: string;
-  meta: Array<[string, string]>;
-  source: 'executive' | 'leaf' | 'library';
-  executive?: NonNullable<SidecarProcessProjection['catalog']>['executives'][number];
-  leaf?: NonNullable<SidecarProcessProjection['catalog']>['leaves'][number];
-  library?: NonNullable<SidecarProcessProjection['catalog']>['library'][number];
-};
-
-function buildProcessNavigatorSections(input: {
-  graphTabCount: number;
-  functionCount: number;
-  assetCount: number;
-  liveAttemptCount: number;
-}): ProcessNavigatorSection[] {
-  const sections: ProcessNavigatorSection[] = [
-    { tab: 'live', label: 'Runtime State', count: input.liveAttemptCount },
-  ];
-  if (input.graphTabCount > 0) {
-    sections.push({ tab: 'graphs', label: 'Graph Overlays', count: input.graphTabCount });
-  }
-  if (input.functionCount > 0) {
-    sections.push({ tab: 'functions', label: 'Function Catalog', count: input.functionCount });
-  }
-  if (input.assetCount > 0) {
-    sections.push({ tab: 'assets', label: 'Asset Nodes', count: input.assetCount });
-  }
-  return sections;
-}
-
-function ProcessNavigatorSimplePanel({ state, dispatch }: {
-  state: SidecarState;
-  dispatch: Dispatch<SidecarMsg>;
-}) {
-  const projection = state.process;
-  const [activeTab, setActiveTab] = useState<ProcessNavigatorSimpleTab>('live');
-  const [selectedOverlayRef, setSelectedOverlayRef] = useState<string | null>(null);
-  const [selectedFunctionId, setSelectedFunctionId] = useState<string | null>(null);
-  const [selectedAssetName, setSelectedAssetName] = useState<string | null>(null);
-  const liveRefreshRoot = state.context?.project.root ?? projection?.workspaceRoot ?? null;
-  const requestLiveRefresh = useCallback(() => {
-    if (!liveRefreshRoot || state.loading) return;
-    dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-  }, [dispatch, liveRefreshRoot, state.loading]);
-
-  useEffect(() => {
-    if (activeTab !== 'live' || !liveRefreshRoot || state.loading || typeof window === 'undefined') return undefined;
-    const refreshTimer = window.setInterval(() => {
-      dispatch({ type: 'load/request', projectRoot: liveRefreshRoot, reason: 'action_completed' });
-    }, 30000);
-    return () => window.clearInterval(refreshTimer);
-  }, [activeTab, dispatch, liveRefreshRoot, state.loading]);
-
-  if (!projection) {
-    return <div className="sidecar-inspector__empty">Process projection is not loaded.</div>;
-  }
-  if (!projection.supported) {
-    return (
-      <div className="sidecar-process-navigator sidecar-process-navigator--unsupported">
-        <div className="sidecar-process-navigator__header">
-          <span className="panel__eyebrow">Process Navigator</span>
-          <h2>TypeScript process contract unavailable</h2>
-          <Pill kind="blocked">unsupported</Pill>
-        </div>
-        <p>{projection.unsupportedReason ?? 'This Project does not expose the odd_sdlc TypeScript process contract.'}</p>
-      </div>
-    );
-  }
-
-  const catalog = projection.catalog ?? null;
-  const abgSystem = projection.abgSystem ?? null;
-  const traversalOverlays = projection.traversalOverlays ?? [];
-  const graphTabCount = traversalOverlays.length;
-  const assetRelationships = catalog ? processAssetRelationships(catalog) : [];
-  const functionItems = catalog ? processFunctionItems(catalog) : [];
-  const abgRegistryEntryCount = abgSystem?.registry.entries.length ?? 0;
-  const abgNodeTypeCount = abgSystem?.registry.entries.filter((entry) => entry.entryKind === 'node_type').length ?? 0;
-  const abgPayloadCount = abgSystem
-    ? abgSystem.payloadLedger.observedPayloadCount +
-      abgSystem.payloadLedger.validatedPayloadCount +
-      abgSystem.payloadLedger.rejectedPayloadCount
-    : 0;
-  const workspaceRun = projection.workspaceRun ?? null;
-  const liveAttemptCount = workspaceRun?.operatorRunCount ?? projection.liveAnalysis?.attempts.length ?? 0;
-  const processSections = buildProcessNavigatorSections({
-    graphTabCount,
-    functionCount: functionItems.length,
-    assetCount: assetRelationships.length,
-    liveAttemptCount,
-  });
-  const activeProcessTab = processSections.some((section) => section.tab === activeTab)
-    ? activeTab
-    : processSections[0]?.tab ?? 'live';
-  const selectedOverlay = traversalOverlays.find((overlay) => overlay.overlayRef === selectedOverlayRef) ?? traversalOverlays[0] ?? null;
-  const selectedFunction = functionItems.find((item) => item.id === selectedFunctionId) ?? functionItems[0] ?? null;
-  const selectedAsset = assetRelationships.find((asset) => asset.name === selectedAssetName) ?? assetRelationships[0] ?? null;
-  const simpleMap = selectedOverlay && activeProcessTab === 'graphs'
-    ? buildSimpleOverlayGraph(selectedOverlay)
-    : selectedFunction && catalog && activeProcessTab === 'functions'
-      ? buildSimpleFunctionGraph(selectedFunction, catalog)
-      : selectedAsset && catalog && activeProcessTab === 'assets'
-        ? buildSimpleAssetGraph(selectedAsset, catalog)
-        : null;
-  const defaultSelectedRecordId = activeProcessTab === 'live'
-    ? null
-    : activeProcessTab === 'graphs' && selectedOverlay
-    ? processGraphRecordId('overlay-function', selectedOverlay.defaultStartTarget || selectedOverlay.graphFunctionRefs[0] || selectedOverlay.overlayRef)
-    : activeProcessTab === 'functions' && selectedFunction
-      ? processGraphRecordId('function', selectedFunction.name)
-      : activeProcessTab === 'assets' && selectedAsset
-        ? processGraphRecordId('asset', selectedAsset.name)
-        : null;
-  const selectedRecordId = simpleMap && state.ui.activeProcessRecordId && processMapHasRecordId(simpleMap, state.ui.activeProcessRecordId)
-    ? state.ui.activeProcessRecordId
-    : defaultSelectedRecordId;
-  const graphTitle = activeProcessTab === 'graphs'
-    ? selectedOverlay?.name ?? 'Graph Overlays'
-    : activeProcessTab === 'functions'
-      ? selectedFunction?.title ?? 'Function Catalog'
-      : activeProcessTab === 'live'
-        ? 'Runtime State'
-      : selectedAsset?.name ?? 'Asset Nodes';
-  const graphSummary = activeProcessTab === 'graphs'
-    ? selectedOverlay?.intent ?? 'No graph overlay is selected.'
-    : activeProcessTab === 'functions'
-      ? selectedFunction?.summary ?? 'No graph function is selected.'
-      : activeProcessTab === 'live'
-        ? 'Current odd_sdlc operator-run, stage-process, and live-analysis state.'
-      : selectedAsset
-        ? `Produced by ${selectedAsset.producers.length} and consumed by ${selectedAsset.consumers.length}.`
-        : 'No asset node is selected.';
-  const openTracePath = (absolutePath: string) => {
-    const relativePath = relativeProjectPath(state.context?.project.root ?? projection.workspaceRoot, absolutePath);
-    if (!relativePath) {
-      dispatch({ type: 'action/result', ok: false, error: 'Trace archive is outside the active Project.' });
-      return;
-    }
-    dispatch({ type: 'viewer/open', kind: 'surface', id: relativePath });
-  };
-
-  return (
-    <div className="sidecar-process-simple" aria-label="Process Navigator">
-      <div className="sidecar-process-navigator__header">
-        <div>
-          <span className="panel__eyebrow">Process Navigator</span>
-          <h2>Supported process surfaces</h2>
-        </div>
-        <div className="sidecar-process-navigator__badges">
-          <Pill kind="process">ts-v1</Pill>
-          <Pill kind="default">{graphTabCount} overlays</Pill>
-          <Pill kind="default">{catalog ? catalog.executives.length + catalog.library.length + catalog.leaves.length : 0} functions</Pill>
-          <Pill kind="default">{assetRelationships.length} assets</Pill>
-          {abgSystem ? <Pill kind="process">{abgRegistryEntryCount} ABG registry</Pill> : null}
-          {abgNodeTypeCount > 0 ? <Pill kind="default">{abgNodeTypeCount} node types</Pill> : null}
-          {abgPayloadCount > 0 ? <Pill kind="default">{abgPayloadCount} payload facts</Pill> : null}
-          {workspaceRun ? <Pill kind={workspaceRun.activeFeedbackLoopCount > 0 ? 'active' : 'default'}>{workspaceRun.stageProcessCount} stage processes</Pill> : null}
-          {projection.liveAnalysis && <Pill kind={liveAnalysisTone(projection.liveAnalysis.liveness.productiveSignal)}>{projection.liveAnalysis.telemetry.operatorRunCount} analyze runs</Pill>}
-        </div>
-      </div>
-
-      <div className="sidecar-process-simple__tabs" role="tablist" aria-label="Process navigator sections">
-        {processSections.map(({ tab, label, count }) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={activeProcessTab === tab}
-            className={`process-tab sidecar-process-simple__tab${activeProcessTab === tab ? ' is-selected' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            <strong>{label}</strong>
-            <span className="status-chip default">{count}</span>
-          </button>
-        ))}
-      </div>
-
-      {activeProcessTab === 'live' ? (
-        <section className="sidecar-process-simple__live sidecar-process-map" aria-label="Runtime State">
-          <ProcessLiveViewPanel
-            analysis={projection.liveAnalysis ?? null}
-            workspaceRun={workspaceRun}
-            projectRoot={liveRefreshRoot}
-            onOpenTracePath={openTracePath}
-            onRefresh={requestLiveRefresh}
-            refreshing={state.loading && state.activeLoadRoot === liveRefreshRoot}
-            terminalSessions={state.sessions.records}
-            activeTerminalSessionId={state.activeSessionId}
-            onOpenTerminalSession={(sessionId) => dispatch({ type: 'terminal/jump-to-session', sessionId })}
-            liveActiveRunRowCollapsed={state.ui.liveActiveRunRowCollapsed}
-            onLiveActiveRunRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-active-run-row-collapsed', collapsed })}
-            liveInternalRowCollapsed={state.ui.liveInternalRowCollapsed}
-            onLiveInternalRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-internal-row-collapsed', collapsed })}
-            liveTranscriptCollapsed={state.ui.liveTranscriptCollapsed}
-            onLiveTranscriptCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-transcript-collapsed', collapsed })}
-            liveDetailRowCollapsed={state.ui.liveDetailRowCollapsed}
-            onLiveDetailRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-detail-row-collapsed', collapsed })}
-            liveGapRowCollapsed={state.ui.liveGapRowCollapsed}
-            onLiveGapRowCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-gap-row-collapsed', collapsed })}
-            liveEventViewerCollapsed={state.ui.liveEventViewerCollapsed}
-            onLiveEventViewerCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-event-viewer-collapsed', collapsed })}
-            onLiveAllCollapsedChange={(collapsed) => dispatch({ type: 'process/set-live-all-collapsed', collapsed })}
-          />
-        </section>
-      ) : (
-        <ProcessSimpleGraphPanel
-          title={graphTitle}
-          summary={graphSummary}
-          map={simpleMap}
-          selectedRecordId={selectedRecordId}
-          graphMode={state.ui.activeProcessGraphMode}
-          onGraphModeChange={(mode) => dispatch({ type: 'process/set-graph-mode', mode })}
-          onSelectRecord={(id) => {
-            dispatch({ type: 'process/select-record', id });
-            const parsed = parseProcessGraphRecordId(id);
-            if (!parsed) return;
-            if (parsed.kind === 'overlay') setSelectedOverlayRef(parsed.value);
-            if (parsed.kind === 'function') setSelectedFunctionId(functionItems.find((item) => item.name === parsed.value)?.id ?? selectedFunctionId);
-            if (parsed.kind === 'asset') setSelectedAssetName(parsed.value);
-          }}
-        />
-      )}
-
-      {activeProcessTab === 'graphs' && (
-        <section className="sidecar-process-simple__section" aria-label="Graph overlays">
-          {traversalOverlays.length ? (
-            <div className="sidecar-process-overlay-grid">
-              {traversalOverlays.map((overlay) => (
-                <ProcessOverlayCard
-                  key={overlay.overlayRef}
-                  overlay={overlay}
-                  selected={selectedOverlay?.overlayRef === overlay.overlayRef}
-                  onSelect={() => {
-                    const firstRef = overlay.defaultStartTarget || overlay.graphFunctionRefs[0] || overlay.overlayRef;
-                    setSelectedOverlayRef(overlay.overlayRef);
-                    dispatch({ type: 'process/select-record', id: processGraphRecordId('overlay-function', firstRef) });
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="sidecar-inspector__empty">
-              No TypeScript graph overlay catalog is projected for this workspace.
-            </div>
-          )}
-        </section>
-      )}
-
-      {activeProcessTab === 'functions' && (
-        <section className="sidecar-process-simple__section" aria-label="Graph functions">
-          {catalog ? (
-            <div className="sidecar-process-function-groups">
-              <ProcessFunctionGroup title="Executive Graph Functions" count={catalog.executives.length}>
-                {functionItems.filter((item) => item.source === 'executive').map((item) => (
-                  <ProcessFunctionCard
-                    key={item.id}
-                    item={item}
-                    selected={selectedFunction?.id === item.id}
-                    onSelect={() => {
-                      setSelectedFunctionId(item.id);
-                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
-                    }}
-                  />
-                ))}
-              </ProcessFunctionGroup>
-              <ProcessFunctionGroup title="Leaf Graph Functions" count={catalog.leaves.length}>
-                {functionItems.filter((item) => item.source === 'leaf').map((item) => (
-                  <ProcessFunctionCard
-                    key={item.id}
-                    item={item}
-                    selected={selectedFunction?.id === item.id}
-                    onSelect={() => {
-                      setSelectedFunctionId(item.id);
-                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
-                    }}
-                  />
-                ))}
-              </ProcessFunctionGroup>
-              <ProcessFunctionGroup title="Library Graph Functions" count={catalog.library.length}>
-                {functionItems.filter((item) => item.source === 'library').map((item) => (
-                  <ProcessFunctionCard
-                    key={item.id}
-                    item={item}
-                    selected={selectedFunction?.id === item.id}
-                    onSelect={() => {
-                      setSelectedFunctionId(item.id);
-                      dispatch({ type: 'process/select-record', id: processGraphRecordId('function', item.name) });
-                    }}
-                  />
-                ))}
-              </ProcessFunctionGroup>
-            </div>
-          ) : (
-            <div className="sidecar-inspector__empty">No graph-function catalog is projected for this workspace.</div>
-          )}
-        </section>
-      )}
-
-      {activeProcessTab === 'assets' && (
-        <section className="sidecar-process-simple__section" aria-label="Leaf node assets and relationships">
-          {assetRelationships.length ? (
-            <div className="sidecar-process-assets">
-              {assetRelationships.map((asset) => (
-                <ProcessAssetCard
-                  key={asset.name}
-                  asset={asset}
-                  selected={selectedAsset?.name === asset.name}
-                  onSelect={() => {
-                    setSelectedAssetName(asset.name);
-                    dispatch({ type: 'process/select-record', id: processGraphRecordId('asset', asset.name) });
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="sidecar-inspector__empty">No leaf asset relationships are projected for this workspace.</div>
-          )}
-        </section>
-      )}
-    </div>
-  );
-}
-
-function ProcessSimpleGraphPanel({ title, summary, map, selectedRecordId, graphMode, onGraphModeChange, onSelectRecord }: {
-  title: string;
-  summary: string;
-  map: SidecarProcessMap | null;
-  selectedRecordId: string | null;
-  graphMode: SidecarProcessGraphMode;
-  onGraphModeChange: (mode: SidecarProcessGraphMode) => void;
-  onSelectRecord: (id: string) => void;
-}) {
-  const activeRecordIds = map ? processMapRecordIds(map) : [];
-  const toggleGraphMode = () => onGraphModeChange(graphMode === 'compressed' ? 'expanded' : 'compressed');
-  return (
-    <section className={`sidecar-process-simple__graph sidecar-process-simple__graph--${graphMode} sidecar-process-map`} aria-label="Selected process graph">
-      <div className="sidecar-process-simple__graph-header">
-        <div>
-          <span className="panel__eyebrow">Selected Graph</span>
-          <h3>{title}</h3>
-        </div>
-        <p>{summary}</p>
-        <button
-          type="button"
-          className="sidecar-process-simple__mode-toggle"
-          onClick={toggleGraphMode}
-          disabled={!map}
-          aria-expanded={graphMode === 'expanded'}
-          aria-label={graphMode === 'compressed' ? 'Show full graph' : 'Show compressed navigator'}
-          title={graphMode === 'compressed' ? 'Show full graph' : 'Show compressed navigator'}
-        >
-          <span aria-hidden="true">{graphMode === 'compressed' ? '⌄' : '⌃'}</span>
-        </button>
-      </div>
-      {map ? (
-        graphMode === 'compressed' ? (
-          <ProcessCompressedNavigator
-            map={map}
-            selectedRecordId={selectedRecordId}
-            onSelectRecord={onSelectRecord}
-          />
-        ) : (
-          <ProcessGraphMap
-            map={map}
-            activeRecordIds={activeRecordIds}
-            selectedRecordId={selectedRecordId}
-            onSelectRecord={onSelectRecord}
-          />
-        )
-      ) : (
-        <div className="sidecar-inspector__empty">Select a process object to render its graph.</div>
-      )}
-    </section>
-  );
-}
-
-const PROCESS_RAIL_ROWS = 2;
-const PROCESS_RAIL_COLUMN_WIDTH = 136;
-
-type ProcessRailNode = SidecarProcessMap['nodes'][number];
-type ProcessRailColumn = {
-  key: string;
-  index: number;
-  topNode: ProcessRailNode | null;
-  bottomNode: ProcessRailNode | null;
-  topConnectorTone: SidecarProcessTone | null;
-  bottomConnectorTone: SidecarProcessTone | null;
-  topConnectorEmphasis: 'selected' | 'related' | 'muted' | null;
-  bottomConnectorEmphasis: 'selected' | 'related' | 'muted' | null;
-  hiddenCount: number;
-};
-type ProcessRailModel = {
-  columns: ProcessRailColumn[];
-  selectedNodeIds: Set<string>;
-  relatedNodeIds: Set<string>;
-  focusRange: { start: number; end: number } | null;
-};
-
-function ProcessCompressedNavigator({ map, selectedRecordId, onSelectRecord }: {
-  map: SidecarProcessMap;
-  selectedRecordId: string | null;
-  onSelectRecord: (id: string) => void;
-}) {
-  const topLaneRef = useRef<HTMLDivElement | null>(null);
-  const bottomLaneRef = useRef<HTMLDivElement | null>(null);
-  const rail = useMemo(() => buildProcessRailModel(map, selectedRecordId), [map, selectedRecordId]);
-
-  useEffect(() => {
-    if (!rail.focusRange) return;
-    const center = ((rail.focusRange.start + rail.focusRange.end + 1) * PROCESS_RAIL_COLUMN_WIDTH) / 2;
-    for (const element of [topLaneRef.current, bottomLaneRef.current]) {
-      if (!element) continue;
-      const nextLeft = Math.max(center - element.clientWidth / 2, 0);
-      element.scrollTo({ left: nextLeft, behavior: 'smooth' });
-    }
-  }, [rail.focusRange]);
-
-  return (
-    <section className="sidecar-process-compressed" aria-label="Compressed process navigator">
-      <div className="sidecar-process-compressed__legend">
-        <span className="panel__eyebrow">Compressed Navigator</span>
-        <p>Two guarded lanes over the same left-to-right process order. Selecting a stop centers its direct neighborhood.</p>
-      </div>
-      <div className="sidecar-process-compressed__lane-shell">
-        <ProcessCompressedLane
-          laneRef={topLaneRef}
-          lane="top"
-          columns={rail.columns}
-          selectedNodeIds={rail.selectedNodeIds}
-          relatedNodeIds={rail.relatedNodeIds}
-          onSelectRecord={onSelectRecord}
-        />
-        <ProcessCompressedLane
-          laneRef={bottomLaneRef}
-          lane="bottom"
-          columns={rail.columns}
-          selectedNodeIds={rail.selectedNodeIds}
-          relatedNodeIds={rail.relatedNodeIds}
-          onSelectRecord={onSelectRecord}
-        />
-      </div>
-    </section>
-  );
-}
-
-function ProcessCompressedLane({ laneRef, lane, columns, selectedNodeIds, relatedNodeIds, onSelectRecord }: {
-  laneRef: RefObject<HTMLDivElement | null>;
-  lane: 'top' | 'bottom';
-  columns: ProcessRailColumn[];
-  selectedNodeIds: Set<string>;
-  relatedNodeIds: Set<string>;
-  onSelectRecord: (id: string) => void;
-}) {
-  return (
-    <div ref={laneRef} className={`sidecar-process-compressed__lane sidecar-process-compressed__lane--${lane}`}>
-      <div
-        className="sidecar-process-compressed__track"
-        style={{ gridTemplateColumns: `repeat(${columns.length}, ${PROCESS_RAIL_COLUMN_WIDTH}px)` } as CSSProperties}
-      >
-        {columns.map((column) => {
-          const node = lane === 'top' ? column.topNode : column.bottomNode;
-          const connectorTone = lane === 'top' ? column.topConnectorTone : column.bottomConnectorTone;
-          const connectorState = lane === 'top' ? column.topConnectorEmphasis : column.bottomConnectorEmphasis;
-          const stateClass = node
-            ? selectedNodeIds.has(node.id)
-              ? 'is-selected'
-              : relatedNodeIds.has(node.id)
-                ? 'is-related'
-                : selectedNodeIds.size > 0
-                  ? 'is-muted'
-                  : ''
-            : '';
-          const primaryRecordId = node?.recordIds[0] ?? null;
-          return (
-            <div key={`${lane}:${column.key}`} className="sidecar-process-compressed__slot">
-              {node ? (
-                <button
-                  type="button"
-                  className={`sidecar-process-compressed__stop sidecar-process-compressed__stop--${node.tone} ${stateClass}`}
-                  disabled={!primaryRecordId}
-                  onClick={() => primaryRecordId ? onSelectRecord(primaryRecordId) : undefined}
-                  title={node.summary}
-                >
-                  <span className={`sidecar-process-compressed__signal sidecar-process-compressed__signal--${node.tone}`} />
-                  <span className="sidecar-process-compressed__label">{node.label}</span>
-                  {lane === 'top' && column.hiddenCount > 0 ? (
-                    <span className="sidecar-process-compressed__overflow" title={`${column.hiddenCount} additional node(s) are collapsed in this stage`}>
-                      +{column.hiddenCount}
-                    </span>
-                  ) : null}
-                </button>
-              ) : (
-                <div className="sidecar-process-compressed__spacer" aria-hidden="true" />
-              )}
-              {connectorTone ? (
-                <span
-                  className={`sidecar-process-compressed__connector sidecar-process-compressed__connector--${connectorTone}${connectorState ? ` is-${connectorState}` : ''}`}
-                  aria-hidden="true"
-                />
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function buildProcessRailModel(map: SidecarProcessMap, selectedRecordId: string | null): ProcessRailModel {
-  const buckets = new Map<number, ProcessRailNode[]>();
-  for (const node of map.nodes) {
-    const bucket = buckets.get(node.column) ?? [];
-    bucket.push(node);
-    buckets.set(node.column, bucket);
-  }
-
-  const selectedNodeIds = new Set(
-    selectedRecordId
-      ? map.nodes.filter((node) => node.recordIds.includes(selectedRecordId)).map((node) => node.id)
-      : [],
-  );
-  const relatedNodeIds = new Set<string>();
-  if (selectedNodeIds.size > 0) {
-    for (const edge of map.edges) {
-      if (selectedNodeIds.has(edge.from)) relatedNodeIds.add(edge.to);
-      if (selectedNodeIds.has(edge.to)) relatedNodeIds.add(edge.from);
-    }
-  }
-
-  const orderedBuckets = [...buckets.entries()]
-    .sort((left, right) => left[0] - right[0])
-    .map(([, nodes]) => nodes.sort((left, right) => left.row - right.row || left.label.localeCompare(right.label)));
-
-  const nodeToColumnIndex = new Map<string, number>();
-  orderedBuckets.forEach((bucket, index) => {
-    bucket.forEach((node) => nodeToColumnIndex.set(node.id, index));
-  });
-
-  const columns = orderedBuckets.map((bucket, index): ProcessRailColumn => {
-    const prioritized = [...bucket].sort((left, right) => {
-      const leftRank = processRailPriority(left.id, selectedNodeIds, relatedNodeIds);
-      const rightRank = processRailPriority(right.id, selectedNodeIds, relatedNodeIds);
-      return leftRank - rightRank || left.row - right.row || left.label.localeCompare(right.label);
-    });
-    const visible = prioritized.slice(0, PROCESS_RAIL_ROWS).sort((left, right) => left.row - right.row);
-    return {
-      key: bucket.map((node) => node.id).join(':'),
-      index,
-      topNode: visible[0] ?? null,
-      bottomNode: visible[1] ?? null,
-      topConnectorTone: null,
-      bottomConnectorTone: null,
-      topConnectorEmphasis: null,
-      bottomConnectorEmphasis: null,
-      hiddenCount: Math.max(bucket.length - visible.length, 0),
-    };
-  });
-
-  for (let index = 0; index < columns.length - 1; index += 1) {
-    const current = columns[index];
-    const next = columns[index + 1];
-    if (current.topNode && next.topNode) {
-      current.topConnectorTone = processRailConnectorTone(map, current.topNode, next.topNode);
-      current.topConnectorEmphasis = processRailConnectorEmphasis(current.topNode.id, next.topNode.id, selectedNodeIds, relatedNodeIds);
-    }
-    if (current.bottomNode && next.bottomNode) {
-      current.bottomConnectorTone = processRailConnectorTone(map, current.bottomNode, next.bottomNode);
-      current.bottomConnectorEmphasis = processRailConnectorEmphasis(current.bottomNode.id, next.bottomNode.id, selectedNodeIds, relatedNodeIds);
-    }
-  }
-
-  const focusColumnIndexes = new Set<number>();
-  selectedNodeIds.forEach((nodeId) => {
-    const columnIndex = nodeToColumnIndex.get(nodeId);
-    if (columnIndex !== undefined) focusColumnIndexes.add(columnIndex);
-  });
-  relatedNodeIds.forEach((nodeId) => {
-    const columnIndex = nodeToColumnIndex.get(nodeId);
-    if (columnIndex !== undefined) focusColumnIndexes.add(columnIndex);
-  });
-  const orderedFocus = [...focusColumnIndexes].sort((left, right) => left - right);
-  const focusRange = orderedFocus.length
-    ? {
-        start: Math.max(orderedFocus[0] - 1, 0),
-        end: Math.min(orderedFocus[orderedFocus.length - 1] + 1, columns.length - 1),
-      }
-    : null;
-
-  return { columns, selectedNodeIds, relatedNodeIds, focusRange };
-}
-
-function processRailPriority(nodeId: string, selectedNodeIds: Set<string>, relatedNodeIds: Set<string>) {
-  if (selectedNodeIds.has(nodeId)) return 0;
-  if (relatedNodeIds.has(nodeId)) return 1;
-  return 2;
-}
-
-function processRailConnectorTone(map: SidecarProcessMap, left: ProcessRailNode, right: ProcessRailNode): SidecarProcessTone {
-  const edge = map.edges.find((candidate) =>
-    (candidate.from === left.id && candidate.to === right.id) ||
-    (candidate.from === right.id && candidate.to === left.id),
-  );
-  if (edge) return edge.tone;
-  if (left.tone === 'blocked' || right.tone === 'blocked') return 'blocked';
-  if (left.tone === 'active' || right.tone === 'active') return 'active';
-  if (left.tone === 'pending' || right.tone === 'pending') return 'pending';
-  return 'converged';
-}
-
-function processRailConnectorEmphasis(
-  leftId: string,
-  rightId: string,
-  selectedNodeIds: Set<string>,
-  relatedNodeIds: Set<string>,
-) {
-  if (selectedNodeIds.has(leftId) || selectedNodeIds.has(rightId)) return 'selected';
-  if (relatedNodeIds.has(leftId) || relatedNodeIds.has(rightId)) return 'related';
-  return selectedNodeIds.size > 0 ? 'muted' : null;
-}
-
-function ProcessOverlayCard({ overlay, selected = false, onSelect }: {
-  overlay: NonNullable<SidecarProcessProjection['traversalOverlays']>[number];
-  selected?: boolean;
-  onSelect?: () => void;
-}) {
-  return (
-    <article
-      className={`sidecar-process-overlay-card${selected ? ' is-selected' : ''}`}
-      role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      onClick={onSelect}
-      onKeyDown={(event) => handleCardKeySelect(event, onSelect)}
-    >
-      <header>
-        <div>
-          <span className="panel__eyebrow">graph overlay</span>
-          <strong>{overlay.name}</strong>
-        </div>
-        <div className="inline-pills">
-          <span className="status-chip default">{overlay.graphFunctionRefs.length} fn</span>
-          <span className="status-chip default">{overlay.graphVectorRefs.length} vec</span>
-        </div>
-      </header>
-      <p>{overlay.intent}</p>
-      <dl>
-        <div>
-          <dt>start</dt>
-          <dd>{overlay.defaultStartTarget || formatProcessList(overlay.publicStartTargets)}</dd>
-        </div>
-        <div>
-          <dt>terminal assets</dt>
-          <dd>{formatProcessList(overlay.terminalAssetTypes)}</dd>
-        </div>
-        <div>
-          <dt>predecessors</dt>
-          <dd>{formatProcessList(overlay.predecessorOverlayRefs)}</dd>
-        </div>
-        <div>
-          <dt>next</dt>
-          <dd>{formatProcessList(overlay.nextEligibleOverlayRefs)}</dd>
-        </div>
-      </dl>
-      <div className="sidecar-process-overlay-card__templates">
-        {overlay.assetTemplates.length ? overlay.assetTemplates.map((template) => (
-          <span key={template.templateRef || `${overlay.overlayRef}:${template.assetType}`} className="status-chip default">
-            {template.assetType}
-          </span>
-        )) : (
-          <span className="status-chip pending">no asset template</span>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function ProcessFunctionGroup({ title, count, children }: PropsWithChildrenLike<{ title: string; count: number }>) {
-  return (
-    <section className="sidecar-process-function-group" aria-label={title}>
-      <div className="requirements-explorer__section-heading">
-        <span className="panel__eyebrow">{title}</span>
-        <span className="status-chip default">{count}</span>
-      </div>
-      <div className="sidecar-process-function-group__list">{children}</div>
-    </section>
-  );
-}
-
-function ProcessFunctionCard({ item, selected = false, onSelect }: {
-  item: ProcessSimpleFunctionItem;
-  selected?: boolean;
-  onSelect?: () => void;
-}) {
-  return (
-    <article
-      className={`sidecar-process-function-card${selected ? ' is-selected' : ''}`}
-      role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      onClick={onSelect}
-      onKeyDown={(event) => handleCardKeySelect(event, onSelect)}
-    >
-      <header>
-        <span className="panel__eyebrow">{item.eyebrow}</span>
-        <strong>{item.title}</strong>
-      </header>
-      <p>{item.summary}</p>
-      <dl>
-        {item.meta.map(([label, value]) => (
-          <div key={`${item.id}:${label}`}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </article>
-  );
-}
-
-function ProcessAssetCard({ asset, selected = false, onSelect }: {
-  asset: ReturnType<typeof processAssetRelationships>[number];
-  selected?: boolean;
-  onSelect?: () => void;
-}) {
-  return (
-    <article
-      className={`sidecar-process-asset-card${selected ? ' is-selected' : ''}`}
-      role={onSelect ? 'button' : undefined}
-      tabIndex={onSelect ? 0 : undefined}
-      onClick={onSelect}
-      onKeyDown={(event) => handleCardKeySelect(event, onSelect)}
-    >
-      <header>
-        <span className="panel__eyebrow">asset</span>
-        <strong>{asset.name}</strong>
-      </header>
-      <div className="sidecar-process-asset-card__relations">
-        <ProcessRelationList label="Produced by" names={asset.producers} emptyLabel="No producer in catalog" />
-        <ProcessRelationList label="Consumed by" names={asset.consumers} emptyLabel="No consumer in catalog" />
-      </div>
-    </article>
-  );
-}
-
-function handleCardKeySelect(event: KeyboardEvent<HTMLElement>, onSelect?: () => void) {
-  if (!onSelect) return;
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  event.preventDefault();
-  onSelect();
-}
-
-function ProcessRelationList({ label, names, emptyLabel }: {
-  label: string;
-  names: string[];
-  emptyLabel: string;
-}) {
-  return (
-    <div className="sidecar-process-relation-list">
-      <span className="panel__eyebrow">{label}</span>
-      <div className="inline-pills">
-        {names.length ? names.map((name) => (
-          <span key={`${label}:${name}`} className="status-chip default">{name}</span>
-        )) : (
-          <span className="status-chip pending">{emptyLabel}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatProcessList(values: string[], emptyLabel = '-') {
-  return values.length ? values.join(', ') : emptyLabel;
-}
-
-function processFunctionItems(catalog: NonNullable<SidecarProcessProjection['catalog']>): ProcessSimpleFunctionItem[] {
-  return [
-    ...catalog.executives.map((fn): ProcessSimpleFunctionItem => ({
-      id: processSimpleFunctionId('executive', fn.name),
-      name: fn.name,
-      eyebrow: 'executive',
-      title: fn.name,
-      summary: fn.intent,
-      source: 'executive',
-      executive: fn,
-      meta: [
-        ['steps', fn.steps.length ? fn.steps.join(' -> ') : '-'],
-        ['outputs', fn.outputs.join(', ') || '-'],
-      ],
-    })),
-    ...catalog.leaves.map((leaf): ProcessSimpleFunctionItem => ({
-      id: processSimpleFunctionId('leaf', leaf.name),
-      name: leaf.name,
-      eyebrow: leaf.catalog,
-      title: leaf.name,
-      summary: leaf.intent,
-      source: 'leaf',
-      leaf,
-      meta: [
-        ['inputs', leaf.inputs.join(', ') || '-'],
-        ['outputs', leaf.outputs.join(', ') || '-'],
-        ['modulation', leaf.traversalModulationStrategy],
-      ],
-    })),
-    ...catalog.library.map((fn): ProcessSimpleFunctionItem => ({
-      id: processSimpleFunctionId('library', fn.name),
-      name: fn.name,
-      eyebrow: 'library',
-      title: fn.name,
-      summary: fn.intent,
-      source: 'library',
-      library: fn,
-      meta: [
-        ['contract', fn.stableOuterContract],
-        ['compute', fn.computeOrder.join(' -> ') || '-'],
-      ],
-    })),
-  ];
-}
-
-function processSimpleFunctionId(kind: ProcessSimpleFunctionItem['source'], name: string) {
-  return `${kind}:${name}`;
-}
-
-function processAssetRelationships(catalog: NonNullable<SidecarProcessProjection['catalog']>) {
-  const assets = new Map<string, { name: string; producers: Set<string>; consumers: Set<string> }>();
-  const ensureAsset = (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return null;
-    const existing = assets.get(trimmed);
-    if (existing) return existing;
-    const next = { name: trimmed, producers: new Set<string>(), consumers: new Set<string>() };
-    assets.set(trimmed, next);
-    return next;
-  };
-  for (const leaf of catalog.leaves) {
-    for (const input of leaf.inputs) ensureAsset(input)?.consumers.add(leaf.name);
-    for (const output of leaf.outputs) ensureAsset(output)?.producers.add(leaf.name);
-  }
-  return Array.from(assets.values())
-    .map((asset) => ({
-      name: asset.name,
-      producers: Array.from(asset.producers).sort((a, b) => a.localeCompare(b)),
-      consumers: Array.from(asset.consumers).sort((a, b) => a.localeCompare(b)),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function buildSimpleOverlayGraph(overlay: NonNullable<SidecarProcessProjection['traversalOverlays']>[number]): SidecarProcessMap {
-  const rowByColumn = new Map<number, number>();
-  const nodes = overlay.graphFunctionRefs.map((ref, index): SidecarProcessMap['nodes'][number] => {
-    const stage = processFunctionStage(ref);
-    const row = rowByColumn.get(stage.column) ?? 0;
-    rowByColumn.set(stage.column, row + 1);
-    return {
-      id: processGraphNodeId('overlay-function', ref, index),
-      label: ref,
-      summary: `${overlay.name}: ${ref}`,
-      kind: overlay.defaultStartTarget === ref ? 'start_target' : 'graph_function',
-      tone: overlay.terminalGraphFunctionRefs.includes(ref) ? 'converged' : overlay.defaultStartTarget === ref ? 'pending' : 'active',
-      lane: stage.label,
-      column: stage.column,
-      row,
-      recordIds: [
-        processGraphRecordId('overlay-function', ref),
-        processGraphRecordId('function', ref),
-      ],
-    };
-  });
-  const nodeByRef = new Map(overlay.graphFunctionRefs.map((ref, index) => [ref, nodes[index]]));
-  const edges: SidecarProcessMap['edges'] = [];
-  overlay.graphFunctionRefs.slice(0, -1).forEach((fromRef, index) => {
-    const toRef = overlay.graphFunctionRefs[index + 1];
-    const from = nodeByRef.get(fromRef);
-    const to = nodeByRef.get(toRef);
-    if (!from || !to) return;
-    edges.push({
-      id: `edge:${from.id}:${to.id}`,
-      from: from.id,
-      to: to.id,
-      label: overlay.graphVectorRefs[index] ?? 'graph vector',
-      tone: 'active',
-      recordIds: [processGraphRecordId('overlay', overlay.overlayRef)],
-    });
-  });
-  return {
-    id: 'process_flow',
-    label: overlay.name,
-    summary: overlay.intent,
-    nodes,
-    edges,
-    stats: [
-      { label: 'functions', value: String(overlay.graphFunctionRefs.length), tone: 'active' },
-      { label: 'vectors', value: String(overlay.graphVectorRefs.length), tone: 'pending' },
-      { label: 'terminal assets', value: String(overlay.terminalAssetTypes.length), tone: 'converged' },
-    ],
-  };
-}
-
-function buildSimpleFunctionGraph(
-  item: ProcessSimpleFunctionItem,
-  catalog: NonNullable<SidecarProcessProjection['catalog']>,
-): SidecarProcessMap {
-  if (item.executive) {
-    return buildSimpleExecutiveGraph(item, item.executive);
-  }
-  if (item.library) {
-    return buildSimpleLibraryGraph(item, item.library);
-  }
-  const leaf = item.leaf;
-  if (!leaf) return emptySimpleProcessMap(item.title, item.summary);
-  const nodes: SidecarProcessMap['nodes'] = [];
-  const edges: SidecarProcessMap['edges'] = [];
-  const selectedNodeId = processGraphNodeId('function', leaf.name);
-  const producersByAsset = new Map<string, string[]>();
-  const consumersByAsset = new Map<string, string[]>();
-  for (const candidate of catalog.leaves) {
-    for (const output of candidate.outputs) {
-      if (!producersByAsset.has(output)) producersByAsset.set(output, []);
-      producersByAsset.get(output)!.push(candidate.name);
-    }
-    for (const input of candidate.inputs) {
-      if (!consumersByAsset.has(input)) consumersByAsset.set(input, []);
-      consumersByAsset.get(input)!.push(candidate.name);
-    }
-  }
-  nodes.push(processGraphNode({
-    id: selectedNodeId,
-    label: leaf.name,
-    summary: leaf.intent,
-    kind: 'graph_function',
-    tone: 'active',
-    lane: processFunctionStage(leaf.name).label,
-    column: 2,
-    row: Math.max(0, Math.floor(Math.max(leaf.inputs.length, leaf.outputs.length) / 2)),
-    recordIds: [processGraphRecordId('function', leaf.name)],
-  }));
-  leaf.inputs.forEach((asset, row) => {
-    const assetNodeId = processGraphNodeId('asset', asset, row);
-    nodes.push(processGraphNode({
-      id: assetNodeId,
-      label: asset,
-      summary: `Input asset for ${leaf.name}`,
-      kind: 'asset',
-      tone: 'pending',
-      lane: 'INPUT',
-      column: 1,
-      row,
-      recordIds: [processGraphRecordId('asset', asset)],
-    }));
-    edges.push(processGraphEdge(assetNodeId, selectedNodeId, 'input', processGraphRecordId('asset', asset)));
-    const producer = (producersByAsset.get(asset) ?? []).find((name) => name !== leaf.name);
-    if (producer) {
-      const producerNodeId = processGraphNodeId('function', producer, row);
-      nodes.push(processGraphNode({
-        id: producerNodeId,
-        label: producer,
-        summary: `Produces ${asset}`,
-        kind: 'graph_function',
-        tone: 'converged',
-        lane: processFunctionStage(producer).label,
-        column: 0,
-        row,
-        recordIds: [processGraphRecordId('function', producer)],
-      }));
-      edges.push(processGraphEdge(producerNodeId, assetNodeId, 'produces', processGraphRecordId('function', producer)));
-    }
-  });
-  leaf.outputs.forEach((asset, row) => {
-    const assetNodeId = processGraphNodeId('asset', asset, row + leaf.inputs.length);
-    nodes.push(processGraphNode({
-      id: assetNodeId,
-      label: asset,
-      summary: `Output asset for ${leaf.name}`,
-      kind: 'asset',
-      tone: 'converged',
-      lane: 'OUTPUT',
-      column: 3,
-      row,
-      recordIds: [processGraphRecordId('asset', asset)],
-    }));
-    edges.push(processGraphEdge(selectedNodeId, assetNodeId, 'output', processGraphRecordId('asset', asset)));
-    const consumer = (consumersByAsset.get(asset) ?? []).find((name) => name !== leaf.name);
-    if (consumer) {
-      const consumerNodeId = processGraphNodeId('function', consumer, row);
-      nodes.push(processGraphNode({
-        id: consumerNodeId,
-        label: consumer,
-        summary: `Consumes ${asset}`,
-        kind: 'graph_function',
-        tone: 'active',
-        lane: processFunctionStage(consumer).label,
-        column: 4,
-        row,
-        recordIds: [processGraphRecordId('function', consumer)],
-      }));
-      edges.push(processGraphEdge(assetNodeId, consumerNodeId, 'consumed by', processGraphRecordId('function', consumer)));
-    }
-  });
-  return {
-    id: 'process_flow',
-    label: item.title,
-    summary: item.summary,
-    nodes: dedupeProcessGraphNodes(nodes),
-    edges: dedupeProcessGraphEdges(edges),
-    stats: [
-      { label: 'inputs', value: String(leaf.inputs.length), tone: 'pending' },
-      { label: 'outputs', value: String(leaf.outputs.length), tone: 'converged' },
-      { label: 'requirements', value: String(leaf.requirementRefs.length), tone: 'active' },
-    ],
-  };
-}
-
-function buildSimpleExecutiveGraph(item: ProcessSimpleFunctionItem, fn: NonNullable<ProcessSimpleFunctionItem['executive']>): SidecarProcessMap {
-  const nodes: SidecarProcessMap['nodes'] = [
-    processGraphNode({
-      id: processGraphNodeId('function', fn.name),
-      label: fn.name,
-      summary: fn.intent,
-      kind: 'start_target',
-      tone: 'active',
-      lane: 'EXECUTIVE',
-      column: 0,
-      row: 0,
-      recordIds: [processGraphRecordId('function', fn.name)],
-    }),
-  ];
-  const edges: SidecarProcessMap['edges'] = [];
-  fn.steps.forEach((step, index) => {
-    const nodeId = processGraphNodeId('function', step, index);
-    nodes.push(processGraphNode({
-      id: nodeId,
-      label: step,
-      summary: `${fn.name} step ${index + 1}`,
-      kind: 'graph_function',
-      tone: 'pending',
-      lane: processFunctionStage(step).label,
-      column: index + 1,
-      row: 0,
-      recordIds: [processGraphRecordId('function', step)],
-    }));
-    const previous = index === 0 ? processGraphNodeId('function', fn.name) : processGraphNodeId('function', fn.steps[index - 1], index - 1);
-    edges.push(processGraphEdge(previous, nodeId, 'step', processGraphRecordId('function', step)));
-  });
-  return {
-    id: 'process_flow',
-    label: item.title,
-    summary: item.summary,
-    nodes,
-    edges,
-    stats: [
-      { label: 'steps', value: String(fn.steps.length), tone: 'active' },
-      { label: 'outputs', value: String(fn.outputs.length), tone: 'converged' },
-    ],
-  };
-}
-
-function buildSimpleLibraryGraph(item: ProcessSimpleFunctionItem, fn: NonNullable<ProcessSimpleFunctionItem['library']>): SidecarProcessMap {
-  const nodes: SidecarProcessMap['nodes'] = [];
-  const edges: SidecarProcessMap['edges'] = [];
-  fn.computeOrder.forEach((step, index) => {
-    const nodeId = processGraphNodeId('function', step, index);
-    nodes.push(processGraphNode({
-      id: nodeId,
-      label: step,
-      summary: `${fn.name} compute order ${index + 1}`,
-      kind: 'graph_function',
-      tone: 'pending',
-      lane: processFunctionStage(step).label,
-      column: index,
-      row: 0,
-      recordIds: [processGraphRecordId('function', step)],
-    }));
-    if (index > 0) {
-      edges.push(processGraphEdge(processGraphNodeId('function', fn.computeOrder[index - 1], index - 1), nodeId, 'compute', processGraphRecordId('function', step)));
-    }
-  });
-  const libraryNodeId = processGraphNodeId('function', fn.name);
-  nodes.push(processGraphNode({
-    id: libraryNodeId,
-    label: fn.name,
-    summary: fn.intent,
-    kind: 'graph_function',
-    tone: 'active',
-    lane: 'LIBRARY',
-    column: fn.computeOrder.length,
-    row: 0,
-    recordIds: [processGraphRecordId('function', fn.name)],
-  }));
-  if (fn.computeOrder.length > 0) {
-    edges.push(processGraphEdge(processGraphNodeId('function', fn.computeOrder.at(-1)!, fn.computeOrder.length - 1), libraryNodeId, 'realizes', processGraphRecordId('function', fn.name)));
-  }
-  return {
-    id: 'process_flow',
-    label: item.title,
-    summary: item.summary,
-    nodes,
-    edges,
-    stats: [
-      { label: 'compute', value: String(fn.computeOrder.length), tone: 'active' },
-      { label: 'domain truth', value: String(fn.sdlcOwnedDomainTruth.length), tone: 'converged' },
-    ],
-  };
-}
-
-function buildSimpleAssetGraph(
-  asset: ReturnType<typeof processAssetRelationships>[number],
-  catalog: NonNullable<SidecarProcessProjection['catalog']>,
-): SidecarProcessMap {
-  const nodes: SidecarProcessMap['nodes'] = [
-    processGraphNode({
-      id: processGraphNodeId('asset', asset.name),
-      label: asset.name,
-      summary: 'Leaf asset relationship focus.',
-      kind: 'asset',
-      tone: 'active',
-      lane: 'ASSET',
-      column: 1,
-      row: Math.max(0, Math.floor(Math.max(asset.producers.length, asset.consumers.length) / 2)),
-      recordIds: [processGraphRecordId('asset', asset.name)],
-    }),
-  ];
-  const edges: SidecarProcessMap['edges'] = [];
-  asset.producers.forEach((producer, row) => {
-    const leaf = catalog.leaves.find((candidate) => candidate.name === producer);
-    const nodeId = processGraphNodeId('function', producer, row);
-    nodes.push(processGraphNode({
-      id: nodeId,
-      label: producer,
-      summary: leaf?.intent ?? `Produces ${asset.name}`,
-      kind: 'graph_function',
-      tone: 'converged',
-      lane: processFunctionStage(producer).label,
-      column: 0,
-      row,
-      recordIds: [processGraphRecordId('function', producer)],
-    }));
-    edges.push(processGraphEdge(nodeId, processGraphNodeId('asset', asset.name), 'produces', processGraphRecordId('function', producer)));
-  });
-  asset.consumers.forEach((consumer, row) => {
-    const leaf = catalog.leaves.find((candidate) => candidate.name === consumer);
-    const nodeId = processGraphNodeId('function', consumer, row);
-    nodes.push(processGraphNode({
-      id: nodeId,
-      label: consumer,
-      summary: leaf?.intent ?? `Consumes ${asset.name}`,
-      kind: 'graph_function',
-      tone: 'pending',
-      lane: processFunctionStage(consumer).label,
-      column: 2,
-      row,
-      recordIds: [processGraphRecordId('function', consumer)],
-    }));
-    edges.push(processGraphEdge(processGraphNodeId('asset', asset.name), nodeId, 'consumes', processGraphRecordId('function', consumer)));
-  });
-  return {
-    id: 'process_flow',
-    label: asset.name,
-    summary: `Produced by ${asset.producers.length} function(s); consumed by ${asset.consumers.length} function(s).`,
-    nodes: dedupeProcessGraphNodes(nodes),
-    edges: dedupeProcessGraphEdges(edges),
-    stats: [
-      { label: 'producers', value: String(asset.producers.length), tone: 'converged' },
-      { label: 'consumers', value: String(asset.consumers.length), tone: 'pending' },
-    ],
-  };
-}
-
-function emptySimpleProcessMap(label: string, summary: string): SidecarProcessMap {
-  return {
-    id: 'process_flow',
-    label,
-    summary,
-    nodes: [],
-    edges: [],
-    stats: [],
-  };
-}
-
-function processGraphNode(input: SidecarProcessMap['nodes'][number]): SidecarProcessMap['nodes'][number] {
-  return input;
-}
-
-function processGraphEdge(from: string, to: string, label: string, recordId: string): SidecarProcessMap['edges'][number] {
-  return {
-    id: `edge:${from}:${to}:${label}`,
-    from,
-    to,
-    label,
-    tone: 'active',
-    recordIds: [recordId],
-  };
-}
-
-function dedupeProcessGraphNodes(nodes: SidecarProcessMap['nodes']): SidecarProcessMap['nodes'] {
-  const seen = new Set<string>();
-  return nodes.filter((node) => {
-    if (seen.has(node.id)) return false;
-    seen.add(node.id);
-    return true;
-  });
-}
-
-function dedupeProcessGraphEdges(edges: SidecarProcessMap['edges']): SidecarProcessMap['edges'] {
-  const seen = new Set<string>();
-  return edges.filter((edge) => {
-    if (seen.has(edge.id)) return false;
-    seen.add(edge.id);
-    return true;
-  });
-}
-
-function processMapRecordIds(map: SidecarProcessMap) {
-  return Array.from(new Set([
-    ...map.nodes.flatMap((node) => node.recordIds),
-    ...map.edges.flatMap((edge) => edge.recordIds),
-  ]));
-}
-
-function processMapHasRecordId(map: SidecarProcessMap, recordId: string) {
-  return map.nodes.some((node) => node.recordIds.includes(recordId)) ||
-    map.edges.some((edge) => edge.recordIds.includes(recordId));
-}
-
-function processGraphNodeId(kind: string, value: string, index?: number) {
-  return `${kind}:${index ?? 'main'}:${safeProcessGraphId(value)}`;
-}
-
-function processGraphRecordId(kind: string, value: string) {
-  return `${kind}:${value}`;
-}
-
-function parseProcessGraphRecordId(id: string) {
-  const separator = id.indexOf(':');
-  if (separator < 0) return null;
-  return {
-    kind: id.slice(0, separator),
-    value: id.slice(separator + 1),
-  };
-}
-
-function safeProcessGraphId(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'node';
-}
-
-function processFunctionStage(name: string): { column: number; label: string } {
-  const lower = name.toLowerCase();
-  if (/(ingress|conform|obligation|carry|gap|governance)/.test(lower)) return { column: 6, label: 'GOVERNANCE LOOP' };
-  if (/(runtime|operational|retrofit)/.test(lower)) return { column: 5, label: 'RUNTIME' };
-  if (/(release|deploy|deployment)/.test(lower)) return { column: 4, label: 'RELEASE / OPS' };
-  if (/(test|uat|qualify|testcase)/.test(lower)) return { column: 3, label: 'TEST' };
-  if (/(materialize|module|component|code|build|adr)/.test(lower)) return { column: 2, label: 'BUILD' };
-  if (/(design|scenario|feature|solution|architecture|implementation)/.test(lower)) return { column: 1, label: 'DESIGN' };
-  if (/(bootstrap|intent|product|goal|requirement|ambiguity|capability)/.test(lower)) return { column: 0, label: 'BOOTSTRAP' };
-  return { column: 2, label: 'BUILD' };
-}
-
-
-type SidecarLiveAnalysis = NonNullable<SidecarProcessProjection['liveAnalysis']>;
-type SidecarLiveAnalysisAttempt = SidecarLiveAnalysis['attempts'][number];
-type SidecarLiveAnalysisDiagnostic = SidecarLiveAnalysis['diagnostics'][number];
-type SidecarLiveAnalysisEvent = SidecarLiveAnalysisAttempt['detail']['events'][number];
-type SidecarLiveAnalysisCliTranscript = SidecarLiveAnalysisAttempt['detail']['cliTranscript'];
-type SidecarLiveAnalysisCliTranscriptInput = Partial<SidecarLiveAnalysisCliTranscript> | null | undefined;
-type SidecarLiveAnalysisStageProcess = NonNullable<SidecarLiveAnalysisAttempt['detail']['stageProcesses']>[number];
-type SidecarLiveAnalysisStageProcessInput = Partial<SidecarLiveAnalysisStageProcess> | null | undefined;
-type SidecarLiveAnalysisEventSourceFilter = 'all' | SidecarLiveAnalysisEvent['sourceKind'];
-type SidecarSdlcWorkspaceRun = NonNullable<SidecarProcessProjection['workspaceRun']>;
-type SidecarSdlcOperatorRun = SidecarSdlcWorkspaceRun['operatorRuns'][number];
-type ProcessAttemptTerminalTarget =
-  | { kind: 'session'; session: SessionRecord; mode: 'active' | 'last-active' }
-  | { kind: 'surface'; path: string; label: string; mode: 'tail' };
-
-function isLiveTerminalSession(session: SessionRecord) {
-  return session.status === 'running' || session.status === 'live';
-}
-
-function terminalSessionTimestamp(value: unknown) {
-  if (typeof value !== 'string' || !value.trim()) return 0;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? time : 0;
-}
-
-function terminalSessionActivityTime(session: SessionRecord) {
-  const raw = session.raw ?? {};
-  const terminalSize = raw.terminalSize && typeof raw.terminalSize === 'object'
-    ? raw.terminalSize as Record<string, unknown>
-    : null;
-  const candidates = [
-    raw.lastOutputAt,
-    raw.updatedAt,
-    raw.updated_at,
-    raw.lastResizeAt,
-    terminalSize?.updatedAt,
-    raw.createdAt,
-    session.started_at,
-  ];
-  return candidates.reduce((latest, candidate) => Math.max(latest, terminalSessionTimestamp(candidate)), 0);
-}
-
-function latestTerminalSession(sessions: SessionRecord[], preferredSessionId: string | null = null) {
-  return sessions.reduce<SessionRecord | null>((latest, session) => {
-    if (!latest) return session;
-    const latestTime = terminalSessionActivityTime(latest);
-    const sessionTime = terminalSessionActivityTime(session);
-    if (sessionTime > latestTime) return session;
-    if (sessionTime === latestTime && preferredSessionId && session.id === preferredSessionId) return session;
-    return latest;
-  }, null);
-}
-
-function projectedTerminalSessionIds(
-  attempt: SidecarLiveAnalysisAttempt,
-  operatorRun: SidecarSdlcOperatorRun | null,
-) {
-  return [
-    ...(attempt.detail.stageProcesses ?? []).map((process) => process.terminalSessionId),
-    ...(operatorRun?.stages.flatMap((stage) => stage.processInvocations.map((process) => process.terminalSessionId)) ?? []),
-  ].filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
-}
-
-function resolveAttemptTailSurface(
-  attempt: SidecarLiveAnalysisAttempt,
-  operatorRun: SidecarSdlcOperatorRun | null,
-) {
-  const stageTranscriptSurfaces = [...(attempt.detail.stageProcesses ?? [])]
-    .reverse()
-    .flatMap((process) => process.transcriptSurfaces ?? [])
-    .filter((transcript) => typeof transcript.sourcePath === 'string' && transcript.sourcePath.trim().length > 0);
-  const primaryTranscript = stageTranscriptSurfaces.find((transcript) => isTailFollowSurfacePath(transcript.sourcePath as string))
-    ?? stageTranscriptSurfaces[0]
-    ?? null;
-  if (primaryTranscript?.sourcePath) {
-    return {
-      path: primaryTranscript.sourcePath,
-      label: primaryTranscript.label,
-    };
-  }
-  const processInvocationPath = operatorRun?.stages
-    .flatMap((stage) => stage.processInvocations)
-    .reverse()
-    .map((process) => process.terminalTranscriptPath ?? process.stdoutPath ?? process.stderrPath)
-    .find((path): path is string => typeof path === 'string' && path.trim().length > 0);
-  return processInvocationPath
-    ? { path: processInvocationPath, label: 'stage process terminal tail' }
-    : null;
-}
-
-function resolveActiveProcessTerminalSession(
-  sessions: SessionRecord[],
-  activeTerminalSessionId: string | null,
-): Extract<ProcessAttemptTerminalTarget, { kind: 'session' }> | null {
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  const activeSession = activeTerminalSessionId ? byId.get(activeTerminalSessionId) ?? null : null;
-  if (activeSession && isLiveTerminalSession(activeSession)) {
-    return { kind: 'session', session: activeSession, mode: 'active' };
-  }
-  const latestLiveSession = latestTerminalSession(sessions.filter(isLiveTerminalSession), activeTerminalSessionId);
-  if (latestLiveSession) {
-    return { kind: 'session', session: latestLiveSession, mode: 'active' };
-  }
-  const latestSession = latestTerminalSession(sessions, activeTerminalSessionId);
-  return latestSession ? { kind: 'session', session: latestSession, mode: 'last-active' } : null;
-}
-
-function resolveAttemptTerminalTarget(
-  attempt: SidecarLiveAnalysisAttempt,
-  operatorRun: SidecarSdlcOperatorRun | null,
-  sessions: SessionRecord[],
-  activeTerminalSessionId: string | null,
-): ProcessAttemptTerminalTarget | null {
-  const byId = new Map(sessions.map((session) => [session.id, session]));
-  const projectedSessions = projectedTerminalSessionIds(attempt, operatorRun)
-    .map((id) => byId.get(id) ?? null)
-    .filter((session): session is SessionRecord => Boolean(session));
-  const projectedLiveSession = latestTerminalSession(projectedSessions.filter(isLiveTerminalSession), activeTerminalSessionId);
-  if (projectedLiveSession) {
-    return { kind: 'session', session: projectedLiveSession, mode: 'active' };
-  }
-  const projectedSession = latestTerminalSession(projectedSessions, activeTerminalSessionId);
-  if (projectedSession) {
-    return { kind: 'session', session: projectedSession, mode: 'last-active' };
-  }
-  const surface = resolveAttemptTailSurface(attempt, operatorRun);
-  if (surface) {
-    return { kind: 'surface', path: surface.path, label: surface.label, mode: 'tail' };
-  }
-  const activeSession = resolveActiveProcessTerminalSession(sessions, activeTerminalSessionId);
-  return activeSession;
-}
-
-const LIVE_ASSURANCE_LEDGER_DESCRIPTIONS: Record<string, { summary: string; detail: string }> = Object.freeze({
-  materialization: {
-    summary: 'Checks that declared product files were produced with valid paths, roles, and file evidence.',
-    detail: 'Measures the materialization contract: output paths stay inside the allowed root, files exist, byte or digest checks match, and product roles line up with the handoff.',
-  },
-  shallow_realization: {
-    summary: 'Rejects placeholder, stub, constant-success, identity-only, or trace-only output.',
-    detail: 'Measures whether the produced implementation is more than a shell. It looks for placeholders, constant success logic, identity-only transforms, and tests that only prove a trace exists.',
-  },
-  semantic_convergence: {
-    summary: 'Checks that candidate evidence covers the target meaning, not just the target shape.',
-    detail: 'Measures semantic coverage against the declared target. Missing, restated, or contradicted semantic claims keep the same edge open or force repricing.',
-  },
-  component_depth: {
-    summary: 'Checks component-depth register rows against observed component and framework truth.',
-    detail: 'Measures whether admitted component rows have stable ids, file paths, public boundaries, requirement allocation, source refs, and required materialized files for the target surface.',
-  },
-  requirement_fulfillment: {
-    summary: 'Checks that admitted requirements have closure evidence for this edge authority.',
-    detail: 'Measures requirement authority coverage from the closure register and lineage evidence. It can pass even when a produced file is still shallow if requirement evidence is otherwise fulfilled.',
-  },
-  obligation_carry: {
-    summary: 'Checks prior retry obligations were closed, carried forward, or repriced.',
-    detail: 'Measures continuity across retries. Prior gap pressure cannot disappear silently; each prior obligation must be closed, remain carried, or be repriced.',
-  },
-  ambiguity: {
-    summary: 'Checks unresolved ambiguity is typed as re-entry pressure instead of hidden in prose.',
-    detail: 'Measures ambiguity handling over the edge contract. Ambiguity must become explicit state with lawful retry, escalation, or repricing pressure.',
-  },
-  capability: {
-    summary: 'Checks produced evidence covers the required capability inventory.',
-    detail: 'Measures whether generated product evidence covers tenant or project capability contracts, especially for code surfaces with declared capability requirements.',
-  },
-  design_completeness: {
-    summary: 'Checks design rows are complete enough to support downstream implementation or tests.',
-    detail: 'Measures whether design evidence has the structural completeness needed by later materialization and execution edges.',
-  },
-});
-
-function liveAssuranceLedgerDescription(dimension: string) {
-  return LIVE_ASSURANCE_LEDGER_DESCRIPTIONS[dimension] ?? {
-    summary: 'Checks one deterministic assurance dimension in the archived traversal fold.',
-    detail: `Measures archived assurance dimension ${dimension}. The verdict contributes to the folded next lawful action.`,
-  };
-}
-
-function ProcessLiveRowGroup({ widgetNames, ariaLabel, collapsed, onCollapsedChange, meta, children, className }: {
-  widgetNames: readonly string[];
-  ariaLabel: string;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  meta: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  const rowLabel = widgetNames.join(' / ');
-  return (
-    <section className={`sidecar-live-view__detail-row-group${collapsed ? ' is-collapsed' : ''}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
-      <button
-        type="button"
-        className="sidecar-live-view__row-collapse-toggle"
-        onClick={() => onCollapsedChange(!collapsed)}
-        aria-expanded={!collapsed}
-        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${rowLabel} row`}
-        title={`${collapsed ? 'Expand' : 'Collapse'} ${rowLabel} row`}
-      >
-        <span className="panel__eyebrow sidecar-live-view__row-label">
-          {widgetNames.map((widgetName, index) => (
-            <Fragment key={widgetName}>
-              {index > 0 ? <span className="sidecar-live-view__row-label-separator" aria-hidden="true"> / </span> : null}
-              <span className="sidecar-live-view__row-label-item">{widgetName}</span>
-            </Fragment>
-          ))}
-        </span>
-        <span className="sidecar-live-view__row-collapse-meta">
-          {meta}
-          <span className="sidecar-live-view__row-collapse-symbol" aria-hidden="true">{collapsed ? '⊞' : '⊟'}</span>
-        </span>
-      </button>
-      {!collapsed ? children : null}
-    </section>
-  );
-}
-
-function ProcessLiveViewPanel({
-  analysis,
-  workspaceRun,
-  projectRoot,
-  onOpenTracePath,
-  onRefresh,
-  refreshing,
-  terminalSessions,
-  activeTerminalSessionId,
-  onOpenTerminalSession,
-  liveActiveRunRowCollapsed,
-  onLiveActiveRunRowCollapsedChange,
-  liveInternalRowCollapsed,
-  onLiveInternalRowCollapsedChange,
-  liveTranscriptCollapsed,
-  onLiveTranscriptCollapsedChange,
-  liveDetailRowCollapsed,
-  onLiveDetailRowCollapsedChange,
-  liveGapRowCollapsed,
-  onLiveGapRowCollapsedChange,
-  liveEventViewerCollapsed,
-  onLiveEventViewerCollapsedChange,
-  onLiveAllCollapsedChange,
-}: {
-  analysis: SidecarProcessProjection['liveAnalysis'] | null | undefined;
-  workspaceRun: SidecarProcessProjection['workspaceRun'] | null | undefined;
-  projectRoot: string | null;
-  onOpenTracePath: (absolutePath: string) => void;
-  onRefresh: () => void;
-  refreshing: boolean;
-  terminalSessions: SessionRecord[];
-  activeTerminalSessionId: string | null;
-  onOpenTerminalSession: (sessionId: string) => void;
-  liveActiveRunRowCollapsed: boolean;
-  onLiveActiveRunRowCollapsedChange: (collapsed: boolean) => void;
-  liveInternalRowCollapsed: boolean;
-  onLiveInternalRowCollapsedChange: (collapsed: boolean) => void;
-  liveTranscriptCollapsed: boolean;
-  onLiveTranscriptCollapsedChange: (collapsed: boolean) => void;
-  liveDetailRowCollapsed: boolean;
-  onLiveDetailRowCollapsedChange: (collapsed: boolean) => void;
-  liveGapRowCollapsed: boolean;
-  onLiveGapRowCollapsedChange: (collapsed: boolean) => void;
-  liveEventViewerCollapsed: boolean;
-  onLiveEventViewerCollapsedChange: (collapsed: boolean) => void;
-  onLiveAllCollapsedChange: (collapsed: boolean) => void;
-}) {
-  const [selectedAttemptRef, setSelectedAttemptRef] = useState<string | null>(null);
-  if (!analysis && !workspaceRun) {
-    return <div className="sidecar-inspector__empty">No live odd_sdlc runtime projection is available for this Project.</div>;
-  }
-  const attempts = analysis?.attempts ?? [];
-  const liveness = analysis?.liveness ?? null;
-  const activeAttemptRef = liveness?.activeOperatorRunRef ?? null;
-  const latestAttempt = attempts[attempts.length - 1] ?? null;
-  const selectedAttempt =
-    attempts.find((attempt) => attempt.operatorRunRef === selectedAttemptRef) ??
-    attempts.find((attempt) => activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef) ??
-    latestAttempt;
-  const selectedOperatorRun = selectedAttempt
-    ? findWorkspaceOperatorRunForAttempt(workspaceRun ?? null, selectedAttempt)
-    : workspaceRun?.operatorRuns.at(-1) ?? null;
-  const visibleDiagnostics = analysis?.diagnostics.slice(0, 6) ?? [];
-  const activeRunTone = liveness ? liveAnalysisTone(liveness.productiveSignal) : workspaceRun?.activeFeedbackLoopCount ? 'active' : 'pending';
-  const diagnosticsTone = (analysis?.diagnostics ?? []).some((diagnostic) => diagnostic.severity === 'error')
-    ? 'blocked'
-    : (analysis?.diagnostics.length ?? 0) > 0
-      ? 'pending'
-      : 'active';
-  const summaryElapsedMs =
-    workspaceRun?.stageProcessElapsedMs ??
-    analysis?.telemetry.totalWorkerElapsedMs ??
-    null;
-  const summaryElapsedLabel = workspaceRun ? 'stage time' : 'worker time';
-
-  return (
-    <div className="sidecar-live-view" aria-label="Live analyze-run view">
-      <header className="sidecar-live-view__header">
-        <div>
-          <span className="panel__eyebrow">Live View</span>
-          <h3>{analysis?.telemetry.scenarioName ?? 'odd_sdlc runtime projection'}</h3>
-          <p>{analysis ? `${analysis.telemetry.inspectedKind} · ${analysis.telemetry.profile} · ${analysis.telemetry.inspectedRoot}` : workspaceRun?.workspaceRoot ?? 'workspace runtime'}</p>
-        </div>
-        <div className="sidecar-live-view__actions">
-          <Pill kind={liveness ? liveAnalysisTone(liveness.productiveSignal) : workspaceRun?.activeFeedbackLoopCount ? 'active' : 'pending'}>
-            {liveness ? liveness.productiveSignal.replace(/_/g, ' ') : workspaceRun?.activeFeedbackLoopCount ? 'feedback loop' : 'runtime artifacts'}
-          </Pill>
-          {liveness?.activeOperatorRunPath ? (
-            <button
-              type="button"
-              className="status-chip active"
-              onClick={() => onOpenTracePath(liveness.activeOperatorRunPath as string)}
-            >
-              Active archive
-            </button>
-          ) : null}
-          <div className="sidecar-live-view__global-row-actions" aria-label="Process Navigator row visibility">
-            <button
-              type="button"
-              className="status-chip default sidecar-live-view__global-row-toggle"
-              onClick={() => onLiveAllCollapsedChange(true)}
-              aria-label="Collapse all Process Navigator rows"
-              title="Collapse all Process Navigator rows"
-            >
-              <span aria-hidden="true">⊟</span>
-            </button>
-            <button
-              type="button"
-              className="status-chip default sidecar-live-view__global-row-toggle"
-              onClick={() => onLiveAllCollapsedChange(false)}
-              aria-label="Expand all Process Navigator rows"
-              title="Expand all Process Navigator rows"
-            >
-              <span aria-hidden="true">⊞</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <div className="sidecar-live-view__stats" aria-label="Analyze-run summary">
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-          <strong>{workspaceRun?.operatorRunCount ?? analysis?.telemetry.operatorRunCount ?? 0}</strong>
-          <small>operator runs</small>
-        </span>
-        {workspaceRun ? (
-          <>
-            <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-              <strong>{workspaceRun.stageProcessCount}</strong>
-              <small>stage processes</small>
-            </span>
-            <span className="sidecar-process-map-stat">
-              <strong>{workspaceRun.transcriptSurfaceCount}</strong>
-              <small>transcript surfaces</small>
-            </span>
-          </>
-        ) : null}
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--blocked">
-          <strong>{workspaceRun?.activeFeedbackLoopCount ?? ((analysis?.telemetry.sameEdgeRetryCount ?? 0) + (analysis?.telemetry.blockedAttemptCount ?? 0))}</strong>
-          <small>feedback loops</small>
-        </span>
-        <span className="sidecar-process-map-stat sidecar-process-map-stat--converged">
-          <strong>{summaryElapsedMs === null ? '—' : formatDurationMs(summaryElapsedMs)}</strong>
-          <small>{summaryElapsedLabel}</small>
-        </span>
-        <span className="sidecar-process-map-stat">
-          <strong>{analysis ? formatBytes(analysis.telemetry.archiveBytes.totalBytes) : '—'}</strong>
-          <small>archive</small>
-        </span>
-        <span className="sidecar-process-map-stat">
-          <strong>{analysis?.telemetry.finalClosureDisposition ?? `${workspaceRun?.closeCount ?? 0} close`}</strong>
-          <small>final disposition</small>
-        </span>
-        <span className="sidecar-process-map-stat">
-          <strong title={analysis?.generatedAt ?? ''}>{analysis ? formatLiveRefreshTime(analysis.generatedAt) : '—'}</strong>
-          <small>last refresh</small>
-        </span>
-        <button
-          type="button"
-          className="sidecar-process-map-stat sidecar-live-view__refresh-button"
-          onClick={onRefresh}
-          disabled={refreshing}
-        >
-          <strong>{refreshing ? 'refreshing' : 'Refresh'}</strong>
-          <small>force refresh</small>
-        </button>
-      </div>
-
-      <ol className="sidecar-live-view__timeline" aria-label="Analyze-run attempts">
-        {attempts.length ? attempts.map((attempt) => {
-          const operatorRun = findWorkspaceOperatorRunForAttempt(workspaceRun ?? null, attempt);
-          const tone = liveAttemptTone(attempt, operatorRun);
-          const active = activeAttemptRef !== null && attempt.operatorRunRef === activeAttemptRef;
-          const canOpen = Boolean(attempt.operatorRunPath);
-          const stageProcessCount = attempt.detail.stageProcesses?.length
-            ?? operatorRun?.stages.reduce((total, stage) => total + stage.processInvocations.length, 0)
-            ?? 0;
-          const eventCount = attempt.detail.events?.length ?? 0;
-          const dispositionLabel = operatorRun?.activeFeedbackLoop
-            ? 'feedback loop'
-            : operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition ?? attempt.postflightStatus ?? attempt.fpEvaluateStatus ?? 'open';
-          const terminalTarget = resolveAttemptTerminalTarget(attempt, operatorRun, terminalSessions, activeTerminalSessionId);
-          const terminalLabel = terminalTarget
-            ? terminalTarget.kind === 'session'
-              ? `${terminalTarget.mode === 'active' ? 'Open active PTY' : 'Open last active PTY'} for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${sessionLabel(terminalTarget.session)}`
-              : `Open run tail for ${operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'runtime node'}: ${terminalTarget.label}`
-            : 'No active or recent terminal session or tail surface is available for this runtime node';
-          return (
-            <li key={attempt.operatorRunRef} className={`sidecar-live-view__attempt sidecar-live-view__attempt--${tone}${active ? ' is-active' : ''}`}>
-              <button
-                type="button"
-                className="sidecar-live-view__attempt-main"
-                disabled={!canOpen && attempts.length === 0}
-                aria-pressed={selectedAttempt?.operatorRunRef === attempt.operatorRunRef}
-                onClick={() => setSelectedAttemptRef(attempt.operatorRunRef)}
-                title={attempt.operatorRunPath ?? attempt.operatorRunRef}
-              >
-                <span className="sidecar-live-view__attempt-index">{attempt.attemptOrdinal + 1}</span>
-                <strong>{operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</strong>
-                <small>{operatorRun?.edge?.targetAssetType ?? attempt.targetAssetType ?? attempt.traversalClass}</small>
-                <span className={`status-chip ${tone}`}>{dispositionLabel}</span>
-                <span className="sidecar-live-view__attempt-metrics">
-                  <span>{stageProcessCount} stages</span>
-                  <span>{eventCount} events</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="sidecar-live-view__attempt-terminal"
-                disabled={!terminalTarget}
-                onClick={() => {
-                  if (!terminalTarget) return;
-                  if (terminalTarget.kind === 'session') {
-                    onOpenTerminalSession(terminalTarget.session.id);
-                  } else {
-                    onOpenTracePath(terminalTarget.path);
-                  }
-                }}
-                aria-label={terminalLabel}
-                title={terminalLabel}
-              >
-                <span aria-hidden="true">&gt;_</span>
-              </button>
-            </li>
-          );
-        }) : (
-          <li className="sidecar-inspector__empty">No operator-run attempts were reported by analyze-run.</li>
-        )}
-      </ol>
-
-      {selectedAttempt ? (
-        <ProcessLiveRunDetail
-          attempt={selectedAttempt}
-          operatorRun={selectedOperatorRun}
-          projectRoot={projectRoot}
-          internalRowCollapsed={liveInternalRowCollapsed}
-          onInternalRowCollapsedChange={onLiveInternalRowCollapsedChange}
-          detailRowCollapsed={liveDetailRowCollapsed}
-          onDetailRowCollapsedChange={onLiveDetailRowCollapsedChange}
-          gapRowCollapsed={liveGapRowCollapsed}
-          onGapRowCollapsedChange={onLiveGapRowCollapsedChange}
-          eventViewerCollapsed={liveEventViewerCollapsed}
-          onEventViewerCollapsedChange={onLiveEventViewerCollapsedChange}
-          transcriptCollapsed={liveTranscriptCollapsed}
-          onTranscriptCollapsedChange={onLiveTranscriptCollapsedChange}
-          onOpenTracePath={onOpenTracePath}
-        />
-      ) : selectedOperatorRun ? (
-        <ProcessSelectedRunSummary operatorRun={selectedOperatorRun} onOpenTracePath={onOpenTracePath} />
-      ) : null}
-
-      <ProcessLiveRowGroup
-        widgetNames={['Active Run', 'Diagnostics']}
-        ariaLabel="active run and diagnostics row"
-        collapsed={liveActiveRunRowCollapsed}
-        onCollapsedChange={onLiveActiveRunRowCollapsedChange}
-        meta={(
-          <>
-            <span className={`status-chip ${activeRunTone}`}>{liveness?.processAlive === true ? 'alive' : liveness?.processAlive === false ? 'not alive' : 'unknown'}</span>
-            <span className={`status-chip ${diagnosticsTone}`}>{analysis?.diagnostics.length ?? 0} diagnostics</span>
-          </>
-        )}
-      >
-        <div className="sidecar-live-view__details">
-          <section className="sidecar-live-view__detail">
-            <div className="requirements-explorer__section-heading">
-              <span className="panel__eyebrow">Active Run</span>
-              <span className={`status-chip ${activeRunTone}`}>{liveness?.processAlive === true ? 'alive' : liveness?.processAlive === false ? 'not alive' : 'unknown'}</span>
-            </div>
-            <MetaGrid items={[
-              ['Active edge', liveness?.activeEdgeRef ?? latestAttempt?.graphFunctionName ?? selectedOperatorRun?.edge?.edgeName ?? '—'],
-              ['Graph vector', liveness?.activeGraphVectorRef ?? latestAttempt?.graphVectorRef ?? selectedOperatorRun?.nextActionProjection?.nextGraphVectorRef ?? '—'],
-              ['Target', liveness?.activeTargetAssetType ?? latestAttempt?.targetAssetType ?? selectedOperatorRun?.edge?.targetAssetType ?? '—'],
-              ['Worker pid', liveness?.workerPid === null || liveness?.workerPid === undefined ? '—' : String(liveness.workerPid)],
-              ['No-output gap', liveness?.maxNoOutputGapMs === null || liveness?.maxNoOutputGapMs === undefined ? '—' : formatDurationMs(liveness.maxNoOutputGapMs)],
-              ['Archive growth/min', liveness?.archiveGrowthBytesPerMinute === null || liveness?.archiveGrowthBytesPerMinute === undefined ? '—' : formatBytes(liveness.archiveGrowthBytesPerMinute)],
-              ['Last blocking reason', liveness?.lastBlockingReason ?? selectedOperatorRun?.blockingReasons[0]?.code ?? '—'],
-            ]} />
-          </section>
-
-          <section className="sidecar-live-view__detail">
-            <div className="requirements-explorer__section-heading">
-              <span className="panel__eyebrow">Diagnostics</span>
-              <span className={`status-chip ${diagnosticsTone}`}>
-                {analysis?.diagnostics.length ?? 0}
-              </span>
-            </div>
-            {visibleDiagnostics.length ? (
-              <ul className="sidecar-live-view__diagnostics">
-                {visibleDiagnostics.map((diagnostic) => (
-                  <LiveAnalysisDiagnosticRow key={`${diagnostic.code}:${diagnostic.detail}`} diagnostic={diagnostic} onOpenTracePath={onOpenTracePath} />
-                ))}
-              </ul>
-            ) : (
-              <div className="sidecar-body-text">No analyze-run diagnostics were reported.</div>
-            )}
-          </section>
-        </div>
-      </ProcessLiveRowGroup>
-    </div>
-  );
-}
-
-function ProcessSelectedRunSummary({
-  operatorRun,
-  onOpenTracePath,
-}: {
-  operatorRun: SidecarSdlcOperatorRun;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const stageCliCount = operatorRun.stages.reduce((total, stage) => total + stage.processInvocations.length, 0);
-  const closureLabel = operatorRun.closureDecision?.disposition ?? operatorRun.status ?? 'open';
-  const selectedRunStartedAt = operatorRun.startedAt ?? parseOperatorRunStartedAt(operatorRun.operatorRunPath);
-  return (
-    <section className="sidecar-live-view__run-detail" aria-label="Selected run detail">
-      <header className="sidecar-live-view__run-header">
-        <div>
-          <span className="panel__eyebrow">Selected Run</span>
-          <h4>{operatorRun.edge?.edgeName ?? operatorRun.edge?.graphFunctionName ?? operatorRun.operatorRunId}</h4>
-          <p>{operatorRun.operatorRunPath}</p>
-        </div>
-        <div className="sidecar-live-view__actions">
-          <span className={`status-chip ${operatorRun.activeFeedbackLoop ? 'active' : operatorRun.status === 'blocked' ? 'blocked' : 'pending'}`}>{closureLabel}</span>
-          <span className="status-chip default" title={selectedRunStartedAt ?? undefined}>
-            Started {formatLiveRunStartedAt(selectedRunStartedAt)}
-          </span>
-          <span className="status-chip default">{stageCliCount} stage CLIs</span>
-          <button type="button" className="status-chip default" onClick={() => onOpenTracePath(operatorRun.operatorRunPath)}>
-            Open archive
-          </button>
-        </div>
-      </header>
-      <MetaGrid items={[
-        ['Graph function', operatorRun.edge?.graphFunctionName ?? '—'],
-        ['Graph vector', operatorRun.edge?.graphVectorRef ?? operatorRun.nextActionProjection?.nextGraphVectorRef ?? '—'],
-        ['Target', operatorRun.edge?.targetAssetType ?? '—'],
-        ['Status', operatorRun.status ?? '—'],
-      ]} />
-    </section>
-  );
-}
-
-function ProcessLiveRunDetail({
-  attempt,
-  operatorRun,
-  projectRoot,
-  internalRowCollapsed,
-  onInternalRowCollapsedChange,
-  detailRowCollapsed,
-  onDetailRowCollapsedChange,
-  gapRowCollapsed,
-  onGapRowCollapsedChange,
-  eventViewerCollapsed,
-  onEventViewerCollapsedChange,
-  transcriptCollapsed,
-  onTranscriptCollapsedChange,
-  onOpenTracePath,
-}: {
-  attempt: SidecarLiveAnalysisAttempt;
-  operatorRun: SidecarSdlcOperatorRun | null;
-  projectRoot: string | null;
-  internalRowCollapsed: boolean;
-  onInternalRowCollapsedChange: (collapsed: boolean) => void;
-  detailRowCollapsed: boolean;
-  onDetailRowCollapsedChange: (collapsed: boolean) => void;
-  gapRowCollapsed: boolean;
-  onGapRowCollapsedChange: (collapsed: boolean) => void;
-  eventViewerCollapsed: boolean;
-  onEventViewerCollapsedChange: (collapsed: boolean) => void;
-  transcriptCollapsed: boolean;
-  onTranscriptCollapsedChange: (collapsed: boolean) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const edge = attempt.detail.edgeAssurance;
-  const assurance = attempt.detail.assurance;
-  const transformStage = operatorRun?.stages.find((stage) => stage.stageKind === 'transform') ?? null;
-  const postflightStage = operatorRun?.stages.find((stage) => stage.stageKind === 'system_postflight') ?? null;
-  const evaluatorStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_review_grade') ?? null;
-  const closure = operatorRun?.closureDecision ?? null;
-  const nextAction = operatorRun?.nextActionProjection ?? null;
-  const activeFeedbackLoop = Boolean(operatorRun?.activeFeedbackLoop);
-  const counts = edge?.counts ?? null;
-  const outstanding =
-    counts === null
-      ? null
-      : counts.partial + counts.blocked + counts.unfulfilled + counts.missing;
-  const gapCount =
-    attempt.detail.runtimeGaps.length +
-    attempt.detail.diagnostics.length +
-    attempt.detail.retryForensics.length +
-    (edge?.gapPressureRefs.length ?? 0) +
-    (edge?.edgeResidualPressureRefs.length ?? 0);
-  const ledgerTone =
-    activeFeedbackLoop
-      ? 'active'
-      : edge?.closeReady === true
-      ? 'active'
-      : edge?.carrierState === 'absent' || gapCount > 0
-        ? 'blocked'
-        : 'pending';
-  const closureLabel = activeFeedbackLoop
-    ? 'retry feedback loop'
-    : closure?.disposition ?? edge?.closureDisposition ?? attempt.closureDisposition ?? 'open';
-  const selectedRunStartedAt = operatorRun?.startedAt ?? parseOperatorRunStartedAt(attempt.operatorRunPath ?? attempt.operatorRunRef);
-  return (
-    <section className="sidecar-live-view__run-detail" aria-label="Selected run detail">
-      <header className="sidecar-live-view__run-header">
-        <div>
-          <span className="panel__eyebrow">Selected Run</span>
-          <h4>{operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'unmapped edge'}</h4>
-          <p>{operatorRun?.operatorRunPath ?? attempt.operatorRunPath ?? attempt.operatorRunRef}</p>
-        </div>
-        <div className="sidecar-live-view__actions">
-          <span className={`status-chip ${ledgerTone}`}>{closureLabel}</span>
-          <span className="status-chip default" title={selectedRunStartedAt ?? undefined}>
-            Started {formatLiveRunStartedAt(selectedRunStartedAt)}
-          </span>
-          {operatorRun ? (
-            <span className="status-chip default">{operatorRun.stages.reduce((total, stage) => total + stage.processInvocations.length, 0)} stage CLIs</span>
-          ) : null}
-          {attempt.operatorRunPath ? (
-            <button type="button" className="status-chip default" onClick={() => onOpenTracePath(attempt.operatorRunPath as string)}>
-              Open archive
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <ProcessLiveInternalStateWidget
-        attempt={attempt}
-        operatorRun={operatorRun}
-        projectRoot={projectRoot}
-        collapsed={internalRowCollapsed}
-        onCollapsedChange={onInternalRowCollapsedChange}
-        onOpenTracePath={onOpenTracePath}
-      />
-
-      <ProcessLiveRowGroup
-        widgetNames={['Ledger State', 'Assurance Ledgers']}
-        ariaLabel="ledger state and assurance row"
-        collapsed={detailRowCollapsed}
-        onCollapsedChange={onDetailRowCollapsedChange}
-        meta={(
-          <>
-            <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
-            <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
-              {assurance?.status ?? 'missing'}
-            </span>
-          </>
-        )}
-      >
-        <div className="sidecar-live-view__detail-grid sidecar-live-view__detail-grid--primary">
-            <section className="sidecar-live-view__detail">
-              <div className="requirements-explorer__section-heading">
-                <span className="panel__eyebrow">Ledger State</span>
-                <span className={`status-chip ${ledgerTone}`}>{edge?.carrierState ?? 'absent'}</span>
-              </div>
-              <div className="sidecar-live-view__stats sidecar-live-view__stats--compact">
-                <span className="sidecar-process-map-stat sidecar-process-map-stat--active">
-                  <strong>{counts?.fulfilled ?? '—'}</strong>
-                  <small>completed</small>
-                </span>
-                <span className={`sidecar-process-map-stat ${outstanding && outstanding > 0 ? 'sidecar-process-map-stat--blocked' : ''}`}>
-                  <strong>{outstanding ?? '—'}</strong>
-                  <small>outstanding</small>
-                </span>
-                <span className="sidecar-process-map-stat">
-                  <strong>{counts?.expected ?? attempt.requirementObligationCount ?? '—'}</strong>
-                  <small>expected</small>
-                </span>
-              </div>
-              <MetaGrid items={[
-                ['Edge name', operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? '—'],
-                ['Worker status', transformStage?.status ?? attempt.workerStatus ?? '—'],
-                ['Postflight status', postflightStage?.status ?? attempt.postflightStatus ?? '—'],
-                ['Evaluator review', evaluatorStage?.status ?? attempt.fpEvaluateStatus ?? '—'],
-                ['Closure', closureLabel],
-                ['Next lawful action', nextAction?.nextActionBasisKind ?? edge?.nextActionBasisKind ?? attempt.selectedNextActionRef ?? '—'],
-                ['Chooses next traversal', nextAction ? formatLiveBoolean(nextAction.choosesNextTraversal) : '—'],
-                ['Edge converged', formatLiveBoolean(edge?.edgeConverged)],
-                ['Carry converged', formatLiveBoolean(edge?.carryConverged)],
-                ['Fulfillment', formatLiveBoolean(edge?.fulfillmentConverged)],
-                ['Admitted', formatLiveBoolean(edge?.admitted)],
-                ['Target cert', formatLiveBoolean(edge?.targetCertificationPassed)],
-                ['F_D recheck', formatLiveBoolean(edge?.fdRecheckPassed)],
-                ['Target carrier', edge?.targetAssetType ?? attempt.targetAssetType ?? '—'],
-                ['Next graph vector', nextAction?.nextGraphVectorRef ?? edge?.nextGraphVectorRef ?? '—'],
-              ]} />
-            </section>
-
-            <section className="sidecar-live-view__detail">
-              <div className="requirements-explorer__section-heading">
-                <span className="panel__eyebrow">Assurance Ledgers</span>
-                <span className={`status-chip ${assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'default'}`}>
-                  {assurance?.status ?? 'missing'}
-                </span>
-              </div>
-              {assurance?.ledgers.length ? (
-                <ul className="sidecar-live-view__ledger-list">
-                  {assurance.ledgers.map((ledger) => {
-                    const description = liveAssuranceLedgerDescription(ledger.dimension);
-                    return (
-                      <li key={ledger.dimension}>
-                        <div className="sidecar-live-view__ledger-head">
-                          <strong>{ledger.dimension}</strong>
-                          <span
-                            className="sidecar-live-view__ledger-info"
-                            title={description.detail}
-                            aria-label={`${ledger.dimension}: ${description.detail}`}
-                            tabIndex={0}
-                          >
-                            i
-                          </span>
-                        </div>
-                        <span className={`status-chip ${ledger.verdict === 'satisfied' ? 'active' : ledger.verdict === 'blocked' ? 'blocked' : ledger.verdict === 'open_gap' ? 'pending' : 'default'}`}>
-                          {ledger.verdict}
-                        </span>
-                        <p className="sidecar-live-view__ledger-description">{description.summary}</p>
-                        <small>{ledger.evidenceRefCount} evidence · {ledger.reasonCount} reasons</small>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <div className="sidecar-body-text">No assurance ledger fold was archived for this run.</div>
-              )}
-            </section>
-        </div>
-      </ProcessLiveRowGroup>
-
-      <ProcessLiveRowGroup
-        widgetNames={['Gap Analysis', 'Requirement / Stage State']}
-        ariaLabel="gap analysis and requirement state row"
-        collapsed={gapRowCollapsed}
-        onCollapsedChange={onGapRowCollapsedChange}
-        meta={(
-          <>
-            <span className={`status-chip ${gapCount > 0 ? 'blocked' : 'active'}`}>{gapCount} gaps</span>
-            <span className={`status-chip ${outstanding && outstanding > 0 ? 'blocked' : counts ? 'active' : 'pending'}`}>
-              {counts ? `${counts.fulfilled}/${counts.expected}` : attempt.requirementObligationCount ?? '—'}
-            </span>
-          </>
-        )}
-      >
-        <div className="sidecar-live-view__detail-grid">
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Gap Analysis</span>
-            <span className={`status-chip ${gapCount > 0 ? 'blocked' : 'active'}`}>{gapCount}</span>
-          </div>
-          <LiveAnalysisRunGapList attempt={attempt} edge={edge} operatorRun={operatorRun} />
-        </section>
-
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Requirement / Stage State</span>
-            <span className={`status-chip ${outstanding && outstanding > 0 ? 'blocked' : counts ? 'active' : 'pending'}`}>
-              {counts ? `${counts.fulfilled}/${counts.expected}` : attempt.requirementObligationCount ?? '—'}
-            </span>
-          </div>
-          <MetaGrid items={[
-            ['Requirement obligations', attempt.requirementObligationCount === null ? '—' : String(attempt.requirementObligationCount)],
-            ['Product lineage', String(attempt.productLineageCount)],
-            ['Product files written', String(attempt.productFilesWritten.length)],
-            ['Product files replayed', String(attempt.productFilesReplayed.length)],
-            ['Residual pressure', String(edge?.edgeResidualPressureRefs.length ?? attempt.residualPressureRefCount)],
-            ['Runtime artifacts', attempt.detail.runtimeGaps.length ? `${attempt.detail.runtimeGaps.length} gaps` : 'complete'],
-          ]} />
-          {attempt.detail.stageCoverage.length ? (
-            <ul className="sidecar-live-view__stage-list">
-              {attempt.detail.stageCoverage.map((stage) => (
-                <li key={`${stage.test35StageRef}:${stage.expectedEdgeName}`}>
-                  <strong>{stage.test35StageRef}</strong>
-                  <span className={`status-chip ${stage.stageClass === 'missing' ? 'blocked' : stage.stageClass === 'unmapped' ? 'pending' : 'active'}`}>
-                    {stage.stageClass}
-                  </span>
-                  <small>{stage.expectedEdgeName} → {stage.mappedEdgeName ?? 'unmapped'}</small>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-        </div>
-      </ProcessLiveRowGroup>
-
-      <ProcessLiveEventViewer
-        attempt={attempt}
-        collapsed={eventViewerCollapsed}
-        onCollapsedChange={onEventViewerCollapsedChange}
-        onOpenTracePath={onOpenTracePath}
-      />
-
-      <ProcessLiveCliTranscriptWidget
-        stageProcesses={attempt.detail.stageProcesses ?? []}
-        transcripts={attempt.detail.cliTranscripts?.length ? attempt.detail.cliTranscripts : [attempt.detail.cliTranscript]}
-        collapsed={transcriptCollapsed}
-        onCollapsedChange={onTranscriptCollapsedChange}
-        onOpenTracePath={onOpenTracePath}
-      />
-    </section>
-  );
-}
-
-type ProcessLiveActionTone = SidecarProcessTone | 'default';
-
-interface ProcessLiveActionLink {
-  key: string;
-  label: string;
-  path: string;
-  tone: ProcessLiveActionTone;
-}
-
-interface ProcessLiveInternalStep {
-  id: string;
-  label: string;
-  boundary: string;
-  status: string;
-  tone: ProcessLiveActionTone;
-  detail: string;
-  actions: ProcessLiveActionLink[];
-}
-
-function ProcessLiveInternalStateWidget({ attempt, operatorRun, projectRoot, collapsed, onCollapsedChange, onOpenTracePath }: {
-  attempt: SidecarLiveAnalysisAttempt;
-  operatorRun: SidecarSdlcOperatorRun | null;
-  projectRoot: string | null;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const stageProcesses = useMemo(() => (attempt.detail.stageProcesses ?? [])
-    .map(normalizeLiveAnalysisStageProcess)
-    .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process)), [attempt.detail.stageProcesses]);
-  const transformProcesses = stageProcesses.filter((process) => process.role === 'transform' || process.stageKind === 'transform_worker');
-  const evaluationProcesses = stageProcesses.filter((process) => process.role === 'evaluate' || process.stageKind.includes('evaluator'));
-  const allTranscripts = stageProcesses.flatMap((process) => process.transcriptSurfaces);
-  const primaryTailTranscript = allTranscripts.find((transcript) => transcript.sourcePath && isTailFollowSurfacePath(transcript.sourcePath))
-    ?? allTranscripts.find((transcript) => transcript.sourcePath)
-    ?? null;
-  const allArtifacts = [
-    ...(operatorRun?.systemArtifacts ?? []),
-    ...(operatorRun?.stages.flatMap((stage) => stage.artifacts) ?? []),
-  ];
-  const evaluationFindings = [
-    ...(operatorRun?.evaluationFindings ?? []),
-    ...(operatorRun?.stages.flatMap((stage) => stage.findings) ?? []),
-  ];
-  const blockingReasons = [
-    ...(operatorRun?.blockingReasons ?? []),
-    ...(operatorRun?.stages.flatMap((stage) => stage.blockingReasons) ?? []),
-  ];
-  const events = attempt.detail.events ?? [];
-  const runtimeEventCount = events.filter((event) => event.sourceKind === 'runtime_event').length;
-  const workerEventCount = events.filter((event) => event.sourceKind === 'worker_event').length;
-  const artifactEventCount = events.filter((event) => event.sourceKind === 'artifact').length;
-  const transformStage = operatorRun?.stages.find((stage) => stage.stageKind === 'transform') ?? null;
-  const postflightStage = operatorRun?.stages.find((stage) => stage.stageKind === 'system_postflight') ?? null;
-  const designEvaluationStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_design_depth') ?? null;
-  const reviewEvaluationStage = operatorRun?.stages.find((stage) => stage.stageKind === 'evaluate_review_grade') ?? null;
-  const assuranceStage = operatorRun?.stages.find((stage) => stage.stageKind === 'assurance') ?? null;
-  const closureStage = operatorRun?.stages.find((stage) => stage.stageKind === 'closure') ?? null;
-  const nextActionStage = operatorRun?.stages.find((stage) => stage.stageKind === 'next_action') ?? null;
-  const edge = attempt.detail.edgeAssurance;
-  const assurance = attempt.detail.assurance;
-  const closure = operatorRun?.closureDecision ?? null;
-  const nextAction = operatorRun?.nextActionProjection ?? null;
-  const operatorRunPath = operatorRun?.operatorRunPath ?? attempt.operatorRunPath ?? null;
-  const admissionArtifacts = allArtifacts.filter((artifact) => (
-    artifact.role === 'authority_admission' ||
-    /admission|postflight|carrier|result/i.test(`${artifact.label} ${artifact.path}`)
-  ));
-  const readModelArtifacts = allArtifacts.filter((artifact) => artifact.role === 'read_model' || /projection|next_action|consequence/i.test(`${artifact.label} ${artifact.path}`));
-  const transformArtifactLinks = uniqueLiveActionLinks([
-    ...transformProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
-    ...liveArtifactLinks(admissionArtifacts.slice(0, 3), projectRoot),
-  ]);
-  const evaluationArtifactLinks = uniqueLiveActionLinks([
-    ...evaluationProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
-    ...liveArtifactLinks((operatorRun?.stages.filter((stage) => stage.stageKind.startsWith('evaluate')).flatMap((stage) => stage.artifacts) ?? []).slice(0, 3), projectRoot),
-  ]);
-  const closureLinks = uniqueLiveActionLinks([
-    liveActionLink('Ledger', edge?.ledgerRef ?? null, projectRoot),
-    liveActionLink('Closure', edge?.closureDecisionRef ?? closure?.decisionRef ?? null, projectRoot),
-    liveActionLink('Next action', edge?.selectedActionRef ?? nextAction?.selectedActionRef ?? null, projectRoot),
-  ]);
-  const runAssetLinks = uniqueLiveActionLinks([
-    liveActionLink('Run archive', operatorRunPath, projectRoot, 'active'),
-    liveActionLink('Tail live', primaryTailTranscript?.sourcePath ?? null, projectRoot, 'active'),
-    ...stageProcesses.flatMap((process) => liveStageProcessLinks(process, projectRoot)),
-    ...liveArtifactLinks(allArtifacts, projectRoot),
-  ]).slice(0, 14);
-  const productFileLinks = uniqueLiveActionLinks([
-    ...attempt.productFilesWritten.map((path) => liveActionLink('Written', path, projectRoot, 'active')),
-    ...attempt.productFilesReplayed.map((path) => liveActionLink('Replayed', path, projectRoot)),
-  ]).slice(0, 10);
-  const steps: ProcessLiveInternalStep[] = [
-    {
-      id: 'gtl-edge',
-      label: 'GTL graph function edge',
-      boundary: 'contract',
-      status: operatorRun?.edge || attempt.graphFunctionName ? 'selected' : 'pending',
-      tone: operatorRun?.edge || attempt.graphFunctionName ? 'active' : 'pending',
-      detail: operatorRun?.edge?.edgeName ?? attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'No selected graph edge was projected.',
-      actions: uniqueLiveActionLinks([liveActionLink('Archive', operatorRunPath, projectRoot)]),
-    },
-    {
-      id: 'abg-frame-open',
-      label: 'ABG start / frame open',
-      boundary: 'system event',
-      status: runtimeEventCount > 0 ? `${runtimeEventCount} events` : 'pending',
-      tone: runtimeEventCount > 0 ? 'active' : 'pending',
-      detail: compactIdentity(attempt.operatorRunRef),
-      actions: uniqueLiveActionLinks([liveActionLink('Archive', operatorRunPath, projectRoot)]),
-    },
-    {
-      id: 'edge-policy',
-      label: 'SDLC EdgePolicy selected',
-      boundary: 'policy fact',
-      status: edge?.edgeAssuranceContractRef ? 'admitted' : 'pending',
-      tone: edge?.edgeAssuranceContractRef ? 'active' : 'pending',
-      detail: edge?.edgeAssuranceContractRef ?? operatorRun?.edge?.edgeAssuranceContractRef ?? 'No edge policy carrier was projected.',
-      actions: closureLinks.slice(0, 1),
-    },
-    {
-      id: 'composition',
-      label: 'ABG selected composition',
-      boundary: 'composition',
-      status: operatorRun?.edge?.graphVectorRef || attempt.graphVectorRef ? 'selected' : 'pending',
-      tone: operatorRun?.edge?.graphVectorRef || attempt.graphVectorRef ? 'active' : 'pending',
-      detail: operatorRun?.edge?.graphVectorRef ?? attempt.graphVectorRef ?? 'No graph vector identity was projected.',
-      actions: [],
-    },
-    {
-      id: 'transform-plugin',
-      label: 'plugin.transform.C',
-      boundary: 'plugin',
-      status: transformStage?.status ?? attempt.workerStatus ?? (transformProcesses.length ? 'invoked' : 'pending'),
-      tone: transformStage?.status === 'failed' ? 'blocked' : transformProcesses.length || transformStage ? 'active' : 'pending',
-      detail: `${transformProcesses.length} process invocation${transformProcesses.length === 1 ? '' : 's'} · ${workerEventCount} worker events`,
-      actions: transformArtifactLinks.slice(0, 4),
-    },
-    {
-      id: 'transform-admission',
-      label: 'system admission/write transform result',
-      boundary: 'system write',
-      status: postflightStage?.status ?? attempt.postflightStatus ?? (admissionArtifacts.length ? 'recorded' : 'pending'),
-      tone: attempt.postflightStatus === 'failed' ? 'blocked' : admissionArtifacts.length || postflightStage ? 'active' : 'pending',
-      detail: `${admissionArtifacts.length} admission artifact${admissionArtifacts.length === 1 ? '' : 's'}`,
-      actions: liveArtifactLinks(admissionArtifacts.slice(0, 4), projectRoot),
-    },
-    {
-      id: 'evaluation-plan',
-      label: 'system plan evaluation set',
-      boundary: 'deterministic plan',
-      status: designEvaluationStage || reviewEvaluationStage || evaluationFindings.length ? 'planned' : 'pending',
-      tone: designEvaluationStage || reviewEvaluationStage || evaluationFindings.length ? 'active' : 'pending',
-      detail: `${evaluationFindings.length} finding${evaluationFindings.length === 1 ? '' : 's'} projected`,
-      actions: evaluationArtifactLinks.slice(0, 3),
-    },
-    {
-      id: 'evaluate-plugin',
-      label: 'plugin.evaluate.C.rule[*]',
-      boundary: 'plugin',
-      status: reviewEvaluationStage?.status ?? designEvaluationStage?.status ?? attempt.fpEvaluateStatus ?? (evaluationProcesses.length ? 'invoked' : 'pending'),
-      tone: evaluationProcesses.length || reviewEvaluationStage || designEvaluationStage ? 'active' : 'pending',
-      detail: `${evaluationProcesses.length} evaluator process${evaluationProcesses.length === 1 ? '' : 'es'}`,
-      actions: evaluationArtifactLinks.slice(0, 4),
-    },
-    {
-      id: 'evaluation-admission',
-      label: 'system admission/write evaluation outcomes',
-      boundary: 'system write',
-      status: evaluationFindings.length ? `${evaluationFindings.length} outcomes` : 'pending',
-      tone: blockingReasons.length ? 'blocked' : evaluationFindings.length ? 'active' : 'pending',
-      detail: blockingReasons.length ? `${blockingReasons.length} blocking reason${blockingReasons.length === 1 ? '' : 's'}` : 'No blocking evaluator outcome projected.',
-      actions: evaluationArtifactLinks.slice(0, 3),
-    },
-    {
-      id: 'evaluation-collect',
-      label: 'system collect evaluation set',
-      boundary: 'projection',
-      status: assurance ? assurance.status ?? 'collected' : 'pending',
-      tone: assurance?.missingRequiredDimensions.length ? 'blocked' : assurance ? 'active' : 'pending',
-      detail: assurance ? `${assurance.satisfiedDimensions.length} satisfied · ${assurance.missingRequiredDimensions.length} missing` : 'No assurance summary was projected.',
-      actions: closureLinks.slice(0, 1),
-    },
-    {
-      id: 'assurance-fold',
-      label: 'system assurance / closure fold',
-      boundary: 'deterministic fold',
-      status: closure?.disposition ?? edge?.closureDisposition ?? attempt.closureDisposition ?? 'open',
-      tone: closure?.disposition === 'close' || edge?.closeReady ? 'converged' : blockingReasons.length ? 'blocked' : edge || closure ? 'active' : 'pending',
-      detail: edge ? `${edge.carrierState} · close ready ${formatLiveBoolean(edge.closeReady)}` : 'No edge assurance carrier was projected.',
-      actions: closureLinks,
-    },
-    {
-      id: 'consequence-plugin',
-      label: 'plugin.consequence.C',
-      boundary: 'projection',
-      status: nextAction?.nextActionBasisKind ?? nextActionStage?.status ?? 'pending',
-      tone: nextAction ? 'active' : 'pending',
-      detail: nextAction?.selectedActionRef ?? attempt.selectedNextActionRef ?? 'No next-action projection was selected.',
-      actions: uniqueLiveActionLinks([liveActionLink('Next action', nextAction?.selectedActionRef ?? attempt.selectedNextActionRef, projectRoot)]),
-    },
-    {
-      id: 'consequence-admission',
-      label: 'system admission/write consequence projection',
-      boundary: 'system write',
-      status: readModelArtifacts.length ? `${readModelArtifacts.length} read models` : nextAction ? 'admitted' : 'pending',
-      tone: nextAction || readModelArtifacts.length ? 'active' : 'pending',
-      detail: nextAction?.overlayStopDisposition ?? 'No consequence read model artifact was projected.',
-      actions: uniqueLiveActionLinks([
-        ...liveArtifactLinks(readModelArtifacts.slice(0, 3), projectRoot),
-        liveActionLink('Next action', nextAction?.selectedActionRef ?? null, projectRoot),
-      ]),
-    },
-    {
-      id: 'traversal-transition',
-      label: 'traversal transition',
-      boundary: 'ABG event',
-      status: nextAction?.choosesNextTraversal ? 'chosen' : nextAction?.nextGraphVectorRef ? 'projected' : 'pending',
-      tone: nextAction?.choosesNextTraversal || nextAction?.nextGraphVectorRef ? 'active' : 'pending',
-      detail: nextAction?.nextGraphVectorRef ?? edge?.nextGraphVectorRef ?? 'No next graph vector was projected.',
-      actions: [],
-    },
-  ];
-
-  return (
-    <ProcessLiveRowGroup
-      widgetNames={['Internal State', 'Run Assets']}
-      ariaLabel="internal state and run assets row"
-      collapsed={collapsed}
-      onCollapsedChange={onCollapsedChange}
-      className="sidecar-live-view__detail-row-group--wide sidecar-live-view__detail-row-group--internal"
-      meta={(
-        <>
-          <span className="status-chip default">{steps.length} boundaries</span>
-          <span className={`status-chip ${runAssetLinks.length ? 'active' : 'default'}`}>{runAssetLinks.length} assets</span>
-          <span className={`status-chip ${primaryTailTranscript ? 'active' : 'default'}`}>{primaryTailTranscript ? 'tail ready' : 'no tail'}</span>
-        </>
-      )}
-    >
-      <div className="sidecar-live-view__internal-layout">
-        <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__internal-state">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Internal State</span>
-            <span className="status-chip default">{artifactEventCount} artifact events</span>
-          </div>
-          <ol className="sidecar-live-view__internal-steps" aria-label="Selected run internal boundary state">
-            {steps.map((step, index) => (
-              <li key={step.id} className={`sidecar-live-view__internal-step sidecar-live-view__internal-step--${step.tone}`}>
-                <span className="sidecar-live-view__internal-step-index">{index + 1}</span>
-                <div className="sidecar-live-view__internal-step-main">
-                  <div className="sidecar-live-view__internal-step-title">
-                    <strong>{step.label}</strong>
-                    <span className={`status-chip ${step.tone}`}>{step.status}</span>
-                  </div>
-                  <small>{step.boundary}</small>
-                  <p>{step.detail}</p>
-                </div>
-                {step.actions.length ? (
-                  <div className="sidecar-live-view__internal-step-actions">
-                    {step.actions.map((action) => (
-                      <button key={action.key} type="button" className={`status-chip ${action.tone}`} onClick={() => onOpenTracePath(action.path)}>
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Run Assets</span>
-            <span className={`status-chip ${runAssetLinks.length ? 'active' : 'default'}`}>{runAssetLinks.length}</span>
-          </div>
-          {runAssetLinks.length ? (
-            <div className="sidecar-live-view__asset-links" aria-label="Run asset links">
-              {runAssetLinks.map((link) => (
-                <button key={link.key} type="button" className={`status-chip ${link.tone}`} onClick={() => onOpenTracePath(link.path)}>
-                  {link.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="sidecar-body-text">No run asset paths were projected.</div>
-          )}
-        </section>
-
-        <section className="sidecar-live-view__detail">
-          <div className="requirements-explorer__section-heading">
-            <span className="panel__eyebrow">Product Files</span>
-            <span className={`status-chip ${productFileLinks.length ? 'active' : 'default'}`}>{productFileLinks.length}</span>
-          </div>
-          {productFileLinks.length ? (
-            <div className="sidecar-live-view__asset-links" aria-label="Product file links">
-              {productFileLinks.map((link) => (
-                <button key={link.key} type="button" className={`status-chip ${link.tone}`} onClick={() => onOpenTracePath(link.path)}>
-                  {link.label}
-                  <span>{folderDisplayPath(link.path, projectRoot)}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="sidecar-body-text">No product files were declared by this run.</div>
-          )}
-        </section>
-      </div>
-    </ProcessLiveRowGroup>
-  );
-}
-
-function liveActionLink(label: string, pathRef: string | null | undefined, projectRoot: string | null, tone: ProcessLiveActionTone = 'default'): ProcessLiveActionLink | null {
-  const path = projectPathRefToAbsolutePath(projectRoot, pathRef ?? null);
-  if (!path) return null;
-  return {
-    key: `${label}:${path}`,
-    label,
-    path,
-    tone,
-  };
-}
-
-function liveStageProcessLinks(stageProcess: SidecarLiveAnalysisStageProcess, projectRoot: string | null): Array<ProcessLiveActionLink | null> {
-  const tailTranscript = stageProcess.transcriptSurfaces.find((transcript) => transcript.sourcePath && isTailFollowSurfacePath(transcript.sourcePath))
-    ?? stageProcess.transcriptSurfaces.find((transcript) => transcript.sourcePath)
-    ?? null;
-  return [
-    liveActionLink('Archive', stageProcess.operatorRunPath, projectRoot),
-    liveActionLink('Started', stageProcess.processStartedPath, projectRoot),
-    liveActionLink('Events', stageProcess.processEventsPath, projectRoot),
-    liveActionLink('Tail', tailTranscript?.sourcePath ?? null, projectRoot, tailTranscript ? 'active' : 'default'),
-  ];
-}
-
-function liveArtifactLinks(artifacts: SidecarSdlcOperatorRun['systemArtifacts'], projectRoot: string | null): Array<ProcessLiveActionLink | null> {
-  return artifacts.map((artifact) => liveActionLink(artifact.label || artifact.role, artifact.path, projectRoot, artifact.role === 'authority_admission' ? 'active' : 'default'));
-}
-
-function uniqueLiveActionLinks(links: Array<ProcessLiveActionLink | null | undefined>) {
-  const seen = new Set<string>();
-  const next: ProcessLiveActionLink[] = [];
-  links.forEach((link) => {
-    if (!link || seen.has(link.key)) return;
-    seen.add(link.key);
-    next.push(link);
-  });
-  return next;
-}
-
-function ProcessLiveEventViewer({ attempt, collapsed, onCollapsedChange, onOpenTracePath }: {
-  attempt: SidecarLiveAnalysisAttempt;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const [sourceFilter, setSourceFilter] = useState<SidecarLiveAnalysisEventSourceFilter>('all');
-  const [collapsedEventKeys, setCollapsedEventKeys] = useState<Set<string>>(() => new Set());
-  const events = attempt.detail.events ?? [];
-  const sourceFilters: Array<{ id: SidecarLiveAnalysisEventSourceFilter; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: events.length },
-    { id: 'artifact', label: 'Artifacts', count: events.filter((event) => event.sourceKind === 'artifact').length },
-    { id: 'runtime_event', label: 'Runtime', count: events.filter((event) => event.sourceKind === 'runtime_event').length },
-    { id: 'worker_event', label: 'Worker', count: events.filter((event) => event.sourceKind === 'worker_event').length },
-  ];
-  const visibleEvents = sourceFilter === 'all'
-    ? events
-    : events.filter((event) => event.sourceKind === sourceFilter);
-  const visibleEventKeys = visibleEvents.map(liveAnalysisEventKey);
-
-  useEffect(() => {
-    const currentKeys = new Set(events.map(liveAnalysisEventKey));
-    setCollapsedEventKeys((previous) => {
-      let changed = false;
-      const next = new Set<string>();
-      previous.forEach((key) => {
-        if (currentKeys.has(key)) {
-          next.add(key);
-        } else {
-          changed = true;
-        }
-      });
-      return changed ? next : previous;
-    });
-  }, [events]);
-
-  const setEventCollapsed = (key: string, collapsed: boolean) => {
-    setCollapsedEventKeys((previous) => {
-      const next = new Set(previous);
-      if (collapsed) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-  };
-
-  const setVisibleEventsCollapsed = (collapsed: boolean) => {
-    setCollapsedEventKeys((previous) => {
-      const next = new Set(previous);
-      visibleEventKeys.forEach((key) => {
-        if (collapsed) {
-          next.add(key);
-        } else {
-          next.delete(key);
-        }
-      });
-      return next;
-    });
-  };
-
-  return (
-    <ProcessLiveRowGroup
-      widgetNames={['Event Viewer']}
-      ariaLabel="event viewer row"
-      collapsed={collapsed}
-      onCollapsedChange={onCollapsedChange}
-      className="sidecar-live-view__detail-row-group--wide"
-      meta={(
-        <>
-          <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
-          <span className="status-chip default">{sourceFilter.replace(/_/g, ' ')}</span>
-        </>
-      )}
-    >
-      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__event-viewer" aria-label="Stage event viewer">
-        <div className="requirements-explorer__section-heading sidecar-live-view__event-heading">
-          <p className="sidecar-live-view__event-scope">
-            Filtered to {attempt.graphFunctionName ?? attempt.graphVectorRef ?? 'selected stage'} · {attempt.targetAssetType ?? attempt.traversalClass}
-          </p>
-          <span className={`status-chip ${events.length ? 'active' : 'default'}`}>{visibleEvents.length}/{events.length}</span>
-        </div>
-
-        <div className="sidecar-live-view__event-filters" role="tablist" aria-label="Event source filters">
-          {sourceFilters.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              className={`process-tab sidecar-live-view__event-filter${sourceFilter === filter.id ? ' is-selected' : ''}`}
-              onClick={() => setSourceFilter(filter.id)}
-              aria-selected={sourceFilter === filter.id}
-              role="tab"
-            >
-              <span>{filter.label}</span>
-              <span className="status-chip default">{filter.count}</span>
-            </button>
-          ))}
-          {visibleEvents.length ? (
-            <div className="sidecar-live-view__event-row-actions" aria-label="Event row visibility">
-              <button
-                type="button"
-                className="status-chip default sidecar-live-view__event-row-toggle"
-                onClick={() => setVisibleEventsCollapsed(true)}
-                aria-label="Collapse all event rows"
-                title="Collapse all event rows"
-              >
-                <span aria-hidden="true">⊟</span>
-              </button>
-              <button
-                type="button"
-                className="status-chip default sidecar-live-view__event-row-toggle"
-                onClick={() => setVisibleEventsCollapsed(false)}
-                aria-label="Expand all event rows"
-                title="Expand all event rows"
-              >
-                <span aria-hidden="true">⊞</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
-
-        {visibleEvents.length ? (
-          <ol className="sidecar-live-view__event-list" aria-label="Scrollable stage event tickets">
-            {visibleEvents.map((event) => {
-              const key = liveAnalysisEventKey(event);
-              return (
-                <ProcessLiveEventTicket
-                  key={key}
-                  event={event}
-                  collapsed={collapsedEventKeys.has(key)}
-                  onCollapsedChange={(collapsed) => setEventCollapsed(key, collapsed)}
-                  onOpenTracePath={onOpenTracePath}
-                />
-              );
-            })}
-          </ol>
-        ) : (
-          <div className="sidecar-body-text">No archived events matched this selected stage filter.</div>
-        )}
-      </section>
-    </ProcessLiveRowGroup>
-  );
-}
-
-function liveAnalysisEventKey(event: SidecarLiveAnalysisEvent) {
-  return `${event.sourceKind}:${event.index}:${event.eventType}`;
-}
-
-function ProcessLiveEventTicket({ event, collapsed, onCollapsedChange, onOpenTracePath }: {
-  event: SidecarLiveAnalysisEvent;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const sourcePath = event.sourcePath ? refToAbsolutePath(event.sourcePath) ?? event.sourcePath : null;
-  const eventTime = event.observedAtMs ?? event.elapsedMs;
-  return (
-    <li className={`sidecar-live-view__event-ticket sidecar-live-view__event-ticket--${event.tone}${collapsed ? ' is-collapsed' : ''}`}>
-      <header className="sidecar-live-view__event-ticket-header">
-        <button
-          type="button"
-          className="sidecar-live-view__event-ticket-toggle"
-          onClick={() => onCollapsedChange(!collapsed)}
-          aria-expanded={!collapsed}
-          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${event.title} details`}
-          title={`${collapsed ? 'Expand' : 'Collapse'} ${event.title} details`}
-        >
-          <div className="sidecar-live-view__event-ticket-title">
-            <span className="sidecar-live-view__event-index">{event.index + 1}</span>
-            <div>
-              <strong>{event.title}</strong>
-              <small>{event.eventType} · {event.sourceKind.replace(/_/g, ' ')}</small>
-            </div>
-          </div>
-          <div className="sidecar-live-view__event-ticket-actions">
-            {eventTime !== null ? <span className="status-chip default">{formatDurationMs(eventTime)}</span> : null}
-            <span className={`status-chip ${event.tone}`}>{event.tone}</span>
-            <span className="sidecar-live-view__collapsible-chevron" aria-hidden="true">{collapsed ? '>' : 'v'}</span>
-          </div>
-        </button>
-        {sourcePath ? (
-          <button type="button" className="status-chip default sidecar-live-view__event-source" onClick={() => onOpenTracePath(sourcePath)}>
-            Source
-          </button>
-        ) : null}
-      </header>
-      {!collapsed ? (
-        <div className="sidecar-live-view__event-ticket-body">
-          <p className="sidecar-live-view__event-summary">{event.summary}</p>
-          {event.detailRows.length ? (
-            <dl className="sidecar-live-view__event-fields">
-              {event.detailRows.map((row, rowIndex) => (
-                <div key={`${event.index}:${rowIndex}:${row.label}:${row.value}`}>
-                  <dt>{row.label}</dt>
-                  <dd>{row.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {event.evidenceRefs.length ? (
-            <div className="sidecar-live-view__event-evidence" aria-label="Event evidence refs">
-              {event.evidenceRefs.map((ref) => {
-                const path = refToAbsolutePath(ref);
-                return path ? (
-                  <button key={ref} type="button" className="status-chip default" onClick={() => onOpenTracePath(path)}>
-                    {compactIdentity(ref)}
-                  </button>
-                ) : (
-                  <span key={ref} className="status-chip default">{compactIdentity(ref)}</span>
-                );
-              })}
-            </div>
-          ) : null}
-          {event.rawPreview ? (
-            <details className="sidecar-live-view__event-raw">
-              <summary>Raw event payload</summary>
-              <pre>{event.rawPreview}</pre>
-            </details>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-function ProcessLiveCliTranscriptWidget({ stageProcesses = [], transcripts, collapsed, onCollapsedChange, onOpenTracePath }: {
-  stageProcesses?: SidecarLiveAnalysisStageProcessInput[];
-  transcripts: SidecarLiveAnalysisCliTranscriptInput[];
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const transcriptModel = useMemo(() => {
-    const normalizedStageProcesses = stageProcesses
-      .map(normalizeLiveAnalysisStageProcess)
-      .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process));
-    const fallbackTranscripts = transcripts
-      .map(normalizeLiveAnalysisCliTranscript)
-      .filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript));
-    const seen = new Set<string>();
-    const processGroups = normalizedStageProcesses.map((process) => {
-      const surfaces = process.transcriptSurfaces.filter((surface) => {
-        if (seen.has(surface.id)) return false;
-        seen.add(surface.id);
-        return true;
-      });
-      return { id: process.id, label: process.label, surfaces };
-    });
-    const ungroupedSurfaces = fallbackTranscripts.filter((surface) => {
-      if (seen.has(surface.id)) return false;
-      seen.add(surface.id);
-      return true;
-    });
-    const groups = [
-      ...processGroups,
-      ...(ungroupedSurfaces.length || !processGroups.length
-        ? [{ id: 'ungrouped-transcript-surfaces', label: 'Unattributed transcript surfaces', surfaces: ungroupedSurfaces }]
-        : []),
-    ].filter((group) => group.surfaces.length || group.id !== 'ungrouped-transcript-surfaces');
-    const groupedSurfaces = groups.flatMap((group) => group.surfaces);
-    return {
-      stageProcesses: normalizedStageProcesses,
-      groups,
-      transcripts: groupedSurfaces.length ? groupedSurfaces : fallbackTranscripts,
-    };
-  }, [stageProcesses, transcripts]);
-  const normalizedStageProcesses = transcriptModel.stageProcesses;
-  const normalizedTranscripts = transcriptModel.transcripts;
-  const transcriptGroups = transcriptModel.groups;
-  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(normalizedTranscripts[0]?.id ?? null);
-  const transcript = normalizedTranscripts.find((candidate) => candidate.id === selectedTranscriptId) ?? normalizedTranscripts[0];
-
-  useEffect(() => {
-    if (!transcript) {
-      if (selectedTranscriptId !== null) setSelectedTranscriptId(null);
-      return;
-    }
-    if (!selectedTranscriptId || !normalizedTranscripts.some((candidate) => candidate.id === selectedTranscriptId)) {
-      setSelectedTranscriptId(transcript.id);
-    }
-  }, [selectedTranscriptId, transcript, normalizedTranscripts]);
-
-  if (!transcript) return null;
-
-  return (
-    <ProcessLiveRowGroup
-      widgetNames={['Stage Processes', 'Transcript Surfaces']}
-      ariaLabel="stage process transcript surfaces row"
-      collapsed={collapsed}
-      onCollapsedChange={onCollapsedChange}
-      className="sidecar-live-view__detail-row-group--wide sidecar-live-view__detail-row-group--transcript"
-      meta={(
-        <>
-          <span className={`status-chip ${transcript.sourceKind === 'missing' ? 'default' : 'active'}`}>
-            {transcript.lineCount} lines
-          </span>
-          <span className="status-chip default">{normalizedStageProcesses.length} {normalizedStageProcesses.length === 1 ? 'stage process' : 'stage processes'}</span>
-          <span className="status-chip default">{normalizedTranscripts.length} {normalizedTranscripts.length === 1 ? 'surface' : 'surfaces'}</span>
-          <span className="status-chip default">{transcript.sourceKind.replace(/_/g, ' ')}</span>
-        </>
-      )}
-    >
-      <section className="sidecar-live-view__detail sidecar-live-view__detail--wide sidecar-live-view__detail--transcript" aria-label="Stage process transcript surfaces">
-        <div className="sidecar-live-view__transcript-body-wrap">
-          <div className="sidecar-live-view__transcript-toolbar">
-            {normalizedTranscripts.length > 1 ? (
-              <label className="sidecar-live-view__transcript-selector">
-                <span>Surface</span>
-                <select
-                  value={transcript.id}
-                  onChange={(event) => setSelectedTranscriptId(event.target.value)}
-                  aria-label="Select transcript surface"
-                >
-                  {transcriptGroups.length ? (
-                    transcriptGroups.map((group) => (
-                      <optgroup key={group.id} label={group.label}>
-                        {group.surfaces.map((candidate) => (
-                          <option key={candidate.id} value={candidate.id}>
-                            {candidate.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))
-                  ) : (
-                    normalizedTranscripts.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-            ) : (
-              <span>{transcript.label}</span>
-            )}
-            <span>{transcript.role.replace(/_/g, ' ')}</span>
-            <span>{transcript.sourceKind.replace(/_/g, ' ')}</span>
-            <span>{formatBytes(transcript.byteCount)}</span>
-            {transcript.sourcePath ? (
-              <button type="button" className="status-chip default" onClick={() => onOpenTracePath(transcript.sourcePath as string)}>
-                {isTailFollowSurfacePath(transcript.sourcePath) ? 'Tail raw' : 'Open raw'}
-              </button>
-            ) : null}
-          </div>
-          {transcript.lines.length ? (
-            <ol className="sidecar-live-view__transcript" aria-label="Scrollable transcript surface">
-              {transcript.lines.map((line) => (
-                <li key={`${line.index}:${line.eventType}`} className={`sidecar-live-view__transcript-line sidecar-live-view__transcript-line--${line.tone}`}>
-                  <span className="sidecar-live-view__transcript-index">{line.index + 1}</span>
-                  <div className="sidecar-live-view__transcript-body">
-                    <div className="sidecar-live-view__transcript-meta">
-                      <span className={`status-chip ${line.tone}`}>{line.label}</span>
-                      <small>{line.role ?? line.eventType}</small>
-                    </div>
-                    <pre>{line.text}</pre>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <div className="sidecar-body-text">No transcript surface was archived for this run.</div>
-          )}
-        </div>
-      </section>
-    </ProcessLiveRowGroup>
-  );
-}
-
-function normalizeLiveAnalysisCliTranscript(transcript: SidecarLiveAnalysisCliTranscriptInput): SidecarLiveAnalysisCliTranscript | null {
-  if (!transcript || transcript.kind !== 'sidecar_live_analysis_cli_transcript') return null;
-  const sourceKind = isLiveAnalysisTranscriptSourceKind(transcript.sourceKind) ? transcript.sourceKind : 'missing';
-  const sourcePath = typeof transcript.sourcePath === 'string' ? transcript.sourcePath : null;
-  const role = typeof transcript.role === 'string' && transcript.role.trim()
-    ? transcript.role
-    : sourceKind === 'missing'
-      ? 'missing'
-      : 'transform';
-  const label = typeof transcript.label === 'string' && transcript.label.trim()
-    ? transcript.label
-    : defaultLiveCliTranscriptLabel(role, sourceKind);
-  const id = typeof transcript.id === 'string' && transcript.id.trim()
-    ? transcript.id
-    : `cli:${sourcePath ?? label}`;
-  return {
-    kind: 'sidecar_live_analysis_cli_transcript',
-    id,
-    label,
-    role,
-    sourceKind,
-    sourcePath,
-    byteCount: typeof transcript.byteCount === 'number' && Number.isFinite(transcript.byteCount) ? transcript.byteCount : 0,
-    lineCount: typeof transcript.lineCount === 'number' && Number.isFinite(transcript.lineCount) ? transcript.lineCount : 0,
-    lines: Array.isArray(transcript.lines) ? transcript.lines : [],
-  };
-}
-
-function normalizeLiveAnalysisStageProcess(stageProcess: SidecarLiveAnalysisStageProcessInput): SidecarLiveAnalysisStageProcess | null {
-  if (!stageProcess || stageProcess.kind !== 'sidecar_live_analysis_stage_process') return null;
-  const stageKind = isLiveAnalysisStageProcessKind(stageProcess.stageKind) ? stageProcess.stageKind : 'unknown';
-  const label = typeof stageProcess.label === 'string' && stageProcess.label.trim()
-    ? stageProcess.label
-    : defaultLiveAnalysisStageProcessLabel(stageKind);
-  const id = typeof stageProcess.id === 'string' && stageProcess.id.trim()
-    ? stageProcess.id
-    : `stage-process:${label}`;
-  const role = typeof stageProcess.role === 'string' && stageProcess.role.trim()
-    ? stageProcess.role
-    : stageKind.includes('evaluator')
-      ? 'evaluate'
-      : stageKind.includes('worker')
-        ? 'transform'
-        : 'worker';
-  const transcriptSurfaces = Array.isArray(stageProcess.transcriptSurfaces)
-    ? stageProcess.transcriptSurfaces
-      .map(normalizeLiveAnalysisCliTranscript)
-      .filter((transcript): transcript is SidecarLiveAnalysisCliTranscript => Boolean(transcript))
-    : [];
-  return {
-    kind: 'sidecar_live_analysis_stage_process',
-    id,
-    label,
-    stageKind,
-    role,
-    operatorRunPath: typeof stageProcess.operatorRunPath === 'string' ? stageProcess.operatorRunPath : null,
-    processStartedPath: typeof stageProcess.processStartedPath === 'string' ? stageProcess.processStartedPath : null,
-    processEventsPath: typeof stageProcess.processEventsPath === 'string' ? stageProcess.processEventsPath : null,
-    terminalSessionId: typeof stageProcess.terminalSessionId === 'string' ? stageProcess.terminalSessionId : null,
-    elapsedMs: typeof stageProcess.elapsedMs === 'number' ? stageProcess.elapsedMs : null,
-    transcriptSurfaces,
-  };
-}
-
-function isLiveAnalysisTranscriptSourceKind(value: unknown): value is SidecarLiveAnalysisCliTranscript['sourceKind'] {
-  return value === 'terminal_transcript'
-    || value === 'terminal_screenlog'
-    || value === 'process_events'
-    || value === 'trace_events'
-    || value === 'worker_stdout'
-    || value === 'worker_stderr'
-    || value === 'last_message'
-    || value === 'final_output'
-    || value === 'run_summary'
-    || value === 'missing';
-}
-
-function isLiveAnalysisStageProcessKind(value: unknown): value is SidecarLiveAnalysisStageProcess['stageKind'] {
-  return value === 'transform_worker'
-    || value === 'design_depth_evaluator'
-    || value === 'review_grade_evaluator'
-    || value === 'evaluator'
-    || value === 'worker'
-    || value === 'unknown';
-}
-
-function defaultLiveAnalysisStageProcessLabel(stageKind: SidecarLiveAnalysisStageProcess['stageKind']) {
-  if (stageKind === 'transform_worker') return 'transform.C/F_P worker';
-  if (stageKind === 'design_depth_evaluator') return 'evaluate.C/F_P design depth';
-  if (stageKind === 'review_grade_evaluator') return 'evaluate.C/F_P review grade';
-  if (stageKind === 'evaluator') return 'evaluate.C/F_P evaluator';
-  if (stageKind === 'worker') return 'worker process';
-  return 'stage process';
-}
-
-function defaultLiveCliTranscriptLabel(role: string, sourceKind: SidecarLiveAnalysisCliTranscript['sourceKind']) {
-  const roleLabel = role === 'evaluate'
-    ? 'Evaluator'
-    : role === 'consequence'
-      ? 'Consequence'
-      : role === 'human_callout'
-        ? 'Human callout'
-        : role === 'missing'
-          ? 'No'
-          : 'Transform';
-  if (sourceKind === 'process_events') return `${roleLabel} process events`;
-  if (sourceKind === 'trace_events') return `${roleLabel} trace events`;
-  if (sourceKind === 'worker_stdout') return `${roleLabel} stdout`;
-  if (sourceKind === 'worker_stderr') return `${roleLabel} stderr`;
-  if (sourceKind === 'last_message') return `${roleLabel} last message`;
-  if (sourceKind === 'final_output') return `${roleLabel} final output`;
-  if (sourceKind === 'run_summary') return `${roleLabel} run summary`;
-  if (sourceKind === 'missing') return 'No transcript surface';
-  if (sourceKind === 'terminal_screenlog') return `${roleLabel} screen log`;
-  return `${roleLabel} terminal transcript`;
-}
-
-function LiveAnalysisRunGapList({ attempt, edge, operatorRun }: {
-  attempt: SidecarLiveAnalysisAttempt;
-  edge: SidecarLiveAnalysisAttempt['detail']['edgeAssurance'];
-  operatorRun: SidecarSdlcOperatorRun | null;
-}) {
-  const rows = [
-    ...(operatorRun?.blockingReasons ?? []).map((reason) => ({
-      key: `blocking:${reason.code}:${reason.detail ?? ''}`,
-      tone: reason.retryable ? 'pending' : 'blocked',
-      label: reason.code,
-      value: reason.retryable ? 'retryable' : 'blocked',
-      detail: [
-        reason.reasonClass,
-        reason.lawfulReentryPoint,
-        reason.detail ?? reason.message,
-      ].filter(Boolean).join(' · ') || 'blocking reason',
-    })),
-    ...attempt.detail.runtimeGaps.map((gap) => ({
-      key: `gap:${gap.artifact}`,
-      tone: gap.status === 'missing' ? 'blocked' : 'pending',
-      label: gap.artifact,
-      value: gap.status,
-      detail: gap.detail ?? 'runtime artifact gap',
-    })),
-    ...attempt.detail.diagnostics.map((diagnostic) => ({
-      key: `diag:${diagnostic.code}:${diagnostic.detail}`,
-      tone: diagnostic.severity === 'error' ? 'blocked' : diagnostic.severity === 'warn' ? 'pending' : 'default',
-      label: diagnostic.code,
-      value: diagnostic.severity,
-      detail: diagnostic.detail,
-    })),
-    ...attempt.detail.retryForensics.map((retry) => ({
-      key: `retry:${retry.edgeName}:${retry.likelyCauseClass}`,
-      tone: 'pending',
-      label: retry.edgeName,
-      value: retry.likelyCauseClass,
-      detail: retry.blockingReasonCodes.join(', ') || 'retry forensic',
-    })),
-    ...(edge?.edgeResidualPressureRefs ?? []).map((ref) => ({
-      key: `residual:${ref}`,
-      tone: 'blocked',
-      label: 'residual pressure',
-      value: 'open',
-      detail: ref,
-    })),
-    ...(edge?.gapPressureRefs ?? []).map((ref) => ({
-      key: `gap-pressure:${ref}`,
-      tone: 'pending',
-      label: 'gap pressure',
-      value: 'carried',
-      detail: ref,
-    })),
-  ] as Array<{ key: string; tone: string; label: string; value: string; detail: string }>;
-
-  if (rows.length === 0) {
-    return <div className="sidecar-body-text">No runtime gaps, residual pressure, retry forensic, or diagnostics are attached to this run.</div>;
-  }
-  return (
-    <ul className="sidecar-live-view__gap-list">
-      {rows.map((row) => (
-        <li key={row.key}>
-          <div>
-            <strong>{row.label}</strong>
-            <span className={`status-chip ${row.tone}`}>{row.value}</span>
-          </div>
-          <p>{row.detail}</p>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function LiveAnalysisDiagnosticRow({ diagnostic, onOpenTracePath }: {
-  diagnostic: SidecarLiveAnalysisDiagnostic;
-  onOpenTracePath: (absolutePath: string) => void;
-}) {
-  const operatorPath = refToAbsolutePath(diagnostic.operatorRunRef);
-  return (
-    <li className="sidecar-live-view__diagnostic">
-      <div>
-        <span className={`status-chip ${diagnostic.severity === 'error' ? 'blocked' : diagnostic.severity === 'warn' ? 'pending' : 'default'}`}>{diagnostic.severity}</span>
-        <strong>{diagnostic.code}</strong>
-      </div>
-      <p>{diagnostic.detail}</p>
-      {operatorPath ? (
-        <button type="button" className="status-chip default" onClick={() => onOpenTracePath(operatorPath)}>
-          Run archive
-        </button>
-      ) : null}
-    </li>
-  );
-}
-
-function ProcessGraphMap({ map, activeRecordIds, selectedRecordId, onSelectRecord, onOpenTracePath }: {
-  map: SidecarProcessMap;
-  activeRecordIds: string[];
-  selectedRecordId: string | null;
-  onSelectRecord: (id: string) => void;
-  onOpenTracePath?: (absolutePath: string) => void;
-}) {
-  if (map.nodes.length === 0) {
-    return <div className="sidecar-inspector__empty">This map has no projected graph nodes.</div>;
-  }
-
-  const activeRecordSet = new Set(activeRecordIds);
-  const nodeWidth = 176;
-  const nodeHeight = 86;
-  const columnGap = 232;
-  const rowGap = 112;
-  const padding = 32;
-  const positions = new Map(map.nodes.map((node) => [
-    node.id,
-    {
-      x: padding + node.column * columnGap,
-      y: padding + node.row * rowGap,
-    },
-  ]));
-  const maxColumn = Math.max(0, ...map.nodes.map((node) => node.column));
-  const maxRow = Math.max(0, ...map.nodes.map((node) => node.row));
-  const width = padding * 2 + nodeWidth + maxColumn * columnGap;
-  const height = padding * 2 + nodeHeight + maxRow * rowGap;
-
-  return (
-    <div className="sidecar-process-map__viewport">
-      <div className="sidecar-process-map__canvas" style={{ width, height } as CSSProperties}>
-        <svg
-          className="sidecar-process-map__edges"
-          width={width}
-          height={height}
-          viewBox={`0 0 ${width} ${height}`}
-          aria-hidden="true"
-        >
-          {map.edges.map((edge) => {
-            const from = positions.get(edge.from);
-            const to = positions.get(edge.to);
-            if (!from || !to) return null;
-            const active = edge.recordIds.length === 0 || edge.recordIds.some((id) => activeRecordSet.has(id));
-            const selected = selectedRecordId ? edge.recordIds.includes(selectedRecordId) : false;
-            const start = processMapEdgeAnchor(from, to, nodeWidth, nodeHeight);
-            const end = processMapEdgeAnchor(to, from, nodeWidth, nodeHeight);
-            return (
-              <line
-                key={edge.id}
-                className={`sidecar-process-map__edge sidecar-process-map__edge--${edge.tone}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-              />
-            );
-          })}
-        </svg>
-        {map.edges.map((edge) => {
-          const from = positions.get(edge.from);
-          const to = positions.get(edge.to);
-          if (!from || !to) return null;
-          const active = edge.recordIds.length === 0 || edge.recordIds.some((id) => activeRecordSet.has(id));
-          const selected = selectedRecordId ? edge.recordIds.includes(selectedRecordId) : false;
-          const start = processMapEdgeAnchor(from, to, nodeWidth, nodeHeight);
-          const end = processMapEdgeAnchor(to, from, nodeWidth, nodeHeight);
-          const x = (start.x + end.x) / 2;
-          const y = (start.y + end.y) / 2;
-          const primaryRecordId = edge.recordIds.find((id) => activeRecordSet.has(id)) ?? edge.recordIds[0] ?? null;
-          const canOpenTrace = Boolean(edge.traceArchiveRoot && onOpenTracePath);
-          const canSelectRecord = Boolean(primaryRecordId);
-          const disabled = !canOpenTrace && !canSelectRecord;
-          return (
-            <button
-              key={`${edge.id}:glyph`}
-              type="button"
-              disabled={disabled}
-              className={`sidecar-process-map__edge-glyph sidecar-process-map__edge-glyph--outcome-${edge.latestOutcome ?? 'unattested'} sidecar-process-map__edge-glyph--executor-${edge.executorProfile ?? 'unattested'}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
-              style={{ left: x, top: y } as CSSProperties}
-              title={processEdgeGlyphLabel(edge)}
-              aria-label={processEdgeGlyphLabel(edge)}
-              onClick={() => {
-                if (edge.traceArchiveRoot && onOpenTracePath) {
-                  onOpenTracePath(edge.traceArchiveRoot);
-                  return;
-                }
-                if (primaryRecordId) onSelectRecord(primaryRecordId);
-              }}
-            >
-              <span className="sidecar-process-map__edge-outcome" aria-hidden="true" />
-              <span className="sidecar-process-map__edge-executor" aria-hidden="true" />
-            </button>
-          );
-        })}
-        {map.nodes.map((node) => {
-          const position = positions.get(node.id);
-          if (!position) return null;
-          const active = node.recordIds.length === 0 || node.recordIds.some((id) => activeRecordSet.has(id));
-          const selected = selectedRecordId ? node.recordIds.includes(selectedRecordId) : false;
-          const primaryRecordId = node.recordIds.find((id) => activeRecordSet.has(id)) ?? null;
-          return (
-            <button
-              key={node.id}
-              type="button"
-              disabled={!primaryRecordId}
-              className={`sidecar-process-map-node sidecar-process-map-node--${node.kind} sidecar-process-map-node--${node.tone}${active ? '' : ' is-muted'}${selected ? ' is-selected' : ''}`}
-              style={{ left: position.x, top: position.y } as CSSProperties}
-              onClick={() => primaryRecordId ? onSelectRecord(primaryRecordId) : undefined}
-              title={node.summary}
-            >
-              <span className="panel__eyebrow">{node.lane}</span>
-              <strong>{node.label}</strong>
-              <small>{node.kind.replace(/_/g, ' ')}</small>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function processMapEdgeAnchor(
-  node: { x: number; y: number },
-  other: { x: number; y: number },
-  nodeWidth: number,
-  nodeHeight: number,
-): { x: number; y: number } {
-  const dx = other.x - node.x;
-  const dy = other.y - node.y;
-  const centerX = node.x + nodeWidth / 2;
-  const centerY = node.y + nodeHeight / 2;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return {
-      x: dx >= 0 ? node.x + nodeWidth : node.x,
-      y: centerY,
-    };
-  }
-  return {
-    x: centerX,
-    y: dy >= 0 ? node.y + nodeHeight : node.y,
-  };
-}
-
-function processEdgeGlyphLabel(edge: SidecarProcessMap['edges'][number]) {
-  const outcome = edge.latestOutcome ?? 'unattested';
-  const executor = edge.executorProfile ?? 'no executor evidence';
-  const trace = edge.traceArchiveRoot ? `Trace archive: ${edge.traceArchiveRoot}` : 'No trace archive admitted';
-  return `${edge.label}: ${outcome}; ${executor}. ${trace}`;
-}
-
-function compactIdentity(value: string | null) {
-  if (!value) return '—';
-  if (value.length <= 72) return value;
-  return `${value.slice(0, 34)}...${value.slice(-28)}`;
-}
-
-function liveAnalysisTone(signal: string) {
-  if (signal === 'progressing' || signal === 'completed') return 'active';
-  if (signal === 'aborted_or_killed' || signal === 'stalled_no_io' || signal === 'stalled_with_io') return 'blocked';
-  return 'pending';
-}
-
-function findWorkspaceOperatorRunForAttempt(
-  workspaceRun: SidecarSdlcWorkspaceRun | null,
-  attempt: SidecarLiveAnalysisAttempt,
-) {
-  if (!workspaceRun) return null;
-  return workspaceRun.operatorRuns.find((operatorRun) => {
-    if (attempt.operatorRunPath && operatorRun.operatorRunPath === attempt.operatorRunPath) return true;
-    if (attempt.operatorRunRef && attempt.operatorRunRef.endsWith(`/${operatorRun.operatorRunId}`)) return true;
-    return false;
-  }) ?? null;
-}
-
-function liveAttemptTone(attempt: SidecarLiveAnalysisAttempt, operatorRun: SidecarSdlcOperatorRun | null = null) {
-  if (operatorRun?.activeFeedbackLoop) return 'active';
-  const closureDisposition = operatorRun?.closureDecision?.disposition ?? attempt.closureDisposition;
-  if (closureDisposition === 'close') return 'converged';
-  if (closureDisposition === 'retry' || closureDisposition === 'repair' || closureDisposition === 're-enter' || closureDisposition === 'reprice' || closureDisposition === 'yield') return 'pending';
-  if (attempt.postflightStatus === 'passed' && !closureDisposition) return 'converged';
-  if (
-    closureDisposition === 'block' ||
-    attempt.blockingReasonCodes.length > 0
-  ) {
-    return 'blocked';
-  }
-  if (attempt.fpEvaluateStatus || attempt.workerStatus) return 'active';
-  return 'pending';
-}
-
-function formatLiveBoolean(value: boolean | null | undefined) {
-  if (value === true) return 'pass';
-  if (value === false) return 'fail';
-  return '—';
-}
-
-function formatDurationMs(value: number) {
-  if (!Number.isFinite(value) || value < 0) return '—';
-  if (value < 1000) return `${Math.round(value)}ms`;
-  const seconds = value / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes.toFixed(minutes < 10 ? 1 : 0)}m`;
-  const hours = minutes / 60;
-  return `${hours.toFixed(hours < 10 ? 1 : 0)}h`;
-}
-
-function formatLiveRefreshTime(value: string | null | undefined) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-function formatLiveRunStartedAt(value: string | null | undefined) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZoneName: 'short',
-  });
-}
-
-function parseOperatorRunStartedAt(ref: string | null | undefined) {
-  if (!ref) return null;
-  const token = ref.split('/').filter(Boolean).at(-1) ?? ref;
-  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{0,3})Z(?:_|$)/.exec(token);
-  if (!match) return null;
-  const [, year, month, day, hour, minute, second, fraction = ''] = match;
-  const date = new Date(Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
-    Number(fraction.padEnd(3, '0') || '0'),
-  ));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function formatBytes(value: number) {
-  if (!Number.isFinite(value) || value < 0) return '—';
-  if (value < 1024) return `${Math.round(value)}B`;
-  const kib = value / 1024;
-  if (kib < 1024) return `${kib.toFixed(kib < 10 ? 1 : 0)}KiB`;
-  const mib = kib / 1024;
-  if (mib < 1024) return `${mib.toFixed(mib < 10 ? 1 : 0)}MiB`;
-  const gib = mib / 1024;
-  return `${gib.toFixed(gib < 10 ? 1 : 0)}GiB`;
-}
-
-function refToAbsolutePath(ref: string | null) {
-  if (!ref) return null;
-  if (!ref.startsWith('file://')) return ref.startsWith('/') ? ref : null;
-  try {
-    return decodeURIComponent(new URL(ref).pathname);
-  } catch {
-    return ref.slice('file://'.length) || null;
-  }
-}
-
-function projectPathRefToAbsolutePath(projectRoot: string | null, ref: string | null) {
-  if (!ref) return null;
-  const absolute = refToAbsolutePath(ref);
-  if (absolute) return absolute;
-  if (!projectRoot) return null;
-  const trimmed = ref.trim();
-  if (
-    !trimmed ||
-    trimmed.startsWith('../') ||
-    trimmed.includes('\0') ||
-    /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-  ) {
-    return null;
-  }
-  return absoluteProjectPath(projectRoot, trimmed);
 }
 
 function isTailFollowSurfacePath(relativePath: string) {
@@ -6664,7 +2971,8 @@ function directorySurfaceLoad(surface: Extract<SurfaceData, { kind: 'directory' 
 function directorySurfaceLabel(relativePath: string) {
   const normalized = relativePath.replace(/\/+$/, '');
   if (!normalized || normalized === '.') return '.';
-  return normalized.split('/').filter(Boolean).at(-1) ?? normalized;
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? normalized;
 }
 
 function directorySurfaceGroupKey(relativePath: string) {
@@ -6886,91 +3194,9 @@ function DirectorySurfaceNode({ relativePath, label, depth, groupStates, directo
   );
 }
 
-function canonicalSurfaceRelativePath(value: string | null | undefined) {
-  return typeof value === 'string'
-    ? value.trim().replace(/^\.\/+/, '').replace(/\/+/g, '/')
-    : '';
-}
-
-function transcriptSurfaceRelativePath(projectRoot: string | null, sourcePath: string | null) {
-  if (!sourcePath) return null;
-  const absolute = projectPathRefToAbsolutePath(projectRoot, sourcePath);
-  if (absolute) return relativeProjectPath(projectRoot, absolute);
-  const trimmed = sourcePath.trim();
-  return trimmed && !trimmed.startsWith('/') && !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-    ? trimmed
-    : null;
-}
-
-function buildSurfacePickerFromStageProcesses(input: {
-  stageProcesses: SidecarLiveAnalysisStageProcess[];
-  projectRoot: string | null;
-  relativePath: string;
-  onSelect: (relativePath: string) => void;
-}): DocumentViewerSurfacePicker | null {
-  const currentPath = canonicalSurfaceRelativePath(input.relativePath);
-  const seen = new Set<string>();
-  const groups = input.stageProcesses
-    .map((process) => {
-      const options = process.transcriptSurfaces
-        .map((surface) => {
-          const relativePath = transcriptSurfaceRelativePath(input.projectRoot, surface.sourcePath);
-          const canonicalPath = canonicalSurfaceRelativePath(relativePath);
-          if (!canonicalPath || seen.has(canonicalPath)) return null;
-          seen.add(canonicalPath);
-          return {
-            id: `${process.id}:${canonicalPath}`,
-            label: surface.label,
-            value: canonicalPath,
-          };
-        })
-        .filter((option): option is NonNullable<typeof option> => Boolean(option));
-      return options.length ? { id: process.id, label: process.label, options } : null;
-    })
-    .filter((group): group is NonNullable<typeof group> => Boolean(group));
-  const options = groups.flatMap((group) => group.options);
-  if (options.length <= 1 || !options.some((option) => option.value === currentPath)) return null;
-  return {
-    value: currentPath,
-    options,
-    groups,
-    onChange: input.onSelect,
-  };
-}
-
-function buildProcessSurfacePicker(input: {
-  projectRoot: string | null;
-  processProjection: SidecarProcessProjection | null;
-  relativePath: string;
-  enabled: boolean;
-  onSelect: (relativePath: string) => void;
-}): DocumentViewerSurfacePicker | null {
-  if (!input.enabled || !input.processProjection?.liveAnalysis) return null;
-  const currentPath = canonicalSurfaceRelativePath(input.relativePath);
-  for (const attempt of input.processProjection.liveAnalysis.attempts) {
-    const stageProcesses = (attempt.detail.stageProcesses ?? [])
-      .map(normalizeLiveAnalysisStageProcess)
-      .filter((process): process is SidecarLiveAnalysisStageProcess => Boolean(process));
-    const ownsSurface = stageProcesses.some((process) => process.transcriptSurfaces.some((surface) => {
-      const relativePath = transcriptSurfaceRelativePath(input.projectRoot, surface.sourcePath);
-      return canonicalSurfaceRelativePath(relativePath) === currentPath;
-    }));
-    if (ownsSurface) {
-      return buildSurfacePickerFromStageProcesses({
-        stageProcesses,
-        projectRoot: input.projectRoot,
-        relativePath: input.relativePath,
-        onSelect: input.onSelect,
-      });
-    }
-  }
-  return null;
-}
-
-function SurfaceInspector({ projectRoot, aiWorkspaceObservation, processProjection, tabId, relativePath, viewerState, dispatch }: {
+function SurfaceInspector({ projectRoot, aiWorkspaceObservation, tabId, relativePath, viewerState, dispatch }: {
   projectRoot: string | null;
   aiWorkspaceObservation: AiWorkspaceObservation | null;
-  processProjection: SidecarProcessProjection | null;
   tabId: string;
   relativePath: string;
   viewerState: SidecarDocumentViewerState | undefined;
@@ -6984,13 +3210,6 @@ function SurfaceInspector({ projectRoot, aiWorkspaceObservation, processProjecti
     () => isAiWorkspaceObservationForProject(aiWorkspaceObservation, projectRoot) ? aiWorkspaceObservation : null,
     [aiWorkspaceObservation, projectRoot],
   );
-  const surfacePicker = useMemo(() => buildProcessSurfacePicker({
-    projectRoot,
-    processProjection,
-    relativePath,
-    enabled: tailFollowSurface,
-    onSelect: (nextPath) => dispatch({ type: 'viewer/open', kind: 'surface', id: nextPath }),
-  }), [dispatch, processProjection, projectRoot, relativePath, tailFollowSurface]);
   const [tailFollowEnabled, setTailFollowEnabled] = useState(tailFollowSurface);
   const [rawTailSurface, setRawTailSurface] = useState(false);
   const aiWorkspaceArtifact = useMemo(() => (
@@ -7058,7 +3277,7 @@ function SurfaceInspector({ projectRoot, aiWorkspaceObservation, processProjecti
   }
   if (surface.kind === 'file') {
     const descriptor = documentDescriptorForPath(surface.relative_path);
-    const sourceUrl = descriptor.format === 'pdf'
+    const sourceUrl = descriptor.format === 'pdf' && projectRoot
       ? surfaceRawUrl(projectRoot, surface.relative_path)
       : undefined;
     const renderedContent = tailFollowSurface && !rawTailSurface
@@ -7078,7 +3297,6 @@ function SurfaceInspector({ projectRoot, aiWorkspaceObservation, processProjecti
           tailFollowEnabled={tailFollowEnabled}
           rawModeAvailable={tailFollowSurface}
           rawModeEnabled={rawTailSurface}
-          surfacePicker={surfacePicker}
           onZoomIn={() => dispatch({ type: 'document/zoom', tabId, delta: 0.15 })}
           onZoomOut={() => dispatch({ type: 'document/zoom', tabId, delta: -0.15 })}
           onZoomBy={(delta) => dispatch({ type: 'document/zoom', tabId, delta })}
@@ -7270,6 +3488,992 @@ function SessionInspector({ s }: { s: SessionRecord }) {
         ['Label', typeof s.raw?.label === 'string' ? s.raw.label : '—'],
         ['PID', typeof s.raw?.pid === 'number' ? String(s.raw.pid) : '—'],
       ]} />
+    </div>
+  );
+}
+
+// Traversal View (sprint W7) — restores the retired graph/vector observation
+// on the generic observation lane. Bounded summary; per-vector detail is
+// fetched lazily on selection through the traversal Cmd family.
+function formatTraversalDuration(ms: number | null) {
+  if (ms === null) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) return `${minutes}m ${seconds}s`;
+  return `${hours}h ${minutes % 60}m ${seconds}s`;
+}
+
+function shortSha(value: string | null) {
+  if (!value) return '—';
+  return value.replace(/^sha256:/, '').slice(0, 12);
+}
+
+function traversalVectorTone(vector: TraversalVectorRow): 'ok' | 'fail' | 'pending' {
+  if (vector.accepted === true) return 'ok';
+  if (vector.accepted === false) return 'fail';
+  return 'pending';
+}
+
+const RUN_SECTION_ORDER: { id: AbgRunSection; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'graph', label: 'Graph' },
+  { id: 'traversal', label: 'Traversal' },
+  { id: 'functions', label: 'Functions' },
+  { id: 'catalog', label: 'Catalog' },
+  { id: 'assets', label: 'Assets' },
+  { id: 'diagnostics', label: 'Diagnostics' },
+  { id: 'assurance', label: 'Assurance' },
+  { id: 'events', label: 'Events' },
+  { id: 'stages', label: 'Stages' },
+  { id: 'transcripts', label: 'Transcripts' },
+  { id: 'artifacts', label: 'Artifacts' },
+];
+
+function shortRunLabel(run: AbgRunObservation['runs'][number]) {
+  const timestamp = run.modifiedAt ? new Date(run.modifiedAt).toLocaleString() : 'undated';
+  return `${run.scenarioId ?? run.scenarioKind ?? run.runId} · ${timestamp}`;
+}
+
+function projectRelativeArtifactPath(projectRoot: string, path: string) {
+  const normalizedRoot = projectRoot.replace(/\/+$/, '');
+  return path.startsWith(`${normalizedRoot}/`) ? path.slice(normalizedRoot.length + 1) : null;
+}
+
+function BuildForensicFocus({ focus }: { focus: RunInspectorFocus | null }) {
+  if (!focus) return null;
+  return (
+    <section className="sidecar-run__forensic-focus" aria-label="Build forensic context">
+      <div><span>Execution</span><code>{focus.executionId}</code></div>
+      <div><span>Run reference</span><code>{focus.runRef ?? 'Not published'}</code></div>
+      <div><span>Revision</span><code>{focus.revision}</code></div>
+      <div><span>Evidence source</span><code>{focus.sourceRef}</code></div>
+    </section>
+  );
+}
+
+function RunInspector({ state, dispatch }: {
+  state: SidecarState;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const traversal = state.traversal;
+  const projectRoot = state.context?.project.root ?? null;
+  const observation = traversal.runObservation?.projectRoot === projectRoot ? traversal.runObservation : null;
+  const runFocus = state.runFocus?.projectRoot === projectRoot ? state.runFocus : null;
+
+  useEffect(() => {
+    if (!projectRoot || traversal.runStatus !== 'ready') return undefined;
+    const timer = window.setInterval(() => {
+      dispatch({
+        type: 'traversal/load',
+        workspaceRoot: projectRoot,
+        runId: traversal.selectedRunId,
+        refresh: true,
+      });
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [dispatch, projectRoot, traversal.runStatus, traversal.selectedRunId]);
+
+  if (traversal.workspaceRoot !== null && traversal.workspaceRoot !== projectRoot) {
+    return (
+      <div className="sidecar-run">
+        <BuildForensicFocus focus={runFocus} />
+        <div className="sidecar-inspector__empty">Run state belongs to a different Project and has been withheld.</div>
+      </div>
+    );
+  }
+  if ((traversal.runStatus === 'idle' || traversal.runStatus === 'loading') && !observation) {
+    return (
+      <div className="sidecar-run">
+        <BuildForensicFocus focus={runFocus} />
+        <div className="sidecar-inspector__empty" aria-busy="true">Discovering Project runs and admitted proof carriers...</div>
+      </div>
+    );
+  }
+  if (traversal.runStatus === 'error' && !observation) {
+    return (
+      <div className="sidecar-run sidecar-run--error">
+        <BuildForensicFocus focus={runFocus} />
+        <div className="sidecar-inspector__id">Run Inspector</div>
+        <h2 className="sidecar-inspector__title">Run observation failed</h2>
+        <div className="sidecar-traversal__error" role="alert">{traversal.runError ?? 'unknown error'}</div>
+        <button type="button" className="secondary sidecar-action-button" onClick={() => dispatch({ type: 'traversal/load', workspaceRoot: projectRoot, refresh: true })}>Retry</button>
+      </div>
+    );
+  }
+  if (!observation || observation.state !== 'ready') {
+    return (
+      <div className="sidecar-run sidecar-run--unsupported">
+        <BuildForensicFocus focus={runFocus} />
+        <div className="sidecar-inspector__id">{observation?.identity.label ?? 'Run Inspector'}</div>
+        <h2 className="sidecar-inspector__title">No admitted run is available</h2>
+        {(observation?.diagnostics ?? []).map((entry, index) => (
+          <div key={`${entry.code}:${index}`} className={`sidecar-run__diagnostic sidecar-run__diagnostic--${entry.severity}`}>
+            <code>{entry.code}</code><span>{entry.message}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const selectedRun = observation.runs.find((run) => run.runId === observation.selectedRunId) ?? observation.runs[0] ?? null;
+  const selectedWorkspaceRoot = observation.selectedWorkspaceRoot;
+  const matchingSession = selectedWorkspaceRoot
+    ? state.sessions.records.find((session) => session.cwd === selectedWorkspaceRoot && ['running', 'live'].includes(session.status)) ?? null
+    : null;
+  const openRuntimeTarget = () => {
+    dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: false });
+    if (matchingSession) {
+      dispatch({ type: 'terminal/open', sessionId: matchingSession.id });
+      return;
+    }
+    if (selectedWorkspaceRoot) {
+      dispatch({
+        type: 'session/spawn/request',
+        cwd: selectedWorkspaceRoot,
+        label: `${selectedRun?.scenarioId ?? 'run'} shell`,
+      });
+    }
+  };
+
+  return (
+    <div className="sidecar-run">
+      <BuildForensicFocus focus={runFocus} />
+      <header className="sidecar-run__header">
+        <div className="sidecar-run__identity">
+          <div className="sidecar-inspector__id">{observation.identity.id} · admitted run</div>
+          <h2 className="sidecar-inspector__title">{selectedRun?.scenarioId ?? selectedRun?.scenarioKind ?? 'Run Inspector'}</h2>
+          <div className="sidecar-run__pills">
+            <Pill kind={observation.activity?.status === 'converged' ? 'lane-completed' : 'lane-active'}>{observation.activity?.status ?? 'unknown'}</Pill>
+            <Pill kind="default">{observation.substrate?.packageVersion ?? 'unversioned substrate'}</Pill>
+            <Pill kind="default">{observation.activity?.eventCount ?? 0} events</Pill>
+            <Pill kind="default">{observation.activity?.vectorClosedCount ?? 0}/{observation.activity?.vectorPlannedCount ?? 0} closed</Pill>
+          </div>
+        </div>
+        <div className="sidecar-run__controls">
+          <label className="sidecar-run__run-select">
+            <span>Run</span>
+            <select
+              aria-label="Select observed run"
+              value={traversal.selectedRunId ?? observation.selectedRunId ?? ''}
+              onChange={(event) => dispatch({ type: 'run/select', runId: event.target.value })}
+            >
+              {observation.runs.map((run) => <option key={run.runId} value={run.runId}>{shortRunLabel(run)}</option>)}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="secondary sidecar-action-button"
+            disabled={traversal.runStatus === 'loading'}
+            onClick={() => dispatch({ type: 'traversal/load', workspaceRoot: projectRoot, runId: traversal.selectedRunId, refresh: true })}
+          >
+            {traversal.runStatus === 'loading' ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button type="button" className="secondary sidecar-action-button" disabled={!selectedWorkspaceRoot} onClick={openRuntimeTarget}>
+            {matchingSession ? 'Open run shell' : 'New run shell'}
+          </button>
+        </div>
+      </header>
+
+      <nav className="sidecar-run__sections" aria-label="Run observation sections">
+        {RUN_SECTION_ORDER.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            aria-pressed={traversal.section === section.id}
+            className={traversal.section === section.id ? 'is-active' : ''}
+            onClick={() => dispatch({ type: 'run/select-section', section: section.id })}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidecar-run__section">
+        {traversal.section === 'overview' && <RunOverview observation={observation} />}
+        {traversal.section === 'graph' && <RunGraph observation={observation} />}
+        {traversal.section === 'traversal' && <TraversalSection traversal={traversal} dispatch={dispatch} />}
+        {traversal.section === 'functions' && <RunFunctions observation={observation} />}
+        {traversal.section === 'catalog' && <RunCatalog observation={observation} />}
+        {traversal.section === 'assets' && <RunAssets observation={observation} />}
+        {traversal.section === 'diagnostics' && <RunDiagnostics observation={observation} />}
+        {traversal.section === 'assurance' && <RunAssurance observation={observation} />}
+        {traversal.section === 'events' && <RunEvents observation={observation} />}
+        {traversal.section === 'stages' && <RunStages observation={observation} />}
+        {traversal.section === 'transcripts' && <RunTranscripts observation={observation} />}
+        {traversal.section === 'artifacts' && <RunArtifacts observation={observation} dispatch={dispatch} />}
+      </div>
+    </div>
+  );
+}
+
+function RunOverview({ observation }: { observation: AbgRunObservation }) {
+  const activity = observation.activity;
+  return (
+    <div className="sidecar-run__overview">
+      <div className="sidecar-run__metrics" aria-label="Run activity summary">
+        <div><strong>{activity?.currentVectorIndex ?? '—'}</strong><span>current vector</span></div>
+        <div><strong>{activity?.retryCount ?? 0}</strong><span>retries</span></div>
+        <div><strong>{activity?.continuationCount ?? 0}</strong><span>continuations</span></div>
+        <div><strong>{activity?.eventKindCount ?? 0}</strong><span>event kinds</span></div>
+        <div><strong>{formatTraversalDuration(activity?.durationMs ?? null)}</strong><span>duration</span></div>
+      </div>
+      <Section title="Runtime">
+        <MetaGrid items={[
+          ['Project root', observation.projectRoot],
+          ['Run root', observation.selectedRunRoot ?? '—'],
+          ['Workspace root', observation.selectedWorkspaceRoot ?? '—'],
+          ['Started', activity?.startedAt ?? '—'],
+          ['Last event', activity?.lastEventAt ?? '—'],
+          ['Substrate', observation.substrate?.packageName ?? '—'],
+          ['Source commit', observation.substrate?.sourceCommit ?? '—'],
+        ]} />
+      </Section>
+      <Section title="System references">
+        <div className="sidecar-run__references">
+          {observation.systemReferences.map((reference) => (
+            <div key={`${reference.kind}:${reference.ref}`}>
+              <span>{reference.kind.replace(/_/g, ' ')}</span>
+              <code>{reference.ref}</code>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function RunGraph({ observation }: { observation: AbgRunObservation }) {
+  const graphRef = observation.systemReferences.find((reference) => reference.kind === 'graph')?.ref ?? 'unpublished graph';
+  const overlayRef = observation.systemReferences.find((reference) => reference.kind === 'overlay')?.ref ?? null;
+  return (
+    <div className="sidecar-run__graph">
+      <div className="sidecar-run__graph-head">
+        <code>{graphRef}</code>
+        {overlayRef && <Pill kind="stdo-ux">{overlayRef}</Pill>}
+      </div>
+      <ol className="sidecar-run__graph-chain" aria-label="Observed graph vectors">
+        {observation.stages.map((stage) => (
+          <li key={stage.vectorIndex} className={`sidecar-run__graph-node sidecar-run__graph-node--${stage.status}`}>
+            <span className="sidecar-run__graph-index">v{stage.vectorIndex}</span>
+            <div><strong>{stage.edge ?? stage.stage ?? 'unlabelled edge'}</strong><code>{stage.sourceTypeRef ?? '—'} → {stage.targetTypeRef ?? '—'}</code></div>
+            <span>{stage.status}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function RunFunctions({ observation }: { observation: AbgRunObservation }) {
+  return (
+    <RunTable headers={['Graph function', 'Selections', 'Calls', 'Frames', 'Vectors']}>
+      {observation.functions.map((fn) => (
+        <tr key={fn.graphFunctionRef}>
+          <td><code>{fn.graphFunctionRef}</code></td><td>{fn.selectedCount}</td><td>{fn.callCount}</td><td>{fn.frameCount}</td><td>{fn.vectorIndexes.length}</td>
+        </tr>
+      ))}
+    </RunTable>
+  );
+}
+
+function RunCatalog({ observation }: { observation: AbgRunObservation }) {
+  const catalog = observation.catalog;
+  const [query, setQuery] = useState('');
+  const [entryKind, setEntryKind] = useState('all');
+  const availableKinds = useMemo(() => catalog.entryKindCounts.map((entry) => entry.kind), [catalog.entryKindCounts]);
+
+  useEffect(() => {
+    if (entryKind !== 'all' && !availableKinds.includes(entryKind)) setEntryKind('all');
+  }, [availableKinds, entryKind]);
+
+  const filteredEntries = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return catalog.entries.filter((entry) => {
+      if (entryKind !== 'all' && entry.entryKind !== entryKind) return false;
+      if (!normalizedQuery) return true;
+      return [
+        entry.name,
+        entry.entryRef,
+        entry.declarationRef,
+        entry.graphFunctionRef,
+        entry.templateRef,
+        ...entry.tags,
+        ...entry.inputTypeRefs,
+        ...entry.outputTypeRefs,
+        ...entry.declarationKeys,
+      ].some((value) => value?.toLowerCase().includes(normalizedQuery));
+    });
+  }, [catalog.entries, entryKind, query]);
+
+  if (catalog.state === 'missing') {
+    return <div className="sidecar-inspector__empty">No ABG catalog events are published by this run.</div>;
+  }
+
+  return (
+    <div className="sidecar-run__catalog" role="region" aria-label="ABG catalog">
+      <div className="sidecar-run__metrics" aria-label="ABG catalog summary">
+        <div><strong>{catalog.entryCount}</strong><span>unique entries</span></div>
+        <div><strong>{catalog.admissionEventCount}</strong><span>admissions</span></div>
+        <div><strong>{catalog.entryKindCounts.length}</strong><span>entry kinds</span></div>
+        <div><strong>{catalog.rejectedEventCount}</strong><span>rejected</span></div>
+        <div><strong>{catalog.constructionCatalogs.length}</strong><span>action catalogs</span></div>
+      </div>
+
+      <div className="sidecar-run__catalog-toolbar">
+        <label>
+          <span>Filter</span>
+          <input
+            type="search"
+            aria-label="Filter ABG catalog"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className="sidecar-run__catalog-kinds" role="group" aria-label="Catalog entry kind">
+          <button type="button" aria-pressed={entryKind === 'all'} className={entryKind === 'all' ? 'is-active' : ''} onClick={() => setEntryKind('all')}>
+            All {catalog.entryCount}
+          </button>
+          {catalog.entryKindCounts.map((entry) => (
+            <button key={entry.kind} type="button" aria-pressed={entryKind === entry.kind} className={entryKind === entry.kind ? 'is-active' : ''} onClick={() => setEntryKind(entry.kind)}>
+              {entry.kind.replace(/_/g, ' ')} {entry.count}
+            </button>
+          ))}
+        </div>
+        {catalog.truncated && <Pill kind="cat-defect">bounded result</Pill>}
+      </div>
+
+      {filteredEntries.length === 0 ? (
+        <div className="sidecar-inspector__empty">No catalog entries match the current filter.</div>
+      ) : (
+        <RunTable headers={['Kind', 'Entry', 'Type flow', 'Declaration / template', 'Admissions', 'Source events']}>
+          {filteredEntries.map((entry) => (
+            <tr key={entry.projectionKey}>
+              <td><Pill kind="default">{entry.entryKind.replace(/_/g, ' ')}</Pill></td>
+              <td><strong>{entry.name}</strong>{entry.entryRef && entry.entryRef !== entry.name && <code>{entry.entryRef}</code>}</td>
+              <td>
+                <code>{entry.inputTypeRefs.join(', ') || '—'}</code>
+                <span>→</span>
+                <code>{entry.outputTypeRefs.join(', ') || '—'}</code>
+              </td>
+              <td>
+                <code>{entry.declarationKeys.join(', ') || entry.templateRef || entry.declarationRef || '—'}</code>
+              </td>
+              <td>
+                <strong>{entry.admissionCount}</strong>
+                {entry.variantCount > 1 && <Pill kind="cat-defect">{entry.variantCount} variants</Pill>}
+              </td>
+              <td><code>{entry.sourceEventIndexes.map((index) => `#${index}`).join(' · ') || '—'}</code></td>
+            </tr>
+          ))}
+        </RunTable>
+      )}
+
+      {catalog.rejectedEntries.length > 0 && (
+        <Section title="Rejected admissions">
+          <RunTable headers={['Kind', 'Entry / declaration', 'Reason', 'Conflicts', 'Source event']}>
+            {catalog.rejectedEntries.map((entry, index) => (
+              <tr key={`${entry.sourceEventIndex ?? 'unknown'}:${index}`}>
+                <td><Pill kind="cat-defect">{entry.entryKind.replace(/_/g, ' ')}</Pill></td>
+                <td><code>{entry.entryRef ?? entry.declarationRef ?? '—'}</code></td>
+                <td>{entry.rejectionReason ?? '—'}</td>
+                <td><code>{entry.conflictingEntryRefs.join(', ') || '—'}</code></td>
+                <td>{entry.sourceEventIndex === null ? '—' : `#${entry.sourceEventIndex}`}</td>
+              </tr>
+            ))}
+          </RunTable>
+        </Section>
+      )}
+
+      {catalog.constructionCatalogs.length > 0 && (
+        <Section title="Construction action catalogs">
+          <RunTable headers={['Catalog', 'Episode', 'Hook resolution', 'Traversal publications', 'Admissions']}>
+            {catalog.constructionCatalogs.map((entry) => (
+              <tr key={entry.catalogRef}>
+                <td><code>{entry.catalogRef}</code></td>
+                <td><code>{entry.episodeId ?? '—'}</code></td>
+                <td><code>{entry.hookResolutionRef ?? '—'}</code></td>
+                <td><code>{entry.traversalPublicationRefs.join(', ') || '—'}</code></td>
+                <td>{entry.admissionCount}</td>
+              </tr>
+            ))}
+          </RunTable>
+        </Section>
+      )}
+
+      <code className="sidecar-run__source-ref">{catalog.sourceRef ?? 'catalog source unavailable'}</code>
+    </div>
+  );
+}
+
+function RunAssets({ observation }: { observation: AbgRunObservation }) {
+  return (
+    <RunTable headers={['Asset', 'Producer', 'Target type', 'Bytes', 'Digest']}>
+      {observation.assets.map((asset, index) => (
+        <tr key={`${asset.producerVectorIndex}:${asset.path}:${index}`}>
+          <td><code>{asset.path}</code></td>
+          <td>v{asset.producerVectorIndex} · {asset.producerStage ?? '—'}</td>
+          <td><code>{asset.targetTypeRef ?? '—'}</code></td>
+          <td>{asset.byteLength ?? '—'}</td>
+          <td><code>{shortSha(asset.sha256)}</code></td>
+        </tr>
+      ))}
+    </RunTable>
+  );
+}
+
+function RunDiagnostics({ observation }: { observation: AbgRunObservation }) {
+  if (observation.diagnostics.length === 0) return <div className="sidecar-inspector__empty">No run diagnostics are projected.</div>;
+  return (
+    <div className="sidecar-run__diagnostics">
+      {observation.diagnostics.map((entry, index) => (
+        <div key={`${entry.code}:${entry.vectorIndex ?? 'run'}:${index}`} className={`sidecar-run__diagnostic sidecar-run__diagnostic--${entry.severity}`}>
+          <div><code>{entry.code}</code>{entry.vectorIndex !== undefined && <Pill kind="default">v{entry.vectorIndex}</Pill>}</div>
+          <span>{entry.message}</span>
+          {entry.sourceRef && <code className="sidecar-run__source-ref">{entry.sourceRef}</code>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RunAssurance({ observation }: { observation: AbgRunObservation }) {
+  const assurance = observation.assurance;
+  if (!assurance) return <div className="sidecar-inspector__empty">No assurance carriers are available for this run.</div>;
+  return (
+    <div className="sidecar-run__assurance">
+      <div className="sidecar-run__metrics">
+        <div><strong>{assurance.evidenceAdmittedCount}</strong><span>evidence admitted</span></div>
+        <div><strong>{assurance.requirementReachedCount}/{assurance.requirementCount}</strong><span>requirements reached</span></div>
+        <div><strong>{assurance.testPassCount ?? '—'}</strong><span>tests passed</span></div>
+        <div><strong>{assurance.depthProofRowCount}</strong><span>depth rows</span></div>
+        <div><strong>{assurance.mutationKillCount}/{assurance.mutationCount}</strong><span>mutations killed</span></div>
+      </div>
+      <Section title="Admission">
+        <MetaGrid items={[
+          ['Payload observed', String(assurance.payloadObservedCount)],
+          ['Payload validated', String(assurance.payloadValidatedCount)],
+          ['Calls judged', String(assurance.judgedCallCount)],
+          ['Test exit', assurance.testStatus === null ? '—' : String(assurance.testStatus)],
+          ['Restore mismatches', String(assurance.mutationRestoreMismatchCount)],
+          ['Depth classes', assurance.depthClasses.join(', ') || '—'],
+        ]} />
+      </Section>
+      {assurance.testReports.length > 0 && (
+        <RunTable headers={['Test report', 'Tests', 'Failures', 'Errors', 'Skipped']}>
+          {assurance.testReports.map((report) => (
+            <tr key={report.path}><td><code>{report.path}</code></td><td>{report.tests}</td><td>{report.failures}</td><td>{report.errors}</td><td>{report.skipped}</td></tr>
+          ))}
+        </RunTable>
+      )}
+    </div>
+  );
+}
+
+function RunEvents({ observation }: { observation: AbgRunObservation }) {
+  return (
+    <div className="sidecar-run__events-layout">
+      <aside className="sidecar-run__event-kinds" aria-label="Event kind counts">
+        {observation.eventKinds.map((entry) => <div key={entry.kind}><code>{entry.kind}</code><strong>{entry.count}</strong></div>)}
+      </aside>
+      <RunTable headers={['#', 'Time', 'Kind', 'Vector', 'Edge', 'Detail']}>
+        {observation.events.map((event) => (
+          <tr key={event.index}><td>{event.index}</td><td>{event.eventTime ?? '—'}</td><td><code>{event.kind}</code></td><td>{event.vectorIndex === null ? '—' : `v${event.vectorIndex}`}</td><td><code>{event.edge ?? '—'}</code></td><td>{event.detail ?? '—'}</td></tr>
+        ))}
+      </RunTable>
+    </div>
+  );
+}
+
+function RunStages({ observation }: { observation: AbgRunObservation }) {
+  return (
+    <RunTable headers={['Vector', 'Stage / edge', 'Type flow', 'Attempts', 'Timing', 'Process trace', 'State']}>
+      {observation.stages.map((stage) => (
+        <tr key={stage.vectorIndex}>
+          <td>v{stage.vectorIndex}</td>
+          <td><strong>{stage.stage ?? '—'}</strong><code>{stage.edge ?? '—'}</code></td>
+          <td><code>{stage.sourceTypeRef ?? '—'} → {stage.targetTypeRef ?? '—'}</code></td>
+          <td>{stage.attemptCount}{stage.hasEvaluator ? ' + eval' : ''}</td>
+          <td>{formatTraversalDuration(stage.durationMs)}</td>
+          <td><code>{stage.processEventRef ?? '—'}</code></td>
+          <td><Pill kind={stage.status === 'accepted' ? 'lane-completed' : stage.status === 'rejected' ? 'cat-defect' : 'lane-active'}>{stage.status}</Pill></td>
+        </tr>
+      ))}
+    </RunTable>
+  );
+}
+
+function RunTranscripts({ observation }: { observation: AbgRunObservation }) {
+  if (observation.transcripts.length === 0) return <div className="sidecar-inspector__empty">No bounded transcript carriers are available.</div>;
+  return (
+    <div className="sidecar-run__transcripts">
+      {observation.transcripts.map((transcript, index) => (
+        <details key={transcript.transcriptId} open={index === 0}>
+          <summary><strong>{transcript.label}</strong><span>{transcript.kind}{transcript.vectorIndex === null ? '' : ` · v${transcript.vectorIndex}`}</span></summary>
+          <code className="sidecar-run__source-ref">{transcript.sourceRef}</code>
+          <pre>{transcript.contentPreview}{transcript.truncated ? '\n[preview truncated]' : ''}</pre>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function RunArtifacts({ observation, dispatch }: { observation: AbgRunObservation; dispatch: Dispatch<SidecarMsg> }) {
+  return (
+    <RunTable headers={['Role', 'Artifact', 'Size', 'Modified', 'Digest', 'Open']}>
+      {observation.artifacts.map((artifact) => {
+        const relativePath = projectRelativeArtifactPath(observation.projectRoot, artifact.path);
+        return (
+          <tr key={`${artifact.role}:${artifact.path}`}>
+            <td><Pill kind="default">{artifact.role.replace(/_/g, ' ')}</Pill></td>
+            <td><code>{relativePath ?? artifact.path}</code></td>
+            <td>{artifact.sizeBytes ?? '—'}</td>
+            <td>{artifact.modifiedAt ?? '—'}</td>
+            <td>
+              {artifact.digestState !== 'not_applicable' ? (
+                <span className="sidecar-run__digest">
+                  <Pill kind={artifact.digestState === 'verified' ? 'lane-completed' : artifact.digestState === 'mismatch' ? 'cat-defect' : 'default'}>{artifact.digestState.replace(/_/g, ' ')}</Pill>
+                  <code>{shortSha(artifact.observedDigest ?? artifact.digest)}</code>
+                </span>
+              ) : '—'}
+            </td>
+            <td><button type="button" className="secondary sidecar-action-button" disabled={!relativePath || artifact.role === 'vector_artifacts'} onClick={() => relativePath && dispatch({ type: 'select', kind: 'surface', id: relativePath })}>Open</button></td>
+          </tr>
+        );
+      })}
+    </RunTable>
+  );
+}
+
+function RunTable({ headers, children }: { headers: string[]; children: ReactNode }) {
+  return (
+    <div className="sidecar-run__table-scroll">
+      <table className="sidecar-run__table"><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{children}</tbody></table>
+    </div>
+  );
+}
+
+function TraversalSection({ traversal, dispatch }: {
+  traversal: SidecarTraversalState;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const summary = traversal.summary;
+  if (traversal.status === 'idle') {
+    return <div className="sidecar-inspector__empty">Open the Traversal View from the context rail to load the active run.</div>;
+  }
+  if (traversal.status === 'loading' && !summary) {
+    return <div className="sidecar-inspector__empty" aria-busy="true">Loading traversal projection…</div>;
+  }
+  if (traversal.status === 'error') {
+    return (
+      <div className="sidecar-traversal sidecar-traversal--error">
+        <div className="sidecar-inspector__id">Traversal</div>
+        <h2 className="sidecar-inspector__title">Traversal projection failed</h2>
+        <div className="sidecar-traversal__error" role="alert">{traversal.error ?? 'unknown error'}</div>
+        <div className="sidecar-actions">
+          <button
+            type="button"
+            className="secondary sidecar-action-button"
+            onClick={() => dispatch({ type: 'traversal/load', workspaceRoot: traversal.workspaceRoot })}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!summary) {
+    return <div className="sidecar-inspector__empty">No traversal projection is loaded.</div>;
+  }
+  if (summary.state !== 'ready') {
+    return (
+      <div className="sidecar-traversal sidecar-traversal--unsupported">
+        <div className="sidecar-inspector__id">Traversal</div>
+        <h2 className="sidecar-inspector__title">No traversal run for this workspace</h2>
+        <Pill kind="default">{summary.state}</Pill>
+        <div className="sidecar-traversal__diagnostics">
+          {summary.diagnostics.length === 0
+            ? <div className="sidecar-body-text">The workspace does not contain a recognisable run topology (proof JSON plus sandbox identity).</div>
+            : summary.diagnostics.map((entry, index) => (
+              <div key={`${entry.code}:${index}`} className={`sidecar-traversal__diagnostic sidecar-traversal__diagnostic--${entry.severity}`}>
+                <code>{entry.code}</code>
+                <span>{entry.message}</span>
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  const selection = traversal.selectedVector;
+  const selectionKey = selection
+    ? traversalDetailKey(selection.index, selection.variant, selection.attempt, traversal.selectedRunId)
+    : null;
+  const detailEntry = selectionKey
+    ? traversal.details.find((entry) => entry.key === selectionKey) ?? null
+    : null;
+
+  return (
+    <div className="sidecar-traversal">
+      <header className="sidecar-traversal__header">
+        <div>
+          <div className="sidecar-inspector__id">{summary.scenario.scenarioId ?? 'traversal run'}</div>
+          <h2 className="sidecar-inspector__title">Traversal View</h2>
+        </div>
+        <div className="sidecar-traversal__header-pills">
+          <Pill kind="default">substrate {summary.substrate?.packageVersion ?? '—'}</Pill>
+          <Pill kind="default">{summary.scenario.proofClass ?? 'no proof class'}</Pill>
+          <Pill kind="default">{formatTraversalDuration(summary.scenario.durationMs)}</Pill>
+          <Pill kind="stdo-ux">current vector {summary.currentVectorIndex ?? '—'}</Pill>
+          {summary.unknownEventKinds.length > 0 && (
+            <Pill kind="lane-backlog">{summary.unknownEventKinds.length} unknown event kinds</Pill>
+          )}
+        </div>
+      </header>
+
+      {summary.requirementLineage.length > 0 && (
+        <section className="sidecar-traversal__lineage" aria-label="Requirement lineage">
+          {summary.requirementLineage.map((row) => (
+            <div key={row.requirementId} className="sidecar-traversal__lineage-row">
+              <code className="sidecar-traversal__lineage-id">{row.requirementId}</code>
+              <span className="sidecar-traversal__lineage-fold">{row.foldStates.join(', ') || '—'}</span>
+              <span className="sidecar-traversal__lineage-coverage">{row.coverageStatuses.join(', ') || '—'}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <div className="sidecar-traversal__layout">
+        <section className="sidecar-traversal__chain" aria-label="Traversal vector chain">
+          {summary.vectors.map((vector) => {
+            const tone = traversalVectorTone(vector);
+            const isCurrent = summary.currentVectorIndex === vector.vectorIndex;
+            const isSelected = selection?.index === vector.vectorIndex;
+            return (
+              <button
+                key={vector.vectorIndex}
+                type="button"
+                className={`sidecar-traversal__vector sidecar-traversal__vector--${tone}${isSelected ? ' is-selected' : ''}${isCurrent ? ' is-current' : ''}`}
+                aria-pressed={isSelected}
+                onClick={() => dispatch({ type: 'traversal/select-vector', index: vector.vectorIndex })}
+              >
+                <span className="sidecar-traversal__vector-frame" title={`invocation frame ${vector.frameOrdinal ?? '—'}`}>
+                  {vector.frameOrdinal === null ? '·' : `⌐${vector.frameOrdinal}`}
+                </span>
+                <span className="sidecar-traversal__vector-index">v{vector.vectorIndex}</span>
+                <span className="sidecar-traversal__vector-edge" title={vector.edge ?? undefined}>
+                  {vector.edge ?? vector.stage ?? '(unlabelled vector)'}
+                </span>
+                <span className="sidecar-traversal__vector-badges">
+                  {vector.attemptCount > 1 && <span className="sidecar-traversal__badge sidecar-traversal__badge--attempts">x{vector.attemptCount}</span>}
+                  {vector.hasEvaluator && <span className="sidecar-traversal__badge sidecar-traversal__badge--evaluator">eval</span>}
+                  {isCurrent && <span className="sidecar-traversal__badge sidecar-traversal__badge--current">current</span>}
+                  <span className={`sidecar-traversal__badge sidecar-traversal__badge--${tone}`}>
+                    {tone === 'ok' ? 'accepted' : tone === 'fail' ? 'rejected' : 'pending'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          {summary.vectors.length === 0 && (
+            <div className="sidecar-inspector__empty">The proof contains no traversed vectors.</div>
+          )}
+        </section>
+
+        <section className="sidecar-traversal__detail" aria-label="Vector detail">
+          {!selection && <div className="sidecar-inspector__empty">Select a vector to load its detail.</div>}
+          {selection && traversal.detailStatus === 'loading' && (
+            <div className="sidecar-inspector__empty" aria-busy="true">Loading vector {selection.index} detail…</div>
+          )}
+          {selection && traversal.detailStatus === 'error' && (
+            <div className="sidecar-traversal__error" role="alert">
+              vector {selection.index}: {traversal.detailError ?? 'detail load failed'}
+            </div>
+          )}
+          {selection && traversal.detailStatus === 'ready' && detailEntry && (
+            <TraversalVectorDetailPane detail={detailEntry.detail} dispatch={dispatch} />
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function TraversalVectorDetailPane({ detail, dispatch }: {
+  detail: TraversalVectorDetail;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  return (
+    <div className="sidecar-traversal__detail-body">
+      <div className="sidecar-traversal__detail-head">
+        <strong>v{detail.vectorIndex}</strong>
+        <span className="sidecar-traversal__detail-stage">{detail.stage ?? detail.edge ?? '—'}</span>
+        {detail.availableVariants.length > 1 && (
+          <div className="sidecar-traversal__variants" role="group" aria-label="Vector variants and attempts">
+            {detail.availableVariants.map((ref) => {
+              const active = ref.variant === detail.variant && ref.attempt === detail.attempt;
+              return (
+                <button
+                  key={`${ref.variant}:${ref.attempt}`}
+                  type="button"
+                  className={`sidecar-traversal__variant-button${active ? ' is-active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => dispatch({
+                    type: 'traversal/select-vector',
+                    index: detail.vectorIndex,
+                    variant: ref.variant,
+                    attempt: ref.attempt,
+                  })}
+                >
+                  {ref.variant === 'evaluator' ? 'eval' : 'run'} #{ref.attempt}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {detail.stagePlan && (
+        <Section title="Stage plan">
+          <div className="sidecar-traversal__stage-plan">
+            <div className="sidecar-traversal__type-flow">
+              <code>{detail.stagePlan.sourceTypeRef ?? '—'}</code>
+              <span aria-hidden="true">→</span>
+              <code>{detail.stagePlan.targetTypeRef ?? '—'}</code>
+            </div>
+            {detail.stagePlan.filesToProduce.length > 0 && (
+              <ul className="sidecar-traversal__files-to-produce">
+                {detail.stagePlan.filesToProduce.map((path) => <li key={path}><code>{path}</code></li>)}
+              </ul>
+            )}
+          </div>
+        </Section>
+      )}
+      {detail.assessment && (
+        <Section title="Assessment">
+          <div className="sidecar-traversal__assessment">
+            <Pill kind={detail.assessment.accepted === true ? 'lane-active' : detail.assessment.accepted === false ? 'cat-defect' : 'default'}>
+              {detail.assessment.accepted === true ? 'accepted' : detail.assessment.accepted === false ? 'rejected' : 'unjudged'}
+            </Pill>
+            {detail.assessment.reason && <div className="sidecar-body-text">{detail.assessment.reason}</div>}
+          </div>
+        </Section>
+      )}
+      {detail.materializedFiles.length > 0 && (
+        <Section title={`Materialized files (${detail.materializedFiles.length})`}>
+          <div className="sidecar-traversal__files-scroll">
+            <table className="sidecar-traversal__files">
+              <thead>
+                <tr><th>path</th><th>bytes</th><th>lines</th><th>sha256</th></tr>
+              </thead>
+              <tbody>
+                {detail.materializedFiles.map((file) => (
+                  <tr key={file.path}>
+                    <td><code>{file.path}</code></td>
+                    <td>{file.byteLength ?? '—'}</td>
+                    <td>{file.lineCount ?? '—'}</td>
+                    <td><code>{shortSha(file.sha256)}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+      {detail.contentPreviews.length > 0 && (
+        <Section title="Content previews">
+          {detail.contentPreviews.map((preview) => (
+            <div key={preview.path} className="sidecar-traversal__preview">
+              <code className="sidecar-traversal__preview-path">{preview.path}</code>
+              <pre className="sidecar-traversal__preview-body">{preview.contentPreview}</pre>
+            </div>
+          ))}
+        </Section>
+      )}
+      {detail.timing && (
+        <Section title="Timing">
+          <MetaGrid items={[
+            ['Started', detail.timing.startedAt ?? '—'],
+            ['Ended', detail.timing.endedAt ?? '—'],
+            ['Duration', formatTraversalDuration(detail.timing.durationMs)],
+          ]} />
+        </Section>
+      )}
+    </div>
+  );
+}
+
+// Ticket Board (sprint W8) — instantiation #1 of the shared DrillView
+// primitive: lanes are the on-disk ticket lanes, cards are ticket records
+// from the batch surface load, the detail pane below renders the STDO
+// frontmatter grid and the markdown body. Selection is reducer-owned
+// (state.ticketBoard) per UX_METHOD §5.
+const TICKET_BOARD_LANE_ORDER: { id: TicketLane; label: string }[] = [
+  { id: 'active', label: 'Active' },
+  { id: 'backlog', label: 'Backlog' },
+  { id: 'completed', label: 'Completed' },
+];
+
+function ticketPriorityTone(priority: string | undefined): DrillTone {
+  const value = (priority ?? '').trim().toLowerCase();
+  if (['critical', 'blocker', 'urgent', 'highest', 'p0'].includes(value)) return 'fail';
+  if (['high', 'p1'].includes(value)) return 'warn';
+  if (['low', 'lowest', 'p3', 'p4'].includes(value)) return 'ok';
+  return 'neutral';
+}
+
+function ticketBoardLanes(tickets: TicketRecord[]): DrillLane[] {
+  return TICKET_BOARD_LANE_ORDER.map(({ id, label }) => ({
+    id,
+    label,
+    items: tickets
+      .filter((ticket) => ticket.lane === id)
+      .map((ticket) => ({
+        id: ticket.id,
+        title: ticket.title,
+        subtitle: ticket.id,
+        tone: ticketPriorityTone(ticket.priority),
+        badges: [
+          ...(ticket.type ? [{ label: ticket.type, kind: `type-${ticket.type}` }] : []),
+          ...(ticket.status ? [{ label: ticket.status, kind: `status-${ticket.status}` }] : []),
+        ],
+      })),
+  }));
+}
+
+function TicketBoardInspector({ state, dispatch }: {
+  state: SidecarState;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const workspaceLabel = state.context?.project.id ?? state.context?.project.root ?? 'this workspace';
+  const selectedTicketId = state.ticketBoard.selectedTicketId;
+  return (
+    <DrillView
+      className="sidecar-ticket-board"
+      label="Tickets Board"
+      lanes={ticketBoardLanes(state.tickets)}
+      selectedId={selectedTicketId}
+      onSelect={(id) => dispatch({ type: 'ticket-board/select', id: id === selectedTicketId ? null : id })}
+      renderDetail={(id) => {
+        const ticket = state.tickets.find((candidate) => candidate.id === id);
+        return ticket
+          ? <TicketBoardDetail t={ticket} />
+          : <div className="sidecar-inspector__empty">Ticket {id} is no longer present in the loaded records.</div>;
+      }}
+      detailPlaceholder="Select a ticket card to inspect its STDO frontmatter and body."
+      emptyMessage={`Workspace ${workspaceLabel} carries no tickets surface — no ticket records are loaded.`}
+    />
+  );
+}
+
+function ticketGovernanceExpansionSummary(t: TicketRecord) {
+  return (t.governanceScopeExpansion ?? [])
+    .flatMap((entry) => Object.entries(entry))
+    .map(([letter, method]) => `${letter} → ${method}`)
+    .join(', ');
+}
+
+function TicketBoardDetail({ t }: { t: TicketRecord }) {
+  const fieldRows = ([
+    ['Goal', t.goal],
+    ['Change intent', t.changeIntent],
+    ['Change class', t.changeClass],
+    ['Re-entry point', t.reEntryPoint],
+    ['Category', t.ticketCategory],
+    ['Priority', t.priority],
+    ['Depends on', t.dependencies?.join(', ')],
+    ['Intake source', t.intakeSource],
+    ['Affected boundary', t.affectedBoundary],
+    ['Build tenant', t.buildTenant],
+    ['Source ticket', t.sourceTicket],
+    ['Governance', t.governanceScope],
+    ['Governance expansion', ticketGovernanceExpansionSummary(t)],
+    ['Closure law', t.closureLaw],
+    ['Triaged', t.triagedAt],
+    ['Created', t.createdAt],
+    ['Updated', t.updatedAt],
+    ['Source', t.sourcePath],
+  ] as [string, string | undefined][]).filter(
+    (entry): entry is [string, string] => Boolean(entry[1] && entry[1].trim()),
+  );
+  const listSections: [string, string[] | undefined][] = [
+    ['Evaluation criteria', t.evaluationCriteria],
+    ['Proof surface', t.proofSurface],
+    ['Non-closure conditions', t.nonClosureConditions],
+  ];
+  return (
+    <div className="sidecar-ticket-board__detail">
+      <div className="sidecar-inspector__id">{t.id}</div>
+      <h2 className="sidecar-inspector__title">{t.title}</h2>
+      <div className="sidecar-ticket-board__detail-pills">
+        <Pill kind={`lane-${t.lane}`}>{t.lane}</Pill>
+        {t.status && <Pill kind="default">{t.status}</Pill>}
+        {t.type && <Pill kind="default">{t.type}</Pill>}
+        {t.priority && <Pill kind={`priority-${t.priority}`}>{t.priority}</Pill>}
+      </div>
+      {fieldRows.length > 0 && <MetaGrid items={fieldRows} />}
+      {t.targetTruth && <Section title="Target truth"><div className="sidecar-body-text">{t.targetTruth}</div></Section>}
+      {t.supersededTruth && <Section title="Superseded truth"><div className="sidecar-body-text">{t.supersededTruth}</div></Section>}
+      {listSections.map(([title, entries]) => (
+        entries && entries.length > 0 ? (
+          <Section key={title} title={title}>
+            <ul className="sidecar-criteria-list">
+              {entries.map((entry, index) => <li key={index}>{entry}</li>)}
+            </ul>
+          </Section>
+        ) : null
+      ))}
+      {t.body && t.body.trim() ? (
+        <Section title="Body">
+          <MarkdownDocumentContent descriptorId={`ticket-board:${t.id}`} content={t.body} />
+        </Section>
+      ) : (
+        <div className="sidecar-inspector__empty">This ticket carries no markdown body.</div>
+      )}
+    </div>
+  );
+}
+
+// AI Workspace viewer — first-class Sidecar canvas tab over the observation
+// that already rides the batch surface load (state.aiWorkspaceObservation).
+// The stale-root guard uses the same project-basis law as the batch loader:
+// an observation for a different root renders as this root's honest absence.
+function AiWorkspaceInspector({ state, dispatch, onInfoSurfaceSelect }: {
+  state: SidecarState;
+  dispatch: Dispatch<SidecarMsg>;
+  onInfoSurfaceSelect: (surface: SidecarInfoSurface) => void;
+}) {
+  const projectRoot = state.context?.project.root ?? null;
+  const observation = isAiWorkspaceObservationForProject(state.aiWorkspaceObservation, projectRoot)
+    ? state.aiWorkspaceObservation
+    : null;
+  const workspaceLabel = state.context?.project.id ?? projectRoot ?? 'this workspace';
+  if (!observation) {
+    return (
+      <div className="sidecar-inspector__empty">
+        Workspace {workspaceLabel} carries no feature-detected .ai-workspace observation for its root
+        {projectRoot ? ` (${projectRoot})` : ''}.
+      </div>
+    );
+  }
+  const handleArtifactOpen = (artifact: AiWorkspaceArtifactRecord) => {
+    dispatchSurfaceSelection(dispatch, projectRoot, artifact.relativePath, artifact.absolutePath, 'browse');
+  };
+  const handleFeatureOpen = (featureId: AiWorkspaceFeatureId) => {
+    if (featureId === 'tickets' || featureId === 'comments') {
+      onInfoSurfaceSelect(featureId);
+    }
+  };
+  return (
+    <div className="sidecar-ai-workspace-view">
+      <AiWorkspaceObservationSummary
+        observation={observation}
+        onArtifactOpen={handleArtifactOpen}
+        onFeatureOpen={handleFeatureOpen}
+        expanded
+      />
     </div>
   );
 }
@@ -7741,7 +4945,7 @@ function SidecarTerminal({ session, projectRoot }: {
     }
 
     function safeFitAndResize(immediate = false) {
-      if (disposed || terminalRef.current !== terminal || !host.isConnected) return;
+      if (disposed || terminalRef.current !== terminal || !host?.isConnected) return;
       try {
         fitAddon.fit();
         queueResize(terminal.cols, terminal.rows, immediate);

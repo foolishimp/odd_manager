@@ -6,10 +6,11 @@ import {
 } from 'node:fs';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
+import { discoverProjectObservationTopology } from './project-observation-topology-service.mjs';
 
 const OBSERVATION_VERSION = 1;
 const DEFAULT_MAX_DIRECTORIES = 6000;
-const DEFAULT_MAX_ARTIFACTS = 1200;
+const DEFAULT_MAX_ARTIFACTS = 2400;
 const DEFAULT_MAX_DEPTH = 14;
 const DEFAULT_MAX_JSON_BYTES = 1024 * 1024;
 
@@ -92,7 +93,6 @@ const FEATURE_DEFS = [
       '.ai-workspace/proofs',
       'test/proof_inputs',
       'test/fixtures',
-      'build_tenants',
     ],
     capabilities: ['proof.inspect'],
   },
@@ -102,7 +102,6 @@ const FEATURE_DEFS = [
     relativePath: 'test_runs',
     directoryHints: [
       'test_runs',
-      'build_tenants',
     ],
     capabilities: ['test_run.inspect'],
   },
@@ -110,7 +109,7 @@ const FEATURE_DEFS = [
     id: 'domain_overlays',
     label: 'Domain Overlays',
     relativePath: null,
-    directoryHints: ['.ai-workspace/overlays', 'build_tenants'],
+    directoryHints: ['.ai-workspace/overlays'],
     capabilities: ['domain_overlay.inspect'],
   },
 ];
@@ -210,7 +209,14 @@ function validateJsonl(path, maxBytes) {
     return { ok: false, lineCount: 0, invalidLineCount: 0, error: 'missing_file' };
   }
   if (stats.size > maxBytes) {
-    return { ok: false, lineCount: 0, invalidLineCount: 0, error: `jsonl_too_large:${stats.size}` };
+    return {
+      ok: true,
+      deferred: true,
+      lineCount: null,
+      invalidLineCount: null,
+      error: null,
+      sizeBytes: stats.size,
+    };
   }
   try {
     const lines = readFileSync(path, 'utf8')
@@ -301,7 +307,8 @@ function jsonSuggestsTestRun(value) {
 }
 
 function jsonSuggestsOverlay(value, relativePath) {
-  if (textIncludesAny(relativePath, ['overlay', 'slot-map', 'software-build'])) return true;
+  const base = basename(String(relativePath ?? '')).toLowerCase();
+  if (textIncludesAny(base, ['overlay', 'slot-map'])) return true;
   return objectHasAnyKey(value, [
     'overlayRef',
     'overlay_ref',
@@ -366,6 +373,10 @@ function isCandidateArtifact(relativePath) {
   if (lower.startsWith('.ai-workspace/catalogs/') && ['.json'].includes(ext)) return true;
   if (lower.includes('/.ai-workspace/proofs/') && ['.json', '.jsonl', '.md'].includes(ext)) return true;
   if (base === 'sandbox-summary.json') return true;
+  if (base === 'sandbox-identity.json') return true;
+  if (base === 'test-execution-result.json') return true;
+  if (base === 'depth-proof-map.json') return true;
+  if (base === 'mutation-outcomes.json') return true;
   if (base.includes('manifest') && ext === '.json') return true;
   if (base.includes('proof') && ext === '.json') return true;
   if (base.includes('event') && ext === '.jsonl') return true;
@@ -385,10 +396,8 @@ function scanCandidateArtifacts(projectRoot, options) {
     : DEFAULT_MAX_DEPTH;
   const roots = uniqueStrings([
     '.ai-workspace',
-    'test_runs',
     'test/proof_inputs',
     'test/fixtures',
-    'build_tenants',
     ...(Array.isArray(options.extraScanRoots) ? options.extraScanRoots : []),
   ]);
 
@@ -449,6 +458,45 @@ function scanCandidateArtifacts(projectRoot, options) {
   };
 }
 
+function isTopologyArtifactName(name) {
+  const base = String(name).toLowerCase();
+  if (base.includes('instruction-manifest')) return false;
+  return base.endsWith('-proof.json')
+    || base.includes('live-manifest')
+    || base === 'proof-input-summary.json'
+    || base === 'sandbox-summary.json'
+    || base === 'sandbox-identity.json'
+    || base === 'test-execution-result.json'
+    || base === 'depth-proof-map.json'
+    || base === 'mutation-outcomes.json';
+}
+
+function scanTopologyArtifacts(carrierRoots, maxArtifacts = 1200) {
+  const artifacts = [];
+  const queue = carrierRoots.map((path) => ({ path, depth: 0 }));
+  let cursor = 0;
+  while (cursor < queue.length && artifacts.length < maxArtifacts) {
+    const current = queue[cursor++];
+    if (current.depth > 8) continue;
+    let entries;
+    try {
+      entries = readdirSync(current.path, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (IGNORED_NAME_SET.has(entry.name) || entry.name === '.ai-workspace') continue;
+        queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
+      } else if (entry.isFile() && isTopologyArtifactName(entry.name)) {
+        artifacts.push(join(current.path, entry.name));
+        if (artifacts.length >= maxArtifacts) break;
+      }
+    }
+  }
+  return artifacts;
+}
+
 function classifyMarkdown(relativePath) {
   const lower = relativePath.toLowerCase();
   if (lower.startsWith('.ai-workspace/context/')) return { featureId: 'context', artifactKind: 'context_document' };
@@ -462,6 +510,24 @@ function classifyJsonArtifact(path, relativePath, options) {
   const base = basename(lower);
   const parsed = safeReadJson(path, options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES);
   if (!parsed.ok) {
+    if (parsed.error?.startsWith('json_too_large:')) {
+      if (base.includes('proof') || base === 'depth-proof-map.json' || base === 'mutation-outcomes.json') {
+        return {
+          featureId: 'proofs',
+          artifactKind: 'proof_artifact',
+          state: 'present',
+          diagnostics: [diagnostic('info', 'json_inspection_deferred', 'Large proof JSON is indexed by metadata and inspected through its bounded run projection.', relativePath)],
+        };
+      }
+      if (base === 'test-execution-result.json' || base === 'sandbox-summary.json') {
+        return {
+          featureId: 'test_runs',
+          artifactKind: 'test_run_summary',
+          state: 'present',
+          diagnostics: [diagnostic('info', 'json_inspection_deferred', 'Large test result is indexed by metadata.', relativePath)],
+        };
+      }
+    }
     return {
       featureId: 'ai_workspace',
       artifactKind: 'raw_file',
@@ -478,6 +544,15 @@ function classifyJsonArtifact(path, relativePath, options) {
   if (lower.startsWith('.ai-workspace/context/')) return { featureId: 'context', artifactKind: 'context_document' };
   if (base === 'sandbox-summary.json' && jsonSuggestsTestRun(value)) {
     return { featureId: 'test_runs', artifactKind: 'test_run_summary' };
+  }
+  if (base === 'test-execution-result.json') {
+    return { featureId: 'test_runs', artifactKind: 'test_run_summary' };
+  }
+  if (base === 'depth-proof-map.json' || base === 'mutation-outcomes.json') {
+    return { featureId: 'proofs', artifactKind: 'proof_artifact' };
+  }
+  if (base === 'sandbox-identity.json') {
+    return { featureId: 'runtime', artifactKind: 'runtime_json' };
   }
   if (base.includes('manifest') && (jsonSuggestsManifest(value) || jsonSuggestsProof(value))) {
     return { featureId: 'proofs', artifactKind: 'proof_manifest' };
@@ -511,14 +586,22 @@ function classifyJsonlArtifact(path, relativePath, options) {
       ],
     };
   }
+  const deferredDiagnostics = validation.deferred
+    ? [diagnostic(
+        'info',
+        'jsonl_digest_deferred',
+        `Large JSONL carrier (${validation.sizeBytes} bytes) is indexed without whole-file parsing; run proofs expose its admitted digest.`,
+        relativePath,
+      )]
+    : [];
   if (lower.startsWith('.ai-workspace/ledgers/') || lower.includes('/ledgers/')) {
-    return { featureId: 'ledgers', artifactKind: 'system_ledger' };
+    return { featureId: 'ledgers', artifactKind: 'system_ledger', diagnostics: deferredDiagnostics };
   }
   if (lower.startsWith('.ai-workspace/catalogs/') || lower.includes('/catalogs/')) {
-    return { featureId: 'catalogs', artifactKind: 'system_catalog' };
+    return { featureId: 'catalogs', artifactKind: 'system_catalog', diagnostics: deferredDiagnostics };
   }
   if (lower.startsWith('.ai-workspace/events/') || lower.includes('/events/') || lower.includes('event')) {
-    return { featureId: 'events', artifactKind: 'event_log_jsonl' };
+    return { featureId: 'events', artifactKind: 'event_log_jsonl', diagnostics: deferredDiagnostics };
   }
   if (lower.startsWith('.ai-workspace/runtime/')) return { featureId: 'runtime', artifactKind: 'runtime_json' };
   return { featureId: 'ai_workspace', artifactKind: 'raw_file' };
@@ -596,7 +679,16 @@ export function loadAiWorkspaceObservation(projectRootInput, options = {}) {
   const projectRoot = resolve(projectRootInput || '.');
   const aiWorkspaceRoot = join(projectRoot, '.ai-workspace');
   const scan = scanCandidateArtifacts(projectRoot, options);
-  const artifacts = scan.artifacts
+  const topology = discoverProjectObservationTopology(projectRoot, {
+    maxRuns: options.maxRuns,
+    refresh: options.refresh === true,
+  });
+  const candidatePaths = uniqueStrings([
+    ...scan.artifacts,
+    ...scanTopologyArtifacts(topology.runCarrierRoots, options.maxTopologyArtifacts),
+    ...topology.runs.flatMap((run) => run.artifactPaths),
+  ]);
+  const artifacts = candidatePaths
     .filter((path) => isFile(path))
     .map((path) => classifyArtifact(projectRoot, path, options))
     .sort((left, right) => {

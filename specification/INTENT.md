@@ -1,7 +1,7 @@
 # Intent
 
 **Status**: Active
-**Date**: 2026-04-06
+**Date**: 2026-07-11
 **Derived From**: current repo initialization and project repricing
 
 ## Purpose
@@ -11,11 +11,16 @@ outcome-driven systems built on GTL and ABG, with `odd_method` shaping how
 domain packages are authored and with concrete `odd_*` domain packages
 publishing the domain-specific graph-function worlds the manager supervises.
 
+Its first primary persona is the developer operating multiple Spec Method and
+ODD-governed Projects. The developer's primary interaction goal is to move one
+or more selected Project revisions from governed specification through
+evidence-backed, gate-complete build outcomes.
+
 It exists because the canonical truth is now split cleanly:
 
 - `abiogenesis` owns language and runtime law
 - `odd_method` owns the method for building domain packages such as
-  `odd_sdlc`, `odd_world_model`, and later `odd_*` lines
+  `odd_glc` and later `odd_*` lines
 - a concrete domain package owns the currently active domain-specific graph
   functions, query overlays, and control semantics for one workspace
 - the manager product must therefore become its own control-plane project
@@ -41,6 +46,17 @@ The project must deliver:
 - operator-facing read models over graph sets, typed assets, asset bindings,
   workorders, jobs, roles, runs, graph calls, frames, continuations, evidence,
   provenance, and closure
+- a portfolio-level control surface over multiple Projects, their specification
+  revisions, readiness, admitted builds, runtime posture, assurance, and
+  attention state
+- one coherent `Review -> Tune -> Build -> Assure` Project interaction loop
+- attributable specification prompting that produces validated proposals for
+  explicit acceptance or rejection before constitutional truth changes
+- typed build-command admission, bounded concurrent process supervision, and
+  correlation to ABG-owned run truth without moving graph policy into the
+  manager
+- evidence-backed required-versus-delivered gate and asset assurance with
+  explicit repair, escalation, and lawful re-entry actions
 - explicit host surfaces for manager-owned core pages and domain-contributed
   pages or actions selected through the active domain package contract
 - a versioned contract seam that lets one manager installation supervise
@@ -52,6 +68,9 @@ The project must deliver:
   runtime truth
 - a tenant-local implementation path for the UI without turning the UI into a
   second runtime
+- a modular but integrated capability architecture in which portfolio,
+  Project workbench, specification proposal, build control, assurance,
+  attention, and run observation can iterate behind clean typed boundaries
 
 ## Constraints
 
@@ -71,9 +90,18 @@ The project is constrained by these rules:
 - concrete domain semantics must come from published domain-package contracts,
   not from sibling-repo assumptions or manager-local hardcoding
 - primary project identity must remain distinct from governance-package
-  identity; an `odd_sdlc`-governed project may still be primarily
-  `odd_world_model` and must be presented that way
+  identity; a Project governed by a shared runtime package may still be
+  primarily `odd_glc` or another `odd_*` product and must be presented that way
 - `odd_manager` must not create a shadow runtime after ABG dispatch
+- `odd_manager` may admit published semantic work, schedule and supervise
+  external process lifecycle, and submit attributable operator decisions; ABG
+  remains owner of traversal, continuation, event truth, evidence admission,
+  and runtime closure
+- no build action may be implemented as hidden view-owned shell text when an
+  admitted typed product carrier is required
+- prompting may propose constitutional change, but may not make that change
+  authoritative without visible validation, attribution, and explicit
+  acceptance
 - derived operator lenses are allowed, but they must derive from canonical
   domain and runtime truth
 - core runtime pages may be cross-domain, but domain-specific tabs and actions
@@ -84,6 +112,12 @@ The project is constrained by these rules:
 - inherited transport metaphors may inform migration, but they must not remain
   the primary ontology
 - the product tone remains operational and serious rather than playful
+- product UX follows STDO-UX: typed state and messages, pure update, declared
+  commands and subscriptions, one explicit effect membrane, runtime ingress
+  validation, and replay proof for product-meaningful interaction
+- capability modules integrate through shared Context, product contracts,
+  commands, events, evidence, and navigation; they do not mutate one another's
+  internal state or create separate world models
 - the operator visual language, including graph-workspace styling, is retained
   as first-class design law even while the semantic model is rebuilt around
   graphs, typed assets, and workorders

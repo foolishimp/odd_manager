@@ -4,7 +4,7 @@ export type WorkspaceIdentity = string;
 export type WorkspaceProfile = {
   primary_identity: WorkspaceIdentity;
   governance_identities: WorkspaceIdentity[];
-  active_domain_pack: "odd_sdlc" | "odd_world_model" | null;
+  active_domain_pack: string | null;
   shell_title: string;
   confidence: "high" | "medium" | "low";
   markers: string[];

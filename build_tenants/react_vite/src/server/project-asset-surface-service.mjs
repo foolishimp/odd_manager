@@ -18,6 +18,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { detectPublishedWorkspaceIdentity } from './workspace-identity-service.mjs';
 
 const DEFAULT_MANAGER_WORKSPACE_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -124,10 +125,8 @@ function sandboxWorkspaceDisplayName(parts) {
   return `${browserFolder}.pid${match[1]}.workspace`;
 }
 
-function detectOddType(installedPackages) {
-  if (installedPackages.includes('odd_sdlc')) return 'odd_sdlc';
-  if (installedPackages.includes('odd_world_model')) return 'odd_world_model';
-  return 'unknown';
+function detectOddType(projectRoot) {
+  return detectPublishedWorkspaceIdentity(projectRoot).id;
 }
 
 function registryPath(managerWorkspaceRoot) {
@@ -217,7 +216,7 @@ function describeProjectAt(name, root, registryEntry = null, activeProjectRoot =
     id: registryEntry?.id ?? projectIdFromRoot(path),
     name: visibleName,
     root: path,
-    odd_type: detectOddType(installedPackages),
+    odd_type: detectOddType(path),
     has_ai_workspace: hasAiWorkspace,
     has_genesis: hasGenesis,
     installed_packages: installedPackages,

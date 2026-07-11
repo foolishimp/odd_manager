@@ -39,33 +39,35 @@ Acceptance Criteria
 activity, process flow, and execution posture rather than around a selected
 requirement.
 
-For the current pre-release line, the conforming process-first surface is the
-Sidecar `Process Navigator`. It is selected from the Sidecar right rail and
-occupies an object-viewer workspace pane. It reads ABG system-ledger and
-catalog projection first, and reads the `odd_sdlc` TypeScript tenant/query
-format only as a compatible domain overlay when present.
+The conforming process-first surface is the selected Project Workbench with
+Build Portfolio and Build Control contributions. Sidecar `Run Inspector`
+remains the deep forensic capability over admitted GTL/ABG run, traversal,
+event, assurance, and artifact carriers discovered within the selected
+Project. It has no privileged domain adapter.
 
 Acceptance Criteria
-- the primary explorer surface can start from process or build-activity
-  objects, queues, or filters
+- the primary surface can start from portfolio attention, process or
+  build-activity objects, queues, or filters
 - process-driven exploration can still reach the same linked design,
   implementation, proof, work, and discussion surfaces where relevant
 - process-first framing does not require duplicating those downstream widgets
   into a second unrelated architecture
-- the Sidecar Process Navigator exposes sections derived from ABG system
-  projection and compatible domain overlays: runtime state is always the first
-  process posture section, and graph overlays, function catalog entries,
-  registry facts, payload facts, and asset-node relationships appear only when
-  the projection supplies those carriers
-- the Sidecar Process Navigator body is graph-first for graph and asset-node
-  carriers, while runtime state remains an operator-run and stage-process
-  projection over the same TypeScript truth
-- the Sidecar Process Navigator accepts ABG 4.2 system-ledger/catalog truth and
-  compatible TypeScript domain overlays, and rejects or ignores legacy Python
-  SDLC process projection shapes with an explicit unsupported-format state
-- the manager projects process state from ABG truth and compatible domain
-  overlays; it does not choose traversal, continuation, next edge, or gap
-  closure
+- the Project Workbench exposes Review, Tune, Build, and Assure posture while
+  preserving capability ownership and one shared Context
+- Build Portfolio distinguishes Project, revision, request, execution, run,
+  freshness, and attention identity across concurrent work
+- the Run Inspector exposes overview, graph, traversal, functions, catalog,
+  assets, diagnostics, assurance, events, stages, transcripts, and artifacts
+  when their admitted carriers are present
+- run discovery starts from the selected Project and relates timestamped run
+  roots and generated workspaces without registering them as separate Projects
+- large event carriers remain bounded in the UX, preserve complete published
+  event-kind counts, and expose digest verification rather than silently
+  dropping unknown kinds
+- missing or incompatible run carriers render an explicit unsupported or
+  incomplete state while generic Project browsing remains available
+- the manager projects process state from admitted GTL/ABG truth; it does not
+  choose traversal, continuation, next edge, retry, or closure
 
 ### REQ-OM-LNS-004 - Shared widget architecture is reusable across entry lenses
 
@@ -153,17 +155,15 @@ Acceptance Criteria
 
 ### REQ-OM-LNS-010 - Domain entry lenses are selected at the primary-identity level
 
-`odd_manager` shall choose domain entry lenses from the selected workspace's
-primary identity, not by treating every domain page as one flat global tab set.
+`odd_manager` shall choose optional domain entry lenses from published Project
+identity and admitted feature carriers, not from repository basenames or a
+hard-coded product list.
 
 Acceptance Criteria
-- `Requirements View` and `Process View` are understood as `odd_sdlc`
-  entry lenses inside the `odd_sdlc` domain pack rather than as domain-neutral
-  global tabs
-- `odd_world_model` landing and future world-model pages sit at the same
-  domain-pack level as the `odd_sdlc` pack rather than as peers to
-  `Requirements View` and `Process View`
-- when the selected workspace is primarily `odd_world_model`, the initial
-  landing page and domain page family come from the `odd_world_model` pack
-- the shell title can present the active primary identity, such as `Odd SDLC`
-  or `Odd World Model`, while manager-owned core pages remain cross-domain
+- published product identity is resolved separately from governance packages
+- generic Project, file, AI Workspace, ticket, shell, and Run Inspector
+  surfaces remain available independently of a domain pack
+- a domain lens is enabled only when its declared feature and contract inputs
+  are admitted
+- shell and Project labels present published primary identity while
+  manager-owned core surfaces remain cross-domain

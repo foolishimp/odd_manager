@@ -81,27 +81,32 @@ Acceptance Criteria
 - provenance is reachable as part of ordinary supervisory work
 - closure claims can be explained in terms of evidence and open obligations
 
-### REQ-OM-ONT-007 - A published domain model exists inside odd_manager
+### REQ-OM-ONT-007 - A published operational domain model exists inside odd_manager
 
-`odd_manager` shall publish its observed domain model as an explicit project
-artifact.
+`odd_manager` shall publish its coordinated and observed domain model as an
+explicit project artifact.
 
 Acceptance Criteria
 - the published domain model is stored inside the project specification surface
-- the published domain model names the graph, asset, binding, workorder,
-  runtime, and derived-view objects used by the product
+- the published domain model names the Project, proposal, command, build,
+  graph, asset, binding, workorder, runtime, assurance, attention, and
+  derived-view objects used by the product
 - requirements, design, and implementation can trace back to the published
   domain model
 
 ### REQ-OM-ONT-008 - Ownership boundaries across language, runtime, builder, and UI are explicit
 
 The product shall preserve explicit ownership boundaries across declaration
-law, runtime law, builder/domain law, and UI-only read models.
+law, runtime law, builder/domain law, manager command/process truth, and
+UI-only read models.
 
 Acceptance Criteria
 - declaration-owned objects remain distinguishable from runtime-owned objects
 - builder/domain-owned objects remain distinguishable from control-plane read
   models
+- manager-owned proposal, command-admission, queue, process-lifecycle,
+  correlation, and operator-decision objects remain distinguishable from ABG
+  runtime objects
 - domain-package-owned objects remain distinguishable from manager-owned core
   system pages and domain UI packs
 - UI-only constructs such as badges, scores, and lenses remain identifiable as

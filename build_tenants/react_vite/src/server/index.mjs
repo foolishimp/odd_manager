@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
@@ -19,7 +19,30 @@ import { createCommentSurface } from "./comment-asset-surface-service.mjs";
 import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { loadAiWorkspaceObservation } from "./ai-workspace-observation-service.mjs";
-import { loadSidecarProcessProjection } from "./sidecar-process-projection.mjs";
+import { loadTraversalSummary, loadTraversalVectorDetail } from "./traversal-projection-service.mjs";
+import { loadAbgRunObservation } from "./abg-run-observation-service.mjs";
+import {
+  loadDeveloperControlBootstrap,
+  loadDeveloperControlPortfolio,
+} from "./developer-control-bootstrap-service.mjs";
+import {
+  createCodexSpecificationProposalProvider,
+  createFixtureSpecificationProposalProvider,
+} from "./specification-proposal-provider.mjs";
+import {
+  createSpecificationProposalService,
+  SpecificationProposalError,
+} from "./specification-proposal-service.mjs";
+import {
+  BuildControlError,
+  createBuildControlService,
+} from "./build-control-service.mjs";
+import { loadBuildExecutionAdapterRegistry } from "./build-execution-adapter-registry.mjs";
+import {
+  AssuranceError,
+  createAssuranceService,
+} from "./assurance-service.mjs";
+import { detectPublishedWorkspaceIdentity } from "./workspace-identity-service.mjs";
 import {
   readWorkspaceSurface,
   resolveWorkspaceSurfacePath,
@@ -71,8 +94,40 @@ import {
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(serverDir, "../../../../");
+const managerStateRoot = resolve(process.env.OMAN_MANAGER_STATE_ROOT || defaultWorkspaceRoot);
 const appsRoot = resolve(serverDir, "../../../../../");
 const port = Number(process.env.OMAN_API_PORT ?? 4173);
+const specificationProposalProvider = process.env.OMAN_PROPOSAL_FIXTURE_MODE === "1"
+  ? createFixtureSpecificationProposalProvider()
+  : createCodexSpecificationProposalProvider();
+const specificationProposalService = createSpecificationProposalService({
+  managerStateRoot,
+  provider: specificationProposalProvider,
+});
+const buildExecutionAdapterRegistry = await loadBuildExecutionAdapterRegistry({
+  managerStateRoot,
+  registryPath: process.env.OMAN_BUILD_ADAPTER_REGISTRY,
+});
+const buildControlService = createBuildControlService({
+  managerStateRoot,
+  adapters: buildExecutionAdapterRegistry.adapters,
+  fixtureMode: process.env.OMAN_BUILD_FIXTURE_MODE === "1",
+  maxConcurrent: Number(process.env.OMAN_BUILD_MAX_CONCURRENT ?? 2),
+  maxQueued: Number(process.env.OMAN_BUILD_MAX_QUEUED ?? 100),
+});
+const assuranceService = createAssuranceService({ buildControlService });
+
+function loadAdmittedDeveloperControlBootstrap(projectRoot, projects) {
+  const base = loadDeveloperControlBootstrap(projectRoot, projects, {
+    proposalParticipantRef: specificationProposalService.participantRef,
+  });
+  return loadDeveloperControlBootstrap(projectRoot, projects, {
+    proposalParticipantRef: specificationProposalService.participantRef,
+    revision: base.context.revision,
+    buildDescriptorAdmission: buildControlService.descriptorAdmission(base.context.project),
+    assuranceCatalogAdmission: assuranceService.catalogAdmission(base.context.project),
+  });
+}
 
 function firstString(...values) {
   for (const value of values) {
@@ -110,12 +165,17 @@ function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
 }
 
+function isPathWithin(root, candidate) {
+  const rel = relative(resolve(root), resolve(candidate));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
 function oddTermSessionRecord(session, workspaceRoot) {
   const status = session.status === "live" ? "running" : session.status ?? "unknown";
   return {
     id: session.id,
     agent_type: "shell",
-    cwd: workspaceRoot,
+    cwd: session.cwd ?? workspaceRoot,
     status,
     started_at: session.createdAt,
     transcript_ref: session.conversationHistoryId
@@ -169,157 +229,11 @@ function loadOddTermSessionRecords(workspaceRoot) {
   };
 }
 
-function readWorkspaceText(workspaceRoot, relativePath) {
-  const absolutePath = join(workspaceRoot, relativePath);
-  if (!existsSync(absolutePath)) {
-    return null;
-  }
-  try {
-    return readFileSync(absolutePath, "utf8").slice(0, 8000).toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function knownIdentityFromText(content) {
-  if (!content) {
-    return null;
-  }
-
-  const explicitMatches = [
-    { identity: "odd_manager", pattern: /(?:workspace|project slug):\s*`odd_manager`/ },
-    { identity: "odd_sdlc", pattern: /(?:workspace|project slug):\s*`odd_sdlc`/ },
-    { identity: "odd_world_model", pattern: /(?:workspace|project slug):\s*`odd_world_model`/ },
-  ];
-  for (const entry of explicitMatches) {
-    if (entry.pattern.test(content)) {
-      return entry.identity;
-    }
-  }
-
-  const rankedPatterns = [
-    {
-      identity: "odd_world_model",
-      patterns: [
-        "# odd_world_model installed builder surface",
-        "`odd_world_model` is a world-model construction product",
-        "`odd_world_model` source project",
-        "world model method",
-      ],
-    },
-    {
-      identity: "odd_manager",
-      patterns: [
-        "`odd_manager` exists to provide a serious operator-facing control surface",
-        "`odd_manager` shall",
-        "# odd_manager",
-      ],
-    },
-    {
-      identity: "odd_sdlc",
-      patterns: [
-        "# odd_sdlc workspace governance surface",
-        "`odd_sdlc` as governance over the target project",
-        "odd_sdlc-governed",
-      ],
-    },
-  ];
-
-  for (const entry of rankedPatterns) {
-    if (entry.patterns.some((pattern) => content.includes(pattern))) {
-      return entry.identity;
-    }
-  }
-
-  return null;
-}
-
-function knownIdentityFromName(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-  for (const identity of ["odd_world_model", "odd_sdlc", "odd_manager"]) {
-    if (normalized === identity || normalized.includes(identity)) {
-      return identity;
-    }
-  }
-  return null;
-}
-
-function detectPrimaryIdentity(workspaceRoot) {
-  const explicitInstallSignals = [
-    [".genesis/odd_world_model/release/install_manifest.json", "odd_world_model"],
-    [".genesis/odd_sdlc/release/install_manifest.json", "odd_sdlc"],
-    [".genesis/odd_manager/release/install_manifest.json", "odd_manager"],
-  ];
-  for (const [relativePath, identity] of explicitInstallSignals) {
-    if (hasWorkspaceMarker(workspaceRoot, relativePath)) {
-      return identity;
-    }
-  }
-
-  for (const relativePath of [
-    "AGENTS.md",
-    "CLAUDE.md",
-    "README.md",
-    "specification/PRODUCT.md",
-    "specification/INTENT.md",
-  ]) {
-    const identity = knownIdentityFromText(readWorkspaceText(workspaceRoot, relativePath));
-    if (identity) {
-      return identity;
-    }
-  }
-
-  const namedIdentity = knownIdentityFromName(workspaceRoot.split("/").filter(Boolean).at(-1) ?? workspaceRoot);
-  if (namedIdentity) {
-    return namedIdentity;
-  }
-
-  if (
-    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
-  ) {
-    return "odd_sdlc";
-  }
-
-  return "unknown";
-}
-
-function detectGovernanceIdentities(workspaceRoot) {
-  return uniqueStrings([
-    hasWorkspaceMarker(workspaceRoot, ".odd_sdlc") ||
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_sdlc/release/genesis.yml")
-      ? "odd_sdlc"
-      : null,
-    hasWorkspaceMarker(workspaceRoot, ".genesis/odd_world_model/release/genesis.yml")
-      ? "odd_world_model"
-      : null,
-  ]);
-}
-
-function workspaceShellTitle(primaryIdentity, activeDomainPack) {
-  const selectedIdentity = activeDomainPack ?? primaryIdentity;
-  if (selectedIdentity === "odd_sdlc") {
-    return "Odd SDLC";
-  }
-  if (selectedIdentity === "odd_world_model") {
-    return "Odd World Model";
-  }
-  if (selectedIdentity === "odd_manager") {
-    return "Odd Manager";
-  }
-  return "Odd Manager";
-}
-
 function profileWorkspace(workspaceRoot) {
-  const primaryIdentity = detectPrimaryIdentity(workspaceRoot);
-  const governanceIdentities = detectGovernanceIdentities(workspaceRoot);
-  const activeDomainPack =
-    primaryIdentity === "odd_sdlc" || primaryIdentity === "odd_world_model"
-      ? primaryIdentity
-      : null;
+  const publishedIdentity = detectPublishedWorkspaceIdentity(workspaceRoot);
+  const primaryIdentity = publishedIdentity.id;
+  const governanceIdentities = publishedIdentity.governancePackages;
+  const activeDomainPack = null;
   const markers = uniqueStrings([
     ...classifyOddWorkspace(workspaceRoot),
     primaryIdentity !== "unknown" ? `identity:${primaryIdentity}` : null,
@@ -336,7 +250,7 @@ function profileWorkspace(workspaceRoot) {
     primary_identity: primaryIdentity,
     governance_identities: governanceIdentities,
     active_domain_pack: activeDomainPack,
-    shell_title: workspaceShellTitle(primaryIdentity, activeDomainPack),
+    shell_title: publishedIdentity.label !== "unknown" ? publishedIdentity.label : "Odd Manager",
     confidence,
     markers,
   };
@@ -360,8 +274,7 @@ function oddNameSignal(name) {
     normalized.includes("-odd") ||
     normalized.includes("oddmanager") ||
     normalized.includes("odd_method") ||
-    normalized.includes("odd_manager") ||
-    normalized.includes("odd_sdlc")
+    normalized.includes("odd_manager")
   );
 }
 
@@ -417,10 +330,6 @@ function classifyOddWorkspace(workspaceRoot) {
 
   if (hasWorkspaceMarker(workspaceRoot, ".ai-workspace")) {
     markers.push("runtime:.ai-workspace");
-  }
-
-  if (hasWorkspaceMarker(workspaceRoot, ".odd_sdlc")) {
-    markers.push("runtime:.odd_sdlc");
   }
 
   if (
@@ -577,6 +486,24 @@ function browseDirectory(targetPath, options = {}) {
     ? Math.max(0, Math.floor(options.maxEntries))
     : 500;
   const includeHidden = options.includeHidden === true;
+  if (!existsSync(directory)) {
+    return {
+      path: directory,
+      parent: directory === "/" ? null : dirname(directory),
+      entries: [],
+      truncated: false,
+      state: "missing",
+    };
+  }
+  if (!statSync(directory).isDirectory()) {
+    return {
+      path: directory,
+      parent: directory === "/" ? null : dirname(directory),
+      entries: [],
+      truncated: false,
+      state: "not_directory",
+    };
+  }
   const rawEntries = readdirSync(directory, { withFileTypes: true });
   const visibleEntries = rawEntries
     .filter((entry) => {
@@ -623,6 +550,7 @@ function browseDirectory(targetPath, options = {}) {
     parent: directory === "/" ? null : dirname(directory),
     entries,
     truncated: maxEntries > 0 && visibleEntries.length > maxEntries,
+    state: "present",
   };
 }
 
@@ -736,7 +664,7 @@ const server = createServer(async (request, response) => {
 
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
-      writeJson(response, 200, { ok: true, workspaceRoot: defaultWorkspaceRoot });
+      writeJson(response, 200, { ok: true, workspaceRoot: defaultWorkspaceRoot, managerStateRoot });
       return;
     }
 
@@ -1335,8 +1263,8 @@ const server = createServer(async (request, response) => {
     const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));
     const projectSurface = getOrCreateAssetSurface(
       "projects",
-      defaultWorkspaceRoot,
-      () => createProjectSurface(defaultWorkspaceRoot, {
+      managerStateRoot,
+      () => createProjectSurface(managerStateRoot, {
         discoveryRoot: process.env.PROJECT_REGISTRY_ROOT || appsRoot,
       }),
     );
@@ -1368,8 +1296,210 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, projectSurface.discover());
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/developer-control/bootstrap") {
+      try {
+        writeJson(response, 200, loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list()));
+      } catch (caught) {
+        writeJson(response, 400, { error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/developer-control/portfolio") {
+      try {
+        writeJson(response, 200, loadDeveloperControlPortfolio(projectSurface.list(), {
+          browseRoot: process.env.OMAN_PORTFOLIO_BROWSE_ROOT || appsRoot,
+          buildObservation: (project) => buildControlService.snapshot(project),
+          assuranceObservation: (project, revision, executionId) => assuranceService.snapshot({
+            project,
+            revision,
+            executionId,
+          }),
+        }));
+      } catch (caught) {
+        writeJson(response, 500, { error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/developer-control/builds") {
+      try {
+        const bootstrap = loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list());
+        writeJson(response, 200, buildControlService.snapshot(bootstrap.context.project));
+      } catch (caught) {
+        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        writeJson(response, statusCode, { error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/developer-control/assurance") {
+      try {
+        const bootstrap = loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list());
+        if (!bootstrap.context.revision) throw new AssuranceError("Assurance requires an admitted Project Revision.");
+        writeJson(response, 200, assuranceService.snapshot({
+          project: bootstrap.context.project,
+          revision: bootstrap.context.revision,
+          executionId: url.searchParams.get("executionId"),
+        }));
+      } catch (caught) {
+        const statusCode = caught instanceof AssuranceError ? caught.statusCode : 400;
+        writeJson(response, statusCode, { error: caught instanceof Error ? caught.message : String(caught) });
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/developer-control/builds/submit") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { error: "invalid json body" }); return; }
+      try {
+        const bootstrap = loadAdmittedDeveloperControlBootstrap(parsed?.project?.root, projectSurface.list());
+        const result = buildControlService.submit({ ...parsed, project: bootstrap.context.project });
+        writeJson(response, 202, result);
+      } catch (caught) {
+        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        writeJson(response, statusCode, {
+          error: caught instanceof Error ? caught.message : String(caught),
+          execution: caught instanceof BuildControlError ? caught.execution : null,
+        });
+      }
+      return;
+    }
+    if (
+      request.method === "POST"
+      && [
+        "/api/developer-control/builds/attach",
+        "/api/developer-control/builds/cancel",
+        "/api/developer-control/builds/resume",
+      ].includes(url.pathname)
+    ) {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { error: "invalid json body" }); return; }
+      try {
+        const bootstrap = loadAdmittedDeveloperControlBootstrap(parsed?.projectRoot, projectSurface.list());
+        const action = url.pathname.split("/").at(-1);
+        const value = action === "attach"
+          ? buildControlService.attach(parsed, bootstrap.context.project)
+          : action === "resume"
+            ? buildControlService.resume(parsed, bootstrap.context.project)
+            : buildControlService.cancel(parsed, bootstrap.context.project);
+        writeJson(response, 200, action === "attach" ? value : { execution: value });
+      } catch (caught) {
+        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        writeJson(response, statusCode, {
+          error: caught instanceof Error ? caught.message : String(caught),
+          execution: caught instanceof BuildControlError ? caught.execution : null,
+        });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/developer-control/proposals") {
+      try {
+        loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list());
+        writeJson(response, 200, specificationProposalService.list(surfaceProjectRoot));
+      } catch (caught) {
+        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        writeJson(response, statusCode, {
+          error: caught instanceof Error ? caught.message : String(caught),
+          proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
+        });
+      }
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/developer-control/proposals/generate") {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { error: "invalid json body" }); return; }
+      try {
+        const bootstrap = loadAdmittedDeveloperControlBootstrap(parsed?.project?.root, projectSurface.list());
+        const proposal = await specificationProposalService.generate({
+          ...parsed,
+          project: bootstrap.context.project,
+        });
+        writeJson(response, 200, { proposal });
+      } catch (caught) {
+        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        writeJson(response, statusCode, {
+          error: caught instanceof Error ? caught.message : String(caught),
+          proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
+        });
+      }
+      return;
+    }
+    if (
+      request.method === "POST"
+      && [
+        "/api/developer-control/proposals/validate",
+        "/api/developer-control/proposals/accept",
+        "/api/developer-control/proposals/reject",
+      ].includes(url.pathname)
+    ) {
+      const body = await readBody(request);
+      let parsed;
+      try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { error: "invalid json body" }); return; }
+      try {
+        loadAdmittedDeveloperControlBootstrap(parsed?.projectRoot, projectSurface.list());
+        const action = url.pathname.split("/").at(-1);
+        const proposal = action === "validate"
+          ? specificationProposalService.validate(parsed)
+          : action === "accept"
+            ? specificationProposalService.accept(parsed)
+            : specificationProposalService.reject(parsed);
+        writeJson(response, 200, { proposal });
+      } catch (caught) {
+        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        writeJson(response, statusCode, {
+          error: caught instanceof Error ? caught.message : String(caught),
+          proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
+        });
+      }
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/ai-workspace/observation") {
       writeJson(response, 200, loadAiWorkspaceObservation(surfaceProjectRoot));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/traversal") {
+      writeJson(response, 200, loadTraversalSummary(surfaceProjectRoot, {
+        runId: url.searchParams.get("runId"),
+        refresh: url.searchParams.get("refresh") === "1",
+      }));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/run") {
+      writeJson(response, 200, loadAbgRunObservation(surfaceProjectRoot, {
+        runId: url.searchParams.get("runId"),
+        refresh: url.searchParams.get("refresh") === "1",
+      }));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/traversal/vector") {
+      const indexParam = url.searchParams.get("index");
+      const vectorIndex = Number(indexParam);
+      if (indexParam === null || !Number.isInteger(vectorIndex) || vectorIndex < 0) {
+        writeJson(response, 400, { error: "traversal vector detail requires a non-negative integer index param" });
+        return;
+      }
+      const variantParam = url.searchParams.get("variant");
+      if (variantParam !== null && variantParam !== "primary" && variantParam !== "evaluator") {
+        writeJson(response, 400, { error: "traversal vector variant must be primary or evaluator" });
+        return;
+      }
+      const attemptParam = url.searchParams.get("attempt");
+      const attempt = attemptParam === null ? undefined : Number(attemptParam);
+      if (attempt !== undefined && (!Number.isInteger(attempt) || attempt < 1)) {
+        writeJson(response, 400, { error: "traversal vector attempt must be a positive integer" });
+        return;
+      }
+      const result = loadTraversalVectorDetail(surfaceProjectRoot, {
+        vectorIndex,
+        variant: variantParam ?? undefined,
+        attempt,
+        runId: url.searchParams.get("runId"),
+      });
+      if (!result.ok) {
+        writeJson(response, 404, { error: result.error });
+        return;
+      }
+      writeJson(response, 200, result.detail);
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/projects/register") {
@@ -1451,39 +1581,23 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, loadOddTermSessionRecords(surfaceProjectRoot));
       return;
     }
-    if (request.method === "GET" && url.pathname === "/api/sidecar/process") {
-      try {
-        writeJson(response, 200, loadSidecarProcessProjection(surfaceProjectRoot));
-      } catch (caught) {
-        writeJson(response, 200, {
-          kind: "sidecar_process_projection",
-          supported: false,
-          unsupportedReason: caught instanceof Error ? caught.message : String(caught),
-          contractName: "odd_sdlc.query-domain",
-          contractVersion: "ts-v1",
-          runtimeModel: "abg-native",
-          queryModel: "odd-domain-read-model",
-          readOnly: true,
-          workspaceRoot: surfaceProjectRoot,
-          eventLogRelativePath: ".ai-workspace/events/events.jsonl",
-          eventCount: 0,
-          eventKinds: [],
-          views: [],
-          records: []
-        });
-      }
-      return;
-    }
-
     if (request.method === "POST" && url.pathname === "/api/sidecar/sessions/spawn") {
       const body = await readBody(request);
       let parsed;
       try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
+      const requestedCwd = typeof parsed.cwd === "string" && parsed.cwd.trim()
+        ? resolve(parsed.cwd)
+        : surfaceProjectRoot;
+      if (!isPathWithin(surfaceProjectRoot, requestedCwd) || !existsSync(requestedCwd) || !statSync(requestedCwd).isDirectory()) {
+        writeJson(response, 400, { ok: false, error: "session cwd must be an existing directory inside the active Project" });
+        return;
+      }
       const session = createGTermSession(surfaceProjectRoot, {
         selectedTrainId: parsed.selectedTrainId || "sidecar",
         stationId: parsed.stationId || null,
         edgeId: parsed.edgeId || null,
         label: parsed.label || "sidecar shell",
+        cwd: requestedCwd,
       });
       selectGTermSession(surfaceProjectRoot, session.id);
       const record = oddTermSessionRecord(session, surfaceProjectRoot);

@@ -44,15 +44,20 @@ Actor: scrum master or delivery lead
 
 Sequence
 - open `Process View`
-- start from build activity, process flow, or execution posture
+- start from Project Portfolio attention, build activity, process flow, or
+  execution posture in the Project Workbench
 - select the relevant process focus
 - inspect the linked requirement, design, implementation, proof, ticket, and
   discussion surfaces through the shared widget family
+- open Run Inspector when graph, traversal, event, transcript, artifact, or
+  proof forensics are required
 - compare the process-selected view with the corresponding requirement-selected
   view for the same underlying concern
 
 Expected outcomes
 - `Process View` acts as a distinct entry lens rather than as a duplicate page
+- Project Workbench remains the goal-oriented composition surface while Run
+  Inspector remains a supporting forensic capability
 - the shared widget family remains recognizable and reusable across both entry
   lenses
 - process-first filtering does not create a second truth model or a second

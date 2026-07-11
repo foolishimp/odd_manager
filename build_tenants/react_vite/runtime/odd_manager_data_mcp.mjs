@@ -222,8 +222,8 @@ const RESOURCES = [
 ];
 
 const ACTIVE_CONTEXT = {
-  project: { id: 'odd_manager', root: projectRoot, odd_type: 'odd_sdlc' },
-  workspace: { id: 'react_vite', profile: 'odd_sdlc' },
+  project: { id: 'odd_manager', root: projectRoot, odd_type: 'unknown' },
+  workspace: { id: 'react_vite', profile: 'unknown' },
   session: null,
 };
 

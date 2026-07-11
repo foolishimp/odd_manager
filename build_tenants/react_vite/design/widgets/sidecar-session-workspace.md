@@ -191,8 +191,8 @@ handlers, and additional product actions remain outside this Sidecar boundary.
 
 B-017 splits the Sidecar realization into two Sidecar-owned sub-workspaces:
 
-- `Info Browser`: Project, Ticket, and Comment browsing plus the information
-  inspector.
+- `Info Browser`: Tickets, Comments, Specification, Build Tenants, files, and
+  user-favorite browsing plus the information inspector.
 - `Shell Workspace`: session list, spawn/close controls, session metadata, and
   terminal attachment.
 
@@ -293,9 +293,9 @@ The layout law is:
 - fixed right context rail compresses current context and selection state
 - terminal workspace is a horizontal bottom dock
 
-The Projects, Tickets, and Comments selectors must not render as three
-simultaneous columns in the main canvas. Rail, flyout, and bottom dock state are
-Sidecar `State`/`Msg` replay state, not view-local React state.
+The Tickets, Comments, Specification, and Build Tenants selectors must not
+render as simultaneous columns in the main canvas. Rail, flyout, and bottom
+dock state are Sidecar `State`/`Msg` replay state, not view-local React state.
 
 ## 15. B-022 Compact Chrome / Deep Terminal Rule
 
@@ -385,15 +385,16 @@ B-028 makes the Sidecar explorer a typed provider registry instead of hard-coded
 rail buttons.
 
 `SidecarExplorerProvider` is the carrier for explorer provider identity. The
-initial registry contains Projects, Tickets, Comments, and Sessions. The left
+current primary registry contains Tickets, Comments, Specification, and Build
+Tenants. Browse and Recent Paths are system providers at the bottom. The left
 activity rail renders from this registry. Active provider selection remains
 Sidecar reducer state and emits no command effects.
 
-The Sessions provider is a browser projection over admitted `SessionRecord`
+Sessions are projected through the bottom terminal dock over admitted `SessionRecord`
 state. Selecting a session may update Sidecar selection and active session
-through the existing typed message path, but the provider must not spawn, kill,
-attach, or perform terminal I/O. Those effects remain in the session and xterm
-effect membrane.
+through the existing typed message path, but the session selector must not
+spawn, kill, attach, or perform terminal I/O. Those effects remain in the
+session and xterm effect membrane.
 
 Future explorer providers must enter through the registry carrier and must name
 their admitted data source or product contract before becoming reachable in the
@@ -672,8 +673,9 @@ must produce paste-ready absolute paths and a bounded recent path memory.
 
 The path-memory law is:
 
-- selecting a file from Browse or a pinned folder opens the file in the active
-  viewer group and requests a clipboard write for the absolute file path
+- selecting a file from a built-in provider, Browse, or a pinned folder opens
+  the file in the active viewer group and requests a clipboard write for the
+  absolute file path
 - the recent path entry records absolute path, Project root, relative path,
   source selector, and timestamp
 - duplicate path selections move the existing path to the top rather than
@@ -743,6 +745,25 @@ These rules are UX projection behavior. They do not create a second Project
 registry, change active Project selection, or reintroduce cross-project picking
 inside Browse.
 
+## 32B. ADR-002 Activity-Bar Provider And Viewer-Tab Rule
+
+ADR-002 promotes `specification/` and `build_tenants/` from default favorites to
+first-class provider roots. The primary activity-bar order is `T`, `C`, `S`,
+`B`; Browse uses `F` and Recent Paths uses `H` in the system group.
+
+The shell law is:
+
+- activity-bar providers select one left flyout navigator;
+- navigator hierarchy, name/time sorting, refresh, and file selection stay in
+  the shared folder-browser function;
+- selected objects open or focus canonical tabs in the right viewer workspace;
+- viewer tabs may open another tab or activate a provider without duplicating
+  collection navigation;
+- AI Workspace reports feature availability and delegates Tickets and Comments
+  to their providers instead of flattening them into artifact rows;
+- canonical provider roots are rejected from persisted user favorites while
+  nested or unrelated Project folders remain pinnable.
+
 ## 33. B-065 Right-Rail Section Chrome Rule
 
 B-065 consolidates Sidecar workspace chrome into the existing narrow right rail.
@@ -761,45 +782,36 @@ The right-rail chrome law is:
 - context facts may remain in the same rail below a compact separator, but the
   rail must stay symbol-first and avoid long inline horizontal labels
 
-## 34. B-074 TypeScript Process Navigator Object-Viewer Rule
+## 34. Generic Run Inspector Object-Viewer Rule
 
-B-074 inducts the process-first lens into the Sidecar workbench. The live
-Process Navigator is not a broad standalone page and not a Python-era process
-projection. It is a Sidecar object-viewer surface over TypeScript odd_sdlc and
-ABG event truth.
+The process-first lens is the Sidecar `Run Inspector`. It is a generic
+object-viewer surface over admitted Project/run topology and GTL/ABG evidence.
 
-The Process Navigator law is:
+The Run Inspector law is:
 
-- the right rail exposes a compact `Process Navigator` command near the
-  workspace chrome commands
-- invoking the command opens or focuses a `process` tab in the object-viewer
-  workspace; it does not route to a separate page
-- the object-viewer tab follows the same split, tab, focus, and close grammar
-  as file, ticket, comment, project, and session tabs
-- the navigator derives its section tabs from the current TypeScript
-  `odd_sdlc` projection: runtime state is always present; graph overlays,
-  function catalog, and typed asset-node relationship sections appear only when
-  their backing carrier is present
-- graph and asset-node sections render graph-first carriers; runtime state
-  renders the current operator-run, stage-process, transcript, analysis, and
-  liveness projection over the same TypeScript truth
-- process section choice is local object-viewer UX state, not a persisted
-  reducer-owned process taxonomy
-- the data contract is TypeScript-only: `odd_sdlc.query-domain` `ts-v1` plus
-  `.ai-workspace/events/events.jsonl` events from the installed TypeScript
-  odd_sdlc tenant
-- Python SDLC projection and event shapes are unsupported input for this
-  Sidecar surface and must produce an explicit unsupported-format state rather
-  than an implicit fallback
-- non-ODD and unknown-identity Projects remain valid Sidecar Projects for
-  generic file/code browsing, pinned folders, recent path memory, and shell
-  workspace use; only the Process Navigator itself fails closed when its
-  TypeScript odd_sdlc contract is absent
-- the manager projects process state only; it does not choose traversal,
-  continuation, next edge, retry, gap closure, or ABG event writes
-- selected process object and graph expansion state are reducer-owned UX state
-  where they affect shared viewer behavior; local section tabs do not mint a
-  second saved-view model
+- the right rail exposes a compact `Run Inspector` command
+- invoking it opens or focuses a `traversal` viewer tab and follows the shared
+  split, tab, focus, and close grammar
+- run roots and generated workspaces are discovered beneath the selected
+  Project and are not promoted into separate Project identity
+- `AbgRunObservation` supplies overview, graph, traversal, functions, catalog,
+  assets, diagnostics, assurance, events, stages, transcripts, and artifacts
+- catalog rows are bounded projections of admitted/rejected ABG registry events
+  and construction-action catalog events; each row preserves source-event
+  indexes and the UI never imports or executes observed Project code
+- section choice, selected run, and traversal detail selection are reducer-owned
+  state; asynchronous results carry Project root and run id stale-result guards
+- the UI receives bounded summaries and lazy vector detail; it never reads a
+  full event ledger or scans the filesystem directly
+- event-ledger digest status is explicit and unknown event kinds remain visible
+- a new runtime shell may target an admitted run workspace while remaining
+  owned by the selected Project
+- unsupported Projects retain generic file/code browsing and show honest Run
+  Inspector absence
+- the manager observes only; it does not choose traversal, continuation, retry,
+  next edge, closure, or ABG event writes
+- no `odd_sdlc` query carrier, runtime install, fixed process taxonomy, or
+  compatibility fallback is part of the live surface
 
 ## 35. B-066 Shared Document Viewer Carrier Rule
 
@@ -812,7 +824,7 @@ document descriptor, one document source, format-specific adapters, and
 explicit viewer state. In the live tenant it is consumed by:
 
 - Sidecar surface viewer tabs
-- Sidecar process and trace tabs that open document surfaces
+- Sidecar run, trace, and artifact tabs that open document surfaces
 
 Future document-consuming surfaces must import `DocumentViewer` directly under
 their own STDO-UX design entry. They must not revive deleted route screens,
@@ -1010,3 +1022,48 @@ B-073 later made Tickets and Comments default filesystem-backed selectors.
 Where Tickets or Comments are rendered as file rows, the filesystem row actions
 are the admitted actions for that selector path; record-specific actions remain
 available through record inspectors or later explicit context-action work.
+
+## 37. Registered Project Deep-Link Rule
+
+The common loader admits `?project=<absolute-local-root>` as a direct address
+for one maintained Project. The parameter identifies Project context; it is not
+a filesystem browser path and does not identify a generated run workspace.
+
+The deep-link law is:
+
+- URL parsing is isolated in a pure helper with an explicit valid, absent, or
+  invalid result
+- only an exact root from `ProjectRegistryResponse.projects` may be activated
+- admitted links take precedence over local-storage and prior registry context
+- activation uses the existing Project active-context command with
+  `registerIfMissing: false`
+- rejected links render a loader error, preserve registry integrity, and fall
+  back to an admitted default Project
+- after bootstrap, Project context changes replace the `project` query
+  parameter while preserving unrelated query parameters and the URL fragment
+- `?project=<root>` opens Project Workbench as the goal-oriented landing;
+  `view=ai-workspace`, `view=run-inspector`, and `view=ticket-board` select
+  those supporting viewer carriers
+- landing selection dispatches the existing typed `viewer/open` message and,
+  for Run Inspector, the existing `traversal/load` command
+- incoming link resolution is a bootstrap effect; Project selection inside the
+  workbench remains reducer-owned and reaches the loader through the existing
+  `onContextChange` boundary
+
+## 38. Prime-Set First-Use Compression Rule
+
+T-031 and T-032 define one first-use hierarchy: Project Workbench owns the
+developer goal, while Sidecar provides navigator, viewer, and terminal tools.
+
+- a fresh or reset Sidecar profile starts with the bottom terminal dock
+  collapsed; opening the dock is an explicit developer action
+- an admitted persisted profile may retain an explicitly expanded terminal
+  dock, including a closed-session transcript
+- the collapsed dock retains its compact restore control and returns its full
+  row to the viewer canvas
+- the Tickets provider remains a filesystem navigator, but its Active,
+  Backlog, and Completed folder counts project the canonical loaded
+  `TicketRecord.lane` collection rather than unloaded child-directory state
+- expanding a lane still loads its files through the one shared folder
+  navigator; the count projection does not become a second ticket store or
+  ticket viewer

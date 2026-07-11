@@ -29,14 +29,14 @@ function setupFixture() {
     status: 'running',
     started_at: '2026-04-26T16:00:00Z',
     transcript_ref: '.ai-workspace/runtime/sessions/sess-1.transcript',
-    context_at_spawn: { project: 'odd_manager', workspace: 'react_vite', odd_type: 'odd_sdlc' },
+    context_at_spawn: { project: 'odd_manager', workspace: 'react_vite', odd_type: 'unknown' },
   }, null, 2));
   writeFileSync(join(fixtureRegistry, 'sess-2.json'), JSON.stringify({
     id: 'sess-2',
     agent_type: 'codex',
-    cwd: '/Users/jim/src/apps/odd_sdlc',
+    cwd: '/Users/jim/src/apps/odd_demo',
     status: 'detached',
-    context_at_spawn: { project: 'odd_sdlc', workspace: 'typescript' },
+    context_at_spawn: { project: 'odd_demo', workspace: 'typescript' },
   }, null, 2));
   writeFileSync(join(fixtureRegistry, 'sess-3.json'), JSON.stringify({
     id: 'sess-3',

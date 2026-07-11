@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -12,7 +12,7 @@ function makeProject(root, name, options = {}) {
   const projectRoot = join(root, name);
   mkdirSync(join(projectRoot, '.ai-workspace'), { recursive: true });
   if (options.oddSdlc) {
-    mkdirSync(join(projectRoot, '.genesis/odd_sdlc'), { recursive: true });
+    mkdirSync(join(projectRoot, '.genesis/odd_demo_pack'), { recursive: true });
   }
   if (options.reactVite) {
     mkdirSync(join(projectRoot, 'build_tenants/react_vite'), { recursive: true });
@@ -45,7 +45,7 @@ test('register persists Project records under the manager workspace', () => {
     const surface = createProjectSurface(managerRoot);
     const registered = surface.register(projectRoot, { setActive: true });
     assert.equal(registered.root, projectRoot);
-    assert.equal(registered.odd_type, 'odd_sdlc');
+    assert.equal(registered.odd_type, 'unknown');
     assert.equal(registered.has_ai_workspace, true);
     assert.equal(registered.is_active, true);
     assert.ok(registered.build_tenants.includes('react_vite'));
@@ -60,6 +60,21 @@ test('register persists Project records under the manager workspace', () => {
     assert.equal(reloaded.records.length, 1);
     assert.equal(reloaded.records[0].root, projectRoot);
     assert.equal(reloaded.records[0].registry_source, 'registry');
+  } finally {
+    rmSync(managerRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test('Project identity is derived from the published product definition rather than its folder name', () => {
+  const managerRoot = mkdtempSync(join(tmpdir(), 'odd-manager-registry-'));
+  const projectRoot = makeProject(mkdtempSync(join(tmpdir(), 'odd-manager-project-')), 'opaque-folder');
+  try {
+    mkdirSync(join(projectRoot, 'specification'), { recursive: true });
+    writeFileSync(join(projectRoot, 'specification', 'PRODUCT.md'), '# odd_glc Product\n\n## Product Identity\n', 'utf8');
+    const surface = createProjectSurface(managerRoot);
+    const registered = surface.register(projectRoot);
+    assert.equal(registered.odd_type, 'odd_glc');
   } finally {
     rmSync(managerRoot, { recursive: true, force: true });
     rmSync(projectRoot, { recursive: true, force: true });

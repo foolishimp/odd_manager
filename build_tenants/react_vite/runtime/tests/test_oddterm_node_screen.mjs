@@ -64,6 +64,27 @@ test('OddTerm uses the Node GNU screen backend and streams appended output', { s
   }
 });
 
+test('OddTerm can target an admitted run workspace while remaining Project-owned', { skip: screenSkip }, async () => {
+  setup();
+  try {
+    const runWorkspace = resolve(fixtureRoot, 'test_runs', 'fixture-run', 'instance');
+    mkdirSync(runWorkspace, { recursive: true });
+    const session = createGTermSession(fixtureRoot, { label: 'run-workspace-proof', cwd: runWorkspace });
+    assert.equal(session.workspaceRoot, fixtureRoot);
+    assert.equal(session.cwd, runWorkspace);
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+    sendGTermSessionInput(fixtureRoot, session.id, "printf 'run-cwd=%s\\n' \"$PWD\"\r");
+    const observed = await waitFor(() => {
+      const tail = readGTermSessionTail(fixtureRoot, session.id, 40);
+      return tail.text.includes(`run-cwd=${runWorkspace}`) ? tail : null;
+    });
+    assert.ok(observed, 'expected the Project-owned shell to start in the admitted run workspace');
+  } finally {
+    teardown();
+  }
+});
+
 test('OddTerm rehydrates and reconnects live screen sessions from backend state', { skip: screenSkip }, async () => {
   setup();
   let restarted = null;

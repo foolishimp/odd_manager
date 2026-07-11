@@ -11,18 +11,23 @@ systems built on GTL and ABG.
 
 It provides one lawful control surface over:
 
+- a maintained portfolio of managed Projects and their selected revisions
 - graph sets, typed assets, asset graphs, bindings, and workorders
 - GTL declarations
 - ABG runtime truth
 - domain-package surfaces published by the active `odd_*` workspace contract
 - workspace evidence, provenance, and closure material
+- specification proposals, admitted semantic build requests, supervised build
+  process lifecycle, gate/asset assurance, and operator attention
 - multiple stakeholder entry lenses over one shared world model, including
   requirement-first and process-first delivery views
 
-The manager may be implemented against a stable observation contract before the
-full multi-domain library hardens.
+The observation contract is necessary but not the whole product. The manager
+also admits typed product commands, coordinates bounded work across Projects,
+and correlates those commands with runtime truth. It does not interpret GTL or
+replace ABG.
 
-That stable contract is:
+The cross-domain foundation is:
 
 - declared domain-package identity and query-contract identity
 - URI-addressed assets
@@ -37,9 +42,16 @@ That stable contract is:
 - ambiguity register, ambiguity policy, and capability-gated stop-state overlays
 - ABG runtime facts and aggregates
 - direct ABG event and projector access for runtime state
-- ABG 4.2 system-ledger and catalog projections, including registry entries,
-  graph-function selections, node-type satisfaction, payload facts, and
-  construction-action catalog entries
+- admitted, versioned GTL/ABG run projections, including graph-function
+  selection, graph calls, frames, traversal, payload and evidence facts,
+  continuation, assurance, event carriers, and source artifacts
+- selected Project and source/specification revision identity
+- typed specification proposals and their validation and acceptance posture
+- typed build requests over published jobs, graph functions, workorders, or
+  another domain-admitted semantic carrier
+- manager-owned queue and external process-lifecycle facts correlated to
+  ABG-owned run identity
+- required and delivered gate, asset, evidence, residual, and attention facts
 - domain-package query-library overlays for domain understanding that ABG does
   not own
 
@@ -47,14 +59,12 @@ The live core observation path is ABG/GTL first. ABG system-ledger and catalog
 projection remains available even when no compatible domain pack is installed
 or selected.
 
-The first concrete domain overlay remains the `odd_sdlc` delivery line where a
-compatible contract is published. Historical `odd_sdlc.query-domain v16`
-surfaces are pre-release adapter evidence, not manager identity and not a
-workspace-local runtime authority. Generated requirement, scenario, design,
-test, release, operational-cycle, execution-contract, start-target,
-asset-ownership, capability, and gap-dossier surfaces remain domain overlays
-over the manager's shared core ontology rather than new GTL/ABG runtime
-primitives.
+The current reference product and first full control-loop proof target is
+`odd_glc`, interpreted through its published identity, callable carriers, run
+proofs, event carriers, typed test assets, and product overlays. This proves
+generic manager contracts; it does not create a hard-coded `odd_glc` lane.
+Historical `odd_sdlc.query-domain` surfaces remain design history only; no
+`odd_sdlc` runtime, adapter, or privileged projection defines the live product.
 
 It is not:
 
@@ -65,6 +75,41 @@ It is not:
 
 Its job is to make current truth legible and operable without inventing a rival
 semantic center.
+
+## Primary Persona And Interaction Goal
+
+The first primary persona is the developer managing multiple Spec Method and
+ODD-governed software Projects through `odd_glc` or another admitted domain
+package.
+
+The developer's primary interaction goal is:
+
+> Move one or more selected Project revisions from governed specification to
+> evidence-backed, gate-complete build outcomes.
+
+The product organizes that goal as one loop:
+
+```text
+portfolio attention
+  -> review Project
+  -> tune specification through an attributable proposal
+  -> validate and accept or reject the proposal
+  -> submit an admitted semantic build
+  -> supervise one or more concurrent build executions
+  -> verify required gates, assets, evidence, and residuals
+  -> converge, repair, escalate, or lawfully re-enter
+```
+
+Observation supports this loop at four levels:
+
+1. portfolio awareness across Projects
+2. goal-oriented Project review and control
+3. live build supervision and intervention
+4. forensic runtime and evidence inspection
+
+AI Workspace and Run Inspector are supporting observation capabilities. They
+are not the developer's end goal or the default organizing principle of the
+product.
 
 ## Pre-release Compatibility Posture
 
@@ -87,6 +132,12 @@ One operator-facing surface that composes runtime truth, domain overlays,
 policy, evidence, and coordination without introducing a second runtime or a
 shadow semantic center.
 
+### Developer Operator
+
+The first primary user of the product: a developer who manages multiple
+governed Projects, tunes specification, submits semantic builds, supervises
+execution, and verifies evidence-backed delivery.
+
 ### Project
 
 A filesystem and version-control entity (typically a Git repository) on disk
@@ -102,6 +153,14 @@ copy paths, and prepare future bootstrap work. Domain-specific widgets must
 fail closed when their required Workspace contract is absent, but the generic
 Project/file workbench remains admissible.
 
+### Project Revision
+
+The immutable source and specification identity against which a proposal,
+build request, run correlation, gate assessment, or asset-delivery claim is
+made. A revision may identify a commit, an isolated worktree state, or another
+admitted version-control snapshot. Dirty or changing state is explicit; it is
+never silently treated as the same build basis.
+
 ### Manager Workspace
 
 The `odd_manager` operator workspace that owns manager-local state, including
@@ -114,6 +173,13 @@ A manager-workspace-owned maintained list of Projects known to the operator.
 Browse, scan, and manual path entry discover candidates; explicit registry
 actions add or remove Projects. The registry is the Projects collection seen by
 manager UX and agent surfaces.
+
+### Project Portfolio
+
+The manager-owned projection over registered Projects that presents identity,
+revision, specification readiness, active build posture, gate/asset posture,
+participants, freshness, and attention state. It coordinates selection and
+operator action but does not merge Project truth into a central project model.
 
 ### File Path Memory
 
@@ -129,7 +195,7 @@ source-project truth.
 ### Workspace
 
 A governance identity and custom UX suite — concretely an `odd_*` package such
-as `odd_sdlc`, `odd_world_model`, or a future `odd_*` domain. The Workspace
+as `odd_glc` or a future `odd_*` domain. The Workspace
 defines the methodology, the published domain contract, the enabled UX widgets,
 and the policy overlays applied while operating over a Project. The Workspace
 is the lens; the Project is the thing viewed through it.
@@ -138,13 +204,29 @@ is the lens; the Project is the thing viewed through it.
 
 The runtime binding `Context = Project × Workspace`. Context is the operational
 unit the manager and any agent execute under. It scopes the filesystem root
-(from Project), the published domain contract where available (from Workspace,
-for example an `odd_sdlc` query contract), the enabled UX widgets, and the MCP
+(from Project), the published domain contract where available (from Workspace),
+the enabled UX widgets, and the MCP
 resources exposed to the agent. An agent execution binds to a Context — not to
 a Workspace or a Project alone. Embedding semantics default to
 local-by-default: a Context selection within an embedded widget scopes only
 that pane; explicit pinning promotes the local selection to the global active
 Context.
+
+### Capability Module
+
+An independently evolvable manager capability with declared inputs, product
+contracts, STDO-UX state and message algebra, commands, subscriptions, views,
+availability states, and proof. Capability modules integrate through shared
+Context, typed commands and events, navigation, and evidence. They do not own
+one another's internal state and are not separate applications or world models.
+
+### Project Workbench
+
+The goal-oriented composition surface for one selected Project. It integrates
+capability contributions around `Review -> Tune -> Build -> Assure` while
+remaining thin: capability state, commands, services, and domain rules stay
+inside their owning modules or published product carriers. A registered Project
+deep link resolves to this surface.
 
 ### Core System Page
 
@@ -279,17 +361,14 @@ A process-first entry lens for delivery stakeholders.
 It frames the same underlying project state around build activity, process
 flow, and execution posture rather than around a selected requirement.
 
-During the forward-only pre-release line, the live process surface is the
-Sidecar `Process Navigator`. It is an object-viewer workspace surface selected
-from the Sidecar right rail. It supports ABG system-ledger and catalog
-projection first, with the `odd_sdlc` TypeScript tenant event and query
-contract acting as a compatible domain overlay when present. Its primary
-sections are derived from ABG event truth and compatible domain projection:
-runtime state, projected graph overlays, the function catalog, registry facts,
-payload facts, and typed asset-node relationships appear only when their
-backing carrier is present.
-Python SDLC process projections are historical compatibility material and do
-not define the live Sidecar process contract.
+The Project Workbench is the goal-oriented process entry surface. Build
+Portfolio contributes cross-Project queue and execution posture. Run Inspector
+is the deep forensic process capability: it discovers admitted runs within the
+selected Project and exposes overview, graph, traversal, functions, assets,
+diagnostics, catalog, assurance, events, stages, transcripts, and artifacts
+from one generic `AbgRunObservation` carrier. Domain overlays may label admitted
+refs but do not own runtime truth. Historical Process Navigator and
+Python/TypeScript SDLC projection shapes do not define the live contract.
 
 ### Information Widget
 
@@ -305,6 +384,60 @@ backing objects rather than independent truth.
 The requirement-scoped inspection surface that gathers history, design,
 implementation, proof, work tracking, and discussion around one selected
 requirement.
+
+### Specification Proposal
+
+An attributable candidate change against named constitutional source surfaces.
+It records context, participant, basis revision, proposed diff, deterministic
+validation, affected authority and downstream surfaces, and acceptance or
+rejection. A proposal is not constitutional truth until admitted through its
+explicit acceptance carrier.
+
+### Build Request
+
+A manager-admitted command to execute one published semantic carrier against a
+named Project Revision and Context. It declares command identity, carrier
+reference, inputs, target/until posture where published, requested resources,
+requester, policy basis, and correlation identity. It is not a shell string and
+does not contain manager-authored traversal policy.
+
+### Build Execution
+
+The manager-owned queue and external process-lifecycle record created from one
+admitted Build Request. It may be queued, starting, running, waiting for human
+authority, converged, failed, cancelled, stale, or disconnected. It correlates
+to zero or more ABG-owned Runs without becoming runtime truth itself.
+
+### Build Portfolio
+
+The bounded cross-Project projection over Build Requests and Build Executions,
+including concurrency, queue, resource, freshness, correlation, and attention
+posture.
+
+### Gate Requirement
+
+A product- or domain-published condition that must be satisfied for a named
+build outcome. The manager may project and group gate requirements but does not
+invent their meaning.
+
+### Gate Assessment
+
+A source-attributed projection of required, satisfied, failed, missing, stale,
+unsupported, or human-decision posture for one Gate Requirement against one
+Project Revision and Build Execution.
+
+### Asset Delivery
+
+A source-attributed relation between one required or expected asset and the
+materialized artifact, producer, revision, evidence, digest, and freshness that
+support its delivery claim.
+
+### Attention Item
+
+A manager projection identifying a condition that requires operator awareness
+or action. It records source, severity, affected Project and Build Execution,
+reason, freshness, and bounded lawful reactions. It does not silently perform
+repair or choose runtime continuation.
 
 ### Semantic Job
 
@@ -402,6 +535,17 @@ The intended end-state product shape is:
    event truth rather than as shadow runtime state
 11. remain forward-only before first release rather than carrying stale
    pre-release compatibility debt
+12. make the multi-Project developer portfolio and Project Workbench the
+    organizing surfaces for `Review -> Tune -> Build -> Assure`
+13. admit typed specification proposals and build requests while preserving the
+    authority split between manager coordination, domain semantics, and ABG
+    runtime truth
+14. supervise bounded concurrent external build processes with stable Project,
+    revision, request, execution, and run correlation
+15. expose required-versus-delivered gate and asset assurance and route explicit
+    attention into bounded reaction or lawful re-entry
+16. compose independently evolvable STDO-UX capability modules through shared
+    Context, contracts, commands, events, navigation, and evidence
 
 ## Current Product Definition
 
@@ -426,6 +570,10 @@ The current product definition of `odd_manager` is:
 - a product whose common loader resolves primary project identity separately
   from governance-package identity before selecting the initial landing page
   and domain page family
+- a product whose common loader accepts a deep-linked absolute local path for
+  an already registered Project, gives that link precedence over saved local
+  context, keeps the selected Project path in the browser URL, and resolves the
+  Project Workbench as the goal-oriented landing surface
 - a product whose shell title and initial domain framing present the selected
   workspace as `Odd SDLC`, `Odd World Model`, or later `odd_*` domain lines
   according to primary identity rather than according to manager branding alone
@@ -435,21 +583,54 @@ The current product definition of `odd_manager` is:
   results instead of depending on one monolithic observer payload
 - a product that offers requirement-first and process-first stakeholder entry
   lenses over one shared world model rather than separate widget systems
+- a product organized for its first primary persona: the developer operating a
+  portfolio of governed software Projects through review, specification
+  proposal, admitted build, supervision, and assurance
+- a product whose manager-owned command authority covers proposal admission,
+  queueing, bounded external process lifecycle, correlation, cancellation, and
+  attributable operator decisions without taking ABG traversal or closure
+  authority
+- a product whose major capabilities are modular for independent iteration and
+  integrated through clean typed boundaries rather than accumulated in one
+  workbench component or duplicated state model
 - a product whose information widgets remain collapsible, drillable, and
   traceable to human-readable and authoritative underlying surfaces
-- a project whose live design law currently sits in
-  `build_tenants/common/design/ODD_MANAGER_DASHBOARD.md`
+- a project whose live observation design law sits in
+  `build_tenants/common/design/AI_WORKSPACE_OBSERVABILITY_MIGRATION.md`
 - a project whose installer-seeded `build_tenants/odd_manager/python/` surface
   remains starter scaffold only, not the chosen control-surface carrier
 
 The current active implementation target is:
 
 - `build_tenants/react_vite/`
-- current core observation contract: ABG 4.2 system-ledger and catalog
-  projection
-- current first domain overlay target: compatible `odd_sdlc` delivery contracts
-  where published
-- immediate next control-plane repricing: treat `odd_sdlc` requirement-first
-  and process-first pages as one domain pack, and treat `odd_world_model`
-  landing and future world-model pages as a separate domain pack selected by
-  primary workspace identity
+- current core observation contract: versioned, source-attributed GTL/ABG run
+  truth discovered through the selected Project topology
+- current reference product: `odd_glc` data-mapper proof and event carriers
+- current process-first surface: generic Sidecar Run Inspector with no
+  privileged domain adapter
+
+## Current Implementation Posture
+
+The React tenant realizes the modular developer-control foundation and the
+generic manager MVP. It provides Project registration and deep links, Build
+Portfolio, the goal-oriented Project Workbench, attributable Specification
+Proposals, typed Build Request admission, bounded single and concurrent build
+supervision, gate/asset Assurance and Attention, durable shells, tickets,
+files, AI Workspace observation, and deep Run Inspector and traversal
+projections. These capabilities compose through one shared Project/revision
+Context and typed command membrane without taking GTL traversal or ABG runtime
+closure authority.
+
+The manager-owned `Review -> Tune -> Build -> Assure` path is proven against
+admitted dynamic product fixtures and a digest-pinned production adapter
+contract. It is not yet proven against the named live `odd_glc` data-mapper
+product carrier. `odd_glc` must publish its declarations-only non-test Build
+Carrier Descriptor, execution adapter, Assurance Catalog, and matching build
+evidence bundle, and the required ABIogenesis candidate must complete F_H
+promotion. Until those external product facts exist, odd_manager reports the
+capabilities as unavailable and does not substitute a test harness, browser
+command, or shell path for product truth.
+
+AI Workspace and Run Inspector remain supporting observation and forensic
+capabilities inside this loop. They are not alternative product centers or
+evidence authorities.

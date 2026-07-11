@@ -431,7 +431,9 @@ export const MarkdownDocumentContent = memo(function MarkdownDocumentContent({ d
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code({ inline, className, children, ...props }) {
+          code(rawProps) {
+            const { className, children, ...props } = rawProps;
+            const inline = (rawProps as typeof rawProps & { inline?: boolean }).inline;
             const language = normalizeCodeLanguage(className?.replace(/^language-/, "") ?? "");
             const source = String(children).replace(/\n$/, "");
             if (!inline && language === "mermaid") {

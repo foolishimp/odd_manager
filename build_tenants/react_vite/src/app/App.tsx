@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "../layout/AppShell";
-import { loadProjectRegistry } from "../lib/collaboration";
+import { loadProjectRegistry, setActiveProject } from "../lib/collaboration";
+import {
+  parseProjectDeepLink,
+  projectDeepLinkUrl,
+  projectLandingSurface,
+  registeredProjectForDeepLink,
+} from "../lib/projectDeepLink";
+import type { ProjectLandingSurface } from "../lib/projectDeepLink";
 import { projectDisplayNameFromRoot } from "../lib/projectDisplay";
 import type { ThemeMode } from "../lib/types";
 import { WorkspaceRoute } from "../routes/WorkspaceRoute";
@@ -37,6 +44,8 @@ function initialWorkspace() {
 
 export function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState(initialWorkspace);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [initialSurface, setInitialSurface] = useState<ProjectLandingSurface | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(initialTheme);
 
@@ -52,14 +61,41 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     void loadProjectRegistry()
-      .then((registry) => {
+      .then(async (registry) => {
         if (cancelled) return;
         const activeProject = registry.projects.find((project) => project.is_active);
         const registryDefault = registry.diagnostic.active_project_root
           || activeProject?.root
           || registry.diagnostic.manager_workspace_root
           || workspaceRoot;
-        if (registryDefault && registryDefault !== workspaceRoot) {
+
+        const deepLink = parseProjectDeepLink(window.location.search);
+        if (deepLink.state === "ready") {
+          const linkedProject = registeredProjectForDeepLink(deepLink.projectRoot, registry.projects);
+          if (linkedProject) {
+            try {
+              if (!linkedProject.is_active) {
+                await setActiveProject(linkedProject.id, { registerIfMissing: false });
+              }
+              if (!cancelled) {
+                setWorkspaceRoot(linkedProject.root);
+                setInitialSurface(projectLandingSurface(window.location.search));
+                setError(null);
+              }
+              return;
+            } catch (caught) {
+              if (!cancelled) {
+                setError(caught instanceof Error ? caught.message : String(caught));
+              }
+            }
+          } else {
+            setError(`Project deep link is not registered: ${deepLink.projectRoot}`);
+          }
+        } else if (deepLink.state === "invalid") {
+          setError(deepLink.error);
+        }
+
+        if (!cancelled && registryDefault && registryDefault !== workspaceRoot) {
           setWorkspaceRoot(registryDefault);
         }
       })
@@ -67,6 +103,9 @@ export function App() {
         if (!cancelled) {
           setError(caught instanceof Error ? caught.message : String(caught));
         }
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspaceReady(true);
       });
     return () => {
       cancelled = true;
@@ -83,6 +122,13 @@ export function App() {
     window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceRoot);
   }, [workspaceRoot]);
 
+  useEffect(() => {
+    if (!workspaceReady || !workspaceRoot) return;
+    const nextUrl = projectDeepLinkUrl(window.location.href, workspaceRoot);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) window.history.replaceState(window.history.state, "", nextUrl);
+  }, [workspaceReady, workspaceRoot]);
+
   const shellTitle = projectDisplayNameFromRoot(workspaceRoot);
   const shellSubtitle = workspaceRoot || "No active project";
 
@@ -94,10 +140,15 @@ export function App() {
       shellSubtitle={shellSubtitle}
       error={error}
     >
-      <WorkspaceRoute
-        workspaceRoot={workspaceRoot}
-        onProjectRootChange={handleApplyWorkspace}
-      />
+      {workspaceReady ? (
+        <WorkspaceRoute
+          workspaceRoot={workspaceRoot}
+          initialSurface={initialSurface}
+          onProjectRootChange={handleApplyWorkspace}
+        />
+      ) : (
+        <main className="route-wrap" aria-busy="true" aria-label="Resolving Project context" />
+      )}
     </AppShell>
   );
 }

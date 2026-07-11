@@ -1,6 +1,7 @@
 # odd_manager Dashboard Design
 
-**Status**: Active
+**Status**: Superseded 2026-07-10
+**Superseded By**: `build_tenants/common/design/AI_WORKSPACE_OBSERVABILITY_MIGRATION.md`
 **Date**: 2026-04-19
 **Implements**: `REQ-OM-BND-*`, `REQ-OM-ONT-*`, `REQ-OM-PROJ-*`, `REQ-OM-NAV-*`, `REQ-OM-INS-*`, `REQ-OM-WRK-*`, `REQ-OM-COL-*`, `REQ-OM-SES-*`, `REQ-OM-VER-*`, `REQ-OM-LNS-*`
 **Derives From**:
@@ -29,7 +30,12 @@
 - `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35/build_tenants/scala_spark/test_env/50-generated-run-archive.md`
 - `/Users/jim/src/apps/ai_sdlc_examples/local_projects/data_mapper/data_mapper.test35/build_tenants/scala_spark/release/60-generated-release-surface.md`
 
-## Position
+## Historical Position
+
+This file records the retired domain-pack dashboard design. It does not define
+the live observation, identity, or process-first surface. The active design is
+the Project observation topology and generic Run Inspector in
+`AI_WORKSPACE_OBSERVABILITY_MIGRATION.md`.
 
 `odd_manager` is a control-plane host over:
 - manager-owned core GTL/ABG pages

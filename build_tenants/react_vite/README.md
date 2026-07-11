@@ -26,6 +26,26 @@ npm run dev:server
 npm run dev:client
 ```
 
+Production Build adapters are installed by the server operator, independently
+of Project descriptors:
+
+```sh
+OMAN_BUILD_ADAPTER_REGISTRY=/absolute/build-execution-adapters.local.json \
+npm run dev:server
+```
+
+The registry is strict, adapter identities are unique, and each absolute
+module path is SHA-256 pinned before import. Project and browser data can name
+only an installed adapter identity; they cannot provide module paths,
+executables, argv, environment, cwd, or shell options. The full contract and
+registry shape are in `design/capabilities/build-control.md`.
+
+Adapters always publish synchronous `validateInputs` and `createProcessPlan`
+functions. A descriptor that publishes `resume` also requires the installed
+adapter to expose typed `observeExecution`; cancelling a resumed external
+process requires typed `cancelExecution`. The manager rejects identity drift or
+untyped lifecycle results before changing execution truth.
+
 Per-agent room/IRC MCP adapter:
 
 ```sh

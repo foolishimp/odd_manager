@@ -5,10 +5,10 @@
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
 
-### REQ-OM-WRK-001 - The product provides a workspace-scoped operator workbench
+### REQ-OM-WRK-001 - The product provides a Project-scoped operator workbench
 
 `odd_manager` shall provide a first-class operator workbench scoped to the
-selected managed workspace and available as a normal product surface.
+selected managed Project Context and available as a normal product surface.
 
 Acceptance Criteria
 - the operator can reason, direct work, and inspect project state while
@@ -17,6 +17,8 @@ Acceptance Criteria
   runtime, and evidence surfaces
 - the workbench remains part of the product rather than a detached generic
   assistant surface
+- the workbench composes the Project's Review, Tune, Build, and Assure
+  capabilities without owning their internal truth
 
 ### REQ-OM-WRK-002 - The workbench is selection-aware but not selection-bound
 

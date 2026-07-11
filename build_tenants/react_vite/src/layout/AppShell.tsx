@@ -55,7 +55,7 @@ export function AppShell({
           </button>
         </div>
 
-        {error ? <div className="shell__error">{error}</div> : null}
+        {error ? <div className="shell__error" role="alert">{error}</div> : null}
       </header>
 
       {children}

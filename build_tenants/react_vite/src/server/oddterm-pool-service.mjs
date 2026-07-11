@@ -307,6 +307,7 @@ function serializeSession(session) {
   return {
     id: session.id,
     workspaceRoot: session.workspaceRoot,
+    cwd: session.cwd ?? session.workspaceRoot,
     label: session.label,
     archived: Boolean(session.archived),
     status: session.status,
@@ -367,6 +368,7 @@ function emptySessionFromDisk(store, sessionId) {
   return {
     id: sessionId,
     workspaceRoot: store.workspaceRoot,
+    cwd: store.workspaceRoot,
     label: sessionId,
     archived: false,
     status: "closed",
@@ -405,6 +407,7 @@ function hydrateSessionFromDisk(store, session, meta, screenSessions) {
   const previousPid = session.pid;
 
   session.workspaceRoot = store.workspaceRoot;
+  session.cwd = typeof meta.cwd === "string" && meta.cwd.trim() ? resolve(meta.cwd) : (session.cwd ?? store.workspaceRoot);
   session.label = meta.label || session.label || session.id;
   session.archived = Boolean(meta.archived);
   session.status = live ? "live" : meta.status === "error" ? "error" : "closed";
@@ -699,7 +702,7 @@ function startScreenBackend(session) {
     "-lc",
     'cd "$1" || exit 1; shift; exec "$@"',
     "oddterm-screen",
-    session.workspaceRoot,
+    session.cwd ?? session.workspaceRoot,
     shell.command,
     ...shell.args,
   ];
@@ -1042,6 +1045,7 @@ function createSession(workspaceRoot, options = {}) {
   const session = {
     id: sessionId,
     workspaceRoot: store.workspaceRoot,
+    cwd: options.cwd ? resolve(options.cwd) : store.workspaceRoot,
     label: options.label?.trim() || `shell-${store.sessions.size + 1}`,
     archived: false,
     status: "live",

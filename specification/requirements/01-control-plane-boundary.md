@@ -21,14 +21,18 @@ Acceptance Criteria
 ### REQ-OM-BND-002 - The product does not create a shadow runtime
 
 `odd_manager` shall treat declaration truth and runtime fact truth as
-authoritative and shall not create post-dispatch control state that competes
-with them.
+authoritative for their ownership domains. Manager-owned command admission,
+queue, external process lifecycle, correlation, and operator-decision truth
+shall remain explicitly distinct from ABG runtime truth and shall not compete
+with it.
 
 Acceptance Criteria
-- operator-visible status derives from authoritative declaration or runtime
-  surfaces
-- UI summaries and queues remain projections rather than rival mutable control
-  state
+- proposal, command, queue, and process status derives from admitted
+  manager-owned product carriers
+- graph execution, continuation, evidence, and closure status derives from ABG
+  runtime truth
+- UI summaries project those ownership lines rather than becoming another
+  mutable control state
 - actions route through lawful runtime and policy mechanisms instead of through
   UI-local shortcuts
 
@@ -93,15 +97,15 @@ Acceptance Criteria
 identity from the governance or runtime package currently operating over it.
 
 Acceptance Criteria
-- a workspace governed by `odd_sdlc` may still present as primarily
-  `odd_world_model` or another `odd_*` project identity
+- a workspace governed by a shared runtime package may still present as
+  primarily `odd_glc` or another `odd_*` project identity
 - domain landing-page selection, shell titling, and domain page-family choice
   are keyed from primary project identity rather than from governance-package
   markers alone
 - governance-package identity remains inspectable as separate context instead
   of being silently collapsed into primary project identity
-- the manager does not force all governed projects into one permanent
-  `odd_sdlc` presentation model
+- the manager does not force governed Projects into one permanent domain
+  presentation model
 
 ### REQ-OM-BND-005 - Shared design law hardens before tenant-local implementation
 
@@ -122,6 +126,8 @@ selected context and current runtime state.
 Acceptance Criteria
 - available actions vary with the selected object, policy state, and runtime
   admissibility
+- build actions also bind to the selected Project Revision and a published
+  semantic carrier
 - the UI does not surface arbitrary global actions that ignore local context
 - actions remain adjacent to the evidence and context that justify them
 

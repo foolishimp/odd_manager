@@ -24,3 +24,8 @@ Use `.genesis/docs/standards/` as the governing method reference when writing or
 - `08-session-workspace-and-provider-adapters.md`
 - `09-verification-and-traceability.md`
 - `10-entry-lenses-and-delivery-workspaces.md`
+- `11-developer-portfolio-and-project-workbench.md`
+- `12-specification-proposal-and-change-control.md`
+- `13-build-admission-and-supervision.md`
+- `14-gate-asset-assurance-and-attention.md`
+- `15-modular-capability-composition.md`

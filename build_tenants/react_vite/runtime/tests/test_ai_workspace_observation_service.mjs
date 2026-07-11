@@ -252,3 +252,44 @@ test('observation degrades malformed JSON candidates to raw error artifacts', ()
     removeTempProject(projectRoot);
   }
 });
+
+test('large event carriers stay present through deferred digest metadata instead of parse error', () => {
+  const projectRoot = createTempProject();
+  try {
+    const eventPath = join(projectRoot, '.ai-workspace', 'events', 'events.jsonl');
+    mkdirSync(dirname(eventPath), { recursive: true });
+    const line = `${JSON.stringify({ kind: 'payload_observed', payload: 'x'.repeat(200) })}\n`;
+    writeFileSync(eventPath, line.repeat(6000), 'utf8');
+
+    const observation = loadAiWorkspaceObservation(projectRoot);
+    const artifact = findArtifact(observation, 'events.jsonl');
+    assert.equal(artifact.artifactKind, 'event_log_jsonl');
+    assert.equal(artifact.state, 'present');
+    assert.ok(artifact.sizeBytes > 1024 * 1024);
+    assert.ok(artifact.diagnostics.some((entry) => entry.code === 'jsonl_digest_deferred'));
+    assert.equal(aiWorkspaceFeatureById(observation, 'events').state, 'present');
+  } finally {
+    removeTempProject(projectRoot);
+  }
+});
+
+test('software-build context does not promote instruction manifests into domain overlays', () => {
+  const projectRoot = createTempProject();
+  try {
+    writeJson(
+      join(projectRoot, '.ai-workspace', 'runtime', 'software-build', 'instruction-manifest.json'),
+      {
+        kind: 'instruction_prompt_manifest',
+        manifestRef: 'instruction-manifest://fixture/1',
+        promptDigest: 'sha256:fixture',
+        outputContractRefs: ['contract://fixture'],
+      },
+    );
+    const observation = loadAiWorkspaceObservation(projectRoot);
+    const artifact = findArtifact(observation, 'instruction-manifest.json');
+    assert.equal(artifact.artifactKind, 'runtime_json');
+    assert.equal(aiWorkspaceFeatureById(observation, 'domain_overlays').state, 'missing');
+  } finally {
+    removeTempProject(projectRoot);
+  }
+});

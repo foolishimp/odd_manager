@@ -7,8 +7,8 @@
 
 ### REQ-OM-NAV-001 - The home surface answers immediate supervisory questions
 
-The product shall provide a home surface that answers the practical questions
-an operator must resolve first.
+The product shall provide a Project Portfolio home surface that answers the
+practical questions a developer must resolve first across registered Projects.
 
 Acceptance Criteria
 - the home surface shows what is active, what is blocked, what changed, and
@@ -16,20 +16,22 @@ Acceptance Criteria
 - the home surface can point to the next lawful move or next waiting condition
 - the home surface can show the currently relevant runtime carrier and open
   obligations without forcing immediate deep drill-down
+- the home surface keeps Project, revision, build, assurance, freshness, and
+  attention identity distinct across the portfolio
 
-### REQ-OM-NAV-002 - The primary orientation surface is a graph workspace
+### REQ-OM-NAV-002 - Primary orientation follows the developer control loop
 
-The main operator experience shall orient the user through a navigable graph
-workspace over typed assets and workorders rather than relying on tables, raw
-logs, or filesystem browsing as the first navigation model.
+The main developer experience shall orient the user through the Project
+Portfolio and selected Project Workbench rather than through raw artifacts,
+logs, terminals, or one runtime view as the first navigation model.
 
 Acceptance Criteria
-- the orientation surface can show one or more graphs in the current workspace
-- the graph view makes the main typed assets, bindings, and workorders legible
-  at a glance
-- the graph can show active, open, blocked, and gated state where relevant
-- the graph gives enough orientation to explain where the current concern lives
-  in the larger managed world
+- the portfolio answers which Projects require attention
+- the Project Workbench frames Review, Tune, Build, and Assure over one Context
+- graph, runtime, artifact, file, ticket, and shell capabilities remain
+  reachable as supporting observations and tools
+- orientation preserves active, open, blocked, gated, stale, and waiting-human
+  meaning across levels
 
 ### REQ-OM-NAV-003 - The operator can move between multiple graphs without losing context
 
@@ -129,10 +131,10 @@ Acceptance Criteria
 - the operator chooses a workspace through one common loader surface rather
   than through separate per-domain launchers
 - after selection, the manager resolves the workspace's primary identity before
-  choosing domain tabs or landing pages
-- identity-specific landing pages can differ between `odd_sdlc`,
-  `odd_world_model`, and later supported `odd_*` lines without forking the
-  whole shell
+  admitting domain capability contributions to the Project Workbench
+- the Project Workbench remains the common goal-oriented landing surface while
+  identity-specific capability contributions can differ between product lines
+  without forking the whole shell or hard-coding a product list
 - if identity cannot be resolved confidently, the manager falls back to an
   explicit compatibility or unknown-identity state rather than silently
   choosing the wrong domain landing page
@@ -148,8 +150,28 @@ Acceptance Criteria
 - generic Project/file capabilities such as Browse, pinned folders, recent
   path memory, code/document viewing, and shell workspace remain available for
   those Projects
-- domain-specific widgets such as an `odd_sdlc` Process Navigator show an
-  explicit unsupported-contract state when the required Workspace contract is
-  absent
+- capability-specific widgets such as Run Inspector show an explicit
+  unsupported or missing state when their required carriers are absent
 - `specification_methodology` and other method/source repositories can be
-  registered for inspection without being mislabeled as `odd_sdlc`
+  registered for inspection without being assigned a false product identity
+
+### REQ-OM-NAV-012 - Registered Projects are directly addressable by local-path deep links
+
+The common loader shall accept an absolute local Project path in the browser
+URL and resolve it through the maintained Project registry before activating
+that Project.
+
+Acceptance Criteria
+- a deep-linked registered Project path takes precedence over persisted browser
+  context and the registry's previously active Project during initial load
+- deep-link admission matches a registered Project root exactly and does not
+  register an unknown filesystem location as a side effect of navigation
+- malformed, relative, or unregistered paths produce an explicit loader error
+  and fall back to a registered active or manager Project
+- generated run roots and run workspaces remain subordinate observation
+  topology and are not promoted into Project identity by a deep link
+- after initial resolution and ordinary Project switching, the browser URL
+  carries the selected absolute Project root as a copyable deep link
+- a Project-only deep link opens the Project Workbench rather than an empty
+  viewer canvas or a supporting observation tab; `view=run-inspector` and
+  `view=ticket-board` may directly select those admitted manager surfaces

@@ -164,22 +164,30 @@ Acceptance Criteria
 - domain-contract compatibility state is itself projected as explicit world
   information
 
-### REQ-OM-PROJ-017 - ABG 4.2 system ledgers and catalogs are core projections
+### REQ-OM-PROJ-017 - Admitted ABG/GTL run truth is a core projection
 
-`odd_manager` shall project ABG 4.2 system-ledger and catalog truth as
-manager-owned core system information, not as an `odd_sdlc`-specific domain
-overlay.
+`odd_manager` shall project versioned ABG/GTL run, event, ledger, catalog,
+proof, and artifact truth as manager-owned core system information, not as an
+`odd_sdlc`-specific domain overlay.
 
 Acceptance Criteria
 - the manager can project ABG registry entries, graph-function selections,
   node-type satisfaction facts, payload facts, and construction-action catalog
   entries where the managed project publishes them
+- the manager can discover admitted runs from the selected Project without
+  requiring each run workspace to be registered as a separate Project
+- runtime activity, traversal, functions, catalog, assets, diagnostics,
+  assurance, events, stages, transcripts, artifacts, and runtime targets remain
+  distinct inspectable projections with source references
 - those projections remain available without a workspace-local `odd_sdlc`
   runtime install
 - unsupported or missing domain overlays do not suppress available ABG system
   projection
 - operator-visible ABG system facts remain traceable to source event or catalog
   records
+- large event carriers remain observable through bounded metadata and digest
+  projections rather than becoming parse errors or requiring whole-file browser
+  transfer
 
 ### REQ-OM-PROJ-014 - Domain UI-pack resolution is explicit and versioned
 
@@ -226,10 +234,11 @@ Acceptance Criteria
 - overview and inspector layers can trace a blocked or carried posture back to
   the governing ambiguity or capability surface
 
-### REQ-OM-PROJ-015 - The first supported odd_sdlc pack projects the observed delivery artifact family
+### REQ-OM-PROJ-015 - Discovered domain packs project their published artifact families
 
-`odd_manager` shall treat the published `odd_sdlc` delivery artifact family as
-first-class domain overlays for the first supported domain pack.
+`odd_manager` shall treat artifact families published by compatible domain
+packs as first-class overlays discovered above the generic Project/run
+observation core.
 
 Acceptance Criteria
 - when the active workspace publishes them, projections can surface generated
@@ -241,7 +250,7 @@ Acceptance Criteria
 - missing or stale generated surfaces are represented honestly with explicit
   absence or staleness state
 - core GTL/ABG runtime projections remain available regardless of whether the
-  full `odd_sdlc` delivery artifact family is present
+  selected Project publishes a compatible domain artifact family
 
 ### REQ-OM-PROJ-016 - Workspace identity and governance identity are projected separately
 
@@ -249,8 +258,8 @@ Acceptance Criteria
 and governance-package identity as separate world facts.
 
 Acceptance Criteria
-- the manager can project a primary identity such as `odd_sdlc` or
-  `odd_world_model` for the selected workspace
+- the manager can project a primary identity such as `odd_glc` or another
+  published `odd_*` product for the selected workspace
 - the manager can also project the governing package or runtime package where
   that differs from primary identity
 - domain-page resolution, landing-page selection, and shell framing can consume

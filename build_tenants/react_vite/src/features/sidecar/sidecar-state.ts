@@ -2,8 +2,14 @@ import type { TicketRecord } from '../../contracts/ticket';
 import type { CommentRecord } from '../../contracts/comment';
 import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/session';
 import type { ProjectRecord } from '../../contracts/project';
-import type { SidecarProcessProjection } from '../../contracts/process';
+import type { RunInspectorFocus } from '../../lib/projectDeepLink';
 import type { AiWorkspaceObservation } from '../../contracts/ai-workspace-observation';
+import type { AbgRunObservation, AbgRunSection } from '../../contracts/abg-run-observation';
+import type {
+  TraversalProjection,
+  TraversalVectorDetail,
+  TraversalVectorVariant,
+} from '../../contracts/traversal';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -11,8 +17,8 @@ export interface ContextRecord {
   session: null | { id: string };
 }
 
-export type SelectionKind = 'project' | 'ticket' | 'comment' | 'session' | 'surface' | 'process' | null;
-export type SidecarExplorerProviderId = 'projects' | 'tickets' | 'comments' | 'history' | 'browse';
+export type SelectionKind = 'project' | 'ticket' | 'comment' | 'session' | 'surface' | 'traversal' | 'ticket-board' | 'ai-workspace' | null;
+export type SidecarExplorerProviderId = 'tickets' | 'comments' | 'specification' | 'build-tenants' | 'history' | 'browse';
 export type SidecarInfoSurface = SidecarExplorerProviderId;
 
 export interface SidecarExplorerProvider {
@@ -23,14 +29,15 @@ export interface SidecarExplorerProvider {
 }
 
 export const SIDECAR_EXPLORER_PROVIDERS: SidecarExplorerProvider[] = [
-  { id: 'projects', label: 'Projects', shortLabel: 'P', selectionKind: 'project' },
   { id: 'tickets', label: 'Tickets', shortLabel: 'T', selectionKind: 'ticket' },
   { id: 'comments', label: 'Comments', shortLabel: 'C', selectionKind: 'comment' },
-  { id: 'browse', label: 'Browse', shortLabel: 'B' },
+  { id: 'specification', label: 'Specification', shortLabel: 'S', selectionKind: 'surface' },
+  { id: 'build-tenants', label: 'Build Tenants', shortLabel: 'B', selectionKind: 'surface' },
+  { id: 'browse', label: 'Browse', shortLabel: 'F' },
   { id: 'history', label: 'Recent Paths', shortLabel: 'H' },
 ];
 
-export type SidecarPathHistorySource = 'browse' | 'pinned_folder' | 'history';
+export type SidecarPathHistorySource = 'browse' | 'provider' | 'pinned_folder' | 'history';
 
 export interface SidecarPathHistoryEntry {
   absolutePath: string;
@@ -50,7 +57,6 @@ export interface Selection {
 export type SidecarShellLayout = 'single' | 'split-vertical' | 'split-horizontal';
 export type SidecarResizeTarget = 'explorer' | 'contextRail' | 'bottomDock';
 export type SidecarPaneGroupId = 'main' | 'secondary' | 'tertiary' | 'quaternary';
-export type SidecarProcessGraphMode = 'expanded' | 'compressed';
 
 export const SIDECAR_PANE_GROUP_IDS: SidecarPaneGroupId[] = ['main', 'secondary', 'tertiary', 'quaternary'];
 export const SIDECAR_MAX_PANE_GROUPS = SIDECAR_PANE_GROUP_IDS.length;
@@ -169,14 +175,6 @@ export interface SidecarLayoutProfile {
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
-    activeProcessRecordId: string | null;
-    liveActiveRunRowCollapsed: boolean;
-    liveInternalRowCollapsed: boolean;
-    liveTranscriptCollapsed: boolean;
-    liveDetailRowCollapsed: boolean;
-    liveGapRowCollapsed: boolean;
-    liveEventViewerCollapsed: boolean;
-    activeProcessGraphMode: SidecarProcessGraphMode;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
     documentViewers: Record<string, SidecarDocumentViewerState>;
@@ -188,44 +186,75 @@ export type SidecarLayoutProfileValidation =
   | { ok: true; profile: SidecarLayoutProfile }
   | { ok: false; error: string };
 
-export type SidecarBrowseScope = 'in-project' | 'cross-project';
+// Traversal View (sprint W7) — recursion-aware, lazy-loading observation of a
+// live traversal run. The summary is bounded; per-vector detail is fetched on
+// selection only and cached FIFO with a hard cap.
+export type SidecarTraversalStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-export interface SidecarBrowseFsEntry {
-  readonly name: string;
-  readonly absolutePath: string;
-  readonly kind?: 'directory' | 'file';
-  readonly hasWorkspace: boolean;
+export interface SidecarTraversalSelectedVector {
+  index: number;
+  variant: TraversalVectorVariant;
+  attempt: number | null;
 }
 
-export interface SidecarBrowseLoaded {
-  readonly path: string;
-  readonly parent: string | null;
-  readonly entries: readonly SidecarBrowseFsEntry[];
-  readonly truncated: boolean;
+export interface SidecarTraversalDetailEntry {
+  key: string;
+  detail: TraversalVectorDetail;
 }
 
-export interface SidecarBrowseState {
-  scope: SidecarBrowseScope;
-  currentPath: string | null;
-  parent: string | null;
-  entries: readonly SidecarBrowseFsEntry[];
-  truncated: boolean;
-  loading: boolean;
+export const SIDECAR_TRAVERSAL_DETAIL_CACHE_LIMIT = 8;
+
+export interface SidecarTraversalState {
+  status: SidecarTraversalStatus;
+  runStatus: SidecarTraversalStatus;
+  workspaceRoot: string | null;
+  requestedRunId: string | null;
+  selectedRunId: string | null;
+  section: AbgRunSection;
+  runObservation: AbgRunObservation | null;
+  runError: string | null;
+  summary: TraversalProjection | null;
   error: string | null;
-  favouriteError: string | null;
-  unfavouriteError: string | null;
+  selectedVector: SidecarTraversalSelectedVector | null;
+  detailStatus: SidecarTraversalStatus;
+  detailError: string | null;
+  details: SidecarTraversalDetailEntry[];
 }
 
-export const INITIAL_SIDECAR_BROWSE_STATE: SidecarBrowseState = Object.freeze({
-  scope: 'in-project',
-  currentPath: null,
-  parent: null,
-  entries: Object.freeze([]),
-  truncated: false,
-  loading: false,
+export const INITIAL_SIDECAR_TRAVERSAL_STATE: SidecarTraversalState = Object.freeze({
+  status: 'idle' as const,
+  runStatus: 'idle' as const,
+  workspaceRoot: null,
+  requestedRunId: null,
+  selectedRunId: null,
+  section: 'overview' as const,
+  runObservation: null,
+  runError: null,
+  summary: null,
   error: null,
-  favouriteError: null,
-  unfavouriteError: null,
+  selectedVector: null,
+  detailStatus: 'idle' as const,
+  detailError: null,
+  details: Object.freeze([]) as unknown as SidecarTraversalDetailEntry[],
+});
+
+export function traversalDetailKey(index: number, variant: TraversalVectorVariant, attempt: number | null, runId: string | null = null) {
+  return `${runId ?? 'default'}:${index}:${variant}:${attempt === null ? 'latest' : attempt}`;
+}
+
+// Ticket Board (sprint W8) — reducer-owned selection for the Drill View
+// instantiation over the tickets surface. Records ride the batch surface load
+// (state.tickets); this slice only carries which card is drilled into, plus
+// the workspace root the selection was made against (stale-root guard, same
+// law as the traversal slice).
+export interface SidecarTicketBoardState {
+  workspaceRoot: string | null;
+  selectedTicketId: string | null;
+}
+
+export const INITIAL_SIDECAR_TICKET_BOARD_STATE: SidecarTicketBoardState = Object.freeze({
+  workspaceRoot: null,
+  selectedTicketId: null,
 });
 
 export interface SidecarState {
@@ -235,7 +264,9 @@ export interface SidecarState {
   comments: CommentRecord[];
   sessions: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
   aiWorkspaceObservation: AiWorkspaceObservation | null;
-  process: SidecarProcessProjection | null;
+  traversal: SidecarTraversalState;
+  runFocus: RunInspectorFocus | null;
+  ticketBoard: SidecarTicketBoardState;
   selection: Selection;
   pathHistory: SidecarPathHistoryEntry[];
   activeSessionId: string | null;
@@ -246,19 +277,10 @@ export interface SidecarState {
     shellCollapsed: boolean;
     shellLayout: SidecarShellLayout;
     activeInfoSurface: SidecarInfoSurface;
-    activeProcessRecordId: string | null;
-    liveActiveRunRowCollapsed: boolean;
-    liveInternalRowCollapsed: boolean;
-    liveTranscriptCollapsed: boolean;
-    liveDetailRowCollapsed: boolean;
-    liveGapRowCollapsed: boolean;
-    liveEventViewerCollapsed: boolean;
-    activeProcessGraphMode: SidecarProcessGraphMode;
     workbenchLayout: SidecarWorkbenchLayout;
     viewerWorkspace: SidecarViewerWorkspace;
     documentViewers: Record<string, SidecarDocumentViewerState>;
     terminalWorkspace: SidecarTerminalWorkspace;
-    browse: SidecarBrowseState;
   };
   unreadIds: string[];
   viewerAgent: string;
@@ -287,7 +309,6 @@ export type SidecarMsg =
         aiWorkspaceObservation?: AiWorkspaceObservation | null;
         pathHistory?: SidecarPathHistoryEntry[];
         unreadIds?: string[];
-        process?: SidecarProcessProjection | null;
         selection?: Selection;
         activeSessionId?: string | null;
         secondarySessionId?: string | null;
@@ -302,15 +323,6 @@ export type SidecarMsg =
   | { type: 'ui/set-info-pinned'; pinned?: boolean }
   | { type: 'ui/set-shell-layout'; layout: SidecarShellLayout }
   | { type: 'ui/select-info-surface'; surface: SidecarInfoSurface; open?: boolean }
-  | { type: 'process/select-record'; id: string | null }
-  | { type: 'process/set-live-active-run-row-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-internal-row-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-transcript-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-detail-row-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-gap-row-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-event-viewer-collapsed'; collapsed: boolean }
-  | { type: 'process/set-live-all-collapsed'; collapsed: boolean }
-  | { type: 'process/set-graph-mode'; mode: SidecarProcessGraphMode }
   | { type: 'ui/resize-start'; target: SidecarResizeTarget; pointerId: number | null; clientX: number; clientY: number }
   | { type: 'ui/resize-preview'; target: SidecarResizeTarget; valuePx: number }
   | { type: 'ui/resize-commit'; target?: SidecarResizeTarget; valuePx?: number }
@@ -352,21 +364,38 @@ export type SidecarMsg =
   | { type: 'reply/edit'; body: string }
   | { type: 'reply/cancel' }
   | { type: 'reply/submit/request'; parentId: string; body: string }
-  | { type: 'session/spawn/request'; groupId?: SidecarTerminalGroupId }
+  | { type: 'session/spawn/request'; groupId?: SidecarTerminalGroupId; cwd?: string | null; label?: string }
   | { type: 'session/spawn/done'; record: SessionRecord; groupId: SidecarTerminalGroupId }
   | { type: 'session/kill/request'; id: string }
-  | { type: 'browse/scope-set'; scope: SidecarBrowseScope }
-  | { type: 'browse/navigate-up' }
-  | { type: 'browse/navigate-to'; path: string }
-  | { type: 'browse/loaded'; result: SidecarBrowseLoaded; scope?: SidecarBrowseScope }
-  | { type: 'browse/load-failed'; error: string }
-  | { type: 'browse/favourite-folder'; path: string }
-  | { type: 'browse/favourite-succeeded'; project: ProjectRecord; projects: ProjectRecord[] }
-  | { type: 'browse/favourite-failed'; path: string; error: string }
-  | { type: 'browse/dismiss-error' }
-  | { type: 'projects/unfavourite'; projectId: string }
-  | { type: 'projects/unfavourite-succeeded'; projectId: string; projects: ProjectRecord[] }
-  | { type: 'projects/unfavourite-failed'; projectId: string; error: string }
+  | { type: 'traversal/load'; workspaceRoot?: string | null; runId?: string | null; refresh?: boolean }
+  | { type: 'run/focus-admitted'; focus: RunInspectorFocus | null }
+  | { type: 'traversal/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; summary: TraversalProjection }
+  | { type: 'traversal/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; error: string }
+  | { type: 'run/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; observation: AbgRunObservation }
+  | { type: 'run/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; error: string }
+  | { type: 'run/select'; runId: string }
+  | { type: 'run/select-section'; section: AbgRunSection }
+  | { type: 'traversal/select-vector'; index: number; variant?: TraversalVectorVariant; attempt?: number | null }
+  | {
+      type: 'traversal/vector-succeeded';
+      workspaceRoot: string | null;
+      runId: string | null;
+      index: number;
+      variant: TraversalVectorVariant;
+      attempt: number | null;
+      detail: TraversalVectorDetail;
+    }
+  | {
+      type: 'traversal/vector-failed';
+      workspaceRoot: string | null;
+      runId: string | null;
+      index: number;
+      variant: TraversalVectorVariant;
+      attempt: number | null;
+      error: string;
+    }
+  | { type: 'traversal/clear' }
+  | { type: 'ticket-board/select'; id: string | null }
   | { type: 'action/result'; ok: boolean; message?: string; error?: string; reload?: boolean };
 
 export type SidecarCmd =
@@ -375,11 +404,18 @@ export type SidecarCmd =
   | { type: 'comment.toggleRead'; id: string; currentlyUnread: boolean; projectRoot: string | null }
   | { type: 'comment.reply'; parentId: string; body: string; projectRoot: string | null }
   | { type: 'clipboard.write'; text: string; label: string }
-  | { type: 'session.spawn'; projectRoot: string | null; groupId: SidecarTerminalGroupId }
+  | { type: 'session.spawn'; projectRoot: string | null; groupId: SidecarTerminalGroupId; cwd: string | null; label: string | null }
   | { type: 'session.kill'; id: string; projectRoot: string | null }
-  | { type: 'browse.path'; path: string | null; scope: SidecarBrowseScope }
-  | { type: 'projects.register'; path: string }
-  | { type: 'projects.unregister'; projectId: string };
+  | { type: 'traversal.loadSummary'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
+  | { type: 'run.loadObservation'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
+  | {
+      type: 'traversal.loadVectorDetail';
+      workspaceRoot: string | null;
+      runId: string | null;
+      index: number;
+      variant: TraversalVectorVariant;
+      attempt: number | null;
+    };
 
 export interface PendingSidecarCmd {
   id: string;
@@ -393,7 +429,9 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   comments: [],
   sessions: { records: [], diagnostic: null },
   aiWorkspaceObservation: null,
-  process: null,
+  traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] },
+  runFocus: null,
+  ticketBoard: { ...INITIAL_SIDECAR_TICKET_BOARD_STATE },
   selection: { kind: null, id: null },
   pathHistory: [],
   activeSessionId: null,
@@ -401,22 +439,13 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   ui: {
     infoCollapsed: false,
     infoPinned: false,
-    shellCollapsed: false,
+    shellCollapsed: true,
     shellLayout: 'single',
     activeInfoSurface: 'tickets',
-    activeProcessRecordId: null,
-    liveActiveRunRowCollapsed: false,
-    liveInternalRowCollapsed: false,
-    liveTranscriptCollapsed: false,
-    liveDetailRowCollapsed: false,
-    liveGapRowCollapsed: false,
-    liveEventViewerCollapsed: false,
-    activeProcessGraphMode: 'expanded',
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: { ...SIDECAR_VIEWER_WORKSPACE_DEFAULTS, groups: [...SIDECAR_VIEWER_WORKSPACE_DEFAULTS.groups] },
     documentViewers: {},
     terminalWorkspace: { ...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS, groups: [...SIDECAR_TERMINAL_WORKSPACE_DEFAULTS.groups] },
-    browse: { ...INITIAL_SIDECAR_BROWSE_STATE },
   },
   unreadIds: [],
   viewerAgent: 'operator',
@@ -432,13 +461,62 @@ function currentProjectRoot(state: SidecarState) {
   return state.context?.project.root ?? null;
 }
 
-function parentFolderPath(path: string | null) {
-  if (!path) return null;
-  const normalized = path.trim().replace(/\/+$/, '');
-  if (!normalized || normalized === '/') return null;
-  const index = normalized.lastIndexOf('/');
-  if (index <= 0) return '/';
-  return normalized.slice(0, index);
+function traversalRequestedRoot(state: SidecarState, msg: Extract<SidecarMsg, { type: 'traversal/load' }>) {
+  return msg.workspaceRoot !== undefined ? msg.workspaceRoot : currentProjectRoot(state);
+}
+
+function traversalRequestedRunId(state: SidecarState, msg: Extract<SidecarMsg, { type: 'traversal/load' }>) {
+  return msg.runId !== undefined ? msg.runId : state.traversal.selectedRunId;
+}
+
+function normalizedTraversalSelection(msg: Extract<SidecarMsg, { type: 'traversal/select-vector' }>): SidecarTraversalSelectedVector {
+  return {
+    index: msg.index,
+    variant: msg.variant ?? 'primary',
+    attempt: msg.attempt === undefined ? null : msg.attempt,
+  };
+}
+
+function traversalCacheHasKey(traversal: SidecarTraversalState, key: string) {
+  return traversal.details.some((entry) => entry.key === key);
+}
+
+// Bounded FIFO detail cache: dedupe by key, append newest, evict oldest
+// beyond SIDECAR_TRAVERSAL_DETAIL_CACHE_LIMIT.
+function appendTraversalDetail(
+  details: SidecarTraversalDetailEntry[],
+  entry: SidecarTraversalDetailEntry,
+  protectedKey: string | null = null,
+): SidecarTraversalDetailEntry[] {
+  const retained = details.filter((candidate) => candidate.key !== entry.key);
+  const next = [...retained, entry];
+  while (next.length > SIDECAR_TRAVERSAL_DETAIL_CACHE_LIMIT) {
+    const evictionIndex = next.findIndex((candidate) => candidate.key !== protectedKey);
+    if (evictionIndex < 0) break;
+    next.splice(evictionIndex, 1);
+  }
+  return next;
+}
+
+// Ticket Board stale-root guard: a board selection is only meaningful against
+// the workspace root and ticket records it was made from. Cleared when the
+// workspace root changes or when the selected ticket leaves the loaded
+// records; kept (referentially stable) otherwise so tab switches survive.
+function reconciledTicketBoardState(
+  board: SidecarTicketBoardState,
+  tickets: TicketRecord[],
+  workspaceRoot: string | null,
+): SidecarTicketBoardState {
+  if (board.selectedTicketId === null) return board;
+  if (board.workspaceRoot !== workspaceRoot || !tickets.some((ticket) => ticket.id === board.selectedTicketId)) {
+    return { workspaceRoot, selectedTicketId: null };
+  }
+  return board;
+}
+
+function reconciledTraversalState(traversal: SidecarTraversalState, workspaceRoot: string | null): SidecarTraversalState {
+  if (traversal.workspaceRoot === null || traversal.workspaceRoot === workspaceRoot) return traversal;
+  return { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] };
 }
 
 function firstLiveSessionId(sessions: SessionRecord[]) {
@@ -1026,7 +1104,7 @@ function stringArray(value: unknown) {
 }
 
 function isPathHistorySource(value: unknown): value is SidecarPathHistorySource {
-  return value === 'browse' || value === 'pinned_folder' || value === 'history';
+  return value === 'browse' || value === 'provider' || value === 'pinned_folder' || value === 'history';
 }
 
 function validPathHistoryEntry(value: unknown): SidecarPathHistoryEntry | null {
@@ -1084,7 +1162,7 @@ function isTerminalGroupId(value: unknown): value is SidecarTerminalGroupId {
 }
 
 function isViewerTabKind(value: unknown): value is SidecarViewerTabKind {
-  return value === 'project' || value === 'ticket' || value === 'comment' || value === 'session' || value === 'surface' || value === 'process';
+  return value === 'project' || value === 'ticket' || value === 'comment' || value === 'session' || value === 'surface' || value === 'traversal' || value === 'ticket-board' || value === 'ai-workspace';
 }
 
 function isInfoSurface(value: unknown): value is SidecarInfoSurface {
@@ -1110,9 +1188,12 @@ function validViewerWorkspace(value: unknown): SidecarViewerWorkspace | null {
   if (!Array.isArray(value.tabs) || !Array.isArray(value.groups)) return null;
   const tabs: SidecarViewerTab[] = [];
   for (const tab of value.tabs) {
-    if (!isRecord(tab) || typeof tab.id !== 'string' || !isViewerTabKind(tab.kind) || typeof tab.objectId !== 'string') {
+    if (!isRecord(tab) || typeof tab.id !== 'string' || typeof tab.objectId !== 'string') {
       return null;
     }
+    // Forward-only profile migration: discard tabs whose viewer kind was
+    // retired without rejecting unrelated pane geometry and operator layout.
+    if (!isViewerTabKind(tab.kind)) continue;
     if (tab.id !== viewerTabId(tab.kind, tab.objectId)) return null;
     tabs.push({ id: tab.id, kind: tab.kind, objectId: tab.objectId });
   }
@@ -1177,14 +1258,6 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
         shellCollapsed: ui.shellCollapsed,
         shellLayout: terminalWorkspace.split,
         activeInfoSurface: ui.activeInfoSurface,
-        activeProcessRecordId: typeof ui.activeProcessRecordId === 'string' ? ui.activeProcessRecordId : null,
-        liveActiveRunRowCollapsed: ui.liveActiveRunRowCollapsed === true,
-        liveInternalRowCollapsed: ui.liveInternalRowCollapsed === true,
-        liveTranscriptCollapsed: ui.liveTranscriptCollapsed === true,
-        liveDetailRowCollapsed: ui.liveDetailRowCollapsed === true,
-        liveGapRowCollapsed: ui.liveGapRowCollapsed === true,
-        liveEventViewerCollapsed: ui.liveEventViewerCollapsed === true,
-        activeProcessGraphMode: isProcessGraphMode(ui.activeProcessGraphMode) ? ui.activeProcessGraphMode : 'expanded',
         workbenchLayout,
         viewerWorkspace,
         documentViewers: validDocumentViewers(ui.documentViewers, viewerWorkspace),
@@ -1192,10 +1265,6 @@ export function validateSidecarLayoutProfile(payload: unknown, contextKey: strin
       },
     },
   };
-}
-
-function isProcessGraphMode(value: unknown): value is SidecarProcessGraphMode {
-  return value === 'expanded' || value === 'compressed';
 }
 
 export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: string): SidecarLayoutProfile {
@@ -1209,14 +1278,6 @@ export function sidecarLayoutProfileFromState(state: SidecarState, contextKey: s
       shellCollapsed: state.ui.shellCollapsed,
       shellLayout: terminalWorkspace.split,
       activeInfoSurface: state.ui.activeInfoSurface,
-      activeProcessRecordId: state.ui.activeProcessRecordId,
-      liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed,
-      liveInternalRowCollapsed: state.ui.liveInternalRowCollapsed,
-      liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed,
-      liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed,
-      liveGapRowCollapsed: state.ui.liveGapRowCollapsed,
-      liveEventViewerCollapsed: state.ui.liveEventViewerCollapsed,
-      activeProcessGraphMode: state.ui.activeProcessGraphMode,
       workbenchLayout: normalizeWorkbenchLayout({
         ...state.ui.workbenchLayout,
         activeResize: null,
@@ -1233,22 +1294,13 @@ function defaultWorkbenchUi(state: SidecarState): SidecarState['ui'] {
   return {
     infoCollapsed: false,
     infoPinned: false,
-    shellCollapsed: false,
+    shellCollapsed: true,
     shellLayout: terminalWorkspace.split,
     activeInfoSurface: 'tickets',
-    activeProcessRecordId: null,
-    liveActiveRunRowCollapsed: false,
-    liveInternalRowCollapsed: false,
-    liveTranscriptCollapsed: false,
-    liveDetailRowCollapsed: false,
-    liveGapRowCollapsed: false,
-    liveEventViewerCollapsed: false,
-    activeProcessGraphMode: 'expanded',
     workbenchLayout: { ...SIDECAR_WORKBENCH_LAYOUT_DEFAULTS },
     viewerWorkspace: defaultViewerWorkspace(),
     documentViewers: {},
     terminalWorkspace,
-    browse: { ...INITIAL_SIDECAR_BROWSE_STATE },
   };
 }
 
@@ -1275,15 +1327,10 @@ function normalizeLoadedState(state: SidecarState) {
     ...state,
     activeSessionId: normalizedActiveSessionId,
     secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, normalizedActiveSessionId) ?? secondarySessionId,
+    ticketBoard: reconciledTicketBoardState(state.ticketBoard, state.tickets, state.context?.project.root ?? null),
+    traversal: reconciledTraversalState(state.traversal, state.context?.project.root ?? null),
     ui: {
       ...state.ui,
-      liveActiveRunRowCollapsed: state.ui.liveActiveRunRowCollapsed === true,
-      liveInternalRowCollapsed: state.ui.liveInternalRowCollapsed === true,
-      liveTranscriptCollapsed: state.ui.liveTranscriptCollapsed === true,
-      liveDetailRowCollapsed: state.ui.liveDetailRowCollapsed === true,
-      liveGapRowCollapsed: state.ui.liveGapRowCollapsed === true,
-      liveEventViewerCollapsed: state.ui.liveEventViewerCollapsed === true,
-      activeProcessGraphMode: isProcessGraphMode(state.ui.activeProcessGraphMode) ? state.ui.activeProcessGraphMode : 'expanded',
       shellLayout: terminalWorkspace.split,
       workbenchLayout,
       viewerWorkspace,
@@ -1293,7 +1340,7 @@ function normalizeLoadedState(state: SidecarState) {
   };
 }
 
-function hasLoadProjectionPayload(payload: SidecarMsg & { type: 'load/done' }['payload']) {
+function hasLoadProjectionPayload(payload: Extract<SidecarMsg, { type: 'load/done' }>['payload']) {
   return (
     payload.context !== undefined
     || payload.projects !== undefined
@@ -1303,7 +1350,6 @@ function hasLoadProjectionPayload(payload: SidecarMsg & { type: 'load/done' }['p
     || payload.aiWorkspaceObservation !== undefined
     || payload.pathHistory !== undefined
     || payload.unreadIds !== undefined
-    || payload.process !== undefined
     || payload.selection !== undefined
     || payload.activeSessionId !== undefined
     || payload.secondarySessionId !== undefined
@@ -1317,19 +1363,10 @@ function isLoadPayloadMismatch(state: SidecarState, requestedRoot: string | null
   return requestedRoot !== null && state.context?.project?.root !== requestedRoot;
 }
 
-function clearStaleProcessLoadState(state: SidecarState): SidecarState {
-  return {
-    ...state,
-    process: null,
-    ui: {
-      ...state.ui,
-      activeProcessRecordId: null,
-    },
-  };
-}
-
 export function updateSidecarState(state: SidecarState, msg: SidecarMsg): SidecarState {
   switch (msg.type) {
+    case 'run/focus-admitted':
+      return { ...state, runFocus: msg.focus };
     case 'load/request':
       return { ...state, loading: true, activeLoadRoot: msg.projectRoot };
     case 'load/start':
@@ -1339,12 +1376,12 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         return state;
       }
       if (!hasLoadProjectionPayload(msg.payload)) {
-        const next = clearStaleProcessLoadState(normalizeLoadedState({
+        const next = normalizeLoadedState({
           ...state,
           ...(msg.payload.lastAction ? { lastAction: msg.payload.lastAction } : {}),
           loading: false,
           activeLoadRoot: null,
-        }));
+        });
         if (isLoadPayloadMismatch(state, msg.projectRoot)) {
           return {
             ...next,
@@ -1354,6 +1391,9 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             pathHistory: [],
             aiWorkspaceObservation: null,
             unreadIds: [],
+            traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] },
+            runFocus: null,
+            ticketBoard: { ...INITIAL_SIDECAR_TICKET_BOARD_STATE },
             selection: { kind: null, id: null },
           };
         }
@@ -1405,83 +1445,6 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           activeInfoSurface: msg.surface,
           infoCollapsed: msg.open === false ? true : false,
           infoPinned: msg.open === false ? false : state.ui.infoPinned,
-        },
-      };
-    case 'process/select-record':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeProcessRecordId: msg.id,
-        },
-      };
-    case 'process/set-live-active-run-row-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveActiveRunRowCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-internal-row-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveInternalRowCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-transcript-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveTranscriptCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-detail-row-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveDetailRowCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-gap-row-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveGapRowCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-event-viewer-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveEventViewerCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-live-all-collapsed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          liveActiveRunRowCollapsed: msg.collapsed,
-          liveInternalRowCollapsed: msg.collapsed,
-          liveTranscriptCollapsed: msg.collapsed,
-          liveDetailRowCollapsed: msg.collapsed,
-          liveGapRowCollapsed: msg.collapsed,
-          liveEventViewerCollapsed: msg.collapsed,
-        },
-      };
-    case 'process/set-graph-mode':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          activeProcessGraphMode: msg.mode,
         },
       };
     case 'ui/resize-start': {
@@ -1579,8 +1542,22 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       if (!validation.ok) {
         return { ...state, lastAction: { ok: false, error: `layout profile rejected: ${validation.error}` } };
       }
+      const activeViewerGroupId = state.ui.viewerWorkspace.activeGroupId;
+      const profileHasActiveViewerGroup = validation.profile.ui.viewerWorkspace.groups.some(
+        (group) => group.id === activeViewerGroupId,
+      );
+      const viewerWorkspaceBase = state.selection.kind
+        && state.selection.id
+        && !profileHasActiveViewerGroup
+        ? state.ui.viewerWorkspace
+        : validation.profile.ui.viewerWorkspace;
       const viewerWorkspace = state.selection.kind && state.selection.id
-        ? openViewerTab(validation.profile.ui.viewerWorkspace, state.selection.kind, state.selection.id)
+        ? openViewerTab(
+            viewerWorkspaceBase,
+            state.selection.kind,
+            state.selection.id,
+            activeViewerGroupId,
+          )
         : validation.profile.ui.viewerWorkspace;
       const terminalWorkspace = normalizeTerminalWorkspace(
         validation.profile.ui.terminalWorkspace,
@@ -1600,14 +1577,6 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           shellCollapsed: validation.profile.ui.shellCollapsed,
           shellLayout: terminalWorkspace.split,
           activeInfoSurface: validation.profile.ui.activeInfoSurface,
-          activeProcessRecordId: validation.profile.ui.activeProcessRecordId,
-          liveActiveRunRowCollapsed: validation.profile.ui.liveActiveRunRowCollapsed,
-          liveInternalRowCollapsed: validation.profile.ui.liveInternalRowCollapsed,
-          liveTranscriptCollapsed: validation.profile.ui.liveTranscriptCollapsed,
-          liveDetailRowCollapsed: validation.profile.ui.liveDetailRowCollapsed,
-          liveGapRowCollapsed: validation.profile.ui.liveGapRowCollapsed,
-          liveEventViewerCollapsed: validation.profile.ui.liveEventViewerCollapsed,
-          activeProcessGraphMode: validation.profile.ui.activeProcessGraphMode,
           workbenchLayout: validation.profile.ui.workbenchLayout,
           viewerWorkspace,
           documentViewers: normalizeDocumentViewers(validation.profile.ui.documentViewers, viewerWorkspace),
@@ -1951,6 +1920,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             ...state.context,
             project: { id: project.id, root: project.root, odd_type: project.odd_type },
           };
+          next.traversal = reconciledTraversalState(state.traversal, project.root);
         }
       }
       return next;
@@ -2006,120 +1976,150 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       return state.replyDraft ? { ...state, replyDraft: { ...state.replyDraft, body: msg.body } } : state;
     case 'reply/cancel':
       return { ...state, replyDraft: null };
-    case 'browse/scope-set':
+    case 'traversal/load': {
+      const workspaceRoot = traversalRequestedRoot(state, msg);
+      const requestedRunId = traversalRequestedRunId(state, msg);
+      if (workspaceRoot !== state.traversal.workspaceRoot || requestedRunId !== state.traversal.requestedRunId) {
+        return {
+          ...state,
+          traversal: {
+            ...INITIAL_SIDECAR_TRAVERSAL_STATE,
+            details: [],
+            status: 'loading',
+            runStatus: 'loading',
+            workspaceRoot,
+            requestedRunId,
+            selectedRunId: requestedRunId,
+            section: workspaceRoot === state.traversal.workspaceRoot ? state.traversal.section : 'overview',
+          },
+        };
+      }
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: {
-            ...state.ui.browse,
-            scope: msg.scope,
-            loading: msg.scope === 'cross-project' && state.ui.browse.currentPath === null ? true : state.ui.browse.loading,
+        traversal: { ...state.traversal, status: 'loading', runStatus: 'loading', error: null, runError: null },
+      };
+    }
+    case 'traversal/load-succeeded':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
+      {
+        const details = state.traversal.details.filter((entry) => !entry.key.endsWith(':latest'));
+        const selectedVector = state.traversal.selectedVector?.attempt === null ? null : state.traversal.selectedVector;
+        return {
+          ...state,
+          traversal: {
+            ...state.traversal,
+            status: 'ready',
+            summary: msg.summary,
+            selectedRunId: msg.summary.runId ?? state.traversal.selectedRunId,
+            selectedVector,
+            detailStatus: selectedVector ? state.traversal.detailStatus : 'idle',
+            detailError: selectedVector ? state.traversal.detailError : null,
+            details,
             error: null,
           },
-        },
-      };
-    case 'browse/navigate-up':
-    case 'browse/navigate-to':
+        };
+      }
+    case 'traversal/load-failed':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: {
-            ...state.ui.browse,
-            loading: true,
-            error: null,
-          },
-        },
+        traversal: { ...state.traversal, status: 'error', error: msg.error },
       };
-    case 'browse/loaded':
+    case 'run/load-succeeded':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: {
-            ...state.ui.browse,
-            scope: msg.scope ?? state.ui.browse.scope,
-            currentPath: msg.result.path,
-            parent: msg.result.parent,
-            entries: msg.result.entries,
-            truncated: msg.result.truncated,
-            loading: false,
-            error: null,
-          },
+        traversal: {
+          ...state.traversal,
+          runStatus: 'ready',
+          runObservation: msg.observation,
+          selectedRunId: msg.observation.selectedRunId ?? state.traversal.selectedRunId,
+          runError: null,
         },
       };
-    case 'browse/load-failed':
+    case 'run/load-failed':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, loading: false, error: msg.error },
-        },
+        traversal: { ...state.traversal, runStatus: 'error', runError: msg.error },
       };
-    case 'browse/favourite-folder':
+    case 'run/select':
+      if (!state.traversal.runObservation?.runs.some((run) => run.runId === msg.runId)) return state;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, favouriteError: null },
+        traversal: {
+          ...state.traversal,
+          status: 'loading',
+          runStatus: 'loading',
+          requestedRunId: msg.runId,
+          selectedRunId: msg.runId,
+          summary: null,
+          error: null,
+          runError: null,
+          selectedVector: null,
+          detailStatus: 'idle',
+          detailError: null,
+          details: [],
         },
       };
-    case 'browse/favourite-succeeded':
+    case 'run/select-section':
+      return { ...state, traversal: { ...state.traversal, section: msg.section } };
+    case 'traversal/select-vector': {
+      const selectedVector = normalizedTraversalSelection(msg);
+      const key = traversalDetailKey(selectedVector.index, selectedVector.variant, selectedVector.attempt, state.traversal.selectedRunId);
+      const cached = traversalCacheHasKey(state.traversal, key);
       return {
         ...state,
-        projects: msg.projects,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, favouriteError: null },
+        traversal: {
+          ...state.traversal,
+          selectedVector,
+          detailStatus: cached ? 'ready' : 'loading',
+          detailError: null,
         },
       };
-    case 'browse/favourite-failed':
+    }
+    case 'traversal/vector-succeeded': {
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.runId ?? null) !== state.traversal.selectedRunId) return state;
+      const key = traversalDetailKey(msg.index, msg.variant, msg.attempt, msg.runId ?? null);
+      const selection = state.traversal.selectedVector;
+      const selectedKey = selection === null
+        ? null
+        : traversalDetailKey(selection.index, selection.variant, selection.attempt, state.traversal.selectedRunId);
+      const details = appendTraversalDetail(state.traversal.details, { key, detail: msg.detail }, selectedKey);
+      const matchesSelection = selection !== null
+        && selectedKey === key;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, favouriteError: msg.error },
+        traversal: {
+          ...state.traversal,
+          details,
+          ...(matchesSelection ? { detailStatus: 'ready' as const, detailError: null } : {}),
         },
       };
-    case 'browse/dismiss-error':
+    }
+    case 'traversal/vector-failed': {
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.runId ?? null) !== state.traversal.selectedRunId) return state;
+      const key = traversalDetailKey(msg.index, msg.variant, msg.attempt, msg.runId ?? null);
+      const selection = state.traversal.selectedVector;
+      const matchesSelection = selection !== null
+        && traversalDetailKey(selection.index, selection.variant, selection.attempt, state.traversal.selectedRunId) === key;
+      if (!matchesSelection) return state;
       return {
         ...state,
-        ui: {
-          ...state.ui,
-          browse: {
-            ...state.ui.browse,
-            error: null,
-            favouriteError: null,
-            unfavouriteError: null,
-          },
-        },
+        traversal: { ...state.traversal, detailStatus: 'error', detailError: msg.error },
       };
-    case 'projects/unfavourite':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, unfavouriteError: null },
-        },
-      };
-    case 'projects/unfavourite-succeeded':
-      return {
-        ...state,
-        projects: msg.projects,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, unfavouriteError: null },
-        },
-      };
-    case 'projects/unfavourite-failed':
-      return {
-        ...state,
-        ui: {
-          ...state.ui,
-          browse: { ...state.ui.browse, unfavouriteError: msg.error },
-        },
-      };
+    }
+    case 'traversal/clear':
+      return { ...state, traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] } };
+    case 'ticket-board/select': {
+      // Selection is product state (UX_METHOD §5): reducer-owned, validated
+      // against the loaded ticket records. Unknown ids resolve to null.
+      const workspaceRoot = currentProjectRoot(state);
+      const selectedTicketId = msg.id !== null && state.tickets.some((ticket) => ticket.id === msg.id)
+        ? msg.id
+        : null;
+      return { ...state, ticketBoard: { workspaceRoot, selectedTicketId } };
+    }
     case 'action/result':
       return { ...state, lastAction: { ok: msg.ok, message: msg.message, error: msg.error } };
     default:
@@ -2154,6 +2154,8 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
         type: 'session.spawn',
         projectRoot: currentProjectRoot(state),
         groupId: msg.groupId ?? state.ui.terminalWorkspace.activeGroupId,
+        cwd: msg.cwd ?? null,
+        label: msg.label ?? null,
       }];
     case 'session/kill/request':
       return [{ type: 'session.kill', id: msg.id, projectRoot: currentProjectRoot(state) }];
@@ -2161,23 +2163,33 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
       return msg.ok && msg.reload
         ? [{ type: 'load', projectRoot: currentProjectRoot(state), reason: 'action_completed' }]
         : [];
-    case 'browse/scope-set': {
-      if (msg.scope !== 'cross-project') return [];
-      if (state.ui.browse.currentPath !== null) return [];
-      const root = currentProjectRoot(state);
-      return [{ type: 'browse.path', path: parentFolderPath(root) ?? root, scope: 'cross-project' }];
+    case 'traversal/load': {
+      const workspaceRoot = traversalRequestedRoot(state, msg);
+      const runId = traversalRequestedRunId(state, msg);
+      const refresh = msg.refresh === true;
+      return [
+        { type: 'run.loadObservation', workspaceRoot, runId, refresh },
+        { type: 'traversal.loadSummary', workspaceRoot, runId, refresh },
+      ];
     }
-    case 'browse/navigate-up': {
-      const parent = state.ui.browse.parent;
-      if (parent === null) return [];
-      return [{ type: 'browse.path', path: parent, scope: state.ui.browse.scope }];
+    case 'run/select':
+      return [
+        { type: 'run.loadObservation', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId, refresh: false },
+        { type: 'traversal.loadSummary', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId, refresh: false },
+      ];
+    case 'traversal/select-vector': {
+      const selection = normalizedTraversalSelection(msg);
+      const key = traversalDetailKey(selection.index, selection.variant, selection.attempt, state.traversal.selectedRunId);
+      if (traversalCacheHasKey(state.traversal, key)) return [];
+      return [{
+        type: 'traversal.loadVectorDetail',
+        workspaceRoot: state.traversal.workspaceRoot,
+        runId: state.traversal.selectedRunId,
+        index: selection.index,
+        variant: selection.variant,
+        attempt: selection.attempt,
+      }];
     }
-    case 'browse/navigate-to':
-      return [{ type: 'browse.path', path: msg.path, scope: state.ui.browse.scope }];
-    case 'browse/favourite-folder':
-      return [{ type: 'projects.register', path: msg.path }];
-    case 'projects/unfavourite':
-      return [{ type: 'projects.unregister', projectId: msg.projectId }];
     default:
       return [];
   }

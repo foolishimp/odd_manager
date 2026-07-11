@@ -1,8 +1,9 @@
 # ADR 0001 — UX Realization Stack
 
-**Status**: Accepted
+**Status**: Superseded In Part
 **Date**: 2026-04-26
 **Ratified**: 2026-04-26 — open decisions ratified per recommendation: Zod for runtime validation; single tenant-local `cmdMiddleware`; state persistence deferred until a concrete requirement surfaces (likely T-009 SessionAssetSurface).
+**Superseded By**: ADR 0003 replaces the unrealized Redux Toolkit and RTK Query choices with the live plain-TypeScript reducer composition and one modular command runtime; React, shared typed contracts, runtime validation, one effect membrane, and replay law remain active.
 **Tenant**: `react_vite`
 **Closes ticket**: T-013
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)

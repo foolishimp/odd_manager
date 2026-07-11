@@ -3,7 +3,10 @@ id: T-010
 title: Realize Project Agent Widget as Context producer in pure sidecar tab
 type: feature
 ticket_category: build_wave
-status: active
+status: completed
+review_status: closed_as_superseded
+proof_status: supersession_verified
+superseded_by: T-034
 goal: realize-ai-workspace-topology-and-agent-interoperability
 change_intent: Build the Project Agent Widget as a standalone Context producer in a pure sidecar tab so it can be embedded into any workspace UX with one prop/event contract, with terminal spawn from the widget passing Context to SessionAssetSurface.
 change_class: realization_refactor
@@ -12,7 +15,7 @@ affected_boundary: AppShell sidecar route, ProjectSelector and FolderBrowser com
 priority: high
 triaged_at: 2026-04-26
 created_at: 2026-04-26
-updated_at: 2026-04-26
+updated_at: 2026-07-11T19:57:31+10:00
 build_tenant: react_vite
 dependencies:
   - T-009 completed
@@ -65,3 +68,12 @@ non_closure_conditions:
 ## STDO Reading
 
 This ticket is the Context producer; everything else in the wave is a Context consumer.
+
+## Prime-Set Cleanup 2026-07-11
+
+This record was already stored in the completed lane but still declared
+`status: active`. Its standalone Project Agent Widget and pure Sidecar Project
+selector target are no longer current product truth. T-034 and the capability
+host now own one shared Project Context, Build Portfolio activation, Project
+Workbench landing, and Project-owned shell targeting. The metadata is
+normalized as completed by supersession; no old selector carrier is restored.

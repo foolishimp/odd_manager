@@ -4,12 +4,17 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "contracts:build": "tsc -p packages/developer-control-contracts/tsconfig.json",
+    "predev:client": "npm run contracts:build",
     "dev:client": "vite",
+    "predev:server": "npm run contracts:build",
     "dev:server": "node src/server/index.mjs",
     "mcp:irc": "node runtime/odd_manager_irc_mcp.mjs",
+    "prebuild": "npm run contracts:build",
     "build": "vite build",
     "preview": "vite preview",
     "test:runtime": "npm run test:runtime:node",
+    "pretest:runtime:node": "npm run contracts:build",
     "test:runtime:node": "node --test runtime/tests/test_*.mjs",
     "test:sidecar-wave": "npm run test:runtime:node",
     "test:e2e": "playwright test",
@@ -17,6 +22,7 @@
     "test:e2e:report": "playwright show-report tests/artifacts/playwright-report"
   },
   "dependencies": {
+    "@odd-manager/developer-control-contracts": "file:packages/developer-control-contracts",
     "@xterm/addon-fit": "^0.11.0",
     "mermaid": "^11.13.0",
     "react": "^18.2.0",

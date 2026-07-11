@@ -16,25 +16,23 @@ observer assumptions to a general `.ai-workspace` browser with artifact viewers.
 
 ## Position
 
-The new lane is not to create an `odd_glc` replacement for `odd_sdlc`.
-
-The new lane is to make `.ai-workspace/` the project-owned observation surface
+The live lane makes `.ai-workspace/` and admitted run carriers the
+project-owned observation surface
 that `odd_manager` can browse, inventory, and explain. Capabilities are enabled
 by viewers over discovered artifacts. A project may expose many observation
 features, a few features, or none yet. The manager must still provide a
 cohesive project view.
 
-`odd_sdlc` remains a source of learning and a compatibility adapter. It is not
-the permanent shape of project observability.
+`odd_sdlc` remains historical learning only. Its runtime, adapter, and
+privileged Process Navigator projection are retired.
 
-`odd_glc` Hello World proof artifacts are the first non-`odd_sdlc` migration
-proof because they exercise ABG 4.2 runtime truth, proof manifests, test-run
-archives, and product overlay meaning without requiring a local `odd_sdlc`
-runtime install.
+`odd_glc` run proofs are the current reference because they exercise versioned
+GTL/ABG runtime truth, proof manifests, test-run archives, event ledgers, and
+product overlay meaning without a domain-specific manager adapter.
 
 Final solution invariant:
-The same browser and viewer mechanism must work equally well for `odd_sdlc`,
-`odd_glc`, and future `odd_*` products. Specialization comes from the features
+The same browser and viewer mechanism must work for `odd_glc`, ordinary
+Projects, and future `odd_*` products. Specialization comes from the features
 and artifacts present under `.ai-workspace/`, not from hardcoded project-line
 identity. As `.ai-workspace` gains new feature families, `odd_manager` may add
 new widgets by registering new feature detectors, artifact classifiers, and
@@ -44,6 +42,13 @@ viewers. The core Project observation model must not fork for each domain.
 
 The `.ai-workspace` browser and artifact viewers are governed UX surfaces under
 `UX_METHOD.md`.
+
+ADR-002 governs placement. AI Workspace inventories feature availability and
+routes to canonical functions; it is not a rival collection navigator. The
+Sidecar activity bar and flyout own Tickets and Comments collection hierarchy,
+sorting, refresh, and selection. Selected objects render in the canonical
+viewer workspace. Artifact rows remain only where no stronger canonical
+navigator or specialized viewer exists.
 
 Consequence:
 The UX renders typed observation state and emits typed messages. It does not
@@ -109,8 +114,8 @@ requiring domain-specific code first:
 | Feature | Typical path | First viewer |
 | --- | --- | --- |
 | Bootstrap/context | `.ai-workspace/context/` | Context document viewer |
-| Tickets | `.ai-workspace/tickets/` | Ticket lane/list/detail viewer |
-| Comments | `.ai-workspace/comments/` | Comment list/detail viewer |
+| Tickets | `.ai-workspace/tickets/` | Canonical Tickets activity provider and ticket viewer |
+| Comments | `.ai-workspace/comments/` | Canonical Comments activity provider and commentary viewer |
 | Runtime state | `.ai-workspace/runtime/` | Runtime artifact browser |
 | ABG events | `.ai-workspace/events/` or event paths referenced by proof JSON | Event log viewer |
 | System ledger/catalog | `.ai-workspace/runtime/`, `.ai-workspace/ledgers/`, `.ai-workspace/catalogs/`, or referenced artifact paths | ABG system viewer |
@@ -140,18 +145,17 @@ Examples:
 
 | Widget | Feature basis | Applies to |
 | --- | --- | --- |
-| Ticket lane/list/detail | `.ai-workspace/tickets/` | odd_manager, odd_sdlc, odd_glc, any project with tickets |
+| Ticket lane/list/detail | `.ai-workspace/tickets/` | any Project with tickets |
 | Comment board/list/detail | `.ai-workspace/comments/` | any project with comments |
-| Event log viewer | ABG/GTL event JSONL | odd_sdlc, odd_glc, abiogenesis, future ABG-backed products |
-| Proof manifest viewer | proof manifest/artifact JSON | odd_sdlc proof runs, odd_glc Hello World proofs, future proof archives |
-| Test-run viewer | `test_runs/` summaries and run manifests | odd_sdlc scenario archives, odd_glc sandbox parity, future test archives |
-| ABG system viewer | registry/catalog/runtime facts | any project that publishes ABG 4.2 system truth |
-| Domain overlay viewer | product overlay artifacts | odd_sdlc, odd_glc, odd_world_model, future domain packs |
+| Event log viewer | GTL/ABG event JSONL | any ABG-backed Project |
+| Proof manifest viewer | proof manifest/artifact JSON | any Project with admitted proof carriers |
+| Test-run viewer | `test_runs/` summaries and run manifests | any Project with test-run carriers |
+| Run Inspector | proof, traversal, event, and assurance carriers | any Project that publishes admitted GTL/ABG run truth |
+| Domain overlay viewer | product overlay artifacts | any Project with a declared overlay |
 
-Equal feature, equal widget:
-If `odd_sdlc` and `odd_glc` both publish proof manifests, they use the same
-proof manifest viewer. If one also publishes a domain overlay, that overlay
-adds meaning after the generic proof is already visible.
+Equal feature, equal widget: Projects publishing the same admitted carrier use
+the same viewer. A domain overlay adds meaning only after the generic proof or
+run is already visible.
 
 ## Component Design
 
@@ -378,35 +382,33 @@ Audit checklist:
 - [ ] Preserves older runs as history.
 - [ ] Does not convert sandbox execution into ABG event truth.
 
-### C-008 ABG System Viewer
+### C-008 Generic Run Inspector
 
 Purpose:
-Render ABG 4.2 system-ledger/catalog facts as manager-owned core projection.
+Render versioned, source-attributed GTL/ABG run facts as a manager-owned core
+projection.
 
 Inputs:
-- ABG event logs
-- system ledger/catalog artifacts
-- proof artifacts that reference ABG output
+- Project observation topology
+- proof and identity carriers
+- event ledgers and proof-declared digests
+- vector artifacts and typed assurance assets
 
 Outputs:
-- registry entries
-- node-type entries
-- graph-function selections
-- graph-call openings
-- payload/evidence facts
-- construction-action catalog rows where present
-- convergence facts
+- overview, graph, traversal, functions, and assets
+- diagnostics, assurance, events, stages, transcripts, and artifacts
+- source references and explicit event-ledger digest state
 
 Design rules:
 - This viewer is cross-domain.
-- It must not depend on `odd_sdlc.query-domain`.
-- It must not require an odd_sdlc TypeScript install.
+- It must not depend on a domain query adapter or substrate CLI.
+- Unknown event kinds remain visible and large ledgers remain server-bounded.
 
 Audit checklist:
-- [ ] Works on odd_glc proof artifacts.
-- [ ] Preserves odd_sdlc compatibility through adapter or fallback.
-- [ ] Reports missing ABG system data as incomplete, not as unsupported Project.
-- [ ] Keeps source event refs reachable.
+- [x] Works on live odd_glc proof, event, traversal, and assurance artifacts.
+- [x] Reports missing run truth honestly without disabling the Project.
+- [x] Keeps source refs reachable.
+- [x] Verifies the event ledger against the proof-declared SHA-256 digest.
 
 ### C-009 Domain Overlay Viewer
 
@@ -432,31 +434,29 @@ Audit checklist:
 - [ ] Labels scenario identities without changing runtime facts.
 - [ ] Does not claim odd_glc owns graph-call opening or event emission.
 
-### C-010 Process Navigator Integration
+### C-010 Run Inspector Integration
 
 Purpose:
-Feed process-first views from the generic `.ai-workspace` inventory before
-domain adapters are applied.
-
-Current problem:
-`sidecar-process-projection.mjs` is still centered on `odd_sdlc.query-domain`,
-`.ai-workspace/runtime/odd_sdlc/operator-runs`, and odd_sdlc TypeScript install
-validation.
+Expose process-first run operations from the generic Project topology.
 
 Target:
-- process projection starts with `.ai-workspace` inventory
-- ABG system projection is cross-domain
-- odd_sdlc query-domain becomes one domain adapter
-- odd_glc overlay interpretation becomes another optional overlay
-- unsupported domain adapters do not suppress generic process evidence
+- run projection starts from selected Project identity and discovered carriers
+- generated workspaces remain subordinate to Project identity
+- the typed projection is cross-domain and runtime-validated at client ingress
+- domain overlays are optional interpretation over admitted refs
+- unsupported run carriers do not suppress generic Project browsing
 
 Audit checklist:
-- [ ] Process Navigator can render generic ABG/proof state without odd_sdlc install validation.
-- [ ] Existing odd_sdlc process behavior remains covered while its adapter remains supported.
-- [ ] odd_glc Hello World proof artifacts appear as process/proof evidence through generic inventory.
-- [ ] Unsupported projects still show the generic Project browser.
+- [x] Run Inspector renders generic GTL/ABG proof state without install validation.
+- [x] Live odd_glc data-mapper runs expose operational and assurance sections.
+- [x] Unsupported Projects retain the generic Project browser.
+- [x] New shells can target admitted run workspaces under their owning Project.
 
-## Migration Walk Through
+## Historical Migration Walk Through
+
+The phase plan below records the 2026-07-01 migration hypothesis. The
+2026-07-10 Project Observation Topology Reframe supersedes adapter-preservation
+and Process Navigator steps in this historical plan.
 
 ### Phase 0 - Baseline and containment
 
@@ -641,10 +641,10 @@ odd_glc proof:
 - [ ] Vector closures are surfaced.
 - [ ] Scenario ids and software-build overlay refs are shown as overlay meaning.
 
-## Design Module Self-Review
+## Historical Design Module Self-Review - 2026-07-01
 
-Status:
-This migration is design-method governed but not yet design-method closed.
+Status at the time:
+This migration was design-method governed but not yet design-method closed.
 S-001 through S-005 are closed. S-006 has a first generic artifact-inspection
 slice. S-007 through S-010 remain open. The current implementation is therefore
 a lawful intermediate state, not a final replacement for existing odd_sdlc
@@ -729,9 +729,9 @@ UX compliance fixes applied during self-review:
 | Deploy | Local dev server/browser smoke only. No packaged deployment change claimed. |
 | Live | odd_glc live proof artifacts were observed through the generic Project Browser path during browser smoke. |
 | Telemetry | Current diagnostics are scan and parse diagnostics. Live observation subscriptions remain out of scope until explicitly admitted. |
-| Retirement | Legacy local odd_sdlc runtime install remains removed. Process Navigator odd_sdlc adapter retirement is S-010/follow-up work, not this slice. |
+| Retirement | At this review point, legacy local odd_sdlc runtime remained removed while adapter retirement was still pending. Superseded by the 2026-07-10 reframe below. |
 
-### Current Non-Closure Gaps
+### Non-Closure Gaps At 2026-07-01
 
 - S-006 does not yet provide linked-artifact traversal from proof artifacts to
   event logs or manifests.
@@ -744,6 +744,74 @@ UX compliance fixes applied during self-review:
   been migrated to start from the generic `.ai-workspace` inventory.
 - S-010 cleanup/publication remains pending.
 
+## Project Observation Topology Reframe - 2026-07-10
+
+The selected Project is the observation boundary. A generated run workspace is
+not a second Project merely because runtime files live below a timestamped run
+root. The manager discovers and relates those roots through one admitted,
+read-only topology:
+
+```text
+ProjectObservationTopology
+  = ProjectIdentity
+  + ProjectAiWorkspaceRoot
+  + RunRoot[]
+  + RunWorkspaceRoot[]
+  + ProofCarrier[]
+  + EventCarrier[]
+  + ArtifactCarrier[]
+```
+
+`ProjectIdentity` is read from published product or install carriers. Repository
+basename and hard-coded product lists are not identity authority. A run is
+admitted only when a bounded proof or identity carrier establishes its shape.
+
+The generic operational projection is `AbgRunObservation`. It starts from a
+selected topology run and exposes these independently inspectable sections:
+
+| Section | Runtime meaning |
+| --- | --- |
+| Overview | Run identity, liveness, substrate pin, graph/overlay/startup refs, event and vector totals. |
+| Traversal | Frames, vectors, attempts, continuation/retry state, requirement lineage, and lazy vector evidence. |
+| Functions | Published graph-function selection and call activity. |
+| Catalog | Runtime registry admissions and rejections, node-type and graph-function entries, declaration/template metadata, construction-action catalog refs, variants, and source event indexes. |
+| Assets | Materialized outputs with producing vector/stage and source artifact. |
+| Assurance | Evidence/admission counts, closures, requirements, test results, depth proof, and mutation outcomes. |
+| Events | Bounded event timeline and complete event-kind counts; unknown kinds remain visible. |
+| Stages | Per-vector stage/process status, timing, attempts, and target type. |
+| Transcripts | Bounded startup and process output with its source carrier. |
+| Artifacts | Proof, identity, event, test, depth, mutation, and vector-carrier references. |
+| Runtime target | Existing matching shell or a new Project-owned shell rooted at the admitted run workspace. |
+
+The projection never recreates `odd_sdlc` process carriers. Domain overlays may
+label generic refs and stages after the core projection is admitted; they do not
+own run state, traversal, evidence, assurance, continuation, or event truth.
+Catalog entries are decoded only from bounded JSON carried by admitted ABG
+events. The manager does not import or execute code from the observed Project.
+
+### UX Runtime Model
+
+```text
+State = selected Project + discovered runs + selected run + selected section
+        + traversal summary/detail cache + refresh status
+Msg   = load | refresh | select run | select section | select vector
+Cmd   = load topology/run projection | load traversal | load vector detail
+Sub   = bounded refresh while a Run Inspector tab is active
+```
+
+Project change clears all run-scoped state before new effects are admitted.
+Every asynchronous result carries the Project root and selected run id; stale
+results are ignored. Refresh invalidation includes proof, identity, event, and
+vector-artifact directory signatures rather than proof mtime alone.
+
+### Recovery Rule
+
+The retired Process Navigator implementation is deletion evidence, not a source
+dependency. Capability recovery is complete only when its generic operational
+meanings remain available through `AbgRunObservation`, runtime validation,
+message replay, focused service tests, and browser proof. Reintroducing an
+`odd_sdlc` adapter does not satisfy this design.
+
 ## Non-Goals
 
 - Do not build an odd_glc-specific replacement for odd_sdlc Process View.
@@ -751,5 +819,5 @@ UX compliance fixes applied during self-review:
 - Do not require all Projects to expose ABG runtime truth.
 - Do not treat test-run sandbox output as ABG event truth.
 - Do not hide raw files behind specialized viewers.
-- Do not remove odd_sdlc compatibility until a separate ticket prices that
-  retirement.
+- Do not restore a retired domain adapter as a shortcut to generic run
+  observation.

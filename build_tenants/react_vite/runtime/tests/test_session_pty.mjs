@@ -40,7 +40,7 @@ test('spawnSession creates a screen session and persists a record + transcript',
       agentType: 'shell',
       command: '/bin/sh',
       args: ['-c', 'printf "hello-from-T-020\\n"; sleep 2'],
-      contextAtSpawn: { project: 'test', workspace: 'react_vite', odd_type: 'odd_sdlc' },
+      contextAtSpawn: { project: 'test', workspace: 'react_vite', odd_type: 'unknown' },
     });
     assert.equal(result.ok, true, `spawn failed: ${result.error}`);
     sessionId = result.id;

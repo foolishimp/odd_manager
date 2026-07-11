@@ -7,12 +7,12 @@
 			"path": "../../../abiogenesis"
 		},
 		{
-			"path": "../../../odd_sdlc"
+			"path": "../../../odd_glc"
 		}
 	],
 	"settings": {
 		"files.watcherExclude": {
-			"**/target": true
+			"**/target/**": true
 		}
 	}
 }
