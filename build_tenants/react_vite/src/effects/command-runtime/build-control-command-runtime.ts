@@ -4,8 +4,10 @@ import {
   buildExecutionSchema,
   buildSubmitResponseSchema,
 } from "@odd-manager/developer-control-contracts";
-import type { BuildControlMessage } from "../../capabilities/build-control/messages";
-import type { BuildControlCommand } from "../../capabilities/build-control/state";
+import type {
+  BuildControlCommand,
+  BuildControlMessage,
+} from "../../capabilities/build-control";
 
 async function responsePayload(response: Response) {
   const payload: unknown = await response.json();
@@ -33,6 +35,7 @@ export async function interpretBuildControlCommand(
       return {
         type: "build/snapshot-loaded",
         commandId: command.commandId,
+        correlationId: command.correlationId,
         projectRoot: command.projectRoot,
         snapshot: buildControlSnapshotSchema.parse(await responsePayload(response)),
       };
@@ -61,6 +64,7 @@ export async function interpretBuildControlCommand(
       return {
         type: "build/submitted",
         commandId: command.commandId,
+        correlationId: command.correlationId,
         projectRoot: command.projectRoot,
         result: buildSubmitResponseSchema.parse(payload),
       };
@@ -69,6 +73,7 @@ export async function interpretBuildControlCommand(
       return {
         type: "build/attached",
         commandId: command.commandId,
+        correlationId: command.correlationId,
         projectRoot: command.projectRoot,
         attached: buildAttachResponseSchema.parse(payload),
       };
@@ -77,6 +82,7 @@ export async function interpretBuildControlCommand(
       return {
         type: "build/resumed",
         commandId: command.commandId,
+        correlationId: command.correlationId,
         projectRoot: command.projectRoot,
         execution: buildExecutionSchema.parse(
           typeof payload === "object" && payload !== null && "execution" in payload
@@ -85,15 +91,19 @@ export async function interpretBuildControlCommand(
         ),
       };
     }
+    const execution = buildExecutionSchema.parse(
+      typeof payload === "object" && payload !== null && "execution" in payload
+        ? payload.execution
+        : null,
+    );
     return {
-      type: "build/cancelled",
+      type: execution.state === "cancelled"
+        ? "build/cancelled"
+        : "build/cancellation-acknowledged",
       commandId: command.commandId,
+      correlationId: command.correlationId,
       projectRoot: command.projectRoot,
-      execution: buildExecutionSchema.parse(
-        typeof payload === "object" && payload !== null && "execution" in payload
-          ? payload.execution
-          : null,
-      ),
+      execution,
     };
   } catch (caught) {
     const candidate = caught && typeof caught === "object" && "execution" in caught
@@ -102,6 +112,7 @@ export async function interpretBuildControlCommand(
     return {
       type: "build/command-failed",
       commandId: command.commandId,
+      correlationId: command.correlationId,
       error: caught instanceof Error ? caught.message : String(caught),
       execution: candidate?.success ? candidate.data : null,
     };

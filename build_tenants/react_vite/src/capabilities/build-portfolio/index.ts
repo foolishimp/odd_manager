@@ -7,6 +7,7 @@ import {
   type BuildPortfolioSubscription,
 } from "./state";
 import type { BuildPortfolioMessage } from "./messages";
+import { buildPortfolioSubscriptions } from "./subscriptions";
 import { updateBuildPortfolio } from "./update";
 import { BuildPortfolioView } from "./view";
 
@@ -19,12 +20,11 @@ export const buildPortfolioModule: CapabilityModule<
   id: "build-portfolio",
   initialState: INITIAL_BUILD_PORTFOLIO_STATE,
   update: updateBuildPortfolio,
-  subscriptions: (state, context) => {
-    const active = state.portfolio?.rows.some((row) => (
-      row.buildActivity.runningCount > 0 || row.buildActivity.queuedCount > 0
-    ));
-    return active ? [{ type: "portfolio.poll", projectRoot: context.project.root, intervalMs: 800 }] : [];
-  },
+  subscriptions: (state, context) => buildPortfolioSubscriptions(
+    state,
+    context.project.root,
+    context.revision,
+  ),
   contribution: buildPortfolioContribution,
   View: BuildPortfolioView,
 };
@@ -33,5 +33,6 @@ export * from "./contribution";
 export * from "./messages";
 export * from "./selectors";
 export * from "./state";
+export * from "./subscriptions";
 export * from "./update";
 export * from "./view";

@@ -1,18 +1,92 @@
 import type { CapabilityUpdate } from "../../contracts/developer-control";
 import type { BuildPortfolioMessage } from "./messages";
-import type {
-  BuildPortfolioCommand,
-  BuildPortfolioCommandInput,
-  BuildPortfolioState,
+import type { BuildPortfolio } from "@odd-manager/developer-control-contracts";
+import {
+  createBuildPortfolioState,
+  type BuildPortfolioCommand,
+  type BuildPortfolioCommandInput,
+  type BuildPortfolioState,
 } from "./state";
 import { buildPortfolioAttentionTarget } from "./selectors";
 
-function pendingCommand(state: BuildPortfolioState, commandId: string) {
-  return state.pendingCommands.find((command) => command.commandId === commandId) ?? null;
+function pendingCommand(state: BuildPortfolioState, commandId: string, correlationId: string) {
+  return state.pendingCommands.find((command) => (
+    command.commandId === commandId && command.correlationId === correlationId
+  )) ?? null;
 }
 
 function withoutCommand(state: BuildPortfolioState, commandId: string) {
   return state.pendingCommands.filter((command) => command.commandId !== commandId);
+}
+
+function portfolioSemanticsMatch(portfolio: BuildPortfolio) {
+  const rows = portfolio.rows;
+  const attentionIds = rows.flatMap((row) => (
+    row.attention.map((attention) => attention.attentionId)
+  ));
+  if (
+    new Set(rows.map((row) => row.project.id)).size !== rows.length
+    || new Set(rows.map((row) => row.project.root)).size !== rows.length
+    || rows.filter((row) => row.active).length > 1
+    || new Set(attentionIds).size !== attentionIds.length
+  ) return false;
+  return rows.every((row) => {
+    const activity = row.buildActivity;
+    const total = (
+      activity.queuedCount
+      + activity.runningCount
+      + activity.waitingHumanCount
+      + activity.terminalCount
+    );
+    if (
+      (activity.latestExecutionId === null) !== (activity.latestState === null)
+      || (activity.latestExecutionId === null && total !== 0)
+    ) return false;
+    if (activity.latestState === "queued") return activity.queuedCount > 0;
+    if (["starting", "running"].includes(activity.latestState ?? "")) {
+      return activity.runningCount > 0;
+    }
+    if (activity.latestState === "waiting_human") {
+      return activity.waitingHumanCount > 0;
+    }
+    if (["converged", "failed", "cancelled"].includes(activity.latestState ?? "")) {
+      return activity.terminalCount > 0;
+    }
+    return true;
+  });
+}
+
+function sameCommand(left: BuildPortfolioCommand, right: BuildPortfolioCommand) {
+  if (
+    left.type !== right.type
+    || left.commandId !== right.commandId
+    || left.correlationId !== right.correlationId
+    || left.contextProjectRoot !== right.contextProjectRoot
+  ) return false;
+  if (left.type === "portfolio.load") return right.type === "portfolio.load";
+  if (left.type === "portfolio.browse") {
+    return right.type === "portfolio.browse" && left.path === right.path;
+  }
+  if (left.type === "portfolio.register") {
+    return right.type === "portfolio.register" && left.path === right.path;
+  }
+  if (left.type === "portfolio.unregister") {
+    return right.type === "portfolio.unregister"
+      && left.projectId === right.projectId
+      && left.projectRoot === right.projectRoot;
+  }
+  if (left.type === "portfolio.activate") {
+    return right.type === "portfolio.activate"
+      && left.projectId === right.projectId
+      && left.projectRoot === right.projectRoot;
+  }
+  return right.type === "portfolio.open-attention"
+    && left.projectId === right.projectId
+    && left.projectRoot === right.projectRoot
+    && left.attentionId === right.attentionId
+    && left.sourceKind === right.sourceKind
+    && left.sourceRef === right.sourceRef
+    && left.targetCapabilityId === right.targetCapabilityId;
 }
 
 function enqueue(
@@ -40,14 +114,18 @@ function enqueue(
 
 function enqueueLoad(
   state: BuildPortfolioState,
+  queueContinuation = true,
 ): CapabilityUpdate<BuildPortfolioState, BuildPortfolioCommand> {
   if (state.pendingCommands.some((command) => command.type === "portfolio.load")) {
-    return { state, commands: [] };
+    return queueContinuation
+      ? { state: { ...state, refreshQueued: true }, commands: [] }
+      : { state, commands: [] };
   }
   const result = enqueue(state, { type: "portfolio.load" });
   const nextState: BuildPortfolioState = {
     ...result.state,
     status: "loading",
+    refreshQueued: false,
     error: null,
   };
   return {
@@ -60,12 +138,32 @@ export function updateBuildPortfolio(
   state: BuildPortfolioState,
   message: BuildPortfolioMessage,
 ): CapabilityUpdate<BuildPortfolioState, BuildPortfolioCommand> {
+  if (message.type === "portfolio/context-cleared") {
+    const cleared = createBuildPortfolioState();
+    return {
+      state: {
+        ...cleared,
+        scope: state.scope,
+        sort: state.sort,
+        commandSequence: state.commandSequence,
+        browser: {
+          ...cleared.browser,
+          open: state.browser.open,
+        },
+      },
+      commands: [],
+    };
+  }
+
   if (message.type === "portfolio/context-changed") {
     const next: BuildPortfolioState = {
       ...state,
       contextProjectRoot: message.projectRoot,
       activatedProjectRoot: null,
       openedAttention: null,
+      refreshQueued: state.contextProjectRoot === message.projectRoot
+        ? state.refreshQueued
+        : false,
       error: null,
     };
     if (
@@ -82,20 +180,30 @@ export function updateBuildPortfolio(
   }
 
   if (message.type === "portfolio/refresh-requested") return enqueueLoad(state);
+  if (message.type === "portfolio/poll-ticked") return enqueueLoad(state, false);
 
   if (message.type === "portfolio/load-succeeded") {
-    const command = pendingCommand(state, message.commandId);
+    const command = pendingCommand(state, message.commandId, message.correlationId);
     if (
       command?.type !== "portfolio.load"
       || command.contextProjectRoot !== state.contextProjectRoot
       || message.contextProjectRoot !== state.contextProjectRoot
     ) return { state, commands: [] };
+    if (state.refreshQueued) {
+      return enqueueLoad({
+        ...state,
+        refreshQueued: false,
+        pendingCommands: withoutCommand(state, message.commandId),
+      });
+    }
+    if (!portfolioSemanticsMatch(message.portfolio)) return { state, commands: [] };
     const selectedStillExists = state.selectedProjectId
       && message.portfolio.rows.some((row) => row.project.id === state.selectedProjectId);
     const admitted: BuildPortfolioState = {
       ...state,
       status: "ready",
       portfolio: message.portfolio,
+      refreshQueued: false,
       selectedProjectId: selectedStillExists
         ? state.selectedProjectId
         : message.portfolio.rows.find((row) => row.active)?.project.id
@@ -130,11 +238,31 @@ export function updateBuildPortfolio(
     return { state: { ...state, selectedProjectId: message.projectId }, commands: [] };
   }
   if (message.type === "portfolio/project-activate-requested") {
-    return enqueue(state, { type: "portfolio.activate", projectId: message.projectId });
+    const row = state.portfolio?.rows.find(
+      (entry) => entry.project.id === message.projectId,
+    ) ?? null;
+    return row
+      ? enqueue(state, {
+        type: "portfolio.activate",
+        projectId: row.project.id,
+        projectRoot: row.project.root,
+      })
+      : { state, commands: [] };
   }
   if (message.type === "portfolio/project-activated") {
-    const command = pendingCommand(state, message.commandId);
-    if (command?.type !== "portfolio.activate") return { state, commands: [] };
+    const command = pendingCommand(state, message.commandId, message.correlationId);
+    const row = state.portfolio?.rows.find(
+      (entry) => entry.project.id === message.projectId,
+    ) ?? null;
+    if (
+      command?.type !== "portfolio.activate"
+      || command.contextProjectRoot !== state.contextProjectRoot
+      || command.projectId !== message.projectId
+      || command.projectRoot !== message.projectRoot
+      || !row
+      || row.project.id !== command.projectId
+      || row.project.root !== command.projectRoot
+    ) return { state, commands: [] };
     return {
       state: {
         ...state,
@@ -162,7 +290,7 @@ export function updateBuildPortfolio(
     });
   }
   if (message.type === "portfolio/attention-opened") {
-    const command = pendingCommand(state, message.commandId);
+    const command = pendingCommand(state, message.commandId, message.correlationId);
     if (
       command?.type !== "portfolio.open-attention"
       || command.projectRoot !== message.projectRoot
@@ -190,11 +318,31 @@ export function updateBuildPortfolio(
     return { state: { ...state, openedAttention: null }, commands: [] };
   }
   if (message.type === "portfolio/project-unregister-requested") {
-    return enqueue(state, { type: "portfolio.unregister", projectId: message.projectId });
+    const row = state.portfolio?.rows.find(
+      (entry) => entry.project.id === message.projectId,
+    ) ?? null;
+    return row
+      ? enqueue(state, {
+        type: "portfolio.unregister",
+        projectId: row.project.id,
+        projectRoot: row.project.root,
+      })
+      : { state, commands: [] };
   }
   if (message.type === "portfolio/project-unregistered") {
-    const command = pendingCommand(state, message.commandId);
-    if (command?.type !== "portfolio.unregister") return { state, commands: [] };
+    const command = pendingCommand(state, message.commandId, message.correlationId);
+    const row = state.portfolio?.rows.find(
+      (entry) => entry.project.id === message.projectId,
+    ) ?? null;
+    if (
+      command?.type !== "portfolio.unregister"
+      || command.contextProjectRoot !== state.contextProjectRoot
+      || command.projectId !== message.projectId
+      || command.projectRoot !== message.projectRoot
+      || !row
+      || row.project.id !== command.projectId
+      || row.project.root !== command.projectRoot
+    ) return { state, commands: [] };
     return enqueueLoad({
       ...state,
       pendingCommands: withoutCommand(state, message.commandId),
@@ -228,7 +376,7 @@ export function updateBuildPortfolio(
     };
   }
   if (message.type === "portfolio/browser-loaded") {
-    const command = pendingCommand(state, message.commandId);
+    const command = pendingCommand(state, message.commandId, message.correlationId);
     if (
       command?.type !== "portfolio.browse"
       || command.path !== message.path
@@ -255,21 +403,37 @@ export function updateBuildPortfolio(
     return enqueue(state, { type: "portfolio.register", path: message.path });
   }
   if (message.type === "portfolio/project-registered") {
-    const command = pendingCommand(state, message.commandId);
-    if (command?.type !== "portfolio.register") return { state, commands: [] };
+    const command = pendingCommand(state, message.commandId, message.correlationId);
+    if (
+      command?.type !== "portfolio.register"
+      || command.contextProjectRoot !== state.contextProjectRoot
+      || command.path !== message.path
+      || message.projectRoot !== command.path
+      || message.projectId.length === 0
+    ) return { state, commands: [] };
     return enqueueLoad({
       ...state,
       pendingCommands: withoutCommand(state, message.commandId),
     });
   }
 
-  const command = pendingCommand(state, message.commandId);
-  if (!command) return { state, commands: [] };
+  const command = pendingCommand(state, message.commandId, message.correlationId);
+  if (!command || !sameCommand(command, message.failedCommand)) {
+    return { state, commands: [] };
+  }
+  if (command.type === "portfolio.load" && state.refreshQueued) {
+    return enqueueLoad({
+      ...state,
+      refreshQueued: false,
+      pendingCommands: withoutCommand(state, message.commandId),
+    });
+  }
   return {
     state: {
       ...state,
       status: command.type === "portfolio.load" ? "error" : state.status,
       pendingCommands: withoutCommand(state, message.commandId),
+      refreshQueued: false,
       browser: command.type === "portfolio.browse"
         ? { ...state.browser, status: "error", requestedPath: null, error: message.error }
         : state.browser,

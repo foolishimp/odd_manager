@@ -22,7 +22,7 @@ The wave should therefore run as:
 - `realization_refactor`
 
 This ordering follows the constitutional chain in
-`/Users/jim/src/apps/specification_methodology/specification/standards/SPEC_METHOD.md`.
+`.genesis/docs/standards/SPEC_METHOD.md`.
 
 Do not treat this as a local code cleanup.
 
@@ -117,7 +117,7 @@ Any future agent or operator restarting this wave should follow this exact
 sequence before making changes.
 
 1. Read the governing method:
-   - `/Users/jim/src/apps/specification_methodology/specification/standards/SPEC_METHOD.md`
+   - `.genesis/docs/standards/SPEC_METHOD.md`
 2. Read the live upstream odd_method authority:
    - `GOALS.md`
    - `PRODUCT.md`

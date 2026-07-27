@@ -91,6 +91,7 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   const historyLoaded = update.updateSpecificationProposal(initial.state, {
     type: 'proposal/history-loaded',
     commandId: initial.commands[0].commandId,
+    correlationId: initial.commands[0].correlationId,
     projectRoot: projectRef.root,
     history: {
       schemaVersion: '1',
@@ -108,9 +109,18 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   assert.deepEqual(generatedRequest.commands.map((entry) => entry.type), ['proposal.generate']);
 
   const generated = proposalRecord('proposal-1', projectRef, basis);
+  const wrongGeneratePayload = update.updateSpecificationProposal(generatedRequest.state, {
+    type: 'proposal/generated',
+    commandId: generatedRequest.commands[0].commandId,
+    correlationId: generatedRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    proposal: { ...generated, prompt: 'A different request.' },
+  });
+  assert.strictEqual(wrongGeneratePayload.state, generatedRequest.state);
   const generatedState = update.updateSpecificationProposal(generatedRequest.state, {
     type: 'proposal/generated',
     commandId: generatedRequest.commands[0].commandId,
+    correlationId: generatedRequest.commands[0].correlationId,
     projectRoot: projectRef.root,
     proposal: generated,
   }).state;
@@ -120,9 +130,37 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   assert.equal(validateRequest.commands[0].type, 'proposal.validate');
 
   const valid = proposalRecord('proposal-1', projectRef, basis, 'valid');
+  const wrongValidateTarget = update.updateSpecificationProposal(validateRequest.state, {
+    type: 'proposal/validated',
+    commandId: validateRequest.commands[0].commandId,
+    correlationId: validateRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    proposal: { ...valid, proposalId: 'proposal-forged' },
+  });
+  assert.strictEqual(wrongValidateTarget.state, validateRequest.state);
+  const authorityIncreasingValidation = update.updateSpecificationProposal(validateRequest.state, {
+    type: 'proposal/validated',
+    commandId: validateRequest.commands[0].commandId,
+    correlationId: validateRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    proposal: {
+      ...valid,
+      status: 'accepted',
+      resultingRevision: revision('b'),
+      decision: {
+        kind: 'accepted',
+        actorRef: 'actor://forged',
+        decidedAt: '2026-07-11T00:01:30.000Z',
+        basisRevision: basis,
+        changedSurfaceRefs: valid.affectedSurfaceRefs,
+      },
+    },
+  });
+  assert.strictEqual(authorityIncreasingValidation.state, validateRequest.state);
   const validatedState = update.updateSpecificationProposal(validateRequest.state, {
     type: 'proposal/validated',
     commandId: validateRequest.commands[0].commandId,
+    correlationId: validateRequest.commands[0].correlationId,
     projectRoot: projectRef.root,
     proposal: valid,
   }).state;
@@ -132,6 +170,15 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   });
   assert.equal(acceptRequest.commands[0].type, 'proposal.accept');
   assert.equal(acceptRequest.commands[0].actorRef, 'actor://operator/jim');
+
+  const incompleteAcceptance = update.updateSpecificationProposal(acceptRequest.state, {
+    type: 'proposal/accepted',
+    commandId: acceptRequest.commands[0].commandId,
+    correlationId: acceptRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    proposal: valid,
+  });
+  assert.strictEqual(incompleteAcceptance.state, acceptRequest.state);
 
   const accepted = {
     ...valid,
@@ -148,6 +195,7 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   const acceptedState = update.updateSpecificationProposal(acceptRequest.state, {
     type: 'proposal/accepted',
     commandId: acceptRequest.commands[0].commandId,
+    correlationId: acceptRequest.commands[0].correlationId,
     projectRoot: projectRef.root,
     proposal: accepted,
   }).state;
@@ -155,11 +203,48 @@ test('proposal Msg replay preserves one generate, validate, and accept command p
   assert.equal(acceptedState.pendingCommands.length, 1);
   assert.equal(acceptedState.pendingCommands[0].type, 'proposal.refresh-context');
   assert.equal(acceptedState.pendingCommands[0].reason, 'accepted');
+
+  const wrongActorAcceptance = update.updateSpecificationProposal(acceptRequest.state, {
+    type: 'proposal/accepted',
+    commandId: acceptRequest.commands[0].commandId,
+    correlationId: acceptRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    proposal: {
+      ...accepted,
+      decision: { ...accepted.decision, actorRef: 'actor://forged' },
+    },
+  });
+  assert.strictEqual(wrongActorAcceptance.state, acceptRequest.state);
   const consumed = update.updateSpecificationProposal(acceptedState, {
     type: 'proposal/supporting-command-consumed',
     commandId: acceptedState.pendingCommands[0].commandId,
+    correlationId: acceptedState.pendingCommands[0].correlationId,
   }).state;
   assert.equal(consumed.pendingCommands.length, 0);
+  const terminalRefine = update.replaySpecificationProposalMessages(consumed, [
+    { type: 'proposal/refinement-edited', value: 'Continue from accepted evidence.' },
+    { type: 'proposal/refine-requested' },
+  ]);
+  assert.deepEqual(terminalRefine.commands, []);
+  assert.equal(terminalRefine.state.currentProposal.status, 'accepted');
+  const terminalHistoryRequest = update.updateSpecificationProposal(consumed, {
+    type: 'proposal/history-requested',
+  });
+  const terminalDowngrade = update.updateSpecificationProposal(terminalHistoryRequest.state, {
+    type: 'proposal/history-loaded',
+    commandId: terminalHistoryRequest.commands[0].commandId,
+    correlationId: terminalHistoryRequest.commands[0].correlationId,
+    projectRoot: projectRef.root,
+    history: {
+      schemaVersion: '1',
+      projectRoot: projectRef.root,
+      proposals: [valid],
+      retentionLimit: 50,
+      truncated: false,
+      sourceRefs: ['proposal-store://project-a'],
+    },
+  });
+  assert.strictEqual(terminalDowngrade.state, terminalHistoryRequest.state);
 });
 
 test('proposal replay rejects late cross-Project generation results', async () => {
@@ -172,9 +257,81 @@ test('proposal replay rejects late cross-Project generation results', async () =
   const contextA = update.updateSpecificationProposal(state.createSpecificationProposalState(), {
     type: 'proposal/context-changed', project: projectA, revision: basisA,
   });
+  const crossProjectHistory = update.updateSpecificationProposal(contextA.state, {
+    type: 'proposal/history-loaded',
+    commandId: contextA.commands[0].commandId,
+    correlationId: contextA.commands[0].correlationId,
+    projectRoot: projectA.root,
+    history: {
+      schemaVersion: '1',
+      projectRoot: projectA.root,
+      proposals: [proposalRecord('proposal-b', projectB, basisB)],
+      retentionLimit: 50,
+      truncated: false,
+      sourceRefs: ['proposal-store://a'],
+    },
+  });
+  assert.strictEqual(crossProjectHistory.state, contextA.state);
+  const incoherentHistory = update.updateSpecificationProposal(contextA.state, {
+    type: 'proposal/history-loaded',
+    commandId: contextA.commands[0].commandId,
+    correlationId: contextA.commands[0].correlationId,
+    projectRoot: projectA.root,
+    history: {
+      schemaVersion: '1',
+      projectRoot: projectA.root,
+      proposals: [{
+        ...proposalRecord('proposal-forged', projectA, basisA, 'valid'),
+        status: 'accepted',
+        decision: null,
+        resultingRevision: null,
+      }],
+      retentionLimit: 50,
+      truncated: false,
+      sourceRefs: ['proposal-store://a'],
+    },
+  });
+  assert.strictEqual(incoherentHistory.state, contextA.state);
+  const brokenLineageHistory = update.updateSpecificationProposal(contextA.state, {
+    type: 'proposal/history-loaded',
+    commandId: contextA.commands[0].commandId,
+    correlationId: contextA.commands[0].correlationId,
+    projectRoot: projectA.root,
+    history: {
+      schemaVersion: '1',
+      projectRoot: projectA.root,
+      proposals: [{
+        ...proposalRecord('proposal-orphan', projectA, basisA),
+        predecessorProposalId: 'proposal-missing',
+      }],
+      retentionLimit: 50,
+      truncated: false,
+      sourceRefs: ['proposal-store://a'],
+    },
+  });
+  assert.strictEqual(brokenLineageHistory.state, contextA.state);
+  const cyclicLineageHistory = update.updateSpecificationProposal(contextA.state, {
+    type: 'proposal/history-loaded',
+    commandId: contextA.commands[0].commandId,
+    correlationId: contextA.commands[0].correlationId,
+    projectRoot: projectA.root,
+    history: {
+      schemaVersion: '1',
+      projectRoot: projectA.root,
+      proposals: [
+        { ...proposalRecord('proposal-cycle-a', projectA, basisA), predecessorProposalId: 'proposal-cycle-b' },
+        { ...proposalRecord('proposal-cycle-b', projectA, basisA), predecessorProposalId: 'proposal-cycle-a' },
+      ],
+      retentionLimit: 50,
+      truncated: false,
+      sourceRefs: ['proposal-store://a'],
+    },
+  });
+  assert.strictEqual(cyclicLineageHistory.state, contextA.state);
   const readyA = update.updateSpecificationProposal(contextA.state, {
     type: 'proposal/history-loaded',
     commandId: contextA.commands[0].commandId,
+    correlationId: contextA.commands[0].correlationId,
     projectRoot: projectA.root,
     history: {
       schemaVersion: '1', projectRoot: projectA.root, proposals: [], retentionLimit: 50,
@@ -185,12 +342,26 @@ test('proposal replay rejects late cross-Project generation results', async () =
     { type: 'proposal/prompt-edited', value: 'Candidate A' },
     { type: 'proposal/generate-requested' },
   ]);
+  const concurrentHistory = update.updateSpecificationProposal(requestedA.state, {
+    type: 'proposal/history-requested',
+  });
+  assert.deepEqual(concurrentHistory.commands, []);
+  assert.strictEqual(concurrentHistory.state, requestedA.state);
+  const crossProjectCurrentResult = update.updateSpecificationProposal(requestedA.state, {
+    type: 'proposal/generated',
+    commandId: requestedA.commands[0].commandId,
+    correlationId: requestedA.commands[0].correlationId,
+    projectRoot: projectA.root,
+    proposal: proposalRecord('proposal-b', projectB, basisA),
+  });
+  assert.strictEqual(crossProjectCurrentResult.state, requestedA.state);
   const contextB = update.updateSpecificationProposal(requestedA.state, {
     type: 'proposal/context-changed', project: projectB, revision: basisB,
   }).state;
   const late = update.updateSpecificationProposal(contextB, {
     type: 'proposal/generated',
     commandId: requestedA.commands[0].commandId,
+    correlationId: requestedA.commands[0].correlationId,
     projectRoot: projectA.root,
     proposal: proposalRecord('proposal-a', projectA, basisA),
   });
@@ -227,6 +398,20 @@ test('attention context handoff is bounded and proposal drafts remain Project-is
   assert.equal(refreshed.contextAttachmentDraft, 'specification/PRODUCT.md');
   assert.deepEqual(refreshed.contextAttachmentRefs, ['git://project-a/aaaaaaaa']);
 
+  const sameRootDifferentIdentity = update.updateSpecificationProposal(refreshed, {
+    type: 'proposal/context-changed',
+    project: {
+      ...projectA,
+      id: 'project-a-replaced',
+      label: 'replacement',
+    },
+    revision: basisA2,
+  }).state;
+  assert.equal(sameRootDifferentIdentity.currentProposal, null);
+  assert.deepEqual(sameRootDifferentIdentity.history, []);
+  assert.equal(sameRootDifferentIdentity.promptDraft, '');
+  assert.deepEqual(sameRootDifferentIdentity.contextAttachmentRefs, []);
+
   const switched = update.updateSpecificationProposal(refreshed, {
     type: 'proposal/context-changed', project: projectB, revision: basisB,
   }).state;
@@ -247,6 +432,7 @@ test('proposal command failure is explicit and cannot invent a proposal', async 
   const ready = update.updateSpecificationProposal(context.state, {
     type: 'proposal/history-loaded',
     commandId: context.commands[0].commandId,
+    correlationId: context.commands[0].correlationId,
     projectRoot: projectRef.root,
     history: {
       schemaVersion: '1', projectRoot: projectRef.root, proposals: [], retentionLimit: 50,
@@ -260,6 +446,7 @@ test('proposal command failure is explicit and cannot invent a proposal', async 
   const failed = update.updateSpecificationProposal(request.state, {
     type: 'proposal/generate-failed',
     commandId: request.commands[0].commandId,
+    correlationId: request.commands[0].correlationId,
     error: 'provider unavailable',
     proposal: null,
   }).state;
@@ -267,6 +454,87 @@ test('proposal command failure is explicit and cannot invent a proposal', async 
   assert.equal(failed.error, 'provider unavailable');
   assert.equal(failed.currentProposal, null);
   assert.equal(failed.pendingCommands.length, 0);
+
+  const validProposal = proposalRecord('proposal-a', projectRef, basis, 'valid');
+  const accepting = update.updateSpecificationProposal({
+    ...state.createSpecificationProposalState(),
+    project: projectRef,
+    basisRevision: basis,
+    currentProposal: validProposal,
+    history: [validProposal],
+    selectedProposalId: validProposal.proposalId,
+  }, {
+    type: 'proposal/accept-requested',
+    actorRef: 'actor://operator/current',
+  });
+  const acceptCommand = accepting.commands[0];
+
+  const wrongFailureKind = update.updateSpecificationProposal(accepting.state, {
+    type: 'proposal/validation-failed',
+    commandId: acceptCommand.commandId,
+    correlationId: acceptCommand.correlationId,
+    error: 'wrong command family',
+    proposal: validProposal,
+  });
+  assert.strictEqual(wrongFailureKind.state, accepting.state);
+
+  const crossProjectFailure = update.updateSpecificationProposal(accepting.state, {
+    type: 'proposal/accept-failed',
+    commandId: acceptCommand.commandId,
+    correlationId: acceptCommand.correlationId,
+    error: 'cross-Project payload',
+    proposal: {
+      ...validProposal,
+      project: project('project-b'),
+    },
+  });
+  assert.strictEqual(crossProjectFailure.state, accepting.state);
+
+  const staleBasisPayload = update.updateSpecificationProposal(accepting.state, {
+    type: 'proposal/accept-failed',
+    commandId: acceptCommand.commandId,
+    correlationId: acceptCommand.correlationId,
+    error: 'wrong basis payload',
+    proposal: {
+      ...validProposal,
+      basisRevision: revision('b'),
+    },
+  });
+  assert.strictEqual(staleBasisPayload.state, accepting.state);
+
+  const admittedAcceptFailure = update.updateSpecificationProposal(accepting.state, {
+    type: 'proposal/accept-failed',
+    commandId: acceptCommand.commandId,
+    correlationId: acceptCommand.correlationId,
+    error: 'basis changed before apply',
+    proposal: { ...validProposal, status: 'stale' },
+  });
+  assert.equal(admittedAcceptFailure.state.currentProposal.status, 'stale');
+  assert.equal(admittedAcceptFailure.state.error, 'basis changed before apply');
+  assert.deepEqual(
+    admittedAcceptFailure.commands.map((command) => command.type),
+    ['proposal.refresh-context'],
+  );
+
+  const authorityIncreasingFailure = update.updateSpecificationProposal(accepting.state, {
+    type: 'proposal/accept-failed',
+    commandId: acceptCommand.commandId,
+    correlationId: acceptCommand.correlationId,
+    error: 'forged terminal payload',
+    proposal: {
+      ...validProposal,
+      status: 'accepted',
+      resultingRevision: revision('b'),
+      decision: {
+        kind: 'accepted',
+        actorRef: 'actor://operator/current',
+        decidedAt: '2026-07-11T00:02:00.000Z',
+        basisRevision: basis,
+        changedSurfaceRefs: validProposal.affectedSurfaceRefs,
+      },
+    },
+  });
+  assert.strictEqual(authorityIncreasingFailure.state, accepting.state);
 });
 
 test('stale proposal acceptance is blocked and regeneration preserves predecessor on the current basis', async () => {
@@ -290,6 +558,7 @@ test('stale proposal acceptance is blocked and regeneration preserves predecesso
   const loaded = update.updateSpecificationProposal(context.state, {
     type: 'proposal/history-loaded',
     commandId: context.commands[0].commandId,
+    correlationId: context.commands[0].correlationId,
     projectRoot: projectRef.root,
     history: {
       schemaVersion: '1', projectRoot: projectRef.root, proposals: [stale], retentionLimit: 50,
@@ -315,6 +584,7 @@ test('stale proposal acceptance is blocked and regeneration preserves predecesso
   const rejected = update.updateSpecificationProposal(rejectRequest.state, {
     type: 'proposal/rejected',
     commandId: rejectRequest.commands[0].commandId,
+    correlationId: rejectRequest.commands[0].correlationId,
     projectRoot: projectRef.root,
     proposal: {
       ...stale,

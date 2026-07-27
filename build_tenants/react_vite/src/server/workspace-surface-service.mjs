@@ -1,10 +1,11 @@
 import {
   existsSync,
+  realpathSync,
   readdirSync,
   readFileSync,
   statSync,
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 const SURFACE_MEDIA_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -27,13 +28,34 @@ const SURFACE_MEDIA_TYPES = new Map([
 
 const BINARY_SURFACE_EXTENSIONS = new Set([".pdf"]);
 
+function pathIsWithin(root, candidate) {
+  const value = relative(root, candidate);
+  return value === "" || (!value.startsWith("..") && !isAbsolute(value));
+}
+
 export function resolveWorkspaceSurfacePath(workspaceRoot, relativePath) {
   const root = resolve(workspaceRoot);
   const target = resolve(root, relativePath);
+  const lexicallyOutside = !pathIsWithin(root, target);
+  let realRoot = null;
+  let realTarget = null;
+  let resolutionError = null;
+  if (!lexicallyOutside && existsSync(root) && existsSync(target)) {
+    try {
+      realRoot = realpathSync(root);
+      realTarget = realpathSync(target);
+    } catch (error) {
+      resolutionError = error;
+    }
+  }
   return {
     root,
     target,
-    outsideWorkspace: !target.startsWith(`${root}/`) && target !== root,
+    realRoot,
+    realTarget,
+    resolutionError,
+    outsideWorkspace: lexicallyOutside
+      || (realRoot !== null && realTarget !== null && !pathIsWithin(realRoot, realTarget)),
   };
 }
 
@@ -51,7 +73,14 @@ function extensionForSurfacePath(path) {
 }
 
 export function readWorkspaceSurface(workspaceRoot, relativePath) {
-  const { root, target, outsideWorkspace } = resolveWorkspaceSurfacePath(workspaceRoot, relativePath);
+  const {
+    root,
+    target,
+    realRoot,
+    realTarget,
+    resolutionError,
+    outsideWorkspace,
+  } = resolveWorkspaceSurfacePath(workspaceRoot, relativePath);
   if (outsideWorkspace) {
     return {
       kind: "unreadable",
@@ -59,6 +88,15 @@ export function readWorkspaceSurface(workspaceRoot, relativePath) {
       path: target,
       reason: "outside_workspace",
       error: "surface path resolves outside the active Project root",
+    };
+  }
+  if (resolutionError) {
+    return {
+      kind: "unreadable",
+      relative_path: relativePath,
+      path: target,
+      reason: "read_error",
+      error: "surface path could not be resolved inside the active Project root",
     };
   }
   if (!existsSync(target)) {
@@ -69,15 +107,25 @@ export function readWorkspaceSurface(workspaceRoot, relativePath) {
     };
   }
   try {
-    const stat = statSync(target);
+    const admittedTarget = realTarget ?? target;
+    const stat = statSync(admittedTarget);
     if (stat.isDirectory()) {
-      const entries = readdirSync(target, { withFileTypes: true })
+      const entries = readdirSync(admittedTarget, { withFileTypes: true })
         .sort((left, right) => left.name.localeCompare(right.name))
-        .map((entry) => ({
-          name: entry.name,
-          kind: entry.isDirectory() ? "directory" : "file",
-          relative_path: relative(root, join(target, entry.name)),
-        }));
+        .flatMap((entry) => {
+          const lexicalChild = join(target, entry.name);
+          try {
+            const realChild = realpathSync(join(admittedTarget, entry.name));
+            if (realRoot && !pathIsWithin(realRoot, realChild)) return [];
+            return [{
+              name: entry.name,
+              kind: statSync(realChild).isDirectory() ? "directory" : "file",
+              relative_path: relative(root, lexicalChild),
+            }];
+          } catch {
+            return [];
+          }
+        });
       return {
         kind: "directory",
         relative_path: relativePath,
@@ -92,7 +140,7 @@ export function readWorkspaceSurface(workspaceRoot, relativePath) {
       kind: "file",
       relative_path: relativePath,
       path: target,
-      content: binary ? "" : readFileSync(target, "utf8"),
+      content: binary ? "" : readFileSync(admittedTarget, "utf8"),
       media_type: mediaType,
       encoding: binary ? "binary" : "utf8",
       size_bytes: stat.size,

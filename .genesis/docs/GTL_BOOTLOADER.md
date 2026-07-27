@@ -161,16 +161,29 @@ If frame-local recursion bleeds into global publication or hidden fallback trave
 
 ## 8. Read Next
 
-Methodology master:
-- public source-of-truth repository: `https://github.com/foolishimp/specification_methodology`
-- installed workspace mirror: `workspace://.genesis/docs/standards/`
+Selected methodology release:
+
+- Product and tag: STDO `v2.2.1`
+- immutable release commit:
+  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`
+- standards member-set digest:
+  `df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`
+- operative installed distribution: `workspace://.genesis/docs/standards/`
+- immutable public source:
+  `https://github.com/foolishimp/specification_methodology/tree/v2.2.1/specification/standards`
+
+Mutable methodology source and candidate cuts do not govern this workspace.
 
 Installed runtime details, always present after install:
+
 - `workspace://.genesis/docs/LLM_GTL_APP_BUILDER_GUIDE.md`
 - `workspace://.genesis/docs/GTL_Technical_Guide.md`
 - `workspace://.genesis/docs/USER_GUIDE.md`
 - `workspace://.genesis/docs/GTL_BOOTLOADER.md`
 - `workspace://.genesis/docs/standards/SPEC_METHOD.md`
+- `workspace://.genesis/docs/standards/ODD_METHOD.md`
+- `workspace://.genesis/docs/standards/DESIGN_MODULE_METHOD.md`
+- `workspace://.genesis/docs/standards/UX_METHOD.md`
 - `workspace://.genesis/docs/standards/POSTING_GUIDE.md`
 - `workspace://.genesis/docs/standards/WRITING_GUIDE.md`
 - `workspace://.genesis/gtl/__init__.py`

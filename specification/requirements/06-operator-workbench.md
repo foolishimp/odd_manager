@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-OPERATE-001`, `PO-OM-DEVELOPER-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local workbench and supporting Sidecar subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Product-meaningful continuation is reducer-owned; unproved complete supervisory and functional steel-thread cases remain explicit scenario gaps
+**Testcase Authority**: `specification/scenarios/04-project-workbench-collaboration-and-observation.md`, `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-collaboration.spec.ts`
 
 ### REQ-OM-WRK-001 - The product provides a Project-scoped operator workbench
 

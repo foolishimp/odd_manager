@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Constraint / Guarantee
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-OBSERVE-001`, `PO-OM-AUDIT-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local read/projection subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation, including the exact odd_glc 0.1.0 / ABIogenesis 4.6.0-rc.3 read-only qualification. Missing domain carriers and unproved projection cases remain explicit unavailable states or scenario gaps
+**Testcase Authority**: `build_tenants/react_vite/runtime/tests/test_ai_workspace_observation_service.mjs`, `build_tenants/react_vite/runtime/tests/test_ai_workspace_observation_validation.mjs`, `build_tenants/react_vite/runtime/tests/test_abg_run_observation.mjs`, `build_tenants/react_vite/runtime/tests/test_abg_run_observation_validation.mjs`, `build_tenants/react_vite/runtime/tests/test_traversal_projection.mjs`
 
 ### REQ-OM-PROJ-001 - The managed system is projected as a live workspace world
 

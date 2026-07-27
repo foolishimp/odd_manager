@@ -1,5 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import {
   assuranceCatalogAdmissionSchema,
   assuranceCatalogSchema,
@@ -19,6 +24,21 @@ function errorDetail(error) {
 
 function unique(values) {
   return new Set(values).size === values.length;
+}
+
+function exactProjectCarrier(projectRoot, carrierPath) {
+  const carrierStat = lstatSync(carrierPath);
+  if (carrierStat.isSymbolicLink() || !carrierStat.isFile()) {
+    throw new Error('carrier must be a regular non-symlink file');
+  }
+  const realProjectRoot = realpathSync(projectRoot);
+  const expectedCarrierPath = resolve(
+    realProjectRoot,
+    relative(projectRoot, carrierPath),
+  );
+  if (realpathSync(carrierPath) !== expectedCarrierPath) {
+    throw new Error('carrier path must not be re-rooted through a symlink');
+  }
 }
 
 export function loadAssuranceCatalog(project, descriptorAdmission) {
@@ -44,6 +64,7 @@ export function loadAssuranceCatalog(project, descriptorAdmission) {
   }
   let catalog;
   try {
+    exactProjectCarrier(projectRoot, catalogPath);
     catalog = assuranceCatalogSchema.parse(JSON.parse(readFileSync(catalogPath, 'utf8')));
   } catch (error) {
     return admission(projectRoot, 'error', null, `Assurance catalog is invalid: ${errorDetail(error)}`, [catalogPath]);

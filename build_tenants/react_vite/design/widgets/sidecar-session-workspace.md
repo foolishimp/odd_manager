@@ -1,12 +1,19 @@
 # Design Module - Sidecar Session Workspace OddTerm Port
 
-**Status**: Active
-**Date**: 2026-04-27
+**Status**: Accepted
+**Date**: 2026-07-27
 **Ticket**: B-015
 **Tenant**: `react_vite`
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
 **Reference Source**: historical legacy screens at tag `last-legacy-screens`; live session substrate in `build_tenants/react_vite/src/server/oddterm-pool-service.mjs`
 **Target Surface**: `build_tenants/react_vite/src/features/sidecar/`
+**Implements**: `PO-OM-OBSERVE-001`; `PO-OM-OPERATE-001`; `PO-OM-LENSES-001`; `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `PO-OM-AUDIT-001`; `REQ-OM-NAV-*`; `REQ-OM-INS-*`; `REQ-OM-WRK-*`; `REQ-OM-SES-*`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx`; `build_tenants/react_vite/src/features/sidecar/sidecar-state.ts`; `build_tenants/react_vite/src/server/oddterm-pool-service.mjs`; `build_tenants/react_vite/src/server/session-pty-screen.mjs`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `storage ingress is typed, validates pinned folders, and initial surface continuation is one reducer transition`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `surface and folder loads replay success, failure, refresh, stale responses, and tail follow deterministically`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `Sidecar subscriptions are state-derived and run refresh failures replay through typed Msg values`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `Sidecar subscription adapters consume declared values and return typed lifecycle messages`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `cross-Project recent-path activation is a typed effect and opens only after the target Context loads`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `same-root load generations reject older success and failure projections`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `Sidecar action results retain exact command and Context identity through terminal admission`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `Project transition retires Project-A action results before Project B becomes current`; `build_tenants/react_vite/runtime/tests/test_oddterm_node_screen.mjs` :: `OddTerm rehydrates and reconnects live screen sessions from backend state`; `build_tenants/react_vite/tests/e2e/odd-manager-collaboration.spec.ts` :: `creates a live local shell and round-trips terminal input`; `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts` :: `sidecar terminal panes open tabs and split groups`
+**STDO-UX Bindings**: State=SidecarState including Context product projections selection path history persisted layout pinned folders surface/folder request state active load generation retained action identities observation sessions terminal viewer layout and typed subscription-failure slices; Msg=SidecarMsg including explicit storage navigation continuation request correlated result failure and subscription lifecycle events; Update=reduceSidecarState as the sole product-meaning transition and result admitter; Cmd=SidecarCmd for HTTP storage clipboard Project activation navigation session and observation effects, with reducer-owned command identity and exact Context on result-bearing actions; Sub=SidecarSub values `project-registry.changed`, `surface.tail-follow`, `run.refresh`, and `oddterm.attach`, each state-derived with a deterministic subscription identity and typed ready/failure Msg return; Ingress=shared Project Ticket Comment and Session contracts plus AI Workspace ABG traversal storage and terminal validators; View=SidecarPanel projections with view-local query sort draft and platform-handle ephemera only; Membrane=Sidecar HTTP clipboard terminal WebSocket storage timer and navigation adapters that interpret declared commands or subscriptions and cannot establish product truth; Replay=build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs :: Sidecar action results retain exact command and Context identity through terminal admission; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: forensic Run Inspector and terminal controls retain named navigation and fit at 390px
+**Accepted Ontology And Basis**: The Sidecar module realizes the manager-local Context, Project, AssetSurface, selection, layout-profile, observation, session, viewer, and terminal relations admitted by `DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md` boundary `B-OM-DEVCTRL-LOCAL-001` and Ontology `ONT-OM-DEVCTRL-001`. Its IACS is the typed State/Msg/Update/Cmd/Sub/Ingress/View/Membrane carrier set above; effect-private DOM, xterm, timer, storage, HTTP, and WebSocket handles are not truth carriers.
+**Accessibility Scope**: Accepted proof covers keyboard and pointer operation for the workbench resize and tab/navigation controls, named regions and panels, focus movement and recovery on the exercised operator paths, polite live status, representative WCAG AA text/control token pairs, terminal/forensic controls, and 390px containment. This is the bounded manager-local STDO-UX minimum for the accepted paths; it is not a blanket screen-reader or exhaustive future-placement certification.
+**Implementation Acceptance**: Accepted for the manager-local Sidecar module subject to the exact T-032 validation bundle. Product-significant storage, Project activation, initial-surface continuation, surface/folder loading, generation-correlated load completion, command-and-Context-correlated action completion, stale-result rejection, and declared registry, tail-follow, run-refresh, and OddTerm-attachment subscription transitions now enter through typed messages and reducer-owned state; the remaining React local state is projection ephemera, and imperative browser/terminal objects stay inside the named effect membrane. This acceptance grants no odd_glc Build or Assure authority and no ABIogenesis 5 compatibility claim.
 
 ## 1. Purpose
 
@@ -56,7 +63,7 @@ WebSocket effects.
 | former `OddTermPanel` split layout, rename, promote, agent join controls | historical reference only; live behavior must be modeled in Sidecar |
 | view-local action state and direct async handlers | rejected for target; replaced by `State`/`Msg`/`Update`/`Cmd` |
 
-## 4. State / Msg / Update / Cmd
+## 4. State / Msg / Update / Cmd / Sub
 
 `SidecarState` owns product-meaningful Sidecar state:
 
@@ -67,6 +74,9 @@ WebSocket effects.
 - reply draft
 - last action result
 - pending commands emitted by the reducer
+- the active load root and reducer-minted load generation
+- retained command identities and exact issuing Contexts for result-bearing
+  ticket, comment, clipboard, and session actions
 
 `SidecarMsg` names all user and effect outcomes.
 
@@ -75,6 +85,27 @@ WebSocket effects.
 `describeSidecarCommands` and `reduceSidecarState` are the target
 `Update : (Msg, State) -> (State, Cmd)` realization. The React component uses
 the reducer result and interprets pending commands in the effect membrane.
+Dispatch removes a command from the interpreter queue but retains each
+result-bearing action in reducer state until one exact terminal result arrives.
+Admission requires the reducer-minted command id, the command's full issuing
+Context, and the still-current Context to agree. Context replacement retires
+the old action basis; foreign, duplicate, retired, and late results are no-ops.
+Reload authority derives from the admitted command variant, not from a result
+payload supplied by the effect edge.
+
+`sidecarSubscriptions` is the pure `Sub` declaration. It derives Project
+registry change, surface tail-follow, active Run Inspector refresh, and visible
+OddTerm attachment values from `SidecarState`. Thin React adapters interpret
+those exact values, return typed reducer events for registry/timer changes and
+typed lifecycle ready/failure messages, and keep validated terminal-stream
+payloads inside the effect-private xterm handle. Timers, event listeners, xterm
+objects, and WebSockets remain effect-private handles.
+
+The registry subscription may observe the pending load root so Project
+discovery can complete a Context transition. Tail-follow, run-refresh, and
+OddTerm attachment subscriptions derive only from the admitted Context root and
+matching owned projections. OddTerm readiness additionally requires the
+server-published `workspaceRoot` to equal the declared attachment root.
 
 ## 5. Effect Membrane
 
@@ -86,6 +117,37 @@ The Sidecar effect membrane is bounded to:
 - refresh/reconnect through the backend-managed OddTerm session registry
 - `ResizeObserver` and terminal resize messages
 
+Every load command carries a reducer-minted monotonic generation in addition
+to its requested Project root. Its started, succeeded, and failed messages
+carry that generation back unchanged. The reducer admits only the terminal
+message for the currently active root and generation, so an older same-root
+load cannot overwrite a newer projection.
+
+Every Project-local HTTP adapter and OddTerm/session WebSocket upgrade first
+admits the exact current Project registry record through the shared server
+Context boundary. Refusal occurs before AssetSurface creation, session
+rehydration, process spawn, or terminal attachment, so an unregistered root
+cannot acquire Sidecar or shell authority through a query string, request body,
+default root, symlink alias, or WebSocket URL. Raw and structured workspace
+surface paths additionally resolve through realpath containment; an external
+symlink is unreadable rather than a Project-local observation.
+Session creation separately admits its working directory before any registry
+record or process exists: the directory must be the exact resolvable
+Project-relative location under both lexical and real paths. A symlink cannot
+re-root that working directory, including through a target that otherwise
+remains inside the Project.
+Rehydration repeats that admission before consulting global screen liveness.
+Persisted workspace, session, screen, transcript, history, or record aliases
+are not authority: Project-plus-session identity derives the screen name and
+every runtime carrier path. The OddTerm, legacy session, and conversation
+history registry chains and their per-session directories/files must be
+realpath-contained non-symlink carriers. Conversation metadata and entries
+that supply terminal replay enter through the same Project membrane and bind
+the exact Project root, canonical history id, and owning session or room.
+Copied cross-Project state or history, symlinked runtime roots, transcripts, or
+replay histories, and traversal or encoded-slash session identities cannot
+attach, replay, accept input, or kill a terminal.
+
 The membrane may branch on declared `Cmd` or terminal event type. It must not
 derive product meaning outside `State`/`Msg`/`Update`.
 
@@ -94,6 +156,8 @@ derive product meaning outside `State`/`Msg`/`Update`.
 - `SidecarState` `<<prime>> <<authoritative>>`: current Sidecar UX state.
 - `SidecarMsg` `<<prime>> <<authoritative>>`: action and effect outcome algebra.
 - `SidecarCmd` `<<prime>> <<authoritative>>`: declared effect algebra.
+- `SidecarSub` `<<prime>> <<authoritative>>`: state-derived registry, tail-follow,
+  run-refresh, and OddTerm-attachment lifecycle algebra.
 - `SessionRecord` `<<prime>> <<downstream>>`: shared FE/BE session contract consumed by the Sidecar.
 - `OddTermTerminalHandle` `<<effect-edge>>`: xterm/WebSocket platform handles, not product truth.
 - `GTermSessionSummary` `<<subordinate>>`: reference runtime payload retained only inside `SessionRecord.raw`.
@@ -125,6 +189,14 @@ classDiagram
     +session.spawn
     +session.kill
   }
+  class SidecarSub {
+    <<prime>>
+    <<authoritative>>
+    +projectRegistryChanged
+    +surfaceTailFollow
+    +runRefresh
+    +oddtermAttach
+  }
   class SessionRecord {
     <<prime>>
     <<downstream>>
@@ -149,7 +221,10 @@ classDiagram
 
   SidecarState *-- SessionRecord
   SidecarMsg --> SidecarCmd
+  SidecarState --> SidecarSub
+  SidecarSub --> SidecarMsg
   SidecarCmd --> SessionRecord
+  SidecarSub --> OddTermTerminalHandle
   SessionRecord *-- GTermSessionSummary
   OddTermTerminalHandle --> SessionRecord
 ```
@@ -444,6 +519,12 @@ store or a second terminal runtime.
 
 Terminal tab bars are product controls. They must expose tablist/tab semantics,
 accessible close controls, deterministic focus behavior, and replayable state.
+Only the exact active pane, where both `activeGroupId === group.id` and
+`activeTabId === tab.id`, may claim xterm DOM focus when an OddTerm attachment
+becomes ready. Background attachment readiness remains a lifecycle observation
+and must not retarget the reducer-owned terminal workspace. When an
+already-connected pane becomes active, the terminal effect may focus that exact
+pane.
 
 ## 23. B-031 Layout Profile Persistence Rule
 

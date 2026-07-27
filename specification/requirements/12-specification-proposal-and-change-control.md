@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `specification/GOALS.md` G-006
+**Product Outcomes**: `PO-OM-DEVELOPER-001`, `PO-OM-AUDIT-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local proposal/change-control subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Commands cross schema-validated envelopes/results and proposal acceptance remains basis-bound; unproved composed reaction scenarios remain explicit gaps
+**Testcase Authority**: `specification/scenarios/02-developer-review-tune-build-assure.md`, `specification/scenarios/03-concurrent-build-attention-and-reentry.md`, `build_tenants/react_vite/runtime/tests/test_specification_proposal_replay.mjs`, `build_tenants/react_vite/runtime/tests/test_specification_proposal_service.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts`
 
 ### REQ-OM-SPC-001 - Prompting produces an attributable specification proposal
 

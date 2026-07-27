@@ -71,11 +71,41 @@ function writeAssuranceEvidence(input, bundlePath, root) {
   const profile = String(input.assuranceProfile ?? 'none');
   if (profile === 'none') return null;
   const producerRef = 'producer://odd_manager/fixture-build-adapter';
+  const probabilisticDecision = {
+    kind: 'probabilistic',
+    outcome: 'satisfied',
+    evaluatorRef: 'evaluator://fixture/depth-reviewer',
+    authorityRef: 'authority://fixture/probabilistic-assurance',
+    basisRefs: [
+      'requirement://fixture/depth',
+      'policy://fixture/probabilistic-assurance/v1',
+    ],
+    facts: [
+      { factRef: 'fact://fixture/depth/coverage', outcome: 'satisfied' },
+      { factRef: 'fact://fixture/depth/residual-risk', outcome: 'satisfied' },
+    ],
+  };
+  const humanDecision = {
+    kind: 'human',
+    decisionRef: 'decision://fixture/human-review/approval',
+    outcome: 'approved',
+    actorRef: 'actor://human/fixture-reviewer',
+    authorityRef: 'authority://fixture/human-release-review',
+    basisRefs: [
+      'requirement://fixture/human-review',
+      'policy://fixture/human-release-review/v1',
+    ],
+  };
   const gateResults = [];
   const assetResults = [];
   const addGate = (gateRef, status, evidenceKey, options = {}) => {
+    const decision = options.decision ?? null;
     const digest = evidenceFile(root, evidenceKey, {
-      kind: 'fixture_gate_evidence', gateRef, status, executionId: input.executionId,
+      kind: 'fixture_gate_evidence',
+      gateRef,
+      status,
+      decision,
+      executionId: input.executionId,
     });
     gateResults.push({
       gateRef,
@@ -83,6 +113,7 @@ function writeAssuranceEvidence(input, bundlePath, root) {
       evidenceKey,
       digest: options.mismatch ? `sha256:${'0'.repeat(64)}` : digest,
       evidenceRefs: [`build-evidence://${input.executionId}/${evidenceKey}`],
+      decision,
       sourceRefs: [producerRef],
     });
   };
@@ -104,14 +135,17 @@ function writeAssuranceEvidence(input, bundlePath, root) {
 
   if (profile === 'complete' || profile === 'proof_mismatch' || profile === 'revision_mismatch') {
     addGate('gate://fixture/tests', 'passed', 'tests');
-    addGate('gate://fixture/depth', 'passed', 'depth', { mismatch: profile === 'proof_mismatch' });
-    addGate('gate://fixture/human-review', 'passed', 'human-review');
+    addGate('gate://fixture/depth', 'passed', 'depth', {
+      mismatch: profile === 'proof_mismatch',
+      decision: probabilisticDecision,
+    });
+    addGate('gate://fixture/human-review', 'passed', 'human-review', { decision: humanDecision });
     addAsset('requirement://fixture/software-package', 'delivered', 'software-package');
   } else if (profile === 'partial') {
     addGate('gate://fixture/tests', 'passed', 'tests');
   } else if (profile === 'fd_fail_waiting_human') {
     addGate('gate://fixture/tests', 'failed', 'tests');
-    addGate('gate://fixture/depth', 'passed', 'depth');
+    addGate('gate://fixture/depth', 'passed', 'depth', { decision: probabilisticDecision });
     addGate('gate://fixture/human-review', 'waiting_human', 'human-review');
   }
 

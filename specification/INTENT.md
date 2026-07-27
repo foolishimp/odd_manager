@@ -2,7 +2,9 @@
 
 **Status**: Active
 **Date**: 2026-07-11
-**Derived From**: current repo initialization and project repricing
+**Updated**: 2026-07-26
+**Derived From**: `specification/GOALS.md`, project formation, and admitted
+Product-owner intake
 
 ## Purpose
 
@@ -78,8 +80,8 @@ The project is constrained by these rules:
 
 - `.genesis/docs/standards/SPEC_METHOD.md` is the governing process
   constitution
-- `.genesis/docs/standards/GRAPH_METHOD.md` is the stronger method surface for
-  graph-native work
+- `.genesis/docs/standards/ODD_METHOD.md` is the graph-native ODD
+  product-authoring and traversal-governance method
 - the current source project is authored as the `odd_manager` control-plane
   product under `SPEC_METHOD.md`; workspace-local `odd_sdlc` runtime installs
   are legacy provenance and must not define manager identity

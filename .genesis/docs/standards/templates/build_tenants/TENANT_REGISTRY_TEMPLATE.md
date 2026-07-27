@@ -13,7 +13,7 @@ The constitutional `specification/` surface is singleton project truth.
 ## Structure
 
 - `common/` holds shared realization/design law adopted across more than one tenant.
-- `<family>/<variant>/` holds one concrete tenant realization.
+- `<family>/<variant>/` holds one concrete tenant realization. The `<family>/<variant>` shape is the recommended scaffold; single-label tenant paths such as `<variant>/` are also lawful per `SPEC_METHOD.md` `## ADR Folder Convention`. Pick one shape per project and stay with it.
 
 ## Registry
 

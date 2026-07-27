@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type { CapabilityContribution } from "@odd-manager/developer-control-contracts";
 import type { CapabilityViewProps } from "../../contracts/developer-control";
 import { CapabilityAvailabilityState } from "../../components/primitives/CapabilityAvailability";
@@ -15,6 +15,22 @@ const PHASES: Array<{ id: WorkbenchPhase; label: string }> = [
   { id: "build", label: "Build" },
   { id: "assure", label: "Assure" },
 ];
+
+function phaseFromKeyboard(
+  event: KeyboardEvent<HTMLButtonElement>,
+  current: WorkbenchPhase,
+) {
+  const currentIndex = PHASES.findIndex((phase) => phase.id === current);
+  if (event.key === "Home") return PHASES[0];
+  if (event.key === "End") return PHASES[PHASES.length - 1];
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    return PHASES[(currentIndex + 1) % PHASES.length];
+  }
+  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    return PHASES[(currentIndex - 1 + PHASES.length) % PHASES.length];
+  }
+  return null;
+}
 
 type ProjectWorkbenchViewProps = CapabilityViewProps<ProjectWorkbenchState, ProjectWorkbenchMessage> & {
   activeCapability?: ReactNode;
@@ -53,11 +69,24 @@ export function ProjectWorkbenchView({
             return (
               <button
                 key={phase.id}
+                id={`project-workbench-tab-${phase.id}`}
                 type="button"
                 role="tab"
                 aria-selected={state.activePhase === phase.id}
+                aria-controls={`project-workbench-panel-${phase.id}`}
+                tabIndex={state.activePhase === phase.id ? 0 : -1}
                 className={state.activePhase === phase.id ? "is-active" : ""}
                 onClick={() => dispatch({ type: "workbench/phase-selected", phase: phase.id })}
+                onKeyDown={(event) => {
+                  const next = phaseFromKeyboard(event, phase.id);
+                  if (!next) return;
+                  event.preventDefault();
+                  dispatch({ type: "workbench/phase-selected", phase: next.id });
+                  const tab = event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                    `#project-workbench-tab-${next.id}`,
+                  );
+                  tab?.focus();
+                }}
               >
                 <span className="project-workbench__phase-label">{phase.label}</span>
                 {phaseContribution ? (
@@ -73,7 +102,15 @@ export function ProjectWorkbenchView({
       </nav>
 
       <div className="project-workbench__body">
-        <div className="project-workbench__active">{activeCapability}</div>
+        <div
+          id={`project-workbench-panel-${state.activePhase}`}
+          className="project-workbench__active"
+          role="tabpanel"
+          aria-labelledby={`project-workbench-tab-${state.activePhase}`}
+          tabIndex={0}
+        >
+          {activeCapability}
+        </div>
       </div>
 
       {supportingCapability ? (

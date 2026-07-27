@@ -1,79 +1,66 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  type KeyboardEvent,
+} from "react";
 import type {
   CapabilityContribution,
   CapabilityId,
+  DeveloperControlBootstrap,
 } from "@odd-manager/developer-control-contracts";
 import {
-  buildPortfolioModule,
   BuildPortfolioView,
-  createBuildPortfolioState,
   selectBuildPortfolioContribution,
-  updateBuildPortfolio,
   type BuildPortfolioMessage,
-  type BuildPortfolioAttentionFocus,
 } from "../build-portfolio";
 import {
-  buildControlModule,
   BuildControlView,
-  createBuildControlState,
   selectBuildControlContribution,
-  updateBuildControl,
   type BuildControlMessage,
 } from "../build-control";
 import {
   AssuranceAttentionView,
-  createAssuranceAttentionState,
   selectAssuranceAttentionContribution,
-  updateAssuranceAttention,
   type AssuranceAttentionMessage,
 } from "../assurance-attention";
 import {
-  INITIAL_PROJECT_WORKBENCH_STATE,
   ProjectWorkbenchView,
   selectProjectWorkbenchContribution,
-  updateProjectWorkbench,
   type ProjectWorkbenchMessage,
 } from "../project-workbench";
 import {
-  INITIAL_RUN_OBSERVATION_STATE,
   RunObservationView,
   selectRunObservationContribution,
-  updateRunObservation,
   type RunObservationMessage,
 } from "../run-observation";
 import {
-  createSpecificationProposalState,
   selectSpecificationProposalContribution,
   SpecificationProposalView,
-  updateSpecificationProposal,
   type SpecificationProposalMessage,
 } from "../specification-proposal";
-import type {
-  DeveloperControlHostMessage,
-  DeveloperControlSurface,
-  SupportingSurfaceCommand,
-} from "../../contracts/developer-control";
-import {
-  interpretBuildPortfolioCommand,
-  interpretBuildControlCommand,
-  interpretDeveloperControlCommand,
-  interpretAssuranceAttentionCommand,
-  interpretSpecificationProposalCommand,
-} from "../../effects/command-runtime";
+import type { DeveloperControlSurface } from "../../contracts/developer-control";
+import { interpretDeveloperControlAggregateCommand } from "../../effects/command-runtime";
 import { SidecarPanel } from "../../features/sidecar/SidecarPanel";
+import type { ContextRecord } from "../../features/sidecar/sidecar-state";
 import { PROJECT_REGISTRY_CHANGED_EVENT } from "../../lib/collaboration";
+import type { RunInspectorFocus } from "../../lib/projectDeepLink";
 import {
-  runInspectorFocus,
-  type RunInspectorFocus,
-} from "../../lib/projectDeepLink";
-import {
-  createDeveloperControlHostState,
-  updateDeveloperControlHost,
-} from "./state";
+  createDeveloperControlAggregateState,
+  selectDeveloperControlAggregateSubscriptions,
+  selectDeveloperControlPresentedSurface,
+  updateDeveloperControlAggregate,
+  type DeveloperControlAggregateCommand,
+  type DeveloperControlAggregateMessage,
+  type DeveloperControlAggregateState,
+  type DeveloperControlAggregateSubscription,
+} from "./aggregate";
 
 type DeveloperControlHostProps = {
   projectRoot: string;
   initialSurface: DeveloperControlSurface | null;
+  initialRunFocus: RunInspectorFocus | null;
   onProjectRootChange: (projectRoot: string) => void;
 };
 
@@ -84,11 +71,121 @@ const SURFACES: Array<{ id: DeveloperControlSurface; label: string }> = [
   { id: "ticket-board", label: "Tickets" },
 ];
 
-function hostReducer(
-  state: ReturnType<typeof createDeveloperControlHostState>,
-  message: DeveloperControlHostMessage,
+function surfaceFromKeyboard(
+  event: KeyboardEvent<HTMLButtonElement>,
+  current: DeveloperControlSurface,
 ) {
-  return updateDeveloperControlHost(state, message).state;
+  const currentIndex = SURFACES.findIndex((surface) => surface.id === current);
+  if (event.key === "Home") return SURFACES[0];
+  if (event.key === "End") return SURFACES[SURFACES.length - 1];
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    return SURFACES[(currentIndex + 1) % SURFACES.length];
+  }
+  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    return SURFACES[(currentIndex - 1 + SURFACES.length) % SURFACES.length];
+  }
+  return null;
+}
+
+function aggregateReducer(
+  state: DeveloperControlAggregateState,
+  message: DeveloperControlAggregateMessage,
+) {
+  return updateDeveloperControlAggregate(state, message).state;
+}
+
+function AggregateCommandInterpreter({
+  command,
+  dispatch,
+  activateProject,
+}: {
+  command: DeveloperControlAggregateCommand;
+  dispatch: (message: DeveloperControlAggregateMessage) => void;
+  activateProject: (projectRoot: string) => void;
+}) {
+  const activateProjectRef = useRef(activateProject);
+  const interpretedCommandIdRef = useRef<string | null>(null);
+  activateProjectRef.current = activateProject;
+
+  useEffect(() => {
+    if (command.status === "queued") {
+      dispatch({
+        type: "aggregate/command-started",
+        aggregateCommandId: command.aggregateCommandId,
+      });
+      return undefined;
+    }
+    if (interpretedCommandIdRef.current === command.aggregateCommandId) {
+      return undefined;
+    }
+    interpretedCommandIdRef.current = command.aggregateCommandId;
+    void interpretDeveloperControlAggregateCommand(
+      command,
+      (projectRoot) => activateProjectRef.current(projectRoot),
+    )
+      .then((message) => {
+        dispatch(message);
+      });
+    return undefined;
+  }, [
+    command.aggregateCommandId,
+    command.status,
+    dispatch,
+  ]);
+  return null;
+}
+
+function AggregateSubscriptionInterpreter({
+  subscription,
+  dispatch,
+}: {
+  subscription: DeveloperControlAggregateSubscription;
+  dispatch: (message: DeveloperControlAggregateMessage) => void;
+}) {
+  const projectRoot = subscription.type === "aggregate.project-registry"
+    ? null
+    : subscription.projectRoot;
+  const intervalMs = subscription.type === "aggregate.project-registry"
+    ? null
+    : subscription.intervalMs;
+  useEffect(() => {
+    try {
+      if (subscription.type === "aggregate.project-registry") {
+        const handleRegistryChange = () => dispatch({ type: "aggregate/registry-changed" });
+        window.addEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleRegistryChange);
+        return () => window.removeEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleRegistryChange);
+      }
+      const timer = window.setInterval(() => {
+        try {
+          dispatch({
+            type: "aggregate/subscription-ticked",
+            subscription,
+          });
+        } catch (caught) {
+          dispatch({
+            type: "aggregate/subscription-failed",
+            subscription,
+            error: caught instanceof Error ? caught.message : String(caught),
+          });
+        }
+      }, subscription.intervalMs);
+      return () => window.clearInterval(timer);
+    } catch (caught) {
+      dispatch({
+        type: "aggregate/subscription-failed",
+        subscription,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+      return undefined;
+    }
+  }, [
+    dispatch,
+    intervalMs,
+    projectRoot,
+    subscription.subscriptionId,
+    subscription.type,
+  ]);
+  return null;
 }
 
 function capabilityById(contributions: CapabilityContribution[], capabilityId: CapabilityId) {
@@ -98,395 +195,172 @@ function capabilityById(contributions: CapabilityContribution[], capabilityId: C
 export function DeveloperControlHost({
   projectRoot,
   initialSurface,
+  initialRunFocus,
   onProjectRootChange,
 }: DeveloperControlHostProps) {
-  const [hostState, dispatchHost] = useReducer(
-    hostReducer,
-    initialSurface ?? "project-workbench",
-    createDeveloperControlHostState,
-  );
-  const [workbenchState, setWorkbenchState] = useState(INITIAL_PROJECT_WORKBENCH_STATE);
-  const [portfolioState, dispatchPortfolio] = useReducer(
-    (state: ReturnType<typeof createBuildPortfolioState>, message: BuildPortfolioMessage) => (
-      updateBuildPortfolio(state, message).state
+  const [state, dispatch] = useReducer(
+    aggregateReducer,
+    {
+      projectRoot,
+      initialSurface: initialSurface ?? "project-workbench",
+      initialRunFocus,
+    },
+    (initial) => createDeveloperControlAggregateState(
+      initial.projectRoot,
+      initial.initialSurface,
+      initial.initialRunFocus,
     ),
-    undefined,
-    createBuildPortfolioState,
   );
-  const [proposalState, dispatchProposal] = useReducer(
-    (state: ReturnType<typeof createSpecificationProposalState>, message: SpecificationProposalMessage) => (
-      updateSpecificationProposal(state, message).state
-    ),
-    undefined,
-    createSpecificationProposalState,
-  );
-  const [buildState, dispatchBuild] = useReducer(
-    (state: ReturnType<typeof createBuildControlState>, message: BuildControlMessage) => (
-      updateBuildControl(state, message).state
-    ),
-    undefined,
-    createBuildControlState,
-  );
-  const [assuranceState, dispatchAssurance] = useReducer(
-    (state: ReturnType<typeof createAssuranceAttentionState>, message: AssuranceAttentionMessage) => (
-      updateAssuranceAttention(state, message).state
-    ),
-    undefined,
-    createAssuranceAttentionState,
-  );
-  const [runObservationState, setRunObservationState] = useState(INITIAL_RUN_OBSERVATION_STATE);
-  const [portfolioAttentionFocus, setPortfolioAttentionFocus] = useState<BuildPortfolioAttentionFocus | null>(null);
-  const requestedProjectRoot = useRef<string | null>(null);
-  const processedCommandIds = useRef(new Set<string>());
-  const processedPortfolioCommandIds = useRef(new Set<string>());
-  const processedProposalCommandIds = useRef(new Set<string>());
-  const processedBuildCommandIds = useRef(new Set<string>());
-  const processedAssuranceCommandIds = useRef(new Set<string>());
-  const commandSequence = useRef(0);
-
-  function nextCommandIdentity(kind: string) {
-    commandSequence.current += 1;
-    return {
-      commandId: `developer-control-${kind}-${commandSequence.current}`,
-      correlationId: `project:${projectRoot}:${kind}:${commandSequence.current}`,
-    };
-  }
-
-  function requestSurface(surface: DeveloperControlSurface, runFocus: RunInspectorFocus | null = null) {
-    const identity = nextCommandIdentity("navigate");
-    dispatchHost({
-      type: "host/navigation-requested",
-      command: {
-        type: "host.project-navigation",
-        ...identity,
-        projectRoot,
-        surface,
-        runFocus,
-      },
-    });
-  }
-
-  function interpretSupportingCommands(commands: SupportingSurfaceCommand[]) {
-    for (const command of commands) requestSurface(command.surface);
-  }
-
-  function dispatchWorkbench(message: ProjectWorkbenchMessage) {
-    setWorkbenchState((current) => updateProjectWorkbench(current, message).state);
-  }
-
-  function dispatchRunObservation(message: RunObservationMessage) {
-    const result = updateRunObservation(runObservationState, message);
-    setRunObservationState(result.state);
-    interpretSupportingCommands(result.commands);
-  }
-
-  function requestContext(root: string) {
-    const identity = nextCommandIdentity("context");
-    dispatchHost({
-      type: "host/context-requested",
-      command: {
-        type: "host.resolve-context",
-        ...identity,
-        projectRoot: root,
-      },
-    });
-  }
 
   useEffect(() => {
-    if (!projectRoot || requestedProjectRoot.current === projectRoot) return;
-    requestedProjectRoot.current = projectRoot;
-    requestContext(projectRoot);
+    dispatch({ type: "aggregate/project-observed", projectRoot });
   }, [projectRoot]);
 
-  useEffect(() => {
-    dispatchPortfolio({ type: "portfolio/context-changed", projectRoot });
-  }, [projectRoot]);
-
-  useEffect(() => {
-    const context = hostState.bootstrap?.context;
-    if (!context || context.project.root !== projectRoot) return;
-    dispatchProposal({
-      type: "proposal/context-changed",
-      project: context.project,
-      revision: context.revision,
+  const subscriptions = selectDeveloperControlAggregateSubscriptions(state);
+  const activeSurface = selectDeveloperControlPresentedSurface(state);
+  const bootstrap = state.host.bootstrap?.context.project.root === state.projectRoot
+    ? state.host.bootstrap
+    : null;
+  const dispatchWorkbench = (message: ProjectWorkbenchMessage) => {
+    dispatch({ type: "aggregate/workbench-message", message });
+  };
+  const dispatchPortfolio = (message: BuildPortfolioMessage) => {
+    dispatch({ type: "aggregate/portfolio-message", message });
+  };
+  const dispatchProposal = (message: SpecificationProposalMessage) => {
+    dispatch({ type: "aggregate/proposal-message", message });
+  };
+  const dispatchBuild = (message: BuildControlMessage) => {
+    dispatch({ type: "aggregate/build-message", message });
+  };
+  const dispatchAssurance = (message: AssuranceAttentionMessage) => {
+    dispatch({ type: "aggregate/assurance-message", message });
+  };
+  const dispatchRunObservation = (message: RunObservationMessage) => {
+    dispatch({ type: "aggregate/run-observation-message", message });
+  };
+  const handleSidecarContextChange = useCallback((context: ContextRecord) => {
+    dispatch({
+      type: "aggregate/project-activation-requested",
+      projectRoot: context.project.root,
     });
-    dispatchBuild({
-      type: "build/context-changed",
-      project: context.project,
-      revision: context.revision,
-    });
-  }, [
-    hostState.bootstrap?.context.project.root,
-    hostState.bootstrap?.context.revision?.sourceDigest,
-    hostState.bootstrap?.context.revision?.specificationDigest,
-    projectRoot,
-  ]);
-
-  useEffect(() => {
-    const handleRegistryChange = () => dispatchPortfolio({ type: "portfolio/refresh-requested" });
-    window.addEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleRegistryChange);
-    return () => window.removeEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleRegistryChange);
   }, []);
-
-  useEffect(() => {
-    for (const command of hostState.pendingCommands) {
-      if (processedCommandIds.current.has(command.commandId)) continue;
-      processedCommandIds.current.add(command.commandId);
-      void interpretDeveloperControlCommand(command).then(dispatchHost);
-    }
-  }, [hostState.pendingCommands]);
-
-  useEffect(() => {
-    for (const command of portfolioState.pendingCommands) {
-      if (processedPortfolioCommandIds.current.has(command.commandId)) continue;
-      processedPortfolioCommandIds.current.add(command.commandId);
-      void interpretBuildPortfolioCommand(command).then(dispatchPortfolio);
-    }
-  }, [portfolioState.pendingCommands]);
-
-  useEffect(() => {
-    for (const command of proposalState.pendingCommands) {
-      if (processedProposalCommandIds.current.has(command.commandId)) continue;
-      processedProposalCommandIds.current.add(command.commandId);
-      if (command.type === "proposal.refresh-context") {
-        requestContext(command.projectRoot);
-        dispatchProposal({ type: "proposal/supporting-command-consumed", commandId: command.commandId });
-      } else {
-        void interpretSpecificationProposalCommand(command).then(dispatchProposal);
-      }
-    }
-  }, [proposalState.pendingCommands]);
-
-  useEffect(() => {
-    for (const command of buildState.pendingCommands) {
-      if (processedBuildCommandIds.current.has(command.commandId)) continue;
-      processedBuildCommandIds.current.add(command.commandId);
-      void interpretBuildControlCommand(command).then(dispatchBuild);
-    }
-  }, [buildState.pendingCommands]);
-
-  useEffect(() => {
-    for (const command of assuranceState.pendingCommands) {
-      if (processedAssuranceCommandIds.current.has(command.commandId)) continue;
-      processedAssuranceCommandIds.current.add(command.commandId);
-      if (command.type === "assurance.open-run-inspector") {
-        if (!command.executionId) {
-          dispatchAssurance({ type: "assurance/supporting-command-consumed", commandId: command.commandId });
-          continue;
-        }
-        requestSurface("run-inspector", {
-          projectRoot: command.projectRoot,
-          executionId: command.executionId,
-          runRef: command.runRef,
-          revision: command.revision,
-          sourceRef: command.sourceRef,
-        });
-        dispatchAssurance({ type: "assurance/supporting-command-consumed", commandId: command.commandId });
-      } else {
-        void interpretAssuranceAttentionCommand(command).then(dispatchAssurance);
-      }
-    }
-  }, [assuranceState.pendingCommands]);
-
-  const buildPollSubscription = hostState.bootstrap?.context.project.root === projectRoot
-    ? buildControlModule.subscriptions(buildState, hostState.bootstrap.context)[0] ?? null
-    : null;
-
-  useEffect(() => {
-    if (!buildPollSubscription) return undefined;
-    const timer = window.setInterval(() => {
-      dispatchBuild({ type: "build/refresh-requested" });
-    }, buildPollSubscription.intervalMs);
-    return () => window.clearInterval(timer);
-  }, [buildPollSubscription?.projectRoot, buildPollSubscription?.intervalMs]);
-
-  const portfolioPollSubscription = hostState.bootstrap?.context.project.root === projectRoot
-    ? buildPortfolioModule.subscriptions(portfolioState, hostState.bootstrap.context)[0] ?? null
-    : null;
-
-  useEffect(() => {
-    if (!portfolioPollSubscription) return undefined;
-    const timer = window.setInterval(() => {
-      dispatchPortfolio({ type: "portfolio/refresh-requested" });
-    }, portfolioPollSubscription.intervalMs);
-    return () => window.clearInterval(timer);
-  }, [portfolioPollSubscription?.projectRoot, portfolioPollSubscription?.intervalMs]);
-
-  const buildProjectionSignature = (buildState.snapshot?.executions ?? [])
-    .map((execution) => `${execution.executionId}:${execution.state}:${execution.updatedAt}`)
-    .join("|");
-
-  useEffect(() => {
-    if (!buildState.snapshot) return;
-    dispatchPortfolio({ type: "portfolio/refresh-requested" });
-  }, [buildState.snapshot?.projectRoot, buildProjectionSignature]);
-
-  const selectedBuildExecution = buildState.snapshot?.executions.find(
-    (execution) => execution.executionId === buildState.selectedExecutionId,
-  ) ?? null;
-
-  useEffect(() => {
-    const context = hostState.bootstrap?.context;
-    if (!context || context.project.root !== projectRoot) return;
-    dispatchAssurance({
-      type: "assurance/context-changed",
-      project: context.project,
-      revision: context.revision,
-      executionId: selectedBuildExecution?.executionId ?? null,
-    });
-  }, [
-    hostState.bootstrap?.context.project.root,
-    hostState.bootstrap?.context.revision?.sourceDigest,
-    hostState.bootstrap?.context.revision?.specificationDigest,
-    selectedBuildExecution?.executionId,
-    projectRoot,
-  ]);
-
-  useEffect(() => {
-    if (!selectedBuildExecution || assuranceState.executionId !== selectedBuildExecution.executionId) return;
-    dispatchAssurance({ type: "assurance/refresh-requested" });
-  }, [selectedBuildExecution?.executionId, selectedBuildExecution?.updatedAt]);
-
-  useEffect(() => {
-    if (!portfolioState.activatedProjectRoot) return;
-    const nextRoot = portfolioState.activatedProjectRoot;
-    dispatchPortfolio({ type: "portfolio/project-activation-consumed" });
-    if (nextRoot !== projectRoot) onProjectRootChange(nextRoot);
-  }, [onProjectRootChange, portfolioState.activatedProjectRoot, projectRoot]);
-
-  useEffect(() => {
-    if (!portfolioState.openedAttention) return;
-    const focus = portfolioState.openedAttention;
-    dispatchPortfolio({ type: "portfolio/attention-focus-consumed" });
-    setPortfolioAttentionFocus(focus);
-    if (focus.projectRoot !== projectRoot) onProjectRootChange(focus.projectRoot);
-  }, [onProjectRootChange, portfolioState.openedAttention, projectRoot]);
-
-  useEffect(() => {
-    const focus = portfolioAttentionFocus;
-    const context = hostState.bootstrap?.context;
-    if (!focus || !context || context.project.root !== focus.projectRoot || projectRoot !== focus.projectRoot) return;
-
-    if (focus.targetCapabilityId === "specification-proposal") {
-      dispatchWorkbench({ type: "workbench/phase-selected", phase: "tune" });
-      dispatchProposal({ type: "proposal/context-attached", sourceRef: focus.sourceRef });
-      setPortfolioAttentionFocus(null);
-      return;
-    }
-
-    if (focus.targetCapabilityId === "build-control") {
-      dispatchWorkbench({ type: "workbench/phase-selected", phase: "build" });
-      if (focus.sourceKind !== "build-execution") {
-        setPortfolioAttentionFocus(null);
-        return;
-      }
-      const executionId = focus.sourceRef.startsWith("build-execution://")
-        ? focus.sourceRef.slice("build-execution://".length)
-        : null;
-      if (executionId && buildState.snapshot?.executions.some((entry) => entry.executionId === executionId)) {
-        dispatchBuild({ type: "build/execution-selected", executionId });
-        setPortfolioAttentionFocus(null);
-      } else if (buildState.snapshot && buildState.status !== "loading") {
-        setPortfolioAttentionFocus(null);
-      }
-      return;
-    }
-
-    dispatchWorkbench({ type: "workbench/phase-selected", phase: "assure" });
-    dispatchAssurance({ type: "assurance/filter-selected", filter: "attention" });
-    if (assuranceState.snapshot?.attentionItems.some((entry) => entry.attentionId === focus.attentionId)) {
-      dispatchAssurance({ type: "attention/item-selected", attentionId: focus.attentionId });
-      setPortfolioAttentionFocus(null);
-    } else if (assuranceState.snapshot && assuranceState.status !== "loading") {
-      setPortfolioAttentionFocus(null);
-    }
-  }, [
-    assuranceState.snapshot,
-    assuranceState.status,
-    buildState.snapshot,
-    buildState.status,
-    hostState.bootstrap?.context.project.root,
-    portfolioAttentionFocus,
-    projectRoot,
-  ]);
-
-  const activeSurface = hostState.requestedSurface ?? hostState.activeSurface;
-  const bootstrap = hostState.bootstrap?.context.project.root === projectRoot
-    ? hostState.bootstrap
-    : null;
 
   return (
     <section className="developer-control-host" aria-label="Developer control host">
+      {state.pendingCommands.map((command) => (
+        <AggregateCommandInterpreter
+          key={command.aggregateCommandId}
+          command={command}
+          dispatch={dispatch}
+          activateProject={onProjectRootChange}
+        />
+      ))}
+      {subscriptions.map((subscription) => (
+        <AggregateSubscriptionInterpreter
+          key={subscription.subscriptionId}
+          subscription={subscription}
+          dispatch={dispatch}
+        />
+      ))}
+
       <nav className="developer-control-host__navigation" aria-label="Developer control surfaces">
         <div role="tablist" aria-label="Developer control surfaces">
           {SURFACES.map((surface) => (
             <button
               key={surface.id}
+              id={`developer-control-tab-${surface.id}`}
               type="button"
               role="tab"
               aria-selected={activeSurface === surface.id}
+              aria-controls={`developer-control-panel-${surface.id}`}
+              tabIndex={activeSurface === surface.id ? 0 : -1}
               className={activeSurface === surface.id ? "is-active" : ""}
-              onClick={() => requestSurface(surface.id)}
+              onClick={() => dispatch({
+                type: "aggregate/surface-requested",
+                surface: surface.id,
+              })}
+              onKeyDown={(event) => {
+                const next = surfaceFromKeyboard(event, surface.id);
+                if (!next) return;
+                event.preventDefault();
+                dispatch({
+                  type: "aggregate/surface-requested",
+                  surface: next.id,
+                });
+                const tab = event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                  `#developer-control-tab-${next.id}`,
+                );
+                tab?.focus();
+              }}
             >
               {surface.label}
             </button>
           ))}
         </div>
         <span
-          className={`developer-control-host__context-state developer-control-host__context-state--${hostState.contextStatus}`}
+          className={`developer-control-host__context-state developer-control-host__context-state--${state.host.contextStatus}`}
           role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          {hostState.contextStatus === "ready" ? "Context admitted" : hostState.contextStatus}
+          {state.host.contextStatus === "ready" ? "Context admitted" : state.host.contextStatus}
         </span>
       </nav>
 
-      {hostState.error ? (
+      {state.host.error ? (
         <div className="developer-control-host__error" role="alert">
-          <span>{hostState.error}</span>
-          <button type="button" className="secondary" onClick={() => requestContext(projectRoot)}>
+          <span>{state.host.error}</span>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => dispatch({ type: "aggregate/context-retry-requested" })}
+          >
             Retry Context
           </button>
         </div>
       ) : null}
 
-      <div className="developer-control-host__surface">
+      <div
+        id={`developer-control-panel-${activeSurface}`}
+        className="developer-control-host__surface"
+        role="tabpanel"
+        aria-labelledby={`developer-control-tab-${activeSurface}`}
+        tabIndex={0}
+      >
         {activeSurface !== "project-workbench" ? (
           <div className="workspace-view workspace-view--sidecar">
             <SidecarPanel
-              projectRoot={projectRoot}
+              projectRoot={state.projectRoot}
               initialSurface={activeSurface}
-              runFocus={runInspectorFocus(window.location.search, projectRoot)}
-              onContextChange={(context) => {
-                if (context.project.root !== projectRoot) {
-                  onProjectRootChange(context.project.root);
-                }
-              }}
+              runFocus={state.runFocus}
+              onContextChange={handleSidecarContextChange}
             />
           </div>
         ) : bootstrap ? (
           <WorkbenchComposition
             bootstrap={bootstrap}
-            workbenchState={workbenchState}
+            workbenchState={state.workbench}
             dispatchWorkbench={dispatchWorkbench}
-            portfolioState={portfolioState}
+            portfolioState={state.portfolio}
             dispatchPortfolio={dispatchPortfolio}
-            proposalState={proposalState}
+            proposalState={state.proposal}
             dispatchProposal={dispatchProposal}
-            buildState={buildState}
+            buildState={state.build}
             dispatchBuild={dispatchBuild}
-            assuranceState={assuranceState}
+            assuranceState={state.assurance}
             dispatchAssurance={dispatchAssurance}
-            runObservationState={runObservationState}
+            runObservationState={state.runObservation}
             dispatchRunObservation={dispatchRunObservation}
           />
         ) : (
           <div
             className="developer-control-host__loading"
-            aria-busy={hostState.contextStatus === "loading"}
+            aria-busy={state.host.contextStatus === "loading"}
             aria-label="Resolving Project Workbench context"
           >
-            <span>{hostState.contextStatus === "error" ? "Project Context unavailable" : "Resolving Project Context"}</span>
-            <code>{projectRoot}</code>
+            <span>{state.host.contextStatus === "error" ? "Project Context unavailable" : "Resolving Project Context"}</span>
+            <code>{state.projectRoot}</code>
           </div>
         )}
       </div>
@@ -495,18 +369,18 @@ export function DeveloperControlHost({
 }
 
 type WorkbenchCompositionProps = {
-  bootstrap: NonNullable<ReturnType<typeof createDeveloperControlHostState>["bootstrap"]>;
-  workbenchState: typeof INITIAL_PROJECT_WORKBENCH_STATE;
+  bootstrap: DeveloperControlBootstrap;
+  workbenchState: DeveloperControlAggregateState["workbench"];
   dispatchWorkbench: (message: ProjectWorkbenchMessage) => void;
-  portfolioState: ReturnType<typeof createBuildPortfolioState>;
+  portfolioState: DeveloperControlAggregateState["portfolio"];
   dispatchPortfolio: (message: BuildPortfolioMessage) => void;
-  proposalState: ReturnType<typeof createSpecificationProposalState>;
+  proposalState: DeveloperControlAggregateState["proposal"];
   dispatchProposal: (message: SpecificationProposalMessage) => void;
-  buildState: ReturnType<typeof createBuildControlState>;
+  buildState: DeveloperControlAggregateState["build"];
   dispatchBuild: (message: BuildControlMessage) => void;
-  assuranceState: ReturnType<typeof createAssuranceAttentionState>;
+  assuranceState: DeveloperControlAggregateState["assurance"];
   dispatchAssurance: (message: AssuranceAttentionMessage) => void;
-  runObservationState: typeof INITIAL_RUN_OBSERVATION_STATE;
+  runObservationState: DeveloperControlAggregateState["runObservation"];
   dispatchRunObservation: (message: RunObservationMessage) => void;
 };
 

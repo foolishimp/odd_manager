@@ -5,6 +5,13 @@
 **Tickets**: T-036, T-037
 **Requirements**: REQ-OM-BLD-001 through REQ-OM-BLD-009
 **Governance**: STDO-UX (`DESIGN_MODULE_METHOD`, `UX_METHOD`)
+**Implements**: `PO-OM-BOUNDARY-001`; `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `REQ-OM-BLD-*`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/build-control/index.ts`; `build_tenants/react_vite/src/effects/command-runtime/build-control-command-runtime.ts`; `build_tenants/react_vite/src/server/build-control-service.mjs`; `build_tenants/react_vite/src/server/build-execution-adapter-registry.mjs`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_build_control_replay.mjs` :: `Build Msg replay carries one typed submit through selection and output attachment`; `build_tenants/react_vite/runtime/tests/test_build_control_service.mjs` :: `descriptor admission fails closed for missing, invalid, mismatched, and uninstalled carriers`; `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts` :: `Build Control submits, supervises, attaches, converges, and cancels real fixture processes`
+**STDO-UX Bindings**: State=BuildControlState; Msg=BuildControlMessage; Update=updateBuildControl; Cmd=BuildControlCommand; Sub=BuildControlSubscription; Ingress=build descriptor request execution and result schemas in developer-control-contracts; View=BuildControlView; Membrane=build-control-command-runtime and build-control-service; Replay=build_tenants/react_vite/runtime/tests/test_build_control_replay.mjs :: Build Msg replay carries one typed submit through selection and output attachment; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer control and workbench tabs provide keyboard parity and named panels
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001` in the parent design; this module projects `P-CONTEXT`, `P-COMMAND`, `P-RESULT`, `P-SUBSCRIPTION`, `P-FAIL-CLOSED`, and `P-AUTHORITY`.
+**Accessibility Proof Scope**: Build navigation, named availability/status, keyboard access, live output controls, representative contrast, and responsive containment are exercised by the accepted operator proof bundle.
+**Implementation Acceptance**: Accepted for the manager-local typed admission and supervision module subject to the exact T-032 validation bundle. The live odd_glc Build operation remains unavailable until odd_glc publishes the required descriptor and adapter; fixture process proof is not that carrier.
 **Common ADR**: `build_tenants/common/design/adrs/ADR-001-canonical-ux-functions-and-projection-instances.md`
 
 ## Responsibility
@@ -24,7 +31,7 @@ assurance. A process outcome remains distinct from ABG and assurance truth.
 | --- | --- | --- | --- |
 | `BuildCarrierDescriptor` | Published semantic program and adapter identity | Authoritative product input | Shared public contract |
 | `BuildExecutionAdapterRegistry` | Digest-pinned server installation of executable adapter functions | Authoritative manager-local configuration | Effect-edge only |
-| `BuildRequest` | Immutable attributed request over Project Revision and descriptor | Authoritative manager command record | Shared public contract |
+| `BuildRequest` | Immutable attributed request over Project Revision, complete descriptor, and installed adapter binding | Authoritative manager command record | Shared public contract |
 | `BuildExecution` | Durable manager queue/process/run correlation | Authoritative only for manager lifecycle | Shared public contract |
 | `BuildControlSnapshot` | Replayable queue and execution projection | Downstream read model | Shared public contract |
 | `BuildControlCommand` | Load, submit, attach, cancel effect plan | Effect-edge only | Capability public entry |
@@ -56,7 +63,8 @@ classDiagram
     +requestId
     +project
     +revision
-    +descriptorRef
+    +descriptorBinding
+    +adapterBinding
     +inputs
   }
 
@@ -151,6 +159,9 @@ may later supply the same descriptor contract without changing Build Control.
 
 Admission requires:
 
+- one regular non-symlink descriptor file at the exact
+  `<Project>/.odd/build-carrier.json` path under a realpath-contained
+  non-symlink `.odd` directory;
 - schema-valid descriptor identity;
 - descriptor product identity compatible with selected Project identity;
 - `submit` support;
@@ -161,6 +172,14 @@ Admission requires:
 
 Missing descriptor or adapter produces typed `unavailable` or `unsupported`
 posture. No shell fallback exists.
+
+Admission freezes the complete validated descriptor and the installed
+adapter's digest-bearing source-ref binding into the Build Request. Those
+bindings, rather than a later mutable Project descriptor, govern queued start,
+reconnect observation, resume, and cancellation for that request. Current
+descriptor discovery governs only new request admission and current
+availability projection. A same-ref adapter whose installed source binding has
+changed is not the admitted adapter and fails closed for existing work.
 
 Descriptor publication does not install executable authority. Production
 adapter installation is a separate manager-local action governed by the
@@ -179,6 +198,19 @@ It excludes repository metadata, dependency caches, generated output, and
 runtime state. It observes the Project Revision before and after provisioning;
 drift fails before process start. The worksite path is minted by the server and
 is never accepted from browser input.
+
+`sourceDigest` content-addresses the complete included Project tree, including
+tracked, untracked, and otherwise included ignored file bytes plus symlink
+targets, using the same exclusion law as the provisioner. Its canonical tuples
+distinguish directory, regular-file, and symlink carriers; regular files also
+carry executable versus non-executable semantics. Unsupported special files
+fail admission. Generated-output exclusions are confined to named Project,
+tenant, package, and test-artifact roots, so a lawful nested source directory
+such as `src/build` or `src/dist` remains part of the basis and worksite. An
+included ignored carrier makes the basis an explicit worktree. A same-path
+content, carrier-kind, or executable-semantics change therefore creates a
+different Project Revision even when Git porcelain path/status text is
+unchanged.
 
 A product may publish another provisioner ref only after it is installed in the
 allowlisted server registry and preserves the same immutable-basis contract.
@@ -235,7 +267,11 @@ Admission law:
 
 - the registry and adapter module are regular non-symlink files;
 - the registry schema is strict and adapter identities are unique;
-- every module is SHA-256 pinned before import;
+- every module is read once, SHA-256 verified, and imported from the resulting
+  manager-owned exact byte buffer rather than re-opened through its mutable
+  installation pathname;
+- adapter modules are self-contained ESM carriers: the exact pinned bytes, not
+  an unpinned relative dependency graph, establish executable authority;
 - the exported factory must return the exact registered `adapterRef` plus
   `validateInputs` and `createProcessPlan` functions;
 - optional `observeExecution` and `cancelExecution` lifecycle methods remain
@@ -248,7 +284,9 @@ Admission law:
 
 The adapter factory is trusted executable server code. Trust is conferred by
 operator installation plus the registry digest, not by product publication.
-Its `validateInputs` result becomes the only admitted request input. Its process
+The factory receives only adapter identity and digest provenance, with no
+mutable registry or module pathname from which to reacquire authority. Its
+`validateInputs` result becomes the only admitted request input. Its process
 plan remains internal and is schema-validated again by the supervisor.
 
 ### Internal process-plan membrane
@@ -286,10 +324,43 @@ and correlation identity. Submit also carries only parsed declared input and
 requester identity. Attach, cancel, and resume carry the named execution
 identity and actor.
 
-Success and failure return typed Msg variants. A host subscription adapter
-requests snapshot refresh while executions are queued, starting, running,
-waiting-human, stale, or disconnected. Late Project, revision, request, and
-execution results are rejected by the reducer.
+Success and failure return typed Msg variants. Reducer admission cross-checks
+the exact Project and current command basis, unique snapshot request/execution
+identities, request-to-execution correlation and revision, submit requester,
+the exact adapter-admitted input repeated by the returned request and snapshot,
+descriptor-bound request fields, snapshot membership, attachment
+output identity, and the immutable request/correlation/Project/revision/
+worksite/attempt identity of an attach, cancel, resume, or optional failure
+execution. The reducer does not compare the admitted request input to the raw
+pre-admission command input or reimplement adapter normalization; that would
+reject lawful defaults and create a second input contract. A host subscription
+adapter requests snapshot refresh while executions are queued, starting,
+running, waiting-human, stale, or disconnected. Each admitted `build.poll`
+dispatches `build/poll-ticked`; the reducer emits at most one `build.load` and
+coalesces later timer ticks while that load remains pending. An explicit
+refresh or an accepted cancellation/cancellation-acknowledgement arriving
+behind that load sets one `refreshQueued` continuation. Repeated explicit or
+mutation-driven requests collapse into that same slot. When the older load
+succeeds or fails, its result is retired without installation and one fresh
+correlated load consumes the slot; periodic ticks never occupy it. Late or
+relationally incoherent Project, revision, request, and execution results are
+rejected by the reducer.
+
+A durable supervisor store is admitted only when request, execution, and
+correlation identities are unique; every request has exactly one execution;
+and each execution repeats the exact request Project, Project Revision, and
+correlation relation. Load, restart, and every subsequent store commit apply
+the same relational validation and fail closed before projecting or acting on
+incoherent history.
+
+A submit result must mint request, correlation, and execution identities absent
+from the pre-submit snapshot. Snapshot observation time, request time, and all
+execution/process/output times are canonical UTC timestamps. Reloaded history
+cannot delete a known request, rewrite immutable execution identity, regress
+time or lifecycle, or alter a terminal outcome. Scheduler running/queued counts
+are global supervisor truth: they must cover at least the Project-local
+execution rows, remain within configured limits, and derive exact available
+slots without being falsely reconstructed from one Project snapshot.
 
 ## Lifecycle Semantics
 
@@ -301,16 +372,41 @@ queued -> starting -> running -> converged | failed | cancelled
 `converged` requires a typed terminal result from the selected execution
 adapter. Exit code zero alone is process outcome only. The fixture adapter may
 publish its own typed fixture terminal result; it carries no product assurance.
+Waiting-human, converged, failed, and cancelled records carry coherent
+completion and process-outcome meaning; non-terminal records cannot borrow a
+terminal outcome.
 
 Restart/reconnect reloads the durable execution identity. Formerly active work
 first projects `stale`, then `disconnected` after the bounded recovery window.
-If the descriptor publishes `resume`, the installed adapter must return a
-typed observation for the same execution identity. Resumed external work is
-polled through that adapter, and the durable execution records reconnect actor
-and time. An observation that remains stale or disconnected fails the command.
-Cancellation of a process no longer owned by the current Node process requires
-adapter-confirmed cancellation; store mutation alone cannot claim the process
-stopped. No connectivity state is silently converted to failed or converged.
+If the request-bound descriptor publishes `resume`, the exact request-bound
+installed adapter must return a typed observation for the same execution
+identity. Resumed external work is polled through that adapter, and the durable
+execution records reconnect actor and time. Running and typed waiting-human,
+converged, or failed observations are durably admitted for that same execution;
+an observation that remains stale or disconnected fails the command. A restart
+that observes durable `starting`
+without a process ref aborts that pre-execution launch as `failed`: the
+supervisor starts a same-PID shell gate, durably commits the process identity
+by fsyncing the state carrier and its containing directory, and only then
+releases the Product executable. Hook failure, store-write failure, or restart
+before that commit closes the gate and terminates the blocked child, so no
+Product work can have occurred. Cancellation of any process no longer owned by
+the current Node process requires request-bound adapter confirmation; store
+mutation alone cannot claim the process stopped. No connectivity state is
+silently converted to failed or converged.
+For a live manager-owned process, accepted signal delivery returns a typed
+cancellation acknowledgement that preserves the non-terminal execution and
+attributed cancel intent. The reducer retires the cancel command and refreshes.
+The attributed cancel intent is durably committed before either local signal
+delivery or a request-bound external adapter cancellation call. A failed intent
+commit therefore has zero cancellation effect; confirmation is a later durable
+transition derived from an observed signal-bearing close or the adapter's typed
+result.
+Only a later process close carrying an observed termination signal and paired
+cancel attribution (or an adapter-confirmed external cancel) may emit the
+terminal `build/cancelled` result. A normal close without a termination signal
+preserves any typed carrier result even when signal delivery was accepted; it
+must not manufacture cancellation.
 
 ## UX Projection
 
@@ -324,6 +420,11 @@ The canonical Build Control projection includes:
 - bounded stdout/stderr tail;
 - refresh, attach, cancel, carrier-gated reconnect, and Run Inspector
   navigation where lawful.
+
+Existing execution supervision remains visible when current descriptor
+discovery becomes unavailable or unsupported. Its cancel/resume affordances
+derive from the selected request's immutable descriptor binding; only new
+submission derives from the current descriptor projection.
 
 Build remains a single canonical function under common ADR-001. Portfolio rows
 consume its downstream snapshot; they do not reconstruct supervisor truth.
@@ -346,14 +447,27 @@ adapter. Its T-033 declarations-only adoption remains blocked on ABIogenesis
   before request admission;
 - missing, malformed, duplicate, digest-drifted, identity-mismatched, and
   reserved-fixture production adapter installs fail closed;
+- mutation of the adapter installation pathname after pinning cannot change the
+  exact manager-owned bytes imported for execution;
 - a digest-pinned external adapter executes through production service with
   fixture mode disabled;
 - process plans cannot escape the minted worksite or terminal-result path;
 - request schema and exact-basis admission;
+- immutable descriptor and digest-bearing adapter bindings survive mutable
+  Project descriptor drift, while same-ref adapter binding drift fails closed;
 - immutable worksite snapshot and drift rejection;
+- copied worksite symlinks cannot re-root to mutable Project source or excluded
+  carriers after rebasing;
 - queued, starting, running, typed terminal, failed, cancelled, stale,
   disconnected, refresh, adapter observation, reconnect, and external
   cancellation lifecycle;
+- restart refuses duplicate or relationally incoherent request, execution, and
+  correlation history;
+- cancellation persistence faults prove no local signal or external adapter
+  cancellation occurs before durable attributed intent;
+- restart, hook failure, and durable-store failure at the launch boundary keep
+  Product work behind the same-PID gate, terminate the blocked child, and
+  project a typed pre-execution failure without manufacturing Product work;
 - process outcome remains separate from run and assurance truth;
 - reducer Msg replay and cross-Project late-result rejection;
 - no browser executable, argv, shell fallback, test-harness, or arbitrary

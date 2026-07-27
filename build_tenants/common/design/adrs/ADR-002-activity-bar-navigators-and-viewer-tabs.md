@@ -2,8 +2,8 @@
 Status: accepted
 Date: 2026-07-11
 Governance:
-  - specification_methodology/specification/standards/DESIGN_MODULE_METHOD.md
-  - specification_methodology/specification/standards/UX_METHOD.md
+  - .genesis/docs/standards/DESIGN_MODULE_METHOD.md
+  - .genesis/docs/standards/UX_METHOD.md
 Derives from:
   - build_tenants/common/design/adrs/ADR-001-canonical-ux-functions-and-projection-instances.md
   - build_tenants/common/design/AI_WORKSPACE_OBSERVABILITY_MIGRATION.md
@@ -12,6 +12,14 @@ Superseded by: none
 ---
 
 # ADR-002: Activity-Bar Navigators And Viewer Tabs
+
+**Implements**: `PO-OM-OBSERVE-001`; `PO-OM-LENSES-001`; `PO-OM-DEVELOPER-001`; `PO-OM-AUDIT-001`; `REQ-OM-NAV-*`; `REQ-OM-INS-*`; `REQ-OM-LNS-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx`; `build_tenants/react_vite/src/features/sidecar/sidecar-state.ts`; `build_tenants/react_vite/src/features/sidecar/ai-workspace-browser.ts`
+**Executable Proof**: `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts` :: `sidecar selector uses the same filesystem browser for tickets and comments`; `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts` :: `AI Workspace delegates Tickets and Comments to canonical left navigators`; `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts` :: `sidecar Build Tenants is a first-class navigator rather than a pinned favorite`
+**STDO-UX Bindings**: State=SidecarState provider flyout and viewer-workspace slices; Msg=SidecarMsg provider selection browser and viewer-tab variants; Update=reduceSidecarState; Cmd=SidecarCmd load and navigation commands; Sub=no autonomous provider subscription with refresh command-driven; Ingress=filesystem browser and AI Workspace response validation; View=SidecarPanel activity bar flyout and viewer groups; Membrane=Sidecar HTTP browser and navigation effect adapters; Replay=build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs :: rail flyout surface selection replays without Cmd effects; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts :: sidecar selector uses the same filesystem browser for tickets and comments
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001`; this ADR projects `P-CONTEXT`, `P-OBSERVATION`, and `P-REPLAY`.
+**Accessibility Proof Scope**: Navigator/viewer keyboard traversal, focus return, expanded/selected annotations, representative contrast, and responsive containment are exercised by the declared operator bundle.
+**Implementation Acceptance**: Accepted for the manager-local activity-bar, navigator, and viewer-tab relation subject to the exact T-032 validation bundle.
 
 ## Context
 

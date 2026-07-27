@@ -5,7 +5,15 @@
 - status: open
 - goal: realize-ai-workspace-topology-and-agent-interoperability
 - opened_at: 2026-05-04T22:50:00Z
-- updated_at: 2026-05-04T22:50:00Z
+- updated_at: 2026-07-26
+- selected_method_release: STDO v2.2.1
+- selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+- selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+- growth_authority: review_and_disposition_only
+
+This sprint remains open only for review and direct disposition of its retained
+closure claim. Its completed tickets and evidence do not authorize further
+realization.
 
 ## Authority
 
@@ -14,11 +22,11 @@
 - specification/requirements/04-orientation-and-navigation.md
 - abiogenesis 3.5.0-rc.1 substrate (T-108 traced process, T-109 universal traced call-out, T-110 odd_sdlc migration, T-111 PTY executor — all closed upstream)
 - odd_sdlc TypeScript tenant publishing `odd_sdlc.query-domain ts-v1` (the contract REQ-OM-LNS-003 obligates)
-- /Users/jim/src/apps/specification_methodology/specification/standards/UX_METHOD.md
-- /Users/jim/src/apps/specification_methodology/specification/standards/SPEC_METHOD.md
-- /Users/jim/src/apps/specification_methodology/specification/standards/TICKET_METHOD.md
-- /Users/jim/src/apps/specification_methodology/specification/standards/DESIGN_MODULE_METHOD.md
-- /Users/jim/src/apps/specification_methodology/specification/standards/ODD_METHOD.md
+- .genesis/docs/standards/UX_METHOD.md
+- .genesis/docs/standards/SPEC_METHOD.md
+- .genesis/docs/standards/TICKET_METHOD.md
+- .genesis/docs/standards/DESIGN_MODULE_METHOD.md
+- .genesis/docs/standards/ODD_METHOD.md
 - canonical reference run for installed-state shape: `/Users/jim/src/apps/odd_sdlc/build_tenants/typescript/test_env/test_runs/t109_live_installed_data_mapper_pty/<latest>/workspace/`
 
 ## Triage Grounding
@@ -138,11 +146,11 @@ The sprint closes when all four included tickets reach `completed` and sprint cl
 
 ## Included Tickets
 
-- `tickets/active/T-022-surface-abg-3-5-traced-callout-runtime-evidence-in-runtimepanel.md`
-- `tickets/active/T-024-render-per-edge-outcome-and-executor-in-processworkspace.md`
-- `tickets/active/T-025-audit-additional-tabs-for-new-substrate-coverage.md`
-- `tickets/active/T-026-rebuild-process-navigator-over-live-ts-projection.md`
-- `tickets/active/B-079-reprice-process-navigator-to-current-odd-sdlc-node-state.md`
+- `tickets/completed/T-022-surface-abg-3-5-traced-callout-runtime-evidence-in-runtimepanel.md`
+- `tickets/completed/T-024-render-per-edge-outcome-and-executor-in-processworkspace.md`
+- `tickets/completed/T-025-audit-additional-tabs-for-new-substrate-coverage.md`
+- `tickets/completed/T-026-rebuild-process-navigator-over-live-ts-projection.md`
+- `tickets/completed/B-079-reprice-process-navigator-to-current-odd-sdlc-node-state.md`
 
 ## Excluded From This Sprint
 

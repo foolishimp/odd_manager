@@ -28,6 +28,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -71,12 +72,17 @@ import {
 } from '../../lib/collaboration';
 import type { SurfaceData, SurfaceEntry } from '../../lib/types';
 import {
+  SIDECAR_CANONICAL_PROVIDER_RELATIVE_PATHS,
   INITIAL_SIDECAR_STATE,
   SIDECAR_EXPLORER_PROVIDERS,
   SIDECAR_MAX_PANE_GROUPS,
+  SIDECAR_RUN_REFRESH_MS,
+  SIDECAR_TAIL_FOLLOW_REFRESH_MS,
   SIDECAR_WORKBENCH_LAYOUT_LIMITS,
+  oddTermReadyMatchesSubscription,
   reduceSidecarState,
   sidecarLayoutProfileFromState,
+  sidecarSubscriptions,
   traversalDetailKey,
 } from './sidecar-state';
 import {
@@ -94,6 +100,18 @@ import type { AiWorkspaceArtifactInspection } from './ai-workspace-artifact-insp
 import { asAiWorkspaceObservation } from './ai-workspace-observation-validation';
 import { asAbgRunObservation } from './abg-run-observation-validation';
 import { asTraversalProjection, asTraversalVectorDetail } from './traversal-validation';
+import {
+  asSidecarCommentCollection,
+  asSidecarContextRecord,
+  asSidecarFolderResponse,
+  asSidecarProjectCollection,
+  asSidecarSessionCollection,
+  asSidecarSpawnResult,
+  asSidecarSurfaceData,
+  asSidecarTicketCollection,
+  asSidecarUnreadIds,
+  assertContextProjectInCollection,
+} from './sidecar-ingress-validation';
 import type {
   TraversalVectorDetail,
   TraversalVectorRow,
@@ -114,6 +132,7 @@ import type {
   SidecarResizeGesture,
   SidecarResizeTarget,
   SidecarState,
+  SidecarSub,
   SidecarTraversalState,
   SidecarTerminalGroup,
   SidecarTerminalGroupId,
@@ -134,7 +153,6 @@ const SIDECAR_BACKEND = (typeof window !== 'undefined' && (window as { __SIDECAR
 const SIDECAR_LAYOUT_STORAGE_PREFIX = 'oman-sidecar-layout:';
 const SIDECAR_PINNED_FOLDERS_STORAGE_PREFIX = 'oman-sidecar-pinned-folders:';
 const SIDECAR_PATH_HISTORY_STORAGE_KEY = 'oman-sidecar-path-history';
-const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500;
 
 type NavigatorSortMode = 'time' | 'alpha';
 interface NavigatorGroupState {
@@ -194,11 +212,16 @@ function splitGridStyle(split: SidecarViewerSplit | SidecarTerminalSplit, ratios
     : { gridTemplateColumns: template };
 }
 
-function oddTermSocketUrl(projectRoot: string, sessionId: string) {
+function oddTermSocketUrl(
+  projectRoot: string,
+  sessionId: string,
+  subscriptionId: string,
+) {
   const url = new URL('/api/oddterm', window.location.origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('workspaceRoot', projectRoot);
   url.searchParams.set('sessionId', sessionId);
+  url.searchParams.set('subscriptionId', subscriptionId);
   return url.toString();
 }
 
@@ -250,30 +273,6 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function asArray<T>(value: unknown, label: string): T[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} response was not an array`);
-  }
-  return value as T[];
-}
-
-function asSessionCollection(value: unknown) {
-  const payload = asRecord(value, 'sessions');
-  return {
-    records: asArray<SessionRecord>(payload.records, 'sessions.records'),
-    diagnostic: payload.diagnostic && typeof payload.diagnostic === 'object'
-      ? payload.diagnostic as SidecarState['sessions']['diagnostic']
-      : null,
-  };
-}
-
-function unreadIdsFrom(value: unknown) {
-  const payload = asRecord(value, 'unread comments');
-  return Array.isArray(payload.unread_ids)
-    ? payload.unread_ids.filter((id): id is string => typeof id === 'string')
-    : [];
-}
-
 async function fetchJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
   const response = await fetch(input, init);
   const payload = await response.json().catch(() => null) as unknown;
@@ -300,27 +299,159 @@ function actionError(payload: Record<string, unknown>) {
   return typeof payload.error === 'string' ? payload.error : 'action failed';
 }
 
-async function interpretSidecarCommand(cmd: SidecarCmd, options: {
+async function interpretSidecarCommand(entry: PendingSidecarCmd, options: {
   backend: string;
   viewerAgent: string;
   dispatch: Dispatch<SidecarMsg>;
+  publishContext?: (context: ContextRecord) => void;
 }) {
-  const { backend, viewerAgent, dispatch } = options;
+  const { cmd } = entry;
+  const { backend, viewerAgent, dispatch, publishContext } = options;
+  if (cmd.type === 'context.publish') {
+    try {
+      publishContext?.(cmd.context);
+    } catch (caught) {
+      dispatch({
+        type: 'action/feedback',
+        ok: false,
+        error: `Context publication failed: ${caught instanceof Error ? caught.message : String(caught)}`,
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'storage.read') {
+    try {
+      const raw = window.localStorage.getItem(cmd.key);
+      const value: unknown = raw ? JSON.parse(raw) : (cmd.scope === 'pinned-folders' ? [] : null);
+      if (cmd.scope === 'path-history') {
+        dispatch({ type: 'path-history/read-succeeded', entries: value });
+      } else if (cmd.scope === 'pinned-folders' && cmd.projectRoot) {
+        dispatch({ type: 'pinned-folders/read-succeeded', projectRoot: cmd.projectRoot, paths: value });
+      } else if (cmd.scope === 'layout-profile' && cmd.contextKey) {
+        // A missing layout is an honest no-op rather than a malformed profile.
+        if (value !== null) dispatch({ type: 'layout/profile-read-succeeded', contextKey: cmd.contextKey, payload: value });
+      }
+    } catch (caught) {
+      const error = caught instanceof Error ? caught.message : String(caught);
+      if (cmd.scope === 'path-history') dispatch({ type: 'path-history/read-failed', error });
+      else if (cmd.scope === 'pinned-folders' && cmd.projectRoot) dispatch({ type: 'pinned-folders/read-failed', projectRoot: cmd.projectRoot, error });
+      else if (cmd.scope === 'layout-profile' && cmd.contextKey) dispatch({ type: 'layout/profile-load-failed', contextKey: cmd.contextKey, error });
+    }
+    return;
+  }
+
+  if (cmd.type === 'surface.load') {
+    try {
+      if (!cmd.projectRoot) throw new Error('No Project context is available.');
+      const params = new URLSearchParams({ workspaceRoot: cmd.projectRoot, relativePath: cmd.relativePath });
+      const surface = asSidecarSurfaceData(
+        await fetchJson(`/api/surface?${params.toString()}`),
+        cmd.projectRoot,
+        cmd.relativePath,
+      );
+      dispatch({ type: 'surface/load-succeeded', key: cmd.key, requestId: cmd.requestId, surface });
+    } catch (caught) {
+      dispatch({ type: 'surface/load-failed', key: cmd.key, requestId: cmd.requestId, error: caught instanceof Error ? caught.message : String(caught) });
+    }
+    return;
+  }
+
+  if (cmd.type === 'folder.load') {
+    try {
+      const payload = asSidecarFolderResponse(await fetchJson(
+        `/api/fs/browse?path=${encodeURIComponent(cmd.path)}&includeFiles=1&includeHidden=1&maxEntries=0&refresh=${Date.now()}`,
+        { cache: 'no-store' },
+      ), cmd.projectRoot, cmd.path);
+      dispatch({ type: 'folder/load-succeeded', path: cmd.path, requestId: cmd.requestId, payload, loadedAt: Date.now() });
+    } catch (caught) {
+      dispatch({ type: 'folder/load-failed', path: cmd.path, requestId: cmd.requestId, error: caught instanceof Error ? caught.message : String(caught) });
+    }
+    return;
+  }
+
+  if (cmd.type === 'storage.write') {
+    try {
+      window.localStorage.setItem(cmd.key, JSON.stringify(cmd.value));
+      if (cmd.scope === 'path-history') dispatch({ type: 'path-history/write-succeeded' });
+      else if (cmd.scope === 'pinned-folders' && cmd.projectRoot) dispatch({ type: 'pinned-folders/write-succeeded', projectRoot: cmd.projectRoot });
+      else if (cmd.scope === 'layout-profile' && cmd.contextKey) dispatch({ type: 'layout/profile-write-succeeded', contextKey: cmd.contextKey });
+    } catch (caught) {
+      const error = caught instanceof Error ? caught.message : String(caught);
+      if (cmd.scope === 'path-history') dispatch({ type: 'path-history/write-failed', error });
+      else if (cmd.scope === 'pinned-folders' && cmd.projectRoot) dispatch({ type: 'pinned-folders/write-failed', projectRoot: cmd.projectRoot, error });
+      else if (cmd.scope === 'layout-profile' && cmd.contextKey) dispatch({ type: 'layout/profile-save-failed', contextKey: cmd.contextKey, error });
+    }
+    return;
+  }
   if (cmd.type === 'load') {
-    dispatch({ type: 'load/start', projectRoot: cmd.projectRoot });
-    const [ctx, projects, tickets, comments, sessions, unread, aiWorkspaceObservation] = await Promise.all([
-      settleSurface('context', async () => asRecord(await fetchJson(apiUrl(backend, '/api/context', cmd.projectRoot)), 'context') as unknown as ContextRecord),
-      settleSurface('projects', async () => asArray<ProjectRecord>(await fetchJson(`${backend}/api/projects`), 'projects')),
-      settleSurface('tickets', async () => asArray<TicketRecord>(await fetchJson(apiUrl(backend, '/api/tickets', cmd.projectRoot)), 'tickets')),
-      settleSurface('comments', async () => asArray<CommentRecord>(await fetchJson(apiUrl(backend, '/api/comments', cmd.projectRoot)), 'comments')),
-      settleSurface('sessions', async () => asSessionCollection(await fetchJson(apiUrl(backend, '/api/sidecar/sessions', cmd.projectRoot)))),
-      settleSurface('unread comments', async () => unreadIdsFrom(await fetchJson(apiUrl(backend, '/api/comments/unread', cmd.projectRoot, { agent: viewerAgent })))),
-      settleSurface('ai-workspace observation', async () => asAiWorkspaceObservation(await fetchJson(apiUrl(backend, '/api/ai-workspace/observation', cmd.projectRoot)))),
+    if (entry.loadGeneration === undefined) {
+      dispatch({
+        type: 'action/feedback',
+        ok: false,
+        error: 'load command is missing its reducer-owned generation',
+      });
+      return;
+    }
+    dispatch({
+      type: 'load/start',
+      projectRoot: cmd.projectRoot,
+      generation: entry.loadGeneration,
+    });
+    const ctx = await settleSurface('context', async () => (
+      asSidecarContextRecord(
+        await fetchJson(apiUrl(backend, '/api/context', cmd.projectRoot)),
+        cmd.projectRoot,
+      )
+    ));
+    if (!ctx.ok) {
+      dispatch({
+        type: 'load/failed',
+        projectRoot: cmd.projectRoot,
+        generation: entry.loadGeneration,
+        error: `load failed: ${ctx.error}`,
+      });
+      return;
+    }
+    const boundProjectRoot = ctx.value.project.root;
+    const [projects, tickets, comments, sessions, unread, aiWorkspaceObservation] = await Promise.all([
+      settleSurface('projects', async () => {
+        const records = asSidecarProjectCollection(await fetchJson(`${backend}/api/projects`));
+        assertContextProjectInCollection(ctx.value, records);
+        return records;
+      }),
+      settleSurface('tickets', async () => (
+        asSidecarTicketCollection(
+          await fetchJson(apiUrl(backend, '/api/tickets', boundProjectRoot)),
+        )
+      )),
+      settleSurface('comments', async () => (
+        asSidecarCommentCollection(
+          await fetchJson(apiUrl(backend, '/api/comments', boundProjectRoot)),
+        )
+      )),
+      settleSurface('sessions', async () => (
+        asSidecarSessionCollection(
+          await fetchJson(apiUrl(backend, '/api/sidecar/sessions', boundProjectRoot)),
+          boundProjectRoot,
+        )
+      )),
+      settleSurface('unread comments', async () => (
+        fetchJson(apiUrl(backend, '/api/comments/unread', boundProjectRoot, { agent: viewerAgent }))
+      )),
+      settleSurface('ai-workspace observation', async () => {
+        const observation = asAiWorkspaceObservation(
+          await fetchJson(apiUrl(backend, '/api/ai-workspace/observation', boundProjectRoot)),
+        );
+        if (observation.projectRoot !== boundProjectRoot) {
+          throw new Error('observation Project root does not match the admitted Context');
+        }
+        return observation;
+      }),
     ]);
     const payload: Extract<SidecarMsg, { type: 'load/done' }>['payload'] = {};
     const errors: string[] = [];
-    if (ctx.ok) payload.context = ctx.value;
-    else errors.push(ctx.error);
+    payload.context = ctx.value;
     if (projects.ok) payload.projects = projects.value;
     else errors.push(projects.error);
     if (tickets.ok) payload.tickets = tickets.value;
@@ -338,10 +469,16 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       payload.sessions = { records: [], diagnostic: null };
       errors.push(sessions.error);
     }
-    if (unread.ok) payload.unreadIds = unread.value;
-    else {
+    if (unread.ok && comments.ok) {
+      try {
+        payload.unreadIds = asSidecarUnreadIds(unread.value, comments.value);
+      } catch (caught) {
+        payload.unreadIds = [];
+        errors.push(`unread comments: ${caught instanceof Error ? caught.message : String(caught)}`);
+      }
+    } else {
       payload.unreadIds = [];
-      errors.push(unread.error);
+      if (!unread.ok) errors.push(unread.error);
     }
     if (aiWorkspaceObservation.ok) payload.aiWorkspaceObservation = aiWorkspaceObservation.value;
     else {
@@ -349,9 +486,21 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       errors.push(aiWorkspaceObservation.error);
     }
     if (errors.length > 0) {
-      payload.lastAction = { ok: false, error: `load partial: ${errors.join('; ')}` };
+      dispatch({
+        type: 'load/failed',
+        projectRoot: cmd.projectRoot,
+        generation: entry.loadGeneration,
+        error: `load failed: ${errors.join('; ')}`,
+        payload,
+      });
+      return;
     }
-    dispatch({ type: 'load/done', projectRoot: cmd.projectRoot, payload });
+    dispatch({
+      type: 'load/done',
+      projectRoot: cmd.projectRoot,
+      generation: entry.loadGeneration,
+      payload,
+    });
     return;
   }
 
@@ -428,12 +577,16 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       await navigator.clipboard.writeText(cmd.text);
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok: true,
         message: `copied ${cmd.label}`,
       });
     } catch (err) {
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok: false,
         error: `clipboard copy failed: ${err instanceof Error ? err.message : String(err)}`,
       });
@@ -441,19 +594,49 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
     return;
   }
 
+  if (cmd.type === 'project.activate') {
+    try {
+      const result = await setActiveProject(cmd.projectId, { registerIfMissing: false });
+      const project = asRecord(result.project, 'project activation project');
+      if (project.id !== cmd.projectId || project.root !== cmd.projectRoot) {
+        throw new Error('project activation returned a different Project identity');
+      }
+      dispatch({
+        type: 'project/activate-succeeded',
+        projectId: cmd.projectId,
+        projectRoot: cmd.projectRoot,
+        relativePath: cmd.relativePath,
+      });
+    } catch (caught) {
+      dispatch({
+        type: 'project/activate-failed',
+        projectId: cmd.projectId,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+    }
+    return;
+  }
+
   if (cmd.type === 'ticket.transition') {
     try {
-      const result = asRecord(await fetchJson(apiUrl(backend, `/api/tickets/${encodeURIComponent(cmd.id)}/transition`, cmd.projectRoot, { to: cmd.toLane }), { method: 'POST' }), 'ticket transition');
+      const result = asRecord(await fetchJson(apiUrl(backend, `/api/tickets/${encodeURIComponent(cmd.id)}/transition`, cmd.context.project.root, { to: cmd.toLane }), { method: 'POST' }), 'ticket transition');
       const ok = result.ok === true;
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok,
         message: ok ? `${cmd.id}: ${String(result.fromLane ?? '')} -> ${String(result.toLane ?? cmd.toLane)}` : undefined,
         error: ok ? undefined : actionError(result),
-        reload: ok,
       });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: String(err) });
+      dispatch({
+        type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
+        ok: false,
+        error: String(err),
+      });
     }
     return;
   }
@@ -461,24 +644,31 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
   if (cmd.type === 'comment.toggleRead') {
     const path = cmd.currentlyUnread ? 'mark-read' : 'mark-unread';
     try {
-      const result = asRecord(await fetchJson(apiUrl(backend, `/api/comments/${encodeURIComponent(cmd.id)}/${path}`, cmd.projectRoot, { agent: viewerAgent }), { method: 'POST' }), 'comment read action');
+      const result = asRecord(await fetchJson(apiUrl(backend, `/api/comments/${encodeURIComponent(cmd.id)}/${path}`, cmd.context.project.root, { agent: viewerAgent }), { method: 'POST' }), 'comment read action');
       const ok = result.ok === true;
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok,
         message: ok ? `${cmd.id} -> ${cmd.currentlyUnread ? 'read' : 'unread'}` : undefined,
         error: ok ? undefined : actionError(result),
-        reload: ok,
       });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: String(err) });
+      dispatch({
+        type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
+        ok: false,
+        error: String(err),
+      });
     }
     return;
   }
 
   if (cmd.type === 'comment.reply') {
     try {
-      const result = asRecord(await fetchJson(apiUrl(backend, `/api/comments/${encodeURIComponent(cmd.parentId)}/reply`, cmd.projectRoot), {
+      const result = asRecord(await fetchJson(apiUrl(backend, `/api/comments/${encodeURIComponent(cmd.parentId)}/reply`, cmd.context.project.root), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ author: viewerAgent, body: cmd.body }),
@@ -486,57 +676,68 @@ async function interpretSidecarCommand(cmd: SidecarCmd, options: {
       const ok = result.ok === true;
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok,
         message: ok ? `reply created: ${String(result.id ?? '')}` : undefined,
         error: ok ? undefined : actionError(result),
-        reload: ok,
       });
-      if (ok) dispatch({ type: 'reply/cancel' });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: String(err) });
+      dispatch({
+        type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
+        ok: false,
+        error: String(err),
+      });
     }
     return;
   }
 
   if (cmd.type === 'session.spawn') {
     try {
-      const result = asRecord(await fetchJson(apiUrl(backend, '/api/sidecar/sessions/spawn', cmd.projectRoot), {
+      if (!cmd.projectRoot) throw new Error('No Project context is available.');
+      const result = asSidecarSpawnResult(await fetchJson(apiUrl(backend, '/api/sidecar/sessions/spawn', cmd.projectRoot), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ selectedTrainId: 'sidecar', label: cmd.label ?? 'sidecar shell', cwd: cmd.cwd }),
-      }), 'session spawn');
-      const ok = result.ok === true;
-      if (ok && typeof result.id === 'string' && typeof result.agent_type === 'string' && typeof result.cwd === 'string' && typeof result.status === 'string') {
-        dispatch({ type: 'session/spawn/done', record: result as unknown as SessionRecord, groupId: cmd.groupId });
-      }
+      }), cmd.projectRoot, cmd.cwd, cmd.existingSessionIds);
       dispatch({
-        type: 'action/result',
-        ok,
-        message: ok ? `spawned ${String(result.id ?? '')}` : undefined,
-        error: ok ? undefined : actionError(result),
-        // session/spawn/done already admits the authoritative response. A second
-        // full load can race a following spawn and replace both with a stale list.
-        reload: false,
+        type: 'session/spawn/done',
+        projectRoot: cmd.projectRoot,
+        record: result,
+        groupId: cmd.groupId,
       });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: String(err) });
+      dispatch({
+        type: 'session/spawn/failed',
+        projectRoot: cmd.projectRoot,
+        error: `session spawn failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
     return;
   }
 
   if (cmd.type === 'session.kill') {
     try {
-      const result = asRecord(await fetchJson(apiUrl(backend, `/api/sidecar/sessions/${encodeURIComponent(cmd.id)}/kill`, cmd.projectRoot), { method: 'POST' }), 'session close');
+      const result = asRecord(await fetchJson(apiUrl(backend, `/api/sidecar/sessions/${encodeURIComponent(cmd.id)}/kill`, cmd.context.project.root), { method: 'POST' }), 'session close');
       const ok = result.ok === true;
       dispatch({
         type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
         ok,
         message: ok ? `closed ${cmd.id}` : undefined,
         error: ok ? undefined : actionError(result),
-        reload: ok,
       });
     } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: String(err) });
+      dispatch({
+        type: 'action/result',
+        commandId: entry.id,
+        context: cmd.context,
+        ok: false,
+        error: String(err),
+      });
     }
     return;
   }
@@ -556,15 +757,16 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   const [state, dispatch] = useReducer(update, { ...INITIAL_SIDECAR_STATE, viewerAgent });
   const processedCommandIds = useRef<Set<string>>(new Set());
   const loadedLayoutContextKeys = useRef<Set<string>>(new Set());
-  const loadedPathHistory = useRef(false);
-  const skipNextPathHistorySave = useRef(true);
   const suppressNextLayoutSave = useRef<Set<string>>(new Set());
   const lastSavedLayoutByContext = useRef<Map<string, string>>(new Map());
-  const pendingProjectContextRoot = useRef<string | null>(null);
-  const openedInitialSurface = useRef(false);
   const runCommand = useCallback((entry: PendingSidecarCmd) => {
-    void interpretSidecarCommand(entry.cmd, { backend, viewerAgent, dispatch });
-  }, [backend, viewerAgent]);
+    void interpretSidecarCommand(entry, {
+      backend,
+      viewerAgent,
+      dispatch,
+      publishContext: onContextChange,
+    });
+  }, [backend, viewerAgent, onContextChange]);
   const layoutContextKey = state.context ? sidecarLayoutContextKey(state.context) : null;
 
   useEffect(() => {
@@ -589,91 +791,66 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
   }, [state.pendingCommands, runCommand]);
 
   const currentProjectRoot = state.activeLoadRoot ?? state.context?.project.root ?? projectRoot ?? null;
+  const projectRegistrySubscription = sidecarSubscriptions(
+    state,
+    SIDECAR_TAIL_FOLLOW_REFRESH_MS,
+    SIDECAR_RUN_REFRESH_MS,
+  ).find((subscription): subscription is Extract<SidecarSub, { type: 'project-registry.changed' }> => (
+    subscription.type === 'project-registry.changed'
+  )) ?? null;
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined' || !projectRegistrySubscription) return undefined;
     const handleProjectRegistryChanged = () => {
-      dispatch({ type: 'load/request', projectRoot: currentProjectRoot, reason: 'action_completed' });
+      dispatch({
+        type: 'project-registry/changed',
+        subscriptionId: projectRegistrySubscription.subscriptionId,
+        projectRoot: projectRegistrySubscription.projectRoot,
+      });
     };
-    window.addEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleProjectRegistryChanged);
+    try {
+      window.addEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleProjectRegistryChanged);
+      dispatch({
+        type: 'subscription/ready',
+        subscriptionId: projectRegistrySubscription.subscriptionId,
+        subscriptionType: projectRegistrySubscription.type,
+      });
+    } catch (caught) {
+      dispatch({
+        type: 'subscription/failed',
+        subscriptionId: projectRegistrySubscription.subscriptionId,
+        subscriptionType: projectRegistrySubscription.type,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+      return undefined;
+    }
     return () => window.removeEventListener(PROJECT_REGISTRY_CHANGED_EVENT, handleProjectRegistryChanged);
-  }, [currentProjectRoot]);
+  }, [
+    projectRegistrySubscription?.projectRoot,
+    projectRegistrySubscription?.subscriptionId,
+  ]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || loadedPathHistory.current) return;
-    loadedPathHistory.current = true;
-    try {
-      const raw = window.localStorage.getItem(SIDECAR_PATH_HISTORY_STORAGE_KEY);
-      if (!raw) return;
-      dispatch({ type: 'path-history/load', entries: JSON.parse(raw) as unknown });
-    } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: `path history load failed: ${String(err)}` });
-    }
+    dispatch({ type: 'path-history/read-request' });
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !loadedPathHistory.current) return;
-    if (skipNextPathHistorySave.current) {
-      skipNextPathHistorySave.current = false;
-      return;
-    }
-    try {
-      window.localStorage.setItem(SIDECAR_PATH_HISTORY_STORAGE_KEY, JSON.stringify(state.pathHistory));
-    } catch (err) {
-      dispatch({ type: 'action/result', ok: false, error: `path history save failed: ${String(err)}` });
-    }
-  }, [state.pathHistory]);
-
-  // Lift Context to embedding site whenever it changes.
-  useEffect(() => {
-    if (!state.context || !onContextChange) return;
-    const contextRoot = state.context.project.root;
-    const contextWasSelectedHere = pendingProjectContextRoot.current === contextRoot;
-    if (projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere) return;
-    if (contextWasSelectedHere) pendingProjectContextRoot.current = null;
-    onContextChange(state.context);
-  }, [projectRoot, state.context, onContextChange]);
-
-  useEffect(() => {
-    if (!layoutContextKey || typeof window === 'undefined') return;
+    if (!layoutContextKey) return;
     if (loadedLayoutContextKeys.current.has(layoutContextKey)) return;
     loadedLayoutContextKeys.current.add(layoutContextKey);
-    const storageKey = sidecarLayoutStorageKey(layoutContextKey);
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return;
-      suppressNextLayoutSave.current.add(layoutContextKey);
-      dispatch({ type: 'layout/profile-loaded', contextKey: layoutContextKey, payload: JSON.parse(raw) as unknown });
-    } catch (err) {
-      dispatch({ type: 'layout/profile-load-failed', contextKey: layoutContextKey, error: String(err) });
-    }
+    suppressNextLayoutSave.current.add(layoutContextKey);
+    dispatch({ type: 'layout/profile-read-request', contextKey: layoutContextKey });
   }, [layoutContextKey]);
 
   useEffect(() => {
     if (!initialSurface || state.loading || !state.context) return;
     const contextRoot = state.context.project.root;
     if (projectRoot && normalizePinnedPath(contextRoot) !== normalizePinnedPath(projectRoot)) return;
-    if (openedInitialSurface.current) return;
-    openedInitialSurface.current = true;
-    if (initialSurface === 'run-inspector') {
-      if (runFocus) {
-        dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
-        dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: true });
-      }
-      dispatch({ type: 'viewer/open', kind: 'traversal', id: contextRoot });
-      dispatch({ type: 'traversal/load', workspaceRoot: contextRoot });
-      return;
-    }
-    dispatch({
-      type: 'viewer/open',
-      kind: initialSurface === 'ticket-board' ? 'ticket-board' : 'ai-workspace',
-      id: contextRoot,
-    });
+    dispatch({ type: 'initial-surface/request', surface: initialSurface, projectRoot: contextRoot, hasRunFocus: Boolean(runFocus) });
   }, [initialSurface, projectRoot, runFocus, state.context, state.loading]);
 
   useEffect(() => {
-    if (!layoutContextKey || !state.context || state.loading || typeof window === 'undefined') return;
-    const storageKey = sidecarLayoutStorageKey(layoutContextKey);
+    if (!layoutContextKey || !state.context || state.loading) return;
     const profile = sidecarLayoutProfileFromState(state, layoutContextKey);
     const serialized = JSON.stringify(profile);
     if (suppressNextLayoutSave.current.has(layoutContextKey)) {
@@ -682,86 +859,53 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
       return;
     }
     if (lastSavedLayoutByContext.current.get(layoutContextKey) === serialized) return;
-    try {
-      window.localStorage.setItem(storageKey, serialized);
-      lastSavedLayoutByContext.current.set(layoutContextKey, serialized);
-    } catch (err) {
-      dispatch({ type: 'layout/profile-save-failed', contextKey: layoutContextKey, error: String(err) });
-    }
+    lastSavedLayoutByContext.current.set(layoutContextKey, serialized);
+    dispatch({ type: 'layout/profile-write-request', contextKey: layoutContextKey, profile });
   }, [layoutContextKey, state.context, state.loading, state.ui, state.sessions.records]);
 
-  const [pinnedFolders, setPinnedFolders] = useState<string[] | null>(null);
-  const [pinnedFoldersRoot, setPinnedFoldersRoot] = useState<string | null>(null);
-  const [activePinnedFolderPath, setActivePinnedFolderPath] = useState<string | null>(null);
+  const pinnedFolders = state.pinnedFolders.projectRoot === currentProjectRoot
+    ? state.pinnedFolders.paths
+    : [];
+  const activePinnedFolderPath = state.pinnedFolders.projectRoot === currentProjectRoot
+    ? state.pinnedFolders.activePath
+    : null;
   const resolvedPinnedFolders = currentProjectRoot
-    ? sanitizePinnedFolders(pinnedFolders ?? defaultPinnedFolders(currentProjectRoot), currentProjectRoot)
+    ? sanitizePinnedFolders(pinnedFolders, currentProjectRoot)
     : [];
   const activeProjectPinnedFolderPath = activePinnedFolderPath && isProjectFolderPath(activePinnedFolderPath, currentProjectRoot)
     ? activePinnedFolderPath
     : null;
 
   useEffect(() => {
-    setActivePinnedFolderPath(null);
-    if (!currentProjectRoot || typeof window === 'undefined') {
-      setPinnedFoldersRoot(null);
-      setPinnedFolders(null);
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem(pinnedFoldersStorageKey(currentProjectRoot));
-      if (!raw) {
-        const next = sanitizePinnedFolders(defaultPinnedFolders(currentProjectRoot), currentProjectRoot);
-        setPinnedFoldersRoot(currentProjectRoot);
-        setPinnedFolders(next);
-        return;
-      }
-      const parsed = JSON.parse(raw) as unknown;
-      const next = Array.isArray(parsed)
-        ? sanitizePinnedFolders(parsed.filter((path): path is string => typeof path === 'string'), currentProjectRoot)
-        : sanitizePinnedFolders(defaultPinnedFolders(currentProjectRoot), currentProjectRoot);
-      setPinnedFoldersRoot(currentProjectRoot);
-      setPinnedFolders(next);
-    } catch {
-      const next = sanitizePinnedFolders(defaultPinnedFolders(currentProjectRoot), currentProjectRoot);
-      setPinnedFoldersRoot(currentProjectRoot);
-      setPinnedFolders(next);
-    }
-  }, [currentProjectRoot]);
-
-  useEffect(() => {
-    if (!currentProjectRoot || pinnedFolders === null || typeof window === 'undefined') return;
-    if (pinnedFoldersRoot !== currentProjectRoot) return;
-    const sanitized = sanitizePinnedFolders(pinnedFolders, currentProjectRoot);
-    window.localStorage.setItem(pinnedFoldersStorageKey(currentProjectRoot), JSON.stringify(sanitized));
-    if (sanitized.length !== pinnedFolders.length || sanitized.some((path, index) => path !== pinnedFolders[index])) {
-      setPinnedFolders(sanitized);
-    }
-  }, [currentProjectRoot, pinnedFolders, pinnedFoldersRoot]);
+    if (!currentProjectRoot || state.pinnedFolders.projectRoot === currentProjectRoot) return;
+    dispatch({ type: 'pinned-folders/read-request', projectRoot: currentProjectRoot });
+  }, [currentProjectRoot, state.pinnedFolders.projectRoot]);
 
   const handlePinnedFoldersChange = (paths: string[], activatePath?: string) => {
     const next = currentProjectRoot ? sanitizePinnedFolders(paths, currentProjectRoot) : dedupeSortedPins(paths);
-    setPinnedFoldersRoot(currentProjectRoot);
-    setPinnedFolders(next);
+    if (!currentProjectRoot) return;
     const normalizedActivatePath = activatePath ? normalizePinnedPath(activatePath) : '';
     if (normalizedActivatePath && next.includes(normalizedActivatePath)) {
-      setActivePinnedFolderPath(normalizedActivatePath);
+      dispatch({ type: 'pinned-folders/set', projectRoot: currentProjectRoot, paths: next, activePath: normalizedActivatePath });
       dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: false });
+      return;
     }
+    dispatch({ type: 'pinned-folders/set', projectRoot: currentProjectRoot, paths: next, activePath: null });
   };
 
   const handlePinnedFolderUnpin = (path: string) => {
     const next = resolvedPinnedFolders.filter((candidate) => candidate !== path);
-    setPinnedFoldersRoot(currentProjectRoot);
-    setPinnedFolders(next);
+    if (!currentProjectRoot) return;
+    dispatch({ type: 'pinned-folders/set', projectRoot: currentProjectRoot, paths: next, activePath: null });
   };
 
   const handleInfoSurfaceSelect = (surface: SidecarInfoSurface) => {
-    setActivePinnedFolderPath(null);
+    if (currentProjectRoot) dispatch({ type: 'pinned-folders/select', projectRoot: currentProjectRoot, path: null });
     dispatch({ type: 'ui/select-info-surface', surface });
   };
 
   const handlePinnedFolderSelect = (path: string) => {
-    setActivePinnedFolderPath(path);
+    if (currentProjectRoot) dispatch({ type: 'pinned-folders/select', projectRoot: currentProjectRoot, path });
     dispatch({ type: 'ui/toggle-workspace', workspace: 'info', collapsed: false });
   };
 
@@ -828,10 +972,10 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     dispatchSurfaceSelection(dispatch, currentProjectRoot, relativePath, absolutePath, source);
   };
 
-  const handleHistoryOpen = async (entry: SidecarPathHistoryEntry) => {
+  const handleHistoryOpen = (entry: SidecarPathHistoryEntry) => {
     const targetRoot = normalizePinnedPath(entry.projectRoot);
     if (!targetRoot) {
-      dispatch({ type: 'action/result', ok: false, error: 'Recent path has no recorded Project root.' });
+      dispatch({ type: 'action/feedback', ok: false, error: 'Recent path has no recorded Project root.' });
       return;
     }
     if (currentProjectRoot && normalizePinnedPath(currentProjectRoot) === targetRoot) {
@@ -840,18 +984,16 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
     }
     const project = state.projects.find((candidate) => normalizePinnedPath(candidate.root) === targetRoot);
     if (!project) {
-      dispatch({ type: 'action/result', ok: false, error: `Recent path Project is not registered: ${entry.projectRoot}` });
+      dispatch({ type: 'action/feedback', ok: false, error: `Recent path Project is not registered: ${entry.projectRoot}` });
       return;
     }
-    try {
-      const result = await setActiveProject(project.id);
-      pendingProjectContextRoot.current = result.project.root;
-      setActivePinnedFolderPath(null);
-      dispatch({ type: 'select', kind: 'project', id: result.project.id });
-      dispatch({ type: 'select', kind: 'surface', id: entry.relativePath });
-    } catch (caught) {
-      dispatch({ type: 'action/result', ok: false, error: caught instanceof Error ? caught.message : String(caught) });
-    }
+    if (currentProjectRoot) dispatch({ type: 'pinned-folders/select', projectRoot: currentProjectRoot, path: null });
+    dispatch({
+      type: 'project/activate-request',
+      projectId: project.id,
+      projectRoot: targetRoot,
+      relativePath: entry.relativePath,
+    });
   };
 
   if (state.loading && !state.context) {
@@ -1133,6 +1275,7 @@ export function SidecarPanel({ onContextChange, backend = SIDECAR_BACKEND, viewe
                   className="sidecar-bottom-tab"
                   onClick={() => dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: false })}
                   aria-expanded={false}
+                  aria-controls="sidecar-terminal-workspace"
                 >
                   Terminal
                 </button>
@@ -1176,12 +1319,8 @@ function defaultPinnedFolders(_projectRoot: string | null) {
 
 function builtInNavigatorFolders(projectRoot: string | null) {
   if (!projectRoot) return [];
-  return [
-    '.ai-workspace/tickets',
-    '.ai-workspace/comments',
-    'specification',
-    'build_tenants',
-  ].map((relativePath) => absoluteProjectPath(projectRoot, relativePath));
+  return SIDECAR_CANONICAL_PROVIDER_RELATIVE_PATHS
+    .map((relativePath) => absoluteProjectPath(projectRoot, relativePath));
 }
 
 function builtInNavigatorFolderForSurface(surface: SidecarInfoSurface, projectRoot: string | null) {
@@ -1703,7 +1842,16 @@ function SelectionFlyout({
   const [groupStates, setGroupStates] = useState<Record<string, NavigatorGroupState>>({});
   const [navigatorSort, setNavigatorSort] = useState<NavigatorSortState>({ sort: 'time', reverse: true });
   const [pinDraft, setPinDraft] = useState('');
-  const [folderLoads, setFolderLoads] = useState<Record<string, NavigatorFolderLoad>>({});
+  const folderLoads = useMemo<Record<string, NavigatorFolderLoad>>(() => Object.fromEntries(
+    Object.entries(state.folderLoads).map(([path, load]) => [path, {
+      entries: load.entries,
+      loading: load.status === 'loading',
+      error: load.error,
+      truncated: load.truncated,
+      loadedAt: load.loadedAt,
+      state: load.state,
+    }]),
+  ), [state.folderLoads]);
   const projectRootPath = projectRoot ? normalizePinnedPath(projectRoot) : null;
   const builtInFolderPath = builtInNavigatorFolderForSurface(surface, projectRoot);
   const ticketFolderCounts = useMemo(() => {
@@ -1719,39 +1867,9 @@ function SelectionFlyout({
     setGroupStates((current) => updateNavigatorGroup(current, key, patch));
   }, []);
 
-  const loadFolder = useCallback(async (path: string) => {
-    setFolderLoads((current) => ({
-      ...current,
-      [path]: {
-        entries: current[path]?.entries ?? [],
-        truncated: current[path]?.truncated ?? false,
-        loading: true,
-          error: null,
-          loadedAt: current[path]?.loadedAt ?? null,
-          state: current[path]?.state,
-      },
-    }));
-    try {
-      const payload = await fetchJson(
-        `/api/fs/browse?path=${encodeURIComponent(path)}&includeFiles=1&includeHidden=1&maxEntries=0&refresh=${Date.now()}`,
-        { cache: 'no-store' },
-      );
-      const load = { ...asNavigatorFolderLoad(payload), loadedAt: Date.now() };
-      setFolderLoads((current) => ({ ...current, [path]: load }));
-    } catch (err) {
-      setFolderLoads((current) => ({
-        ...current,
-        [path]: {
-          entries: current[path]?.entries ?? [],
-          truncated: false,
-          loading: false,
-          error: err instanceof Error ? err.message : String(err),
-          loadedAt: current[path]?.loadedAt ?? null,
-          state: current[path]?.state,
-        },
-      }));
-    }
-  }, []);
+  const loadFolder = useCallback((path: string) => {
+    dispatch({ type: 'folder/load-request', path });
+  }, [dispatch]);
 
   const handleFolderToggle = useCallback((key: string, path: string, collapsed: boolean) => {
     const nextCollapsed = !collapsed;
@@ -1794,7 +1912,7 @@ function SelectionFlyout({
         label={label}
         loading={load?.loading === true}
         loadedAt={load?.loadedAt ?? null}
-        onRefresh={() => void loadFolder(normalizedPath)}
+      onRefresh={() => loadFolder(normalizedPath)}
       />
     );
   };
@@ -1807,17 +1925,17 @@ function SelectionFlyout({
 
   useEffect(() => {
     if (surface !== 'browse' || !projectRootPath || folderLoads[projectRootPath]) return;
-    void loadFolder(projectRootPath);
+    loadFolder(projectRootPath);
   }, [surface, projectRootPath, folderLoads, loadFolder]);
 
   useEffect(() => {
     if (!builtInFolderPath || folderLoads[builtInFolderPath]) return;
-    void loadFolder(builtInFolderPath);
+    loadFolder(builtInFolderPath);
   }, [builtInFolderPath, folderLoads, loadFolder]);
 
   useEffect(() => {
     if (!activePinnedFolderPath || folderLoads[activePinnedFolderPath]) return;
-    void loadFolder(activePinnedFolderPath);
+    loadFolder(activePinnedFolderPath);
   }, [activePinnedFolderPath, folderLoads, loadFolder]);
 
   if (activePinnedFolderPath && projectRoot) {
@@ -2749,6 +2867,7 @@ function ViewerTabBody({ tab, state, viewerAgent, dispatch, onInfoSurfaceSelect,
           tabId={tab.id}
           relativePath={tab.objectId}
           viewerState={state.ui.documentViewers[tab.id]}
+          sidecarState={state}
           dispatch={dispatch}
         />
       </Inspector>
@@ -2979,16 +3098,29 @@ function directorySurfaceGroupKey(relativePath: string) {
   return navigatorGroupKey('surface-directory', relativePath);
 }
 
-function DirectorySurfaceBrowser({ projectRoot, surface, dispatch }: {
+function DirectorySurfaceBrowser({ projectRoot, surface, sidecarState, dispatch }: {
   projectRoot: string | null;
   surface: Extract<SurfaceData, { kind: 'directory' }>;
+  sidecarState: SidecarState;
   dispatch: Dispatch<SidecarMsg>;
 }) {
   const [groupStates, setGroupStates] = useState<Record<string, NavigatorGroupState>>({});
   const [navigatorSort, setNavigatorSort] = useState<NavigatorSortState>({ sort: 'time', reverse: true });
-  const [directoryLoads, setDirectoryLoads] = useState<Record<string, DirectorySurfaceLoad>>({
-    [surface.relative_path]: directorySurfaceLoad(surface),
-  });
+  const directoryLoads = useMemo<Record<string, DirectorySurfaceLoad>>(() => {
+    const entries = Object.values(sidecarState.surfaceLoads).flatMap((load) => (
+      load.surface?.kind === 'directory'
+        ? [[load.relativePath, {
+          ...directorySurfaceLoad(load.surface),
+          loading: load.status === 'loading',
+          error: load.error,
+        }] as const]
+        : []
+    ));
+    return {
+      [surface.relative_path]: directorySurfaceLoad(surface),
+      ...Object.fromEntries(entries),
+    };
+  }, [sidecarState.surfaceLoads, surface]);
 
   const patchGroup = useCallback((key: string, patch: Partial<NavigatorGroupState>) => {
     setGroupStates((current) => updateNavigatorGroup(current, key, patch));
@@ -2998,70 +3130,22 @@ function DirectorySurfaceBrowser({ projectRoot, surface, dispatch }: {
     dispatch({ type: 'select', kind: 'surface', id: relativePath });
   }, [dispatch]);
 
-  const loadDirectory = useCallback(async (relativePath: string) => {
-    if (!projectRoot) {
-      setDirectoryLoads((current) => ({
-        ...current,
-        [relativePath]: {
-          entries: current[relativePath]?.entries ?? [],
-          loading: false,
-          error: 'No Project context is available.',
-          truncated: false,
-          loadedAt: current[relativePath]?.loadedAt ?? null,
-        },
-      }));
-      return;
-    }
-    setDirectoryLoads((current) => ({
-      ...current,
-      [relativePath]: {
-        entries: current[relativePath]?.entries ?? [],
-        loading: true,
-        error: null,
-        truncated: current[relativePath]?.truncated ?? false,
-        loadedAt: current[relativePath]?.loadedAt ?? null,
-      },
-    }));
-    try {
-      const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
-      const payload = await fetchJson(`/api/surface?${params.toString()}`) as SurfaceData;
-      if (payload.kind !== 'directory') {
-        throw new Error(`${relativePath} is not a directory surface`);
-      }
-      setDirectoryLoads((current) => ({
-        ...current,
-        [relativePath]: directorySurfaceLoad(payload),
-      }));
-    } catch (err) {
-      setDirectoryLoads((current) => ({
-        ...current,
-        [relativePath]: {
-          entries: current[relativePath]?.entries ?? [],
-          loading: false,
-          error: err instanceof Error ? err.message : String(err),
-          truncated: current[relativePath]?.truncated ?? false,
-          loadedAt: current[relativePath]?.loadedAt ?? null,
-        },
-      }));
-    }
-  }, [projectRoot]);
+  const loadDirectory = useCallback((relativePath: string) => {
+    dispatch({ type: 'surface/load-request', projectRoot, relativePath });
+  }, [dispatch, projectRoot]);
 
   const toggleDirectory = useCallback((relativePath: string, collapsed: boolean) => {
     const key = directorySurfaceGroupKey(relativePath);
     const nextCollapsed = !collapsed;
     patchGroup(key, { collapsed: nextCollapsed });
     if (!nextCollapsed && !directoryLoads[relativePath]?.loading && !directoryLoads[relativePath]?.loadedAt) {
-      void loadDirectory(relativePath);
+      loadDirectory(relativePath);
     }
   }, [directoryLoads, loadDirectory, patchGroup]);
 
   useEffect(() => {
-    setDirectoryLoads((current) => ({
-      ...current,
-      [surface.relative_path]: directorySurfaceLoad(surface),
-    }));
     setGroupStates((current) => updateNavigatorGroup(current, directorySurfaceGroupKey(surface.relative_path), { collapsed: false }));
-  }, [surface]);
+  }, [surface.relative_path]);
 
   return (
     <div className="sidecar-surface-inspector sidecar-directory-tab" aria-label={`Directory surface ${surface.relative_path}`}>
@@ -3074,7 +3158,7 @@ function DirectorySurfaceBrowser({ projectRoot, surface, dispatch }: {
           label={surface.relative_path}
           loading={directoryLoads[surface.relative_path]?.loading === true}
           loadedAt={directoryLoads[surface.relative_path]?.loadedAt ?? null}
-          onRefresh={() => void loadDirectory(surface.relative_path)}
+          onRefresh={() => loadDirectory(surface.relative_path)}
         />
       </div>
       <div className="sidecar-directory-tab__path">
@@ -3194,24 +3278,34 @@ function DirectorySurfaceNode({ relativePath, label, depth, groupStates, directo
   );
 }
 
-function SurfaceInspector({ projectRoot, aiWorkspaceObservation, tabId, relativePath, viewerState, dispatch }: {
+function SurfaceInspector({ projectRoot, aiWorkspaceObservation, tabId, relativePath, viewerState, sidecarState, dispatch }: {
   projectRoot: string | null;
   aiWorkspaceObservation: AiWorkspaceObservation | null;
   tabId: string;
   relativePath: string;
   viewerState: SidecarDocumentViewerState | undefined;
+  sidecarState: SidecarState;
   dispatch: Dispatch<SidecarMsg>;
 }) {
-  const [surface, setSurface] = useState<SurfaceData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const tailFollowSurface = isTailFollowSurfacePath(relativePath);
   const activeAiWorkspaceObservation = useMemo(
     () => isAiWorkspaceObservationForProject(aiWorkspaceObservation, projectRoot) ? aiWorkspaceObservation : null,
     [aiWorkspaceObservation, projectRoot],
   );
-  const [tailFollowEnabled, setTailFollowEnabled] = useState(tailFollowSurface);
   const [rawTailSurface, setRawTailSurface] = useState(false);
+  const surfaceKey = `${projectRoot ?? 'none'}:${relativePath}`;
+  const load = sidecarState.surfaceLoads[surfaceKey];
+  const surface = load?.surface ?? null;
+  const loading = load?.status === 'loading';
+  const error = load?.error ?? null;
+  const tailFollowEnabled = load?.tailFollow ?? tailFollowSurface;
+  const tailFollowSubscription = useMemo(() => sidecarSubscriptions(
+    sidecarState,
+    SIDECAR_TAIL_FOLLOW_REFRESH_MS,
+    SIDECAR_RUN_REFRESH_MS,
+  ).find((sub): sub is Extract<SidecarSub, { type: 'surface.tail-follow' }> => (
+    sub.type === 'surface.tail-follow' && sub.projectRoot === projectRoot && sub.relativePath === relativePath
+  )) ?? null, [projectRoot, relativePath, sidecarState]);
   const aiWorkspaceArtifact = useMemo(() => (
     surface?.kind === 'file'
       ? aiWorkspaceArtifactForRelativePath(activeAiWorkspaceObservation, surface.relative_path)
@@ -3224,47 +3318,43 @@ function SurfaceInspector({ projectRoot, aiWorkspaceObservation, tabId, relative
   ), [aiWorkspaceArtifact, surface]);
 
   useEffect(() => {
-    setTailFollowEnabled(tailFollowSurface);
     setRawTailSurface(false);
-  }, [relativePath, tailFollowSurface]);
+    dispatch({ type: 'surface/tail-follow-set', projectRoot, relativePath, enabled: tailFollowSurface });
+    dispatch({ type: 'surface/load-request', projectRoot, relativePath });
+  }, [projectRoot, relativePath, tailFollowSurface, dispatch]);
 
   useEffect(() => {
-    if (!projectRoot) {
-      setSurface(null);
-      setError('No Project context is available.');
-      return;
+    if (!tailFollowSurface || !tailFollowEnabled || !tailFollowSubscription) return undefined;
+    let timer: number;
+    try {
+      timer = window.setInterval(
+        () => dispatch({ type: 'surface/tail-ticked', projectRoot, relativePath }),
+        tailFollowSubscription.intervalMs,
+      );
+      dispatch({
+        type: 'subscription/ready',
+        subscriptionId: tailFollowSubscription.subscriptionId,
+        subscriptionType: tailFollowSubscription.type,
+      });
+    } catch (caught) {
+      dispatch({
+        type: 'subscription/failed',
+        subscriptionId: tailFollowSubscription.subscriptionId,
+        subscriptionType: tailFollowSubscription.type,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+      return undefined;
     }
-    let cancelled = false;
-    let refreshTimer: number | null = null;
-    const loadSurface = (showLoading: boolean) => {
-      if (showLoading) setLoading(true);
-      const params = new URLSearchParams({ workspaceRoot: projectRoot, relativePath });
-      void fetchJson(`/api/surface?${params.toString()}`)
-        .then((payload) => {
-          if (!cancelled) {
-            setSurface(payload as SurfaceData);
-            setError(null);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setSurface(null);
-            setError(err instanceof Error ? err.message : String(err));
-          }
-        })
-        .finally(() => {
-          if (!cancelled && showLoading) setLoading(false);
-        });
-    };
-    loadSurface(true);
-    if (tailFollowSurface && tailFollowEnabled && typeof window !== 'undefined') {
-      refreshTimer = window.setInterval(() => loadSurface(false), SIDECAR_TAIL_FOLLOW_REFRESH_MS);
-    }
-    return () => {
-      cancelled = true;
-      if (refreshTimer !== null) window.clearInterval(refreshTimer);
-    };
-  }, [projectRoot, relativePath, tailFollowSurface, tailFollowEnabled]);
+    return () => window.clearInterval(timer);
+  }, [
+    projectRoot,
+    relativePath,
+    tailFollowSurface,
+    tailFollowEnabled,
+    tailFollowSubscription?.intervalMs,
+    tailFollowSubscription?.subscriptionId,
+    dispatch,
+  ]);
 
   if (loading) {
     return <div className="sidecar-inspector__empty">Loading {relativePath}.</div>;
@@ -3302,14 +3392,14 @@ function SurfaceInspector({ projectRoot, aiWorkspaceObservation, tabId, relative
           onZoomBy={(delta) => dispatch({ type: 'document/zoom', tabId, delta })}
           onReset={() => dispatch({ type: 'document/reset', tabId })}
           onFitWidth={() => dispatch({ type: 'document/fit-width', tabId })}
-          onTailFollowToggle={() => setTailFollowEnabled((enabled) => !enabled)}
+          onTailFollowToggle={() => dispatch({ type: 'surface/tail-follow-set', projectRoot, relativePath, enabled: !tailFollowEnabled })}
           onRawModeToggle={() => setRawTailSurface((raw) => !raw)}
         />
       </div>
     );
   }
   if (surface.kind === 'directory') {
-    return <DirectorySurfaceBrowser projectRoot={projectRoot} surface={surface} dispatch={dispatch} />;
+    return <DirectorySurfaceBrowser projectRoot={projectRoot} surface={surface} sidecarState={sidecarState} dispatch={dispatch} />;
   }
   if (surface.kind === 'unreadable') {
     const reason = surface.reason === 'permission_denied'
@@ -3533,6 +3623,22 @@ const RUN_SECTION_ORDER: { id: AbgRunSection; label: string }[] = [
   { id: 'artifacts', label: 'Artifacts' },
 ];
 
+function runSectionFromKeyboard(
+  event: KeyboardEvent<HTMLButtonElement>,
+  current: AbgRunSection,
+) {
+  const currentIndex = RUN_SECTION_ORDER.findIndex((section) => section.id === current);
+  if (event.key === 'Home') return RUN_SECTION_ORDER[0];
+  if (event.key === 'End') return RUN_SECTION_ORDER[RUN_SECTION_ORDER.length - 1];
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    return RUN_SECTION_ORDER[(currentIndex + 1) % RUN_SECTION_ORDER.length];
+  }
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    return RUN_SECTION_ORDER[(currentIndex - 1 + RUN_SECTION_ORDER.length) % RUN_SECTION_ORDER.length];
+  }
+  return null;
+}
+
 function shortRunLabel(run: AbgRunObservation['runs'][number]) {
   const timestamp = run.modifiedAt ? new Date(run.modifiedAt).toLocaleString() : 'undated';
   return `${run.scenarioId ?? run.scenarioKind ?? run.runId} · ${timestamp}`;
@@ -3563,19 +3669,48 @@ function RunInspector({ state, dispatch }: {
   const projectRoot = state.context?.project.root ?? null;
   const observation = traversal.runObservation?.projectRoot === projectRoot ? traversal.runObservation : null;
   const runFocus = state.runFocus?.projectRoot === projectRoot ? state.runFocus : null;
+  const runRefreshSubscription = useMemo(() => sidecarSubscriptions(
+    state,
+    SIDECAR_TAIL_FOLLOW_REFRESH_MS,
+    SIDECAR_RUN_REFRESH_MS,
+  ).find((subscription): subscription is Extract<SidecarSub, { type: 'run.refresh' }> => (
+    subscription.type === 'run.refresh'
+  )) ?? null, [state]);
 
   useEffect(() => {
-    if (!projectRoot || traversal.runStatus !== 'ready') return undefined;
-    const timer = window.setInterval(() => {
+    if (!runRefreshSubscription) return undefined;
+    let timer: number;
+    try {
+      timer = window.setInterval(() => {
+        dispatch({
+          type: 'run/refresh-ticked',
+          subscriptionId: runRefreshSubscription.subscriptionId,
+          workspaceRoot: runRefreshSubscription.workspaceRoot,
+          runId: runRefreshSubscription.runId,
+        });
+      }, runRefreshSubscription.intervalMs);
       dispatch({
-        type: 'traversal/load',
-        workspaceRoot: projectRoot,
-        runId: traversal.selectedRunId,
-        refresh: true,
+        type: 'subscription/ready',
+        subscriptionId: runRefreshSubscription.subscriptionId,
+        subscriptionType: runRefreshSubscription.type,
       });
-    }, 30_000);
+    } catch (caught) {
+      dispatch({
+        type: 'subscription/failed',
+        subscriptionId: runRefreshSubscription.subscriptionId,
+        subscriptionType: runRefreshSubscription.type,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+      return undefined;
+    }
     return () => window.clearInterval(timer);
-  }, [dispatch, projectRoot, traversal.runStatus, traversal.selectedRunId]);
+  }, [
+    dispatch,
+    runRefreshSubscription?.intervalMs,
+    runRefreshSubscription?.runId,
+    runRefreshSubscription?.subscriptionId,
+    runRefreshSubscription?.workspaceRoot,
+  ]);
 
   if (traversal.workspaceRoot !== null && traversal.workspaceRoot !== projectRoot) {
     return (
@@ -3682,10 +3817,20 @@ function RunInspector({ state, dispatch }: {
         {RUN_SECTION_ORDER.map((section) => (
           <button
             key={section.id}
+            data-run-section={section.id}
             type="button"
             aria-pressed={traversal.section === section.id}
             className={traversal.section === section.id ? 'is-active' : ''}
             onClick={() => dispatch({ type: 'run/select-section', section: section.id })}
+            onKeyDown={(event) => {
+              const next = runSectionFromKeyboard(event, section.id);
+              if (!next) return;
+              event.preventDefault();
+              dispatch({ type: 'run/select-section', section: next.id });
+              event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                `[data-run-section="${next.id}"]`,
+              )?.focus();
+            }}
           >
             {section.label}
           </button>
@@ -4659,7 +4804,7 @@ function TerminalWorkspace({ state, projectRoot, dispatch, onSpawn, onKill, onRe
         </button>
       </div>
 
-      <div className={`sidecar-terminal-workspace sidecar-terminal-workspace--${terminalWorkspace.split}`}>
+      <div id="sidecar-terminal-workspace" className={`sidecar-terminal-workspace sidecar-terminal-workspace--${terminalWorkspace.split}`}>
         <div
           className="sidecar-terminal-groups"
           style={splitGridStyle(terminalWorkspace.split, terminalWorkspace.ratios, terminalWorkspace.groups.length)}
@@ -4757,26 +4902,37 @@ function TerminalTabBody({ group, tab, state, projectRoot, dispatch, onSpawn }: 
       </div>
     );
   }
+  const oddTermSubscription = sidecarSubscriptions(
+    state,
+    SIDECAR_TAIL_FOLLOW_REFRESH_MS,
+    SIDECAR_RUN_REFRESH_MS,
+  ).find((subscription): subscription is Extract<SidecarSub, { type: 'oddterm.attach' }> => (
+    subscription.type === 'oddterm.attach'
+    && subscription.projectRoot === projectRoot
+    && subscription.sessionId === session.id
+  )) ?? null;
+  const activePane = state.ui.terminalWorkspace.activeGroupId === group.id
+    && group.activeTabId === tab.id;
   return (
     <SessionTerminalWindow
-      session={session}
-      projectRoot={projectRoot}
-      selected={state.activeSessionId === session.id}
+      active={activePane}
+      subscription={oddTermSubscription}
+      dispatch={dispatch}
       onActivate={() => dispatch({ type: 'terminal/select-tab', groupId: group.id, tabId: tab.id })}
     />
   );
 }
 
-function SessionTerminalWindow({ session, selected, onActivate, projectRoot }: {
-  session: SessionRecord;
-  selected: boolean;
+function SessionTerminalWindow({ active, onActivate, subscription, dispatch }: {
+  active: boolean;
   onActivate: () => void;
-  projectRoot: string | null;
+  subscription: Extract<SidecarSub, { type: 'oddterm.attach' }> | null;
+  dispatch: Dispatch<SidecarMsg>;
 }) {
   return (
-    <section className={`agent-console__terminal-shell sidecar-session-window${selected ? ' is-active' : ''}`} onClick={onActivate}>
-      {projectRoot ? (
-        <SidecarTerminal session={session} projectRoot={projectRoot} />
+    <section className={`agent-console__terminal-shell sidecar-session-window${active ? ' is-active' : ''}`} onClick={onActivate}>
+      {subscription ? (
+        <SidecarTerminal active={active} subscription={subscription} dispatch={dispatch} />
       ) : (
         <div className="sidecar-terminal-placeholder">
           <p className="muted">Select a Project to attach this shell.</p>
@@ -4789,12 +4945,60 @@ function SessionTerminalWindow({ session, selected, onActivate, projectRoot }: {
 type TerminalStatus = 'connecting' | 'connected' | 'closed' | 'error';
 
 type TerminalEvent =
-  | { type: 'ready'; workspaceRoot: string; shell: string; pid: number; backend?: string }
+  | {
+      type: 'ready';
+      workspaceRoot: string;
+      sessionId: string;
+      subscriptionId: string;
+      shell: string;
+      pid: number;
+      backend?: string;
+    }
   | { type: 'data'; data: string }
   | { type: 'exit'; exitCode: number; signal: number | null }
   | { type: 'resize_ack'; cols: number; rows: number; seq?: number | null; duplicate?: boolean }
   | { type: 'resize_error'; message: string; seq?: number | null }
   | { type: 'error'; message: string };
+
+/** Platform ingress only: terminal bytes can affect the terminal view, never
+ * Project selection, evidence, assurance, or closure state. */
+function parseTerminalEvent(value: unknown): TerminalEvent | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const event = value as Record<string, unknown>;
+  if (event.type === 'ready') {
+    return (
+      typeof event.workspaceRoot === 'string'
+      && typeof event.sessionId === 'string'
+      && typeof event.subscriptionId === 'string'
+      && typeof event.shell === 'string'
+      && typeof event.pid === 'number'
+    )
+      ? {
+          type: 'ready',
+          workspaceRoot: event.workspaceRoot,
+          sessionId: event.sessionId,
+          subscriptionId: event.subscriptionId,
+          shell: event.shell,
+          pid: event.pid,
+          ...(typeof event.backend === 'string' ? { backend: event.backend } : {}),
+        }
+      : null;
+  }
+  if (event.type === 'data') return typeof event.data === 'string' ? { type: 'data', data: event.data } : null;
+  if (event.type === 'exit') return typeof event.exitCode === 'number' && (typeof event.signal === 'number' || event.signal === null)
+    ? { type: 'exit', exitCode: event.exitCode, signal: event.signal } : null;
+  if (event.type === 'resize_ack') return typeof event.cols === 'number' && typeof event.rows === 'number'
+    && (typeof event.seq === 'number' || event.seq === null || event.seq === undefined)
+    ? { type: 'resize_ack', cols: event.cols, rows: event.rows, ...(typeof event.seq === 'number' || event.seq === null ? { seq: event.seq } : {}), ...(typeof event.duplicate === 'boolean' ? { duplicate: event.duplicate } : {}) }
+    : null;
+  if (event.type === 'resize_error') return typeof event.message === 'string'
+    && (typeof event.seq === 'number' || event.seq === null || event.seq === undefined)
+    ? { type: 'resize_error', message: event.message, ...(typeof event.seq === 'number' || event.seq === null ? { seq: event.seq } : {}) }
+    : null;
+  return event.type === 'error' && typeof event.message === 'string'
+    ? { type: 'error', message: event.message }
+    : null;
+}
 
 const ODDTERM_RESIZE_DEBOUNCE_MS = 180;
 const ODDTERM_RESIZE_MAX_WAIT_MS = 900;
@@ -4833,15 +5037,24 @@ function terminalTheme() {
   };
 }
 
-function SidecarTerminal({ session, projectRoot }: {
-  session: SessionRecord;
-  projectRoot: string;
+function SidecarTerminal({ active, subscription, dispatch }: {
+  active: boolean;
+  subscription: Extract<SidecarSub, { type: 'oddterm.attach' }>;
+  dispatch: Dispatch<SidecarMsg>;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const statusRef = useRef<TerminalStatus>('connecting');
+  const activeRef = useRef(active);
+
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    if (active && statusRef.current === 'connected') {
+      terminalRef.current?.focus();
+    }
+  }, [active]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -4863,6 +5076,16 @@ function SidecarTerminal({ session, projectRoot }: {
     let pendingResize: PendingTerminalResize | null = null;
     let lastSentResize: PendingTerminalResize | null = null;
     let resizeSeq = 0;
+    let socket: WebSocket | null = null;
+
+    function reportSubscriptionFailure(error: string) {
+      dispatch({
+        type: 'subscription/failed',
+        subscriptionId: subscription.subscriptionId,
+        subscriptionType: subscription.type,
+        error,
+      });
+    }
 
     function setConnectionStatus(nextStatus: TerminalStatus) {
       statusRef.current = nextStatus;
@@ -4871,7 +5094,11 @@ function SidecarTerminal({ session, projectRoot }: {
 
     function send(payload: Record<string, unknown>) {
       const socket = socketRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      if (
+        statusRef.current !== 'connected'
+        || !socket
+        || socket.readyState !== WebSocket.OPEN
+      ) return false;
       socket.send(JSON.stringify(payload));
       return true;
     }
@@ -4975,28 +5202,95 @@ function SidecarTerminal({ session, projectRoot }: {
     const inputDisposable = terminal.onData((data) => {
       if (statusRef.current === 'connected') send({ type: 'input', data });
     });
-    const socket = new WebSocket(oddTermSocketUrl(projectRoot, session.id));
-    socketRef.current = socket;
 
-    socket.addEventListener('open', () => {
-      if (disposed) {
-        socket.close();
-        return;
+    function cleanup() {
+      disposed = true;
+      if (pendingFitFrame !== null) {
+        window.cancelAnimationFrame(pendingFitFrame);
+        pendingFitFrame = null;
       }
-      setConnectionStatus('connected');
-      scheduleFitAndResize(true);
-      terminal.focus();
+      clearResizeTimers();
+      pendingResize = null;
+      resizeObserver.disconnect();
+      inputDisposable.dispose();
+      if (socket?.readyState === WebSocket.OPEN) socket.close();
+      socketRef.current = null;
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+      window.setTimeout(() => {
+        try { fitAddon.dispose(); } catch { /* best effort */ }
+        try { terminal.dispose(); } catch { /* best effort */ }
+      }, 100);
+    }
+
+    try {
+      socket = new WebSocket(oddTermSocketUrl(
+        subscription.projectRoot,
+        subscription.sessionId,
+        subscription.subscriptionId,
+      ));
+    } catch (caught) {
+      const error = caught instanceof Error ? caught.message : String(caught);
+      setConnectionStatus('error');
+      terminal.writeln(`[oddterm error] ${error}`);
+      reportSubscriptionFailure(error);
+      return cleanup;
+    }
+    socketRef.current = socket;
+    const attachedSocket = socket;
+
+    attachedSocket.addEventListener('open', () => {
+      if (disposed) {
+        attachedSocket.close();
+      }
     });
 
-    socket.addEventListener('message', (event) => {
+    attachedSocket.addEventListener('message', (event) => {
       if (disposed) return;
-      let payload: TerminalEvent;
+      let payload: TerminalEvent | null;
       try {
-        payload = JSON.parse(String(event.data)) as TerminalEvent;
-      } catch {
+        payload = parseTerminalEvent(JSON.parse(String(event.data)) as unknown);
+      } catch (caught) {
+        reportSubscriptionFailure(
+          `OddTerm event validation failed: ${caught instanceof Error ? caught.message : String(caught)}`,
+        );
+        return;
+      }
+      if (!payload) {
+        reportSubscriptionFailure('OddTerm event validation failed: unsupported event payload');
         return;
       }
       if (payload.type === 'ready') {
+        if (!oddTermReadyMatchesSubscription(subscription, payload)) {
+          const error = [
+            'OddTerm ready identity mismatch:',
+            `expected ${subscription.subscriptionId}`,
+            `for ${subscription.projectRoot} session ${subscription.sessionId},`,
+            `received ${payload.subscriptionId}`,
+            `for ${payload.workspaceRoot} session ${payload.sessionId}`,
+          ].join(' ');
+          setConnectionStatus('error');
+          terminal.writeln(`[oddterm error] ${error}`);
+          reportSubscriptionFailure(error);
+          attachedSocket.close();
+          return;
+        }
+        setConnectionStatus('connected');
+        dispatch({
+          type: 'subscription/ready',
+          subscriptionId: subscription.subscriptionId,
+          subscriptionType: subscription.type,
+        });
+        scheduleFitAndResize(true);
+        if (activeRef.current) terminal.focus();
+        return;
+      }
+      if (statusRef.current !== 'connected') {
+        const error = `OddTerm event received before ready admission: ${payload.type}`;
+        setConnectionStatus('error');
+        terminal.writeln(`[oddterm error] ${error}`);
+        reportSubscriptionFailure(error);
+        attachedSocket.close();
         return;
       }
       if (payload.type === 'resize_ack') {
@@ -5016,48 +5310,39 @@ function SidecarTerminal({ session, projectRoot }: {
         setConnectionStatus('closed');
         terminal.writeln('');
         terminal.writeln(`[session exited: ${payload.exitCode}]`);
-        socket.close();
+        attachedSocket.close();
         return;
       }
       if (payload.type === 'error') {
         setConnectionStatus('error');
         terminal.writeln('');
         terminal.writeln(`[oddterm error] ${payload.message}`);
+        reportSubscriptionFailure(payload.message);
       }
     });
 
-    socket.addEventListener('close', () => {
+    attachedSocket.addEventListener('close', () => {
       if (disposed) return;
+      const previousStatus = statusRef.current;
       setConnectionStatus(statusRef.current === 'error' ? 'error' : 'closed');
+      if (previousStatus !== 'closed' && previousStatus !== 'error') {
+        reportSubscriptionFailure('OddTerm attachment closed unexpectedly');
+      }
     });
 
-    socket.addEventListener('error', () => {
+    attachedSocket.addEventListener('error', () => {
       if (disposed) return;
       setConnectionStatus('error');
+      reportSubscriptionFailure('OddTerm attachment failed');
     });
 
-    scheduleFitAndResize();
-
-    return () => {
-      disposed = true;
-      if (pendingFitFrame !== null) {
-        window.cancelAnimationFrame(pendingFitFrame);
-        pendingFitFrame = null;
-      }
-      clearResizeTimers();
-      pendingResize = null;
-      resizeObserver.disconnect();
-      inputDisposable.dispose();
-      if (socket.readyState === WebSocket.OPEN) socket.close();
-      socketRef.current = null;
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-      window.setTimeout(() => {
-        try { fitAddon.dispose(); } catch { /* best effort */ }
-        try { terminal.dispose(); } catch { /* best effort */ }
-      }, 100);
-    };
-  }, [projectRoot, session.id]);
+    return cleanup;
+  }, [
+    dispatch,
+    subscription.projectRoot,
+    subscription.sessionId,
+    subscription.subscriptionId,
+  ]);
 
   return (
     <div className="agent-console__terminal-shell sidecar-terminal">

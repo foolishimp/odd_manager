@@ -143,7 +143,10 @@ function waitForMessage(ws, predicate) {
 test('mounted WebSocket supports spawn, attach, input, replay, reattach, and kill', { skip: screenSkip }, async () => {
   setup();
   const server = createServer();
-  const wss = mountSessionWebSocket(server);
+  const wss = mountSessionWebSocket(server, {
+    defaultProjectRoot: fixtureRoot,
+    admitProjectRoot: (requestedRoot) => resolve(requestedRoot),
+  });
   let sessionId;
   try {
     const port = await waitForServerListen(server);

@@ -12,6 +12,7 @@ import { dirname, resolve, join } from 'node:path';
 
 import {
   createTicketSurface,
+  loadAllTickets,
   transitionStatus,
   updateFrontmatterField,
   linkDependency,
@@ -23,7 +24,7 @@ const fixtureRoot = resolve(here, '_fixture_ticket_write');
 const ticketsRoot = resolve(fixtureRoot, '.ai-workspace/tickets');
 
 function mkTicket(lane, id, extras = {}) {
-  const filename = `${id}-test-ticket.md`;
+  const filename = extras.filename ?? `${id}-test-ticket.md`;
   const dir = join(ticketsRoot, lane);
   mkdirSync(dir, { recursive: true });
   const fm = [
@@ -72,6 +73,21 @@ function fileExists(lane, id) {
   return readdirSync(dir).some((n) => n.startsWith(`${id}-`));
 }
 
+function ticketTreeSnapshot() {
+  const snapshot = [];
+  for (const lane of ['active', 'backlog', 'completed']) {
+    const dir = join(ticketsRoot, lane);
+    if (!existsSync(dir)) continue;
+    for (const filename of readdirSync(dir).sort()) {
+      snapshot.push({
+        path: `${lane}/${filename}`,
+        bytes: readFileSync(join(dir, filename)),
+      });
+    }
+  }
+  return snapshot;
+}
+
 test('transitionStatus moves file between lanes and updates frontmatter status', () => {
   setup();
   try {
@@ -105,14 +121,116 @@ test('transitionStatus rejects invalid lane and same-lane transitions', () => {
 test('transitionStatus refuses destination collision without moving source', () => {
   setup();
   try {
-    mkTicket('completed', 'T-100');
+    const occupied = mkTicket('completed', 'T-199', {
+      filename: 'T-100-test-ticket.md',
+    });
+    const occupiedBytes = readFileSync(occupied);
+    assert.doesNotThrow(() => loadAllTickets(fixtureRoot), 'collision fixture identities remain unique');
     const result = transitionStatus(fixtureRoot, 'T-100', 'completed');
     assert.equal(result.ok, false);
     assert.match(result.error, /destination ticket already exists/);
     assert.equal(fileExists('active', 'T-100'), true, 'source remains when destination collides');
     assert.equal(fileExists('completed', 'T-100'), true, 'existing destination remains');
+    assert.deepEqual(readFileSync(occupied), occupiedBytes, 'occupied destination bytes remain unchanged');
   } finally {
     teardown();
+  }
+});
+
+test('all ID-addressed actions reject duplicate identities with path and byte invariance', () => {
+  setup();
+  try {
+    mkTicket('active', 'T-200', { filename: 'T-200-first.md' });
+    mkTicket('backlog', 'T-200', { filename: 'T-200-second.md' });
+    assert.throws(
+      () => loadAllTickets(fixtureRoot),
+      /tickets contains duplicate identity: T-200/,
+      'public reads retain collection-level duplicate rejection',
+    );
+
+    const actions = [
+      ['transitionStatus', () => transitionStatus(fixtureRoot, 'T-200', 'completed')],
+      ['updateFrontmatterField', () => updateFrontmatterField(fixtureRoot, 'T-200', 'priority', 'critical')],
+      ['linkDependency', () => linkDependency(fixtureRoot, 'T-200', 'T-099 completed')],
+      ['assignBuildTenant', () => assignBuildTenant(fixtureRoot, 'T-200', 'react_vite')],
+    ];
+    for (const [name, action] of actions) {
+      const before = ticketTreeSnapshot();
+      const result = action();
+      assert.equal(result.ok, false, `${name} must return a typed failure`);
+      assert.match(result.error, /ticket collection rejected: tickets contains duplicate identity: T-200/);
+      assert.deepEqual(ticketTreeSnapshot(), before, `${name} must preserve every path and byte`);
+    }
+  } finally {
+    teardown();
+  }
+});
+
+test('all ID-addressed actions convert producer and contract failures to non-mutating results', () => {
+  const invalidFixtures = [
+    {
+      label: 'producer',
+      install() {
+        const path = mkTicket('active', 'T-300');
+        const raw = readFileSync(path, 'utf-8');
+        writeFileSync(
+          path,
+          raw.replace(
+            'dependencies:',
+            'governance_scope_expansion: [S, X]\ndependencies:',
+          ),
+        );
+      },
+      loadError: /unsupported governance_scope_expansion shorthand: X/,
+      error: /ticket collection rejected: unsupported governance_scope_expansion shorthand: X/,
+    },
+    {
+      label: 'contract',
+      install() {
+        const path = mkTicket('active', 'T-301');
+        const raw = readFileSync(path, 'utf-8');
+        writeFileSync(path, raw.replace(/^type: feature\n/m, ''));
+      },
+      loadError: /tickets\[\d+\]\.type must be a non-empty string/,
+      error: /ticket collection rejected: tickets\[\d+\]\.type must be a non-empty string/,
+    },
+    {
+      label: 'conflicting type aliases',
+      install() {
+        const path = mkTicket('active', 'T-302');
+        const raw = readFileSync(path, 'utf-8');
+        writeFileSync(path, raw.replace('type: feature', 'type: feature\nticket_type: defect'));
+      },
+      loadError: /ticket declares both type and legacy ticket_type/,
+      error: /ticket collection rejected: ticket declares both type and legacy ticket_type/,
+    },
+  ];
+
+  for (const invalid of invalidFixtures) {
+    setup();
+    try {
+      invalid.install();
+      assert.throws(() => loadAllTickets(fixtureRoot), invalid.loadError);
+      const actions = [
+        ['transitionStatus', () => transitionStatus(fixtureRoot, 'T-100', 'completed')],
+        ['updateFrontmatterField', () => updateFrontmatterField(fixtureRoot, 'T-100', 'priority', 'critical')],
+        ['linkDependency', () => linkDependency(fixtureRoot, 'T-100', 'T-099 completed')],
+        ['assignBuildTenant', () => assignBuildTenant(fixtureRoot, 'T-100', 'react_vite')],
+      ];
+      for (const [name, action] of actions) {
+        const before = ticketTreeSnapshot();
+        const result = action();
+        assert.equal(result.ok, false, `${invalid.label} ${name} must return a typed failure`);
+        assert.match(result.error, invalid.error);
+        assert.deepEqual(
+          ticketTreeSnapshot(),
+          before,
+          `${invalid.label} ${name} must preserve every path and byte`,
+        );
+      }
+    } finally {
+      teardown();
+    }
   }
 });
 

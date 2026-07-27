@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
 import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
+  lstatSync,
   readdirSync,
-  readFileSync,
-  writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import {
+  admitProjectRuntimeDirectory,
+  admitProjectRuntimeFile,
+  appendProjectRuntimeFile,
+  projectRuntimeLexicalPath,
+  readProjectRuntimeFile,
+  writeProjectRuntimeFile,
+} from "./project-runtime-carrier-service.mjs";
 
 const MAX_HISTORY_BYTES = 1024 * 1024;
 const HISTORY_TAIL_LINES = 400;
+const HISTORY_ROOT_SEGMENTS = [".ai-workspace", "runtime", "conversation_history"];
 const historyCache = new Map();
 
 function slugifySegment(value) {
@@ -26,19 +31,50 @@ function cacheKey(workspaceRoot, historyId) {
 }
 
 export function conversationHistoryRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/conversation_history");
+  return projectRuntimeLexicalPath(workspaceRoot, HISTORY_ROOT_SEGMENTS);
 }
 
 function conversationHistoryDirectory(workspaceRoot, historyId) {
-  return join(conversationHistoryRoot(workspaceRoot), historyId);
-}
-
-function conversationHistoryMetaPath(workspaceRoot, historyId) {
-  return join(conversationHistoryDirectory(workspaceRoot, historyId), "meta.json");
+  return projectRuntimeLexicalPath(workspaceRoot, [
+    ...HISTORY_ROOT_SEGMENTS,
+    historyId,
+  ]);
 }
 
 function conversationHistoryEntriesPath(workspaceRoot, historyId) {
-  return join(conversationHistoryDirectory(workspaceRoot, historyId), "entries.ndjson");
+  return projectRuntimeLexicalPath(workspaceRoot, [
+    ...HISTORY_ROOT_SEGMENTS,
+    historyId,
+    "entries.ndjson",
+  ]);
+}
+
+function historyDirectorySegments(historyId) {
+  return [...HISTORY_ROOT_SEGMENTS, historyId];
+}
+
+function lexicalPathExists(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function admitHistoryDirectory(workspaceRoot, historyId, options = {}) {
+  const rootExists = lexicalPathExists(conversationHistoryRoot(workspaceRoot));
+  const historyExists = rootExists
+    && lexicalPathExists(conversationHistoryDirectory(workspaceRoot, historyId));
+  if (options.create !== true && (!rootExists || !historyExists)) {
+    return null;
+  }
+  return admitProjectRuntimeDirectory(
+    workspaceRoot,
+    historyDirectorySegments(historyId),
+    { create: options.create === true },
+  );
 }
 
 function trimBufferTail(text, maxBytes) {
@@ -51,21 +87,66 @@ function trimBufferTail(text, maxBytes) {
   return newlineIndex >= 0 ? trimmed.slice(newlineIndex + 1) : trimmed;
 }
 
-function readJsonFile(filePath) {
-  try {
-    return JSON.parse(readFileSync(filePath, "utf8"));
-  } catch {
+function readHistoryText(workspaceRoot, historyId, fileName) {
+  if (!admitHistoryDirectory(workspaceRoot, historyId)) {
     return null;
   }
+  const filePath = projectRuntimeLexicalPath(workspaceRoot, [
+    ...historyDirectorySegments(historyId),
+    fileName,
+  ]);
+  if (!lexicalPathExists(filePath)) {
+    return null;
+  }
+  return readProjectRuntimeFile(
+    workspaceRoot,
+    historyDirectorySegments(historyId),
+    fileName,
+    { encoding: "utf8" },
+  );
+}
+
+function admitHistoryMeta(value, workspaceRoot, historyId) {
+  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+  if (
+    !value
+    || typeof value !== "object"
+    || Array.isArray(value)
+    || value.conversationHistoryId !== historyId
+    || value.workspaceRoot !== resolvedWorkspaceRoot
+  ) {
+    throw new Error(
+      "conversation history metadata does not match the exact Project and history identity",
+    );
+  }
+  return value;
+}
+
+function readJsonFile(workspaceRoot, historyId) {
+  const raw = readHistoryText(workspaceRoot, historyId, "meta.json");
+  if (raw === null) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("conversation history metadata is invalid");
+  }
+  return admitHistoryMeta(parsed, workspaceRoot, historyId);
 }
 
 function isPermissionError(error) {
   return error?.code === "EACCES" || error?.code === "EPERM";
 }
 
-function writeTextFileIfPossible(filePath, content) {
+function writeTextFileIfPossible(workspaceRoot, historyId, fileName, content) {
   try {
-    writeFileSync(filePath, content, "utf8");
+    writeProjectRuntimeFile(
+      workspaceRoot,
+      historyDirectorySegments(historyId),
+      fileName,
+      content,
+      { encoding: "utf8" },
+    );
     return true;
   } catch (caught) {
     if (isPermissionError(caught)) {
@@ -78,46 +159,82 @@ function writeTextFileIfPossible(filePath, content) {
 function loadCacheRecord(workspaceRoot, historyId) {
   const key = cacheKey(workspaceRoot, historyId);
   const existing = historyCache.get(key);
+  const directory = admitHistoryDirectory(workspaceRoot, historyId);
+  if (!directory) {
+    historyCache.delete(key);
+    return {
+      historyBytes: 0,
+      tailLines: [],
+    };
+  }
+  const entriesPath = conversationHistoryEntriesPath(workspaceRoot, historyId);
+  const hasEntries = lexicalPathExists(entriesPath);
   if (existing) {
+    if (hasEntries) {
+      admitProjectRuntimeFile(
+        workspaceRoot,
+        historyDirectorySegments(historyId),
+        "entries.ndjson",
+        { mustExist: true },
+      );
+    } else {
+      existing.historyBytes = 0;
+      existing.tailLines = [];
+    }
+    decodeEntries(existing.tailLines, historyId);
     return existing;
   }
 
-  const entriesPath = conversationHistoryEntriesPath(workspaceRoot, historyId);
   const record = {
     historyBytes: 0,
     tailLines: [],
   };
 
-  if (existsSync(entriesPath)) {
+  if (hasEntries) {
     let raw = "";
     try {
-      raw = readFileSync(entriesPath, "utf8");
-    } catch {
+      raw = readProjectRuntimeFile(
+        workspaceRoot,
+        historyDirectorySegments(historyId),
+        "entries.ndjson",
+        { encoding: "utf8" },
+      );
+    } catch (error) {
+      if (!isPermissionError(error)) throw error;
       raw = "";
     }
     const trimmed = trimBufferTail(raw, MAX_HISTORY_BYTES);
     if (trimmed !== raw) {
-      writeTextFileIfPossible(entriesPath, trimmed);
+      writeTextFileIfPossible(
+        workspaceRoot,
+        historyId,
+        "entries.ndjson",
+        trimmed,
+      );
     }
     record.historyBytes = Buffer.byteLength(trimmed, "utf8");
     record.tailLines = trimmed.split("\n").filter(Boolean).slice(-HISTORY_TAIL_LINES);
   }
 
+  decodeEntries(record.tailLines, historyId);
   historyCache.set(key, record);
   return record;
 }
 
 function persistMeta(workspaceRoot, historyId, meta) {
-  mkdirSync(conversationHistoryDirectory(workspaceRoot, historyId), { recursive: true });
+  admitHistoryDirectory(workspaceRoot, historyId, { create: true });
   return writeTextFileIfPossible(
-    conversationHistoryMetaPath(workspaceRoot, historyId),
+    workspaceRoot,
+    historyId,
+    "meta.json",
     `${JSON.stringify(meta, null, 2)}\n`,
   );
 }
 
 function pruneHistoryWithinBudget(workspaceRoot, historyId, cacheRecord) {
   const entriesPath = conversationHistoryEntriesPath(workspaceRoot, historyId);
-  if (!existsSync(entriesPath)) {
+  admitHistoryDirectory(workspaceRoot, historyId, { create: true });
+  if (!lexicalPathExists(entriesPath)) {
     cacheRecord.historyBytes = 0;
     cacheRecord.tailLines = [];
     return;
@@ -125,25 +242,42 @@ function pruneHistoryWithinBudget(workspaceRoot, historyId, cacheRecord) {
 
   let raw = "";
   try {
-    raw = readFileSync(entriesPath, "utf8");
-  } catch {
+    raw = readProjectRuntimeFile(
+      workspaceRoot,
+      historyDirectorySegments(historyId),
+      "entries.ndjson",
+      { encoding: "utf8" },
+    );
+  } catch (error) {
+    if (!isPermissionError(error)) throw error;
     raw = "";
   }
   const trimmed = trimBufferTail(raw, MAX_HISTORY_BYTES);
   if (trimmed !== raw) {
-    writeTextFileIfPossible(entriesPath, trimmed);
+    writeTextFileIfPossible(
+      workspaceRoot,
+      historyId,
+      "entries.ndjson",
+      trimmed,
+    );
   }
   cacheRecord.historyBytes = Buffer.byteLength(trimmed, "utf8");
   cacheRecord.tailLines = trimmed.split("\n").filter(Boolean).slice(-HISTORY_TAIL_LINES);
 }
 
-function decodeEntries(lines) {
+function decodeEntries(lines, historyId) {
   return lines
     .map((line) => {
       try {
-        return JSON.parse(line);
+        const entry = JSON.parse(line);
+        if (entry?.conversationHistoryId !== historyId) {
+          throw new Error(
+            "conversation history entry does not match the exact history identity",
+          );
+        }
+        return entry;
       } catch {
-        return null;
+        throw new Error("conversation history entry is invalid");
       }
     })
     .filter(Boolean);
@@ -175,8 +309,30 @@ export function ensureConversationHistory(
   }
 
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
-  const metaPath = conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId);
-  const current = existsSync(metaPath) ? readJsonFile(metaPath) : null;
+  const current = readJsonFile(resolvedWorkspaceRoot, historyId);
+  if (
+    !current
+    && lexicalPathExists(
+      conversationHistoryEntriesPath(resolvedWorkspaceRoot, historyId),
+    )
+  ) {
+    throw new Error(
+      "conversation history entries cannot be admitted without exact metadata",
+    );
+  }
+  if (
+    current
+    && ownerKind
+    && ownerKind !== "unknown"
+    && (
+      current.ownerKind !== ownerKind
+      || current.ownerRef !== (ownerRef ?? historyId)
+    )
+  ) {
+    throw new Error(
+      "conversation history owner does not match the admitted history identity",
+    );
+  }
   const timestamp = nowIso();
   const next = current
     ? {
@@ -209,7 +365,7 @@ export function ensureConversationHistory(
 export function updateConversationMetadata(workspaceRoot, historyId, metadata = {}) {
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
   const existing =
-    readJsonFile(conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId)) ??
+    readJsonFile(resolvedWorkspaceRoot, historyId) ??
     ensureConversationHistory(resolvedWorkspaceRoot, {
       historyId,
       ownerKind: "unknown",
@@ -257,10 +413,15 @@ export function appendConversationEntry(
     payload,
   };
 
-  const entriesPath = conversationHistoryEntriesPath(resolvedWorkspaceRoot, historyId);
   const cacheRecord = loadCacheRecord(resolvedWorkspaceRoot, historyId);
   const line = `${JSON.stringify(entry)}\n`;
-  appendFileSync(entriesPath, line, "utf8");
+  appendProjectRuntimeFile(
+    resolvedWorkspaceRoot,
+    historyDirectorySegments(historyId),
+    "entries.ndjson",
+    line,
+    { encoding: "utf8" },
+  );
   cacheRecord.historyBytes += Buffer.byteLength(line, "utf8");
   cacheRecord.tailLines.push(line.trimEnd());
   if (cacheRecord.tailLines.length > HISTORY_TAIL_LINES) {
@@ -276,7 +437,7 @@ export function appendConversationEntry(
 
 export function loadConversationHistory(workspaceRoot, historyId, options = {}) {
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
-  const meta = readJsonFile(conversationHistoryMetaPath(resolvedWorkspaceRoot, historyId));
+  const meta = readJsonFile(resolvedWorkspaceRoot, historyId);
   if (!meta) {
     return {
       meta: null,
@@ -290,16 +451,17 @@ export function loadConversationHistory(workspaceRoot, historyId, options = {}) 
 
   return {
     meta,
-    entries: decodeEntries(lines),
+    entries: decodeEntries(lines, historyId),
   };
 }
 
 export function listConversationHistories(workspaceRoot, options = {}) {
   const resolvedWorkspaceRoot = resolve(workspaceRoot);
   const root = conversationHistoryRoot(resolvedWorkspaceRoot);
-  if (!existsSync(root)) {
+  if (!lexicalPathExists(root)) {
     return [];
   }
+  admitProjectRuntimeDirectory(resolvedWorkspaceRoot, HISTORY_ROOT_SEGMENTS);
 
   const ownerKind = options.ownerKind ?? null;
   const histories = [];
@@ -313,7 +475,7 @@ export function listConversationHistories(workspaceRoot, options = {}) {
     if (!entry.isDirectory()) {
       continue;
     }
-    const meta = readJsonFile(conversationHistoryMetaPath(resolvedWorkspaceRoot, entry.name));
+    const meta = readJsonFile(resolvedWorkspaceRoot, entry.name);
     if (!meta) {
       continue;
     }
@@ -328,7 +490,15 @@ export function listConversationHistories(workspaceRoot, options = {}) {
 }
 
 export function loadConversationHistoryStats(workspaceRoot, historyId) {
-  const cacheRecord = loadCacheRecord(workspaceRoot, historyId);
+  const resolvedWorkspaceRoot = resolve(workspaceRoot);
+  const meta = readJsonFile(resolvedWorkspaceRoot, historyId);
+  if (!meta) {
+    return {
+      historyBytes: 0,
+      retainedLineCount: 0,
+    };
+  }
+  const cacheRecord = loadCacheRecord(resolvedWorkspaceRoot, historyId);
   return {
     historyBytes: cacheRecord.historyBytes,
     retainedLineCount: cacheRecord.tailLines.length,

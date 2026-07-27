@@ -45,9 +45,10 @@ A Build Request invokes only a published semantic carrier. GTL owns that
 carrier's declared program and ABG owns traversal, continuation, runtime event
 truth, evidence admission, and closure.
 
-The current reference evidence is the `odd_glc` data-mapper run family. That
-reference proves the generic model; it does not create an `odd_glc`-specific
-manager lane.
+The current exact reference evidence is the immutable `odd_glc` `0.1.0`
+Basic-CLI proof produced on ABIogenesis `4.6.0-rc.3`. It qualifies only the
+generic read-only observation projection; it does not create an
+`odd_glc`-specific manager lane or supply Build/Assure authority.
 
 Historical Process Navigator and `odd_sdlc.query-domain` carriers are retired
 pre-release material. They do not define a live compatibility contract.

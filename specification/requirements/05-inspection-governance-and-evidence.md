@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-OBSERVE-001`, `PO-OM-AUDIT-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the implemented inspection/evidence projection in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Observation ingress is runtime-validated and cannot create authority; exact unproved governance, ownership-label, and forensic scenario cases remain open in the scenario ledger
+**Testcase Authority**: `specification/scenarios/04-project-workbench-collaboration-and-observation.md`, `build_tenants/react_vite/runtime/tests/test_ai_workspace_artifact_inspection.mjs`, `build_tenants/react_vite/runtime/tests/test_abg_run_observation.mjs`, `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-run-inspector.spec.ts`
 
 ### REQ-OM-INS-001 - Supervisory information is organized into explicit categories
 

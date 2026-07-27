@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Constraint / Guarantee
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-BOUNDARY-001`, `PO-OM-OBSERVE-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local boundary derived from `ONT-OM-DEVCTRL-001`, whole-family Prime contraction, IACS, class/sequence/state projections, axiom evaluation, and module mapping in `B-OM-DEVCTRL-LOCAL-001`, subject to exact deterministic validation. Requirement cases not exercised by the current Product slice remain explicit scenario gaps
+**Testcase Authority**: `build_tenants/react_vite/runtime/tests/test_abg_run_observation.mjs`, `build_tenants/react_vite/runtime/tests/test_developer_control_bootstrap.mjs`, `build_tenants/react_vite/runtime/tests/test_assurance_service.mjs`
 
 ### REQ-OM-ONT-001 - The product exposes canonical supervisory objects
 

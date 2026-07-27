@@ -3,6 +3,43 @@ import { z } from 'zod';
 const nonEmptyString = z.string().min(1);
 const stringList = z.array(nonEmptyString);
 
+export type AssuranceAttentionSourceKind = 'gate' | 'asset';
+export type AssuranceAttentionIdentityInput = {
+  projectId: string;
+  executionId: string | null;
+  sourceKind: AssuranceAttentionSourceKind;
+  sourceIdentity: string;
+};
+
+function utf16IdentityFrame(label: string, value: string) {
+  return `${label}:${value.length}:${value}`;
+}
+
+export function assuranceAttentionIdentity(
+  input: AssuranceAttentionIdentityInput,
+) {
+  const executionFrame = input.executionId === null
+    ? 'execution:none'
+    : utf16IdentityFrame('execution', input.executionId);
+  return [
+    'assurance:v1',
+    utf16IdentityFrame('project', input.projectId),
+    executionFrame,
+    `kind:${input.sourceKind}`,
+    utf16IdentityFrame('source', input.sourceIdentity),
+  ].join('|');
+}
+
+const isoTimestamp = z.string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    'expected a canonical UTC ISO-8601 timestamp',
+  )
+  .refine((value) => {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+  }, 'expected a valid canonical UTC ISO-8601 timestamp');
+
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() => z.union([
   z.string(),
@@ -29,11 +66,156 @@ export const projectRevisionSchema = z.object({
   observedAt: nonEmptyString,
 }).strict();
 
+function sameProjectRevisionIdentity(
+  left: z.infer<typeof projectRevisionSchema>,
+  right: z.infer<typeof projectRevisionSchema>,
+) {
+  return (
+    left.kind === right.kind
+    && left.revision === right.revision
+    && left.dirty === right.dirty
+    && left.sourceDigest === right.sourceDigest
+    && left.specificationDigest === right.specificationDigest
+  );
+}
+
 export const managerContextSchema = z.object({
   project: projectRefSchema,
   workspaceRef: nonEmptyString.nullable(),
   revision: projectRevisionSchema.nullable(),
 }).strict();
+
+export const workspaceProfileSchema = z.object({
+  primary_identity: nonEmptyString,
+  governance_identities: z.array(nonEmptyString),
+  active_domain_pack: nonEmptyString.nullable(),
+  shell_title: nonEmptyString,
+  confidence: z.enum(['high', 'medium', 'low']),
+  markers: z.array(nonEmptyString),
+}).strict();
+
+export const fsEntrySchema = z.object({
+  name: nonEmptyString,
+  absolutePath: nonEmptyString,
+  kind: z.enum(['directory', 'file']),
+  updatedAt: nonEmptyString,
+  hasWorkspace: z.boolean(),
+  markers: z.array(nonEmptyString),
+  profile: workspaceProfileSchema.nullable(),
+}).strict();
+
+export const fsBrowseResultSchema = z.object({
+  path: nonEmptyString,
+  parent: nonEmptyString.nullable(),
+  entries: z.array(fsEntrySchema),
+  truncated: z.boolean(),
+  state: z.enum(['present', 'missing', 'not_directory']),
+}).strict();
+
+export const projectRecordSchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  root: nonEmptyString,
+  odd_type: nonEmptyString,
+  has_ai_workspace: z.boolean(),
+  has_genesis: z.boolean(),
+  installed_packages: z.array(nonEmptyString),
+  build_tenants: z.array(nonEmptyString),
+  registry_source: z.enum(['registry', 'discovery']),
+  registered_at: nonEmptyString.nullable(),
+  updated_at: nonEmptyString.nullable(),
+  tags: z.array(nonEmptyString),
+  is_active: z.boolean(),
+}).strict();
+
+export const projectSurfaceDiagnosticSchema = z.object({
+  registry_root: nonEmptyString,
+  manager_workspace_root: nonEmptyString,
+  registry_version: z.number().int().nonnegative(),
+  active_project_root: nonEmptyString.nullable(),
+  candidate_count: z.number().int().nonnegative(),
+}).strict();
+
+function addProjectRegistryIssues(
+  projects: z.infer<typeof projectRecordSchema>[],
+  diagnostic: z.infer<typeof projectSurfaceDiagnosticSchema>,
+  context: z.RefinementCtx,
+) {
+  const active = projects.filter((entry) => entry.is_active);
+  if (
+    new Set(projects.map((entry) => entry.id)).size !== projects.length
+    || new Set(projects.map((entry) => entry.root)).size !== projects.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['projects'],
+      message: 'Project registry ids and roots must be unique',
+    });
+  }
+  if (
+    active.length > 1
+    || (diagnostic.active_project_root === null) !== (active.length === 0)
+    || (
+      diagnostic.active_project_root !== null
+      && active[0]?.root !== diagnostic.active_project_root
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['diagnostic', 'active_project_root'],
+      message: 'Project registry active row and diagnostic root are incoherent',
+    });
+  }
+  if (diagnostic.candidate_count !== projects.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['diagnostic', 'candidate_count'],
+      message: 'Project registry candidate count does not match rows',
+    });
+  }
+}
+
+export const projectRegistryResponseSchema = z.object({
+  projects: z.array(projectRecordSchema),
+  diagnostic: projectSurfaceDiagnosticSchema,
+}).strict().superRefine((value, context) => {
+  addProjectRegistryIssues(value.projects, value.diagnostic, context);
+});
+
+export const projectRegistryMutationResponseSchema = z.object({
+  ok: z.literal(true),
+  project: projectRecordSchema,
+  projects: z.array(projectRecordSchema),
+  diagnostic: projectSurfaceDiagnosticSchema,
+}).strict().superRefine((value, context) => {
+  addProjectRegistryIssues(value.projects, value.diagnostic, context);
+  const retained = value.projects.find((entry) => entry.id === value.project.id);
+  if (!retained || JSON.stringify(retained) !== JSON.stringify(value.project)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['project'],
+      message: 'Project mutation result is not present exactly in registry rows',
+    });
+  }
+});
+
+export const projectRegistryRemovalResponseSchema = z.object({
+  ok: z.literal(true),
+  removed: projectRecordSchema,
+  projects: z.array(projectRecordSchema),
+  diagnostic: projectSurfaceDiagnosticSchema,
+}).strict().superRefine((value, context) => {
+  addProjectRegistryIssues(value.projects, value.diagnostic, context);
+  if (value.projects.some((entry) => (
+    entry.id === value.removed.id || entry.root === value.removed.root
+  ))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['removed'],
+      message: 'removed Project remains present in registry rows',
+    });
+  }
+});
 
 export const portfolioPostureSchema = z.object({
   kind: z.enum([
@@ -51,6 +233,7 @@ export const portfolioPostureSchema = z.object({
 
 export const portfolioAttentionSummarySchema = z.object({
   attentionId: nonEmptyString,
+  correlationId: nonEmptyString,
   severity: z.enum(['info', 'warning', 'blocking']),
   sourceKind: nonEmptyString,
   sourceRef: nonEmptyString,
@@ -77,7 +260,31 @@ export const buildPortfolioActivitySchema = z.object({
   latestExecutionId: nonEmptyString.nullable(),
   latestState: buildExecutionStateSchema.nullable(),
   sourceRefs: z.array(z.string()),
-}).strict();
+}).strict().superRefine((value, context) => {
+  const total = (
+    value.queuedCount
+    + value.runningCount
+    + value.waitingHumanCount
+    + value.terminalCount
+  );
+  if (
+    (value.latestExecutionId === null) !== (value.latestState === null)
+    || (value.latestExecutionId === null && total !== 0)
+    || (value.latestState === 'queued' && value.queuedCount === 0)
+    || (['starting', 'running'].includes(value.latestState ?? '') && value.runningCount === 0)
+    || (value.latestState === 'waiting_human' && value.waitingHumanCount === 0)
+    || (
+      ['converged', 'failed', 'cancelled'].includes(value.latestState ?? '')
+      && value.terminalCount === 0
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['latestExecutionId'],
+      message: 'Portfolio activity latest execution identity is incoherent with counts',
+    });
+  }
+});
 
 export const buildPortfolioRowSchema = z.object({
   project: projectRefSchema,
@@ -112,7 +319,21 @@ export const buildPortfolioSchema = z.object({
   browseRoot: nonEmptyString,
   observedAt: nonEmptyString,
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  const attentions = value.rows.flatMap((row) => row.attention.map((entry) => entry.attentionId));
+  if (
+    new Set(value.rows.map((row) => row.project.id)).size !== value.rows.length
+    || new Set(value.rows.map((row) => row.project.root)).size !== value.rows.length
+    || value.rows.filter((row) => row.active).length > 1
+    || new Set(attentions).size !== attentions.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['rows'],
+      message: 'Portfolio Project, active Context, or attention identities are incoherent',
+    });
+  }
+});
 
 export const capabilityIdSchema = z.enum([
   'build-portfolio',
@@ -220,6 +441,7 @@ export const commandResultSchema = z.discriminatedUnion('status', [
     failureKind: nonEmptyString,
     error: nonEmptyString,
     retryable: z.boolean(),
+    value: z.unknown(),
   }).strict(),
 ]);
 
@@ -283,22 +505,60 @@ export const buildInternalProcessPlanSchema = z.object({
   }
 });
 
+export const buildExecutionAdapterBindingSchema = z.object({
+  adapterRef: nonEmptyString,
+  sourceRefs: z.array(nonEmptyString).min(1),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.sourceRefs).size !== value.sourceRefs.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sourceRefs'],
+      message: 'execution adapter binding source refs must be unique',
+    });
+  }
+});
+
 export const buildRequestSchema = z.object({
   schemaVersion: z.literal('1'),
   requestId: nonEmptyString,
   correlationId: nonEmptyString,
   project: projectRefSchema,
   revision: projectRevisionSchema,
+  descriptorBinding: buildCarrierDescriptorSchema,
+  adapterBinding: buildExecutionAdapterBindingSchema,
   descriptorRef: nonEmptyString,
   carrierRef: nonEmptyString,
   startupConfigRef: nonEmptyString,
   publicStartTarget: nonEmptyString,
   inputs: jsonValueSchema,
   requestedBy: nonEmptyString,
-  requestedAt: nonEmptyString,
+  requestedAt: isoTimestamp,
   resourcePolicyRef: nonEmptyString,
   authorityRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  const descriptorFields = [
+    ['descriptorRef', value.descriptorBinding.descriptorRef],
+    ['carrierRef', value.descriptorBinding.carrierRef],
+    ['startupConfigRef', value.descriptorBinding.startupConfigRef],
+    ['publicStartTarget', value.descriptorBinding.publicStartTarget],
+  ] as const;
+  for (const [field, expected] of descriptorFields) {
+    if (value[field] !== expected) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} must match the immutable descriptor binding`,
+      });
+    }
+  }
+  if (value.adapterBinding.adapterRef !== value.descriptorBinding.executionAdapterRef) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['adapterBinding', 'adapterRef'],
+      message: 'execution adapter binding must match the immutable descriptor binding',
+    });
+  }
+});
 
 export const buildTerminalResultSchema = z.object({
   kind: z.enum(['converged', 'failed', 'waiting_human']),
@@ -313,7 +573,7 @@ export const buildExecutionObservationSchema = z.object({
   executionId: nonEmptyString,
   state: z.enum(['running', 'waiting_human', 'converged', 'failed', 'stale', 'disconnected']),
   processRef: nonEmptyString.nullable(),
-  heartbeatAt: nonEmptyString,
+  heartbeatAt: isoTimestamp,
   runRefs: z.array(nonEmptyString),
   terminalResult: buildTerminalResultSchema.nullable(),
   sourceRefs: stringList,
@@ -356,7 +616,7 @@ export const buildProcessOutcomeSchema = z.object({
   terminalResult: buildTerminalResultSchema.nullable(),
   stdoutRef: nonEmptyString,
   stderrRef: nonEmptyString,
-  observedAt: nonEmptyString,
+  observedAt: isoTimestamp,
 }).strict();
 
 export const buildExecutionSchema = z.object({
@@ -372,18 +632,87 @@ export const buildExecutionSchema = z.object({
   processRef: nonEmptyString.nullable(),
   worksiteRef: nonEmptyString,
   runRefs: z.array(z.string()),
-  startedAt: nonEmptyString.nullable(),
-  updatedAt: nonEmptyString,
-  completedAt: nonEmptyString.nullable(),
-  heartbeatAt: nonEmptyString.nullable(),
-  resumedAt: nonEmptyString.nullable().default(null),
+  startedAt: isoTimestamp.nullable(),
+  updatedAt: isoTimestamp,
+  completedAt: isoTimestamp.nullable(),
+  heartbeatAt: isoTimestamp.nullable(),
+  resumedAt: isoTimestamp.nullable().default(null),
   resumedBy: nonEmptyString.nullable().default(null),
   processOutcome: buildProcessOutcomeSchema.nullable(),
-  cancelRequestedAt: nonEmptyString.nullable(),
+  cancelRequestedAt: isoTimestamp.nullable(),
   cancelledBy: nonEmptyString.nullable(),
   assuranceSummaryRef: nonEmptyString.nullable(),
   sourceRefs: z.array(z.string()),
-}).strict();
+}).strict().superRefine((value, context) => {
+  const terminalLike = ['waiting_human', 'converged', 'failed', 'cancelled'].includes(value.state);
+  const nonTerminal = ['queued', 'starting', 'running', 'stale', 'disconnected'].includes(value.state);
+  if ((value.state === 'queued') !== (value.queuePosition !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['queuePosition'],
+      message: 'only a queued execution may carry queue position',
+    });
+  }
+  if (terminalLike !== (value.completedAt !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['completedAt'],
+      message: 'terminal or waiting-human execution must carry completion time',
+    });
+  }
+  if (nonTerminal && value.processOutcome !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['processOutcome'],
+      message: 'non-terminal execution cannot carry process outcome',
+    });
+  }
+  if (terminalLike && value.processOutcome === null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['processOutcome'],
+      message: 'terminal or waiting-human execution requires process outcome',
+    });
+  }
+  if (value.state === 'running' && (!value.processRef || !value.heartbeatAt)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['processRef'],
+      message: 'running execution requires process and heartbeat identity',
+    });
+  }
+  if (
+    (value.cancelRequestedAt === null) !== (value.cancelledBy === null)
+    || (
+      value.state === 'cancelled'
+      && (
+        value.cancelRequestedAt === null
+        || value.cancelledBy === null
+        || value.processOutcome?.kind !== 'cancelled'
+      )
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['cancelRequestedAt'],
+      message: 'cancellation requires paired attribution and a cancelled outcome',
+    });
+  }
+  const terminalResult = value.processOutcome?.terminalResult ?? null;
+  if (
+    (value.state === 'waiting_human' && terminalResult?.kind !== 'waiting_human')
+    || (value.state === 'converged' && terminalResult?.kind !== 'converged')
+    || (value.state === 'failed' && terminalResult && terminalResult.kind !== 'failed')
+    || (value.state === 'cancelled' && terminalResult !== null)
+    || (value.processOutcome?.kind === 'cancelled' && value.state !== 'cancelled')
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['processOutcome', 'terminalResult'],
+      message: 'process outcome does not match execution lifecycle state',
+    });
+  }
+});
 
 export const buildDescriptorAdmissionSchema = z.object({
   schemaVersion: z.literal('1'),
@@ -407,7 +736,18 @@ export const buildSchedulerProjectionSchema = z.object({
   runningCount: z.number().int().nonnegative(),
   queuedCount: z.number().int().nonnegative(),
   availableSlots: z.number().int().nonnegative(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (
+    value.runningCount > value.maxConcurrent
+    || value.queuedCount > value.maxQueued
+    || value.availableSlots !== Math.max(0, value.maxConcurrent - value.runningCount)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Build scheduler counts exceed limits or available slots are incoherent',
+    });
+  }
+});
 
 export const buildControlSnapshotSchema = z.object({
   schemaVersion: z.literal('1'),
@@ -417,7 +757,7 @@ export const buildControlSnapshotSchema = z.object({
   requests: z.array(buildRequestSchema),
   executions: z.array(buildExecutionSchema),
   scheduler: buildSchedulerProjectionSchema,
-  observedAt: nonEmptyString,
+  observedAt: isoTimestamp,
   sourceRefs: stringList,
 }).strict();
 
@@ -441,7 +781,7 @@ export const buildOutputTailSchema = z.object({
   stderr: z.string(),
   stdoutTruncated: z.boolean(),
   stderrTruncated: z.boolean(),
-  observedAt: nonEmptyString,
+  observedAt: isoTimestamp,
   sourceRefs: stringList,
 }).strict();
 
@@ -509,7 +849,78 @@ export const specificationProposalSchema = z.object({
   resultingRevision: projectRevisionSchema.nullable(),
   decision: proposalDecisionSchema.nullable(),
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  const allValidationPassed = (
+    value.validation.length > 0
+    && value.validation.every((entry) => entry.status === 'passed')
+  );
+  if (value.status === 'draft' && value.validation.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['validation'],
+      message: 'draft proposal cannot carry validation results',
+    });
+  }
+  if (value.status === 'valid' && !allValidationPassed) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['validation'],
+      message: 'valid proposal requires complete passing validation',
+    });
+  }
+  if (
+    ['invalid', 'stale'].includes(value.status)
+    && (
+      value.validation.length === 0
+      || value.validation.every((entry) => entry.status === 'passed')
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['validation'],
+      message: `${value.status} proposal requires a non-passing validation result`,
+    });
+  }
+  if (value.status === 'accepted') {
+    if (
+      value.decision?.kind !== 'accepted'
+      || !value.resultingRevision
+      || !allValidationPassed
+      || !sameProjectRevisionIdentity(value.decision.basisRevision, value.basisRevision)
+      || sameProjectRevisionIdentity(value.resultingRevision, value.basisRevision)
+      || JSON.stringify(value.decision.changedSurfaceRefs) !== JSON.stringify(value.affectedSurfaceRefs)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['decision'],
+        message: 'accepted proposal requires passing validation and a coherent accepted decision/result',
+      });
+    }
+    return;
+  }
+  if (value.status === 'rejected') {
+    if (
+      value.decision?.kind !== 'rejected'
+      || value.resultingRevision !== null
+      || !sameProjectRevisionIdentity(value.decision.basisRevision, value.basisRevision)
+      || value.decision.changedSurfaceRefs.length > 0
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['decision'],
+        message: 'rejected proposal requires a coherent non-mutating rejection decision',
+      });
+    }
+    return;
+  }
+  if (value.decision !== null || value.resultingRevision !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['decision'],
+      message: 'non-decided proposal cannot carry decision or resulting revision',
+    });
+  }
+});
 
 export const specificationProposalProviderResponseSchema = z.object({
   summary: nonEmptyString,
@@ -541,7 +952,161 @@ export const specificationProposalHistorySchema = z.object({
   retentionLimit: z.number().int().positive(),
   truncated: z.boolean(),
   sourceRefs: stringList,
+}).strict().superRefine((value, context) => {
+  const byId = new Map(value.proposals.map((proposal) => [proposal.proposalId, proposal]));
+  if (
+    byId.size !== value.proposals.length
+    || value.proposals.length > value.retentionLimit
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['proposals'],
+      message: 'proposal history identities must be unique and within its retention limit',
+    });
+  }
+  for (const [index, proposal] of value.proposals.entries()) {
+    const predecessorId = proposal.predecessorProposalId;
+    if (
+      predecessorId === proposal.proposalId
+      || (predecessorId !== null && !value.truncated && !byId.has(predecessorId))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['proposals', index, 'predecessorProposalId'],
+        message: 'proposal history predecessor is self-referential or missing',
+      });
+    }
+    const visited = new Set<string>();
+    let cursor: z.infer<typeof specificationProposalSchema> | undefined = proposal;
+    while (cursor?.predecessorProposalId) {
+      if (visited.has(cursor.proposalId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['proposals', index, 'predecessorProposalId'],
+          message: 'proposal history predecessor lineage contains a cycle',
+        });
+        break;
+      }
+      visited.add(cursor.proposalId);
+      cursor = byId.get(cursor.predecessorProposalId);
+    }
+  }
+});
+
+const authorityBasisFields = {
+  authorityRef: nonEmptyString,
+  basisRefs: z.array(nonEmptyString).min(1),
+};
+
+export const gatePositiveDecisionRequirementSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('probabilistic'),
+    evaluatorRef: nonEmptyString,
+    ...authorityBasisFields,
+    requiredFactRefs: z.array(nonEmptyString).min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('human'),
+    decisionRef: nonEmptyString,
+    requiredOutcome: z.literal('approved'),
+    ...authorityBasisFields,
+  }).strict(),
+]).superRefine((value, context) => {
+  for (const [path, values] of [
+    ['basisRefs', value.basisRefs],
+    ...(value.kind === 'probabilistic'
+      ? [['requiredFactRefs', value.requiredFactRefs] as const]
+      : []),
+  ] as const) {
+    if (new Set(values).size !== values.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [path],
+        message: `${path} must contain unique identities`,
+      });
+    }
+  }
+});
+
+const probabilisticDecisionFactSchema = z.object({
+  factRef: nonEmptyString,
+  outcome: z.enum(['satisfied', 'not_satisfied', 'unknown']),
 }).strict();
+
+export const gateDecisionEvidenceSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('probabilistic'),
+    outcome: z.enum(['satisfied', 'not_satisfied', 'inconclusive']),
+    evaluatorRef: nonEmptyString,
+    ...authorityBasisFields,
+    facts: z.array(probabilisticDecisionFactSchema).min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('human'),
+    decisionRef: nonEmptyString,
+    outcome: z.enum(['approved', 'rejected']),
+    actorRef: nonEmptyString,
+    ...authorityBasisFields,
+  }).strict(),
+]).superRefine((value, context) => {
+  if (new Set(value.basisRefs).size !== value.basisRefs.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['basisRefs'],
+      message: 'basisRefs must contain unique identities',
+    });
+  }
+  if (
+    value.kind === 'probabilistic'
+    && new Set(value.facts.map((entry) => entry.factRef)).size !== value.facts.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['facts'],
+      message: 'probabilistic decision fact identities must be unique',
+    });
+  }
+});
+
+export type GatePositiveDecisionRequirement = z.infer<typeof gatePositiveDecisionRequirementSchema>;
+export type GateDecisionEvidence = z.infer<typeof gateDecisionEvidenceSchema>;
+
+function sameExactStringList(left: string[], right: string[]) {
+  return (
+    left.length === right.length
+    && left.every((entry, index) => entry === right[index])
+  );
+}
+
+function decisionSatisfiesRequirement(
+  requirement: GatePositiveDecisionRequirement | null,
+  decision: GateDecisionEvidence | null,
+) {
+  if (!requirement || !decision || requirement.kind !== decision.kind) return false;
+  if (
+    requirement.authorityRef !== decision.authorityRef
+    || !sameExactStringList(requirement.basisRefs, decision.basisRefs)
+  ) return false;
+  if (requirement.kind === 'human' && decision.kind === 'human') {
+    return (
+      decision.decisionRef === requirement.decisionRef
+      && decision.outcome === requirement.requiredOutcome
+      && decision.actorRef.length > 0
+    );
+  }
+  if (requirement.kind === 'probabilistic' && decision.kind === 'probabilistic') {
+    return (
+      decision.evaluatorRef === requirement.evaluatorRef
+      && decision.outcome === 'satisfied'
+      && decision.facts.length === requirement.requiredFactRefs.length
+      && decision.facts.every((fact, index) => (
+        fact.factRef === requirement.requiredFactRefs[index]
+        && fact.outcome === 'satisfied'
+      ))
+    );
+  }
+  return false;
+}
 
 export const gateAssessmentSchema = z.object({
   gateRef: nonEmptyString,
@@ -556,9 +1121,33 @@ export const gateAssessmentSchema = z.object({
   producerRef: nonEmptyString.nullable(),
   evidenceDigest: nonEmptyString.nullable(),
   evidenceRefs: z.array(z.string()),
+  decision: gateDecisionEvidenceSchema.nullable(),
   sourceRefs: stringList,
   assessedAt: nonEmptyString,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.regime === 'F_D' && value.decision !== null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['decision'],
+      message: 'deterministic gate assessment cannot carry probabilistic or human decision authority',
+    });
+  }
+  if (
+    value.status === 'satisfied'
+    && (
+      (value.regime === 'F_P'
+        && (value.decision?.kind !== 'probabilistic' || value.decision.outcome !== 'satisfied'))
+      || (value.regime === 'F_H'
+        && (value.decision?.kind !== 'human' || value.decision.outcome !== 'approved'))
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['decision'],
+      message: `${value.regime} satisfaction requires its structured positive decision`,
+    });
+  }
+});
 
 export const assetDeliverySchema = z.object({
   requirementRef: nonEmptyString,
@@ -594,9 +1183,29 @@ const assuranceCatalogGateSchema = z.object({
   requirementRef: nonEmptyString,
   regime: z.enum(['F_D', 'F_P', 'F_H']),
   evidenceKey: nonEmptyString,
+  positiveDecisionRequirement: gatePositiveDecisionRequirementSchema.nullable(),
   reactionRefs: z.array(nonEmptyString),
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  const requiredKind = value.regime === 'F_P'
+    ? 'probabilistic'
+    : value.regime === 'F_H'
+      ? 'human'
+      : null;
+  if (
+    (requiredKind === null && value.positiveDecisionRequirement !== null)
+    || (
+      requiredKind !== null
+      && value.positiveDecisionRequirement?.kind !== requiredKind
+    )
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['positiveDecisionRequirement'],
+      message: `${value.regime} gate has an incoherent positive decision authority requirement`,
+    });
+  }
+});
 
 const assuranceCatalogAssetSchema = z.object({
   requirementRef: nonEmptyString,
@@ -615,7 +1224,28 @@ export const assuranceCatalogSchema = z.object({
   gates: z.array(assuranceCatalogGateSchema),
   assets: z.array(assuranceCatalogAssetSchema),
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.gates.length + value.assets.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assurance catalog must declare at least one gate or asset',
+    });
+  }
+  for (const [path, values] of [
+    ['gates.gateRef', value.gates.map((entry) => entry.gateRef)],
+    ['gates.evidenceKey', value.gates.map((entry) => entry.evidenceKey)],
+    ['assets.requirementRef', value.assets.map((entry) => entry.requirementRef)],
+    ['assets.evidenceKey', value.assets.map((entry) => entry.evidenceKey)],
+  ] as const) {
+    if (new Set(values).size !== values.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: path.split('.'),
+        message: `duplicate assurance catalog identity: ${path}`,
+      });
+    }
+  }
+});
 
 const buildGateEvidenceResultSchema = z.object({
   gateRef: nonEmptyString,
@@ -623,6 +1253,7 @@ const buildGateEvidenceResultSchema = z.object({
   evidenceKey: nonEmptyString,
   digest: nonEmptyString.nullable(),
   evidenceRefs: z.array(nonEmptyString),
+  decision: gateDecisionEvidenceSchema.nullable(),
   sourceRefs: stringList,
 }).strict();
 
@@ -657,7 +1288,18 @@ export const assuranceCatalogAdmissionSchema = z.object({
   catalog: assuranceCatalogSchema.nullable(),
   reason: nonEmptyString.nullable(),
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (
+    (value.status === 'ready' && (!value.catalog || value.reason !== null))
+    || (value.status !== 'ready' && value.reason === null)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['catalog'],
+      message: 'assurance catalog admission status, catalog, and reason are incoherent',
+    });
+  }
+});
 
 export const assuranceSummarySchema = z.object({
   posture: z.enum(['unassessed', 'partial', 'verified', 'failed', 'stale', 'unsupported', 'waiting_human']),
@@ -692,7 +1334,64 @@ export const assuranceSnapshotSchema = z.object({
   summary: assuranceSummarySchema,
   observedAt: nonEmptyString,
   sourceRefs: stringList,
-}).strict();
+}).strict().superRefine((value, context) => {
+  for (const [index, item] of value.attentionItems.entries()) {
+    const projectBound = item.sourceKind === 'assurance-catalog'
+      ? item.attentionId === `assurance-catalog:${item.project.id}`
+      : item.sourceKind === 'gate'
+        ? value.gateAssessments.some((assessment) => (
+            assessment.project.id === item.project.id
+            && assessment.executionId === item.executionId
+            && item.attentionId === assuranceAttentionIdentity({
+              projectId: assessment.project.id,
+              executionId: assessment.executionId,
+              sourceKind: 'gate',
+              sourceIdentity: assessment.gateRef,
+            })
+          ))
+        : item.sourceKind === 'asset'
+          ? value.assetDeliveries.some((delivery) => (
+              delivery.project.id === item.project.id
+              && delivery.executionId === item.executionId
+              && item.attentionId === assuranceAttentionIdentity({
+                projectId: delivery.project.id,
+                executionId: delivery.executionId,
+                sourceKind: 'asset',
+                sourceIdentity: delivery.requirementRef,
+              })
+            ))
+          : false;
+    if (!projectBound) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attentionItems', index, 'attentionId'],
+        message: 'Assurance attention identity is not bound to its exact Project, execution, source kind, and assessment',
+      });
+    }
+  }
+  const catalog = value.catalogAdmission.status === 'ready'
+    ? value.catalogAdmission.catalog
+    : null;
+  if (!catalog) return;
+  for (const [index, assessment] of value.gateAssessments.entries()) {
+    if (assessment.status !== 'satisfied' || assessment.regime === 'F_D') continue;
+    const definition = catalog.gates.find((entry) => entry.gateRef === assessment.gateRef);
+    if (
+      !definition
+      || definition.regime !== assessment.regime
+      || !decisionSatisfiesRequirement(
+        definition.positiveDecisionRequirement,
+        assessment.decision,
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['gateAssessments', index, 'decision'],
+        message: `${assessment.regime} satisfaction does not match catalog-admitted decision authority and basis`,
+      });
+    }
+  }
+});
 
 export const assuranceLoadRequestSchema = z.object({
   project: projectRefSchema,
@@ -703,6 +1402,14 @@ export const assuranceLoadRequestSchema = z.object({
 export type ProjectRef = z.infer<typeof projectRefSchema>;
 export type ProjectRevision = z.infer<typeof projectRevisionSchema>;
 export type ManagerContext = z.infer<typeof managerContextSchema>;
+export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
+export type FsEntry = z.infer<typeof fsEntrySchema>;
+export type FsBrowseResult = z.infer<typeof fsBrowseResultSchema>;
+export type ProjectRecord = z.infer<typeof projectRecordSchema>;
+export type ProjectSurfaceDiagnostic = z.infer<typeof projectSurfaceDiagnosticSchema>;
+export type ProjectRegistryResponse = z.infer<typeof projectRegistryResponseSchema>;
+export type ProjectRegistryMutationResponse = z.infer<typeof projectRegistryMutationResponseSchema>;
+export type ProjectRegistryRemovalResponse = z.infer<typeof projectRegistryRemovalResponseSchema>;
 export type PortfolioPosture = z.infer<typeof portfolioPostureSchema>;
 export type PortfolioAttentionSummary = z.infer<typeof portfolioAttentionSummarySchema>;
 export type BuildPortfolioActivity = z.infer<typeof buildPortfolioActivitySchema>;

@@ -8,6 +8,7 @@ import {
   type BuildControlState,
   type BuildControlSubscription,
 } from "./state";
+import { buildControlSubscriptions } from "./subscriptions";
 import { updateBuildControl } from "./update";
 import { BuildControlView } from "./view";
 
@@ -20,16 +21,11 @@ export const buildControlModule: CapabilityModule<
   id: "build-control",
   initialState: INITIAL_BUILD_CONTROL_STATE,
   update: updateBuildControl,
-  subscriptions: (state, context) => {
-    const active = state.snapshot?.executions.some((execution) => (
-      execution.state === "queued"
-      || execution.state === "starting"
-      || execution.state === "running"
-      || execution.state === "stale"
-      || execution.state === "disconnected"
-    ));
-    return active ? [{ type: "build.poll", projectRoot: context.project.root, intervalMs: 600 }] : [];
-  },
+  subscriptions: (state, context) => buildControlSubscriptions(
+    state,
+    context.project.root,
+    context.revision,
+  ),
   contribution: buildControlContribution,
   View: BuildControlView,
 };
@@ -38,6 +34,7 @@ export * from "./contribution";
 export * from "./messages";
 export * from "./selectors";
 export * from "./state";
+export * from "./subscriptions";
 export * from "./update";
 export * from "./view";
 export { createBuildControlState };

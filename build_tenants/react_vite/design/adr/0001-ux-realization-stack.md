@@ -3,11 +3,18 @@
 **Status**: Superseded In Part
 **Date**: 2026-04-26
 **Ratified**: 2026-04-26 — open decisions ratified per recommendation: Zod for runtime validation; single tenant-local `cmdMiddleware`; state persistence deferred until a concrete requirement surfaces (likely T-009 SessionAssetSurface).
-**Superseded By**: ADR 0003 replaces the unrealized Redux Toolkit and RTK Query choices with the live plain-TypeScript reducer composition and one modular command runtime; React, shared typed contracts, runtime validation, one effect membrane, and replay law remain active.
+**Superseded By**: ADR 0003 replaces the unrealized Redux Toolkit and RTK Query choices with a plain-TypeScript reducer composition and modular command-runtime target; React, shared typed contracts, runtime validation, one effect membrane, and replay remain retained design intent, with current implementation acceptance governed by the disposition below.
 **Tenant**: `react_vite`
 **Closes ticket**: T-013
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
 **Method anchors**: `UX_METHOD.md` §4 (Process Model), §4A (Stack Discretion), §6 (Effect Membrane), §10 (Type Sharing), §12 (Realization Discretion), §13 (Adoption)
+**Implements**: `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/host/index.ts`; `build_tenants/react_vite/src/effects/command-runtime/index.ts`; `build_tenants/react_vite/src/contracts/developer-control/index.ts`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `host rejects unknown, duplicate, and uncorrelated capability traffic`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `each capability owns its structural public surfaces and cross-capability imports stay at host ports`
+**STDO-UX Bindings**: State=plain immutable capability State records and DeveloperControlHostState; Msg=capability Msg unions and DeveloperControlHostMessage; Update=pure capability update functions and updateDeveloperControlHost; Cmd=capability command unions and DeveloperControlHostCommand; Sub=declarative capability subscriptions; Ingress=shared TypeScript contracts plus runtime validation; View=React capability Views and DeveloperControlHost; Membrane=effects/command-runtime plus minimal React lifecycle adapters; Replay=build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs :: host rejects unknown, duplicate, and uncorrelated capability traffic; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer control and workbench tabs provide keyboard parity and named panels
+**Accepted Ontology And Design Basis**: The retained React, shared-contract, runtime-validation, effect-membrane, and replay relations project `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001`; superseded Redux Toolkit and RTK Query choices carry no live authority.
+**Accessibility Proof Scope**: Retained React surfaces in the declared operator bundle carry keyboard/focus semantics, named status, representative contrast, terminal/forensic access, and responsive containment.
+**Implementation Acceptance**: Accepted only for the retained relations now realized through ADR 0003, subject to the exact T-032 validation bundle. The superseded stack choices remain non-operative.
 
 ---
 

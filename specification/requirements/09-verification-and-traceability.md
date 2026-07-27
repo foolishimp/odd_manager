@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Verification
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-AUDIT-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the Product-to-proof graph, exact STDO release check, source runtime/build/browser gates, exact 4.6 qualification, and isolated installed-development significant-path bundle, subject to their exact candidate run. Requirement-specific functional scenario gaps remain counted and explicit; they block only the corresponding unproved claims
+**Testcase Authority**: `specification/scenarios/`, `build_tenants/react_vite/runtime/tests/test_stdo_traceability.mjs`, `build_tenants/react_vite/qualification/installed-development-proof.mjs`, `build_tenants/react_vite/runtime/tests/`, `build_tenants/react_vite/tests/e2e/`
 
 ### REQ-OM-VER-001 - Every live requirement family has downstream closure
 

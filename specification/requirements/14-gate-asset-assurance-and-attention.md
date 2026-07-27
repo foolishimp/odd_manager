@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `specification/GOALS.md` G-006
+**Product Outcomes**: `PO-OM-DEVELOPER-001`, `PO-OM-AUDIT-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local assurance/attention projection in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Positive posture remains catalog/evidence/basis-bound; the absent live odd_glc Assurance Catalog and remaining reaction/forensic scenarios stay open
+**Testcase Authority**: `specification/scenarios/02-developer-review-tune-build-assure.md`, `specification/scenarios/03-concurrent-build-attention-and-reentry.md`, `build_tenants/react_vite/runtime/tests/test_assurance_attention_replay.mjs`, `build_tenants/react_vite/runtime/tests/test_assurance_service.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts`
 
 ### REQ-OM-ASR-001 - Required gates and assets come from published meaning
 
@@ -63,8 +66,13 @@ assurance posture.
 
 Acceptance Criteria
 - F_D results identify deterministic pass, fail, or unavailable state
-- F_P work or assessment does not self-certify constitutional truth
-- F_H obligations identify the required human decision and authority
+- F_P positive satisfaction requires a structured decision whose evaluator,
+  authority, exact basis, and exact required fact set match independently
+  admitted catalog meaning; a producer's self-declared evaluator or generic
+  passed result does not certify constitutional truth
+- F_H positive satisfaction requires the exact admitted human decision,
+  attributable actor, authority, and basis; a generic passed result is not a
+  human decision
 - human approval cannot override deterministic failure
 
 ### REQ-OM-ASR-006 - Attention items identify one actionable condition
@@ -78,6 +86,9 @@ Acceptance Criteria
 - deterministic failure, waiting-human, stale heartbeat, proof mismatch,
   specification drift, missing carrier, and residual posture are distinguishable
 - duplicate projections of the same condition preserve one correlation identity
+- derived gate and asset attention identities injectively retain exact Project,
+  present-or-absent execution, source kind, and source identity so delimiter
+  content, literal sentinel text, and equal catalog strings cannot collapse
 - attention ordering remains a projection and does not rewrite source severity
 
 ### REQ-OM-ASR-007 - Reactions are explicit, bounded, and lawful

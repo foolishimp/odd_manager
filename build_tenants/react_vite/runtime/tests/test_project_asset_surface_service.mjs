@@ -30,7 +30,7 @@ test('setActive registers an absolute child project root before activating it', 
   }
 });
 
-test('setActive can monitor an absolute child project root without registering it', () => {
+test('setActive refuses an unregistered absolute root when registration is disabled', () => {
   const tempRoot = mkdtempSync(join(tmpdir(), 'odd-manager-project-surface-'));
   try {
     const managerRoot = join(tempRoot, 'manager');
@@ -40,15 +40,13 @@ test('setActive can monitor an absolute child project root without registering i
     mkdirSync(join(childRoot, '.ai-workspace'), { recursive: true });
 
     const surface = createProjectSurface(managerRoot, { discoveryRoot: sandboxRoot });
-    const project = surface.setActive(childRoot, { registerIfMissing: false });
-    const projects = surface.list();
-
-    assert.equal(project.root, childRoot);
-    assert.equal(project.name, 'scenario_t164_data_mapper_live.pid95067.workspace');
-    assert.equal(project.is_active, true);
-    assert.equal(project.registry_source, 'discovery');
-    assert.equal(projects.length, 0);
-    assert.equal(surface.diagnostic().active_project_root, childRoot);
+    const before = surface.diagnostic().active_project_root;
+    assert.throws(
+      () => surface.setActive(childRoot, { registerIfMissing: false }),
+      /Project is not registered/,
+    );
+    assert.deepEqual(surface.list(), []);
+    assert.equal(surface.diagnostic().active_project_root, before);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }

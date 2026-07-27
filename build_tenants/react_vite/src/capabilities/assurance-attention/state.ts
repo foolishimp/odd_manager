@@ -11,6 +11,18 @@ type AssuranceCommandIdentity = {
   basisRevision: ProjectRevision;
 };
 
+export type AssuranceInspectorFocusBasis =
+  | {
+      kind: "attention-reaction";
+      attentionId: string;
+      reactionRef: string;
+      sourceRef: string;
+    }
+  | {
+      kind: "execution-evidence";
+      sourceRef: string;
+    };
+
 export type AssuranceAttentionCommand =
   | ({
       type: "assurance.load";
@@ -19,10 +31,8 @@ export type AssuranceAttentionCommand =
     } & AssuranceCommandIdentity)
   | ({
       type: "assurance.open-run-inspector";
-      executionId: string | null;
-      runRef: string | null;
-      revision: string;
-      sourceRef: string;
+      executionId: string;
+      focusBasis: AssuranceInspectorFocusBasis;
     } & AssuranceCommandIdentity);
 
 export type AssuranceFilter = "all" | "attention";
@@ -36,6 +46,7 @@ export type AssuranceAttentionState = {
   filter: AssuranceFilter;
   selectedAssessmentRef: string | null;
   selectedAttentionId: string | null;
+  refreshQueued: boolean;
   pendingCommands: AssuranceAttentionCommand[];
   commandSequence: number;
   error: string | null;
@@ -51,6 +62,7 @@ export function createAssuranceAttentionState(): AssuranceAttentionState {
     filter: "all",
     selectedAssessmentRef: null,
     selectedAttentionId: null,
+    refreshQueued: false,
     pendingCommands: [],
     commandSequence: 0,
     error: null,

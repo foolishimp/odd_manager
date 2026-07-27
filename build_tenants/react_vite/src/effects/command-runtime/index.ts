@@ -2,6 +2,7 @@ export { interpretDeveloperControlCommand } from "./developer-control-command-ru
 export { interpretAssuranceAttentionCommand } from "./assurance-attention-command-runtime";
 export { interpretBuildPortfolioCommand } from "./build-portfolio-command-runtime";
 export { interpretBuildControlCommand } from "./build-control-command-runtime";
+export { interpretDeveloperControlAggregateCommand } from "./developer-control-aggregate-runtime";
 export { interpretSpecificationProposalCommand } from "./specification-proposal-command-runtime";
 export {
   admitDeveloperControlSubscription,

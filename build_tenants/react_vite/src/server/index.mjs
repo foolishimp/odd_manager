@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
@@ -43,6 +43,13 @@ import {
   createAssuranceService,
 } from "./assurance-service.mjs";
 import { detectPublishedWorkspaceIdentity } from "./workspace-identity-service.mjs";
+import {
+  admitProjectWorkingDirectory,
+  admitRegisteredProject,
+  admitRegisteredProjectRoot,
+  ProjectContextAdmissionError,
+  ProjectWorkingDirectoryAdmissionError,
+} from "./project-context-admission-service.mjs";
 import {
   readWorkspaceSurface,
   resolveWorkspaceSurfacePath,
@@ -118,10 +125,18 @@ const buildControlService = createBuildControlService({
 const assuranceService = createAssuranceService({ buildControlService });
 
 function loadAdmittedDeveloperControlBootstrap(projectRoot, projects) {
-  const base = loadDeveloperControlBootstrap(projectRoot, projects, {
+  const admittedProjectRoot = admitRegisteredProjectRoot(
+    projectRoot,
+    projects,
+    defaultWorkspaceRoot,
+  );
+  const base = loadDeveloperControlBootstrap(admittedProjectRoot, projects, {
     proposalParticipantRef: specificationProposalService.participantRef,
   });
-  return loadDeveloperControlBootstrap(projectRoot, projects, {
+  if (!base.context.revision) {
+    return base;
+  }
+  return loadDeveloperControlBootstrap(admittedProjectRoot, projects, {
     proposalParticipantRef: specificationProposalService.participantRef,
     revision: base.context.revision,
     buildDescriptorAdmission: buildControlService.descriptorAdmission(base.context.project),
@@ -163,11 +178,6 @@ function workspaceDisplayName(workspaceRoot) {
 
 function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
-}
-
-function isPathWithin(root, candidate) {
-  const rel = relative(resolve(root), resolve(candidate));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function oddTermSessionRecord(session, workspaceRoot) {
@@ -566,6 +576,36 @@ function browseMaxEntriesFromParam(value) {
 // memoize their own reads internally and invalidate on action).
 const assetSurfaceCache = new Map();
 const rehydratedSessionRoots = new Set();
+const projectSurface = createProjectSurface(managerStateRoot, {
+  discoveryRoot: process.env.PROJECT_REGISTRY_ROOT || appsRoot,
+});
+
+function admitProjectRoot(requestedRoot) {
+  return admitProject(requestedRoot).root;
+}
+
+function admitProject(requestedRoot) {
+  return admitRegisteredProject(
+    requestedRoot,
+    projectSurface.list(),
+    defaultWorkspaceRoot,
+  );
+}
+
+function isQueryProjectRoute(method, pathname) {
+  return pathname === "/api/context"
+    || pathname.startsWith("/api/ai-workspace/")
+    || pathname.startsWith("/api/tickets")
+    || pathname.startsWith("/api/comments")
+    || pathname.startsWith("/api/sessions")
+    || pathname.startsWith("/api/sidecar/sessions")
+    || (
+      method === "GET"
+      && pathname.startsWith("/api/developer-control/")
+      && pathname !== "/api/developer-control/portfolio"
+    );
+}
+
 function getOrCreateAssetSurface(kind, root, factory) {
   const key = `${kind}::${root}`;
   if (!assetSurfaceCache.has(key)) assetSurfaceCache.set(key, factory());
@@ -611,11 +651,16 @@ function writeRawSurface(response, workspaceRoot, relativePath, options = {}) {
     writeJson(response, 403, { error: "surface path resolves outside the active Project root" });
     return;
   }
+  if (resolved.resolutionError) {
+    writeJson(response, 403, { error: "surface path could not be resolved inside the active Project root" });
+    return;
+  }
   if (!existsSync(resolved.target)) {
     writeJson(response, 404, { error: "surface not found" });
     return;
   }
-  const stat = statSync(resolved.target);
+  const admittedTarget = resolved.realTarget ?? resolved.target;
+  const stat = statSync(admittedTarget);
   if (!stat.isFile()) {
     writeJson(response, 400, { error: "raw surface requests require a file path" });
     return;
@@ -631,7 +676,7 @@ function writeRawSurface(response, workspaceRoot, relativePath, options = {}) {
     response.end();
     return;
   }
-  const stream = createReadStream(resolved.target);
+  const stream = createReadStream(admittedTarget);
   stream.on("error", (error) => {
     response.destroy(error);
   });
@@ -685,13 +730,13 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/odd-console") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(response, 200, loadAgentConsoleState(workspaceRoot));
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/odd-console/stream") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeSseHeaders(response);
       writeSseEvent(response, "connected", {
         workspaceRoot,
@@ -718,7 +763,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/surface") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       const relativePath = url.searchParams.get("relativePath");
       if (!relativePath) {
         writeJson(response, 400, { error: "surface requests require relativePath" });
@@ -729,7 +774,7 @@ const server = createServer(async (request, response) => {
     }
 
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/api/surface/raw") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       const relativePath = url.searchParams.get("relativePath");
       if (!relativePath) {
         writeJson(response, 400, { error: "raw surface requests require relativePath" });
@@ -741,7 +786,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/odd-console/comment") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -758,7 +803,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -775,7 +820,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/attach-record") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -789,7 +834,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/attach-session") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -802,7 +847,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/room") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       const roomId = url.searchParams.get("roomId");
       if (!roomId) {
         writeJson(response, 400, { error: "room requests require roomId" });
@@ -818,7 +863,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/participants") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(response, 200, {
         ok: true,
         participants: listOddChatParticipants(workspaceRoot, {
@@ -834,7 +879,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/join") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -853,7 +898,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/leave") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -867,7 +912,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/oddchat/participant/status") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(
         response,
         200,
@@ -882,7 +927,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/read") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -900,7 +945,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/wait") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -919,7 +964,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/participant/message") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -936,7 +981,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/bootstrap-agent") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -951,7 +996,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/add-participant") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -967,7 +1012,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddchat/topic/room-recipients") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -981,7 +1026,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/launch-agent") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -995,7 +1040,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/join-topic") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -1010,7 +1055,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/odd-console/message") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       const posted = createGChatMessage(workspaceRoot, {
         roomId: body.roomId,
         body: body.body,
@@ -1033,7 +1078,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         session: createGTermSession(workspaceRoot, {
@@ -1048,7 +1093,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/ensure") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         session: ensureGTermSession(workspaceRoot, {
@@ -1063,7 +1108,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/rename") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         session: renameGTermSession(workspaceRoot, body.sessionId, body.label),
@@ -1073,7 +1118,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/close") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         session: closeGTermSession(workspaceRoot, body.sessionId),
@@ -1083,7 +1128,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/close-all") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         ...closeAllGTermSessions(workspaceRoot),
@@ -1093,7 +1138,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/session/select") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       const state = selectGTermSession(workspaceRoot, body.sessionId);
       writeJson(response, 200, {
         ok: true,
@@ -1104,7 +1149,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/oddterm/promote") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(
         response,
         200,
@@ -1120,7 +1165,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/status") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(response, 200, {
         ok: true,
         binding: getIrcGatewayBindingStatus(workspaceRoot, {
@@ -1132,7 +1177,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/read") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(response, 200, {
         ok: true,
         binding: readIrcGatewayRoom(workspaceRoot, {
@@ -1145,7 +1190,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/irc/session/who") {
-      const workspaceRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(url.searchParams.get("workspaceRoot"));
       writeJson(response, 200, {
         ok: true,
         ...whoIrcGatewayChannel(workspaceRoot, {
@@ -1159,7 +1204,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/connect") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: connectIrcGatewayBinding(workspaceRoot, {
@@ -1183,7 +1228,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/disconnect") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: disconnectIrcGatewayBinding(workspaceRoot, {
@@ -1196,7 +1241,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/join") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: joinIrcGatewayChannel(workspaceRoot, {
@@ -1210,7 +1255,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/part") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: partIrcGatewayChannel(workspaceRoot, {
@@ -1225,7 +1270,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/send") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: sendIrcGatewayChannelMessage(workspaceRoot, {
@@ -1240,7 +1285,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/irc/session/dm") {
       const body = JSON.parse((await readBody(request)) || "{}");
-      const workspaceRoot = body.workspaceRoot || defaultWorkspaceRoot;
+      const workspaceRoot = admitProjectRoot(body.workspaceRoot);
       writeJson(response, 200, {
         ok: true,
         binding: sendIrcGatewayDirectMessage(workspaceRoot, {
@@ -1256,26 +1301,30 @@ const server = createServer(async (request, response) => {
     // T-016 closure: AssetSurface read/write endpoints absorbed from the
     // retired sidecar-demo.mjs scaffold. Per project rather than per-request
     // so the surfaces cache properly. SidecarPanel consumes /api/* relative.
-    const surfaceProjectRoot = url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot;
-    ensureSessionsRehydrated(surfaceProjectRoot);
-    const ticketSurface = getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot));
-    const commentSurface = getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot));
-    const sessionSurface = getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot));
-    const projectSurface = getOrCreateAssetSurface(
-      "projects",
-      managerStateRoot,
-      () => createProjectSurface(managerStateRoot, {
-        discoveryRoot: process.env.PROJECT_REGISTRY_ROOT || appsRoot,
-      }),
-    );
+    const surfaceProject = isQueryProjectRoute(request.method, url.pathname)
+      ? admitProject(url.searchParams.get("workspaceRoot"))
+      : null;
+    const surfaceProjectRoot = surfaceProject?.root ?? null;
+    if (surfaceProjectRoot) ensureSessionsRehydrated(surfaceProjectRoot);
+    const ticketSurface = surfaceProjectRoot
+      ? getOrCreateAssetSurface("tickets", surfaceProjectRoot, () => createTicketSurface(surfaceProjectRoot))
+      : null;
+    const commentSurface = surfaceProjectRoot
+      ? getOrCreateAssetSurface("comments", surfaceProjectRoot, () => createCommentSurface(surfaceProjectRoot))
+      : null;
+    const sessionSurface = surfaceProjectRoot
+      ? getOrCreateAssetSurface("sessions", surfaceProjectRoot, () => createSessionSurface(surfaceProjectRoot))
+      : null;
     const VIEWER_AGENT = url.searchParams.get("agent") || process.env.OMAN_AGENT_PROVIDER || "operator";
 
     if (request.method === "GET" && url.pathname === "/api/context") {
       const profile = profileWorkspace(surfaceProjectRoot);
-      const projectId = surfaceProjectRoot.split("/").filter(Boolean).at(-1) ?? "workspace";
-      const oddType = profile.active_domain_pack ?? profile.primary_identity ?? "unknown";
       writeJson(response, 200, {
-        project: { id: projectId, root: surfaceProjectRoot, odd_type: oddType },
+        project: {
+          id: surfaceProject.id,
+          root: surfaceProject.root,
+          odd_type: surfaceProject.odd_type,
+        },
         workspace: { id: "react_vite", profile: profile.active_domain_pack ?? profile.primary_identity ?? "unknown" },
         session: null,
       });
@@ -1300,7 +1349,11 @@ const server = createServer(async (request, response) => {
       try {
         writeJson(response, 200, loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list()));
       } catch (caught) {
-        writeJson(response, 400, { error: caught instanceof Error ? caught.message : String(caught) });
+        writeJson(
+          response,
+          caught instanceof ProjectContextAdmissionError ? caught.statusCode : 400,
+          { error: caught instanceof Error ? caught.message : String(caught) },
+        );
       }
       return;
     }
@@ -1325,7 +1378,9 @@ const server = createServer(async (request, response) => {
         const bootstrap = loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list());
         writeJson(response, 200, buildControlService.snapshot(bootstrap.context.project));
       } catch (caught) {
-        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof BuildControlError ? caught.statusCode : 400;
         writeJson(response, statusCode, { error: caught instanceof Error ? caught.message : String(caught) });
       }
       return;
@@ -1340,7 +1395,9 @@ const server = createServer(async (request, response) => {
           executionId: url.searchParams.get("executionId"),
         }));
       } catch (caught) {
-        const statusCode = caught instanceof AssuranceError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof AssuranceError ? caught.statusCode : 400;
         writeJson(response, statusCode, { error: caught instanceof Error ? caught.message : String(caught) });
       }
       return;
@@ -1354,7 +1411,9 @@ const server = createServer(async (request, response) => {
         const result = buildControlService.submit({ ...parsed, project: bootstrap.context.project });
         writeJson(response, 202, result);
       } catch (caught) {
-        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof BuildControlError ? caught.statusCode : 400;
         writeJson(response, statusCode, {
           error: caught instanceof Error ? caught.message : String(caught),
           execution: caught instanceof BuildControlError ? caught.execution : null,
@@ -1383,7 +1442,9 @@ const server = createServer(async (request, response) => {
             : buildControlService.cancel(parsed, bootstrap.context.project);
         writeJson(response, 200, action === "attach" ? value : { execution: value });
       } catch (caught) {
-        const statusCode = caught instanceof BuildControlError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof BuildControlError ? caught.statusCode : 400;
         writeJson(response, statusCode, {
           error: caught instanceof Error ? caught.message : String(caught),
           execution: caught instanceof BuildControlError ? caught.execution : null,
@@ -1396,7 +1457,9 @@ const server = createServer(async (request, response) => {
         loadAdmittedDeveloperControlBootstrap(surfaceProjectRoot, projectSurface.list());
         writeJson(response, 200, specificationProposalService.list(surfaceProjectRoot));
       } catch (caught) {
-        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof SpecificationProposalError ? caught.statusCode : 400;
         writeJson(response, statusCode, {
           error: caught instanceof Error ? caught.message : String(caught),
           proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
@@ -1416,7 +1479,9 @@ const server = createServer(async (request, response) => {
         });
         writeJson(response, 200, { proposal });
       } catch (caught) {
-        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof SpecificationProposalError ? caught.statusCode : 400;
         writeJson(response, statusCode, {
           error: caught instanceof Error ? caught.message : String(caught),
           proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
@@ -1438,14 +1503,16 @@ const server = createServer(async (request, response) => {
       try {
         loadAdmittedDeveloperControlBootstrap(parsed?.projectRoot, projectSurface.list());
         const action = url.pathname.split("/").at(-1);
-        const proposal = action === "validate"
+        const proposal = await (action === "validate"
           ? specificationProposalService.validate(parsed)
           : action === "accept"
             ? specificationProposalService.accept(parsed)
-            : specificationProposalService.reject(parsed);
+            : specificationProposalService.reject(parsed));
         writeJson(response, 200, { proposal });
       } catch (caught) {
-        const statusCode = caught instanceof SpecificationProposalError ? caught.statusCode : 400;
+        const statusCode = caught instanceof ProjectContextAdmissionError
+          ? caught.statusCode
+          : caught instanceof SpecificationProposalError ? caught.statusCode : 400;
         writeJson(response, statusCode, {
           error: caught instanceof Error ? caught.message : String(caught),
           proposal: caught instanceof SpecificationProposalError ? caught.proposal : null,
@@ -1585,11 +1652,17 @@ const server = createServer(async (request, response) => {
       const body = await readBody(request);
       let parsed;
       try { parsed = body ? JSON.parse(body) : {}; } catch { writeJson(response, 400, { ok: false, error: "invalid json body" }); return; }
-      const requestedCwd = typeof parsed.cwd === "string" && parsed.cwd.trim()
-        ? resolve(parsed.cwd)
-        : surfaceProjectRoot;
-      if (!isPathWithin(surfaceProjectRoot, requestedCwd) || !existsSync(requestedCwd) || !statSync(requestedCwd).isDirectory()) {
-        writeJson(response, 400, { ok: false, error: "session cwd must be an existing directory inside the active Project" });
+      let requestedCwd;
+      try {
+        requestedCwd = admitProjectWorkingDirectory(
+          surfaceProjectRoot,
+          parsed.cwd,
+        );
+      } catch (caught) {
+        writeJson(response, 403, {
+          ok: false,
+          error: caught instanceof Error ? caught.message : String(caught),
+        });
         return;
       }
       const session = createGTermSession(surfaceProjectRoot, {
@@ -1685,15 +1758,24 @@ const server = createServer(async (request, response) => {
 
     writeJson(response, 404, { error: `unknown route: ${url.pathname}` });
   } catch (caught) {
-    writeJson(response, 500, {
+    writeJson(
+      response,
+      (
+        caught instanceof ProjectContextAdmissionError
+        || caught instanceof ProjectWorkingDirectoryAdmissionError
+      ) ? caught.statusCode : 500,
+      {
       error: caught instanceof Error ? caught.message : String(caught),
-    });
+      },
+    );
   }
 });
 
-attachGTermServer(server, { defaultWorkspaceRoot });
-ensureSessionsRehydrated(defaultWorkspaceRoot);
-mountSessionWebSocket(server);
+attachGTermServer(server, { defaultWorkspaceRoot, admitProjectRoot });
+mountSessionWebSocket(server, {
+  defaultProjectRoot: defaultWorkspaceRoot,
+  admitProjectRoot,
+});
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`odd_manager API listening on http://127.0.0.1:${port}`);

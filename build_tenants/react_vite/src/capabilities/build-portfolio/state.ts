@@ -1,6 +1,7 @@
 import type {
   BuildPortfolio,
   CapabilityId,
+  ProjectRevision,
 } from "@odd-manager/developer-control-contracts";
 import type { FsEntry } from "../../lib/collaboration";
 
@@ -31,6 +32,7 @@ export type BuildPortfolioCommand =
       correlationId: string;
       contextProjectRoot: string;
       projectId: string;
+      projectRoot: string;
     }
   | {
       type: "portfolio.activate";
@@ -38,6 +40,7 @@ export type BuildPortfolioCommand =
       correlationId: string;
       contextProjectRoot: string;
       projectId: string;
+      projectRoot: string;
     }
   | {
       type: "portfolio.open-attention";
@@ -56,8 +59,8 @@ export type BuildPortfolioCommandInput =
   | { type: "portfolio.load" }
   | { type: "portfolio.browse"; path: string }
   | { type: "portfolio.register"; path: string }
-  | { type: "portfolio.unregister"; projectId: string }
-  | { type: "portfolio.activate"; projectId: string }
+  | { type: "portfolio.unregister"; projectId: string; projectRoot: string }
+  | { type: "portfolio.activate"; projectId: string; projectRoot: string }
   | {
       type: "portfolio.open-attention";
       projectId: string;
@@ -95,6 +98,7 @@ export type BuildPortfolioState = {
   selectedProjectId: string | null;
   browser: BuildPortfolioBrowserState;
   pendingCommands: BuildPortfolioCommand[];
+  refreshQueued: boolean;
   commandSequence: number;
   activatedProjectRoot: string | null;
   openedAttention: BuildPortfolioAttentionFocus | null;
@@ -120,6 +124,7 @@ export function createBuildPortfolioState(): BuildPortfolioState {
       error: null,
     },
     pendingCommands: [],
+    refreshQueued: false,
     commandSequence: 0,
     activatedProjectRoot: null,
     openedAttention: null,
@@ -132,5 +137,6 @@ export const INITIAL_BUILD_PORTFOLIO_STATE = createBuildPortfolioState();
 export type BuildPortfolioSubscription = {
   type: "portfolio.poll";
   projectRoot: string;
+  basisRevision: ProjectRevision | null;
   intervalMs: number;
 };

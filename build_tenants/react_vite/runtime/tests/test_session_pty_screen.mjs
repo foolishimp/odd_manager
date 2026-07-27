@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 
 import {
+  decodeScreenTranscriptFrame,
   spawnScreenSession,
   killScreenSession,
   listScreenSessions,
@@ -36,6 +37,51 @@ function teardown(...ids) {
 
 const screenSkip = isScreenAvailable() ? false : 'screen executable not available in this environment';
 
+test('Screen transcript framing preserves invalid bytes and split UTF-8 with exact byte offsets', () => {
+  const writes = [
+    Buffer.from([0x41, 0xff, 0xe2, 0x82]),
+    Buffer.from([0xac, 0x42, 0xf0]),
+    Buffer.from([0x9f, 0x98]),
+    Buffer.from([0x80, 0x43]),
+    Buffer.from([0xe2]),
+  ];
+  const expectedOffsets = [2, 6, 6, 11, 11];
+  let transcript = Buffer.alloc(0);
+  let offset = 0;
+  let emitted = '';
+  const observedOffsets = [];
+
+  writes.forEach((write, index) => {
+    transcript = Buffer.concat([transcript, write]);
+    const frame = decodeScreenTranscriptFrame(transcript, offset, transcript.length);
+    assert.equal(frame.offset, offset);
+    assert.equal(frame.nextOffset, expectedOffsets[index]);
+    assert.equal(frame.bytesConsumed, frame.nextOffset - offset);
+    assert.equal(frame.observedSize, transcript.length);
+    assert.equal(frame.pendingBytes, transcript.length - frame.nextOffset);
+    offset = frame.nextOffset;
+    observedOffsets.push(offset);
+    emitted += frame.data;
+  });
+
+  assert.equal(emitted, 'A\ufffd€B😀C');
+  assert.deepEqual(observedOffsets, expectedOffsets);
+  assert.ok(observedOffsets.every((value, index) => index === 0 || value >= observedOffsets[index - 1]));
+
+  const finalFrame = decodeScreenTranscriptFrame(
+    transcript,
+    offset,
+    transcript.length,
+    { final: true },
+  );
+  assert.equal(finalFrame.data, '\ufffd');
+  assert.equal(finalFrame.nextOffset, transcript.length);
+  assert.equal(finalFrame.bytesConsumed, 1);
+  assert.equal(finalFrame.pendingBytes, 0);
+  emitted += finalFrame.data;
+  assert.equal(emitted, transcript.toString('utf8'));
+});
+
 test('spawnScreenSession launches detached screen session', { skip: screenSkip }, async () => {
   setup();
   let id;
@@ -49,9 +95,12 @@ test('spawnScreenSession launches detached screen session', { skip: screenSkip }
     id = result.id;
     // Give screen a moment to actually create the socket
     await new Promise((r) => setTimeout(r, 200));
-    const live = listScreenSessions().map((s) => s.id);
-    assert.ok(live.includes(id), `screen -ls did not show ${id}; saw: ${JSON.stringify(live)}`);
     const record = JSON.parse(readFileSync(join(fixtureRoot, '.ai-workspace/runtime/sessions', `${id}.json`), 'utf-8'));
+    const live = listScreenSessions().map((s) => s.id);
+    assert.ok(
+      live.includes(record.screen_session_id),
+      `screen -ls did not show ${record.screen_session_id}; saw: ${JSON.stringify(live)}`,
+    );
     assert.equal(record.status, 'running');
     assert.equal(record.backplane, 'screen');
     assert.match(record.transcript_ref, new RegExp(`${id}/screenlog\\.0$`));

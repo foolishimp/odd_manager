@@ -18,8 +18,272 @@ function sameBasis(left: ProjectRevision | null, right: ProjectRevision | null) 
   );
 }
 
-function pendingCommand(state: SpecificationProposalState, commandId: string) {
-  return state.pendingCommands.find((command) => command.commandId === commandId) ?? null;
+function sameProjectIdentity(
+  left: SpecificationProposal["project"],
+  right: SpecificationProposal["project"],
+) {
+  return (
+    left.id === right.id
+    && left.root === right.root
+    && left.label === right.label
+    && left.publishedProductRef === right.publishedProductRef
+  );
+}
+
+function sameStructuredValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (
+    typeof left !== typeof right
+    || left === null
+    || right === null
+    || typeof left !== "object"
+  ) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((entry, index) => sameStructuredValue(entry, right[index]))
+    );
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  return (
+    leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => (
+      key === rightKeys[index]
+      && sameStructuredValue(leftRecord[key], rightRecord[key])
+    ))
+  );
+}
+
+function proposalTarget(
+  state: SpecificationProposalState,
+  proposalId: string,
+) {
+  if (state.currentProposal?.proposalId === proposalId) return state.currentProposal;
+  return state.history.find((entry) => entry.proposalId === proposalId) ?? null;
+}
+
+function proposalImmutableIdentityMatches(
+  candidate: SpecificationProposal,
+  target: SpecificationProposal,
+) {
+  return (
+    candidate.schemaVersion === target.schemaVersion
+    && candidate.proposalId === target.proposalId
+    && sameProjectIdentity(candidate.project, target.project)
+    && sameBasis(candidate.basisRevision, target.basisRevision)
+    && candidate.participantRef === target.participantRef
+    && candidate.createdAt === target.createdAt
+    && candidate.prompt === target.prompt
+    && candidate.summary === target.summary
+    && sameStructuredValue(candidate.contextAttachments, target.contextAttachments)
+    && candidate.patch === target.patch
+    && sameStructuredValue(candidate.affectedSurfaceRefs, target.affectedSurfaceRefs)
+    && candidate.predecessorProposalId === target.predecessorProposalId
+  );
+}
+
+function passingValidation(proposal: SpecificationProposal) {
+  return (
+    proposal.validation.length > 0
+    && proposal.validation.every((entry) => entry.status === "passed")
+  );
+}
+
+function proposalRecordSemanticsMatch(proposal: SpecificationProposal) {
+  if (proposal.status === "draft" && proposal.validation.length > 0) return false;
+  if (proposal.status === "valid" && !passingValidation(proposal)) return false;
+  if (
+    ["invalid", "stale"].includes(proposal.status)
+    && (
+      proposal.validation.length === 0
+      || proposal.validation.every((entry) => entry.status === "passed")
+    )
+  ) return false;
+  if (proposal.status === "accepted") {
+    return Boolean(
+      proposal.decision?.kind === "accepted"
+      && proposal.resultingRevision
+      && passingValidation(proposal)
+      && sameBasis(proposal.decision.basisRevision, proposal.basisRevision)
+      && !sameBasis(proposal.resultingRevision, proposal.basisRevision)
+      && sameStructuredValue(
+        proposal.decision.changedSurfaceRefs,
+        proposal.affectedSurfaceRefs,
+      )
+    );
+  }
+  if (proposal.status === "rejected") {
+    return (
+      proposal.decision?.kind === "rejected"
+      && proposal.resultingRevision === null
+      && sameBasis(proposal.decision.basisRevision, proposal.basisRevision)
+      && proposal.decision.changedSurfaceRefs.length === 0
+    );
+  }
+  return proposal.decision === null && proposal.resultingRevision === null;
+}
+
+function proposalHistoryLineageMatches(
+  proposals: SpecificationProposal[],
+  truncated: boolean,
+) {
+  const byId = new Map(proposals.map((proposal) => [proposal.proposalId, proposal]));
+  for (const proposal of proposals) {
+    const predecessorId = proposal.predecessorProposalId;
+    if (!predecessorId) continue;
+    if (predecessorId === proposal.proposalId) return false;
+    if (!byId.has(predecessorId) && !truncated) return false;
+  }
+  for (const proposal of proposals) {
+    const visited = new Set<string>();
+    let cursor: SpecificationProposal | undefined = proposal;
+    while (cursor?.predecessorProposalId) {
+      if (visited.has(cursor.proposalId)) return false;
+      visited.add(cursor.proposalId);
+      cursor = byId.get(cursor.predecessorProposalId);
+    }
+  }
+  return true;
+}
+
+function historyProposalMayAdvance(
+  current: SpecificationProposal,
+  candidate: SpecificationProposal,
+) {
+  if (!proposalImmutableIdentityMatches(candidate, current)) return false;
+  if (terminalStatus(current.status)) {
+    return sameStructuredValue(candidate, current);
+  }
+  if (candidate.status === "draft" && current.status !== "draft") return false;
+  return true;
+}
+
+function mergeProposalHistory(
+  current: SpecificationProposal[],
+  incoming: SpecificationProposal[],
+  retentionLimit: number,
+  truncated: boolean,
+) {
+  if (!truncated) return incoming;
+  const incomingIds = new Set(incoming.map((proposal) => proposal.proposalId));
+  return [
+    ...incoming,
+    ...current.filter((proposal) => !incomingIds.has(proposal.proposalId)),
+  ].slice(0, Math.max(retentionLimit, 1));
+}
+
+function proposalSuccessSemanticsMatch(
+  state: SpecificationProposalState,
+  command: SpecificationProposalCommand,
+  proposal: SpecificationProposal,
+  target: SpecificationProposal | null,
+) {
+  if (command.type === "proposal.generate") {
+    return (
+      proposal.status === "draft"
+      && proposal.validation.length === 0
+      && proposal.resultingRevision === null
+      && proposal.decision === null
+      && proposal.proposalId !== command.predecessorProposalId
+      && !state.history.some((entry) => entry.proposalId === proposal.proposalId)
+    );
+  }
+  if (!target || command.type === "proposal.history" || command.type === "proposal.refresh-context") {
+    return false;
+  }
+  if (command.type === "proposal.validate") {
+    const validationDispositionMatches = proposal.status === "valid"
+      ? passingValidation(proposal)
+      : (
+          ["invalid", "stale"].includes(proposal.status)
+          && proposal.validation.length > 0
+          && proposal.validation.some((entry) => entry.status !== "passed")
+    );
+    return (
+      !terminalStatus(target.status)
+      &&
+      validationDispositionMatches
+      && proposal.resultingRevision === null
+      && proposal.decision === null
+    );
+  }
+  if (command.type === "proposal.accept") {
+    return Boolean(
+      target.status === "valid"
+      && proposal.status === "accepted"
+      && passingValidation(proposal)
+      && proposal.resultingRevision
+      && !sameBasis(proposal.resultingRevision, target.basisRevision)
+      && proposal.decision?.kind === "accepted"
+      && proposal.decision.actorRef === command.actorRef
+      && sameBasis(proposal.decision.basisRevision, target.basisRevision)
+      && sameStructuredValue(
+        proposal.decision.changedSurfaceRefs,
+        proposal.affectedSurfaceRefs,
+      )
+    );
+  }
+  return (
+    !terminalStatus(target.status)
+    &&
+    proposal.status === "rejected"
+    && proposal.resultingRevision === null
+    && proposal.decision?.kind === "rejected"
+    && proposal.decision.actorRef === command.actorRef
+    && sameBasis(proposal.decision.basisRevision, target.basisRevision)
+    && proposal.decision.changedSurfaceRefs.length === 0
+  );
+}
+
+function failureProposalMayReplace(
+  command: SpecificationProposalCommand,
+  proposal: SpecificationProposal,
+  target: SpecificationProposal,
+) {
+  if (
+    proposal.resultingRevision !== target.resultingRevision
+    || !sameStructuredValue(proposal.decision, target.decision)
+  ) {
+    return false;
+  }
+  if (command.type === "proposal.accept") {
+    return (
+      ["valid", "invalid", "stale"].includes(proposal.status)
+      && (proposal.status !== "valid" || passingValidation(proposal))
+    );
+  }
+  return proposal.status === target.status;
+}
+
+function generatedProposalMatches(
+  proposal: SpecificationProposal,
+  command: Extract<SpecificationProposalCommand, { type: "proposal.generate" }>,
+) {
+  return (
+    sameProjectIdentity(proposal.project, command.project)
+    && sameBasis(proposal.basisRevision, command.basisRevision)
+    && proposal.prompt === command.prompt
+    && proposal.predecessorProposalId === command.predecessorProposalId
+    && sameStructuredValue(
+      proposal.contextAttachments.map((entry) => entry.sourceRef),
+      command.contextAttachmentRefs,
+    )
+  );
+}
+
+function pendingCommand(
+  state: SpecificationProposalState,
+  commandId: string,
+  correlationId: string,
+) {
+  return state.pendingCommands.find((command) => (
+    command.commandId === commandId && command.correlationId === correlationId
+  )) ?? null;
 }
 
 function withoutCommand(state: SpecificationProposalState, commandId: string) {
@@ -28,6 +292,63 @@ function withoutCommand(state: SpecificationProposalState, commandId: string) {
 
 function commandProjectRoot(command: SpecificationProposalCommand) {
   return command.type === "proposal.generate" ? command.project.root : command.projectRoot;
+}
+
+type ProposalFailureMessage = Extract<
+  SpecificationProposalMessage,
+  {
+    type:
+      | "proposal/history-failed"
+      | "proposal/generate-failed"
+      | "proposal/validation-failed"
+      | "proposal/accept-failed"
+      | "proposal/reject-failed";
+  }
+>;
+
+function proposalFailureType(command: SpecificationProposalCommand): ProposalFailureMessage["type"] | null {
+  if (command.type === "proposal.history") return "proposal/history-failed";
+  if (command.type === "proposal.generate") return "proposal/generate-failed";
+  if (command.type === "proposal.validate") return "proposal/validation-failed";
+  if (command.type === "proposal.accept") return "proposal/accept-failed";
+  if (command.type === "proposal.reject") return "proposal/reject-failed";
+  return null;
+}
+
+function proposalFailureMatches(
+  state: SpecificationProposalState,
+  command: SpecificationProposalCommand,
+  message: ProposalFailureMessage,
+) {
+  const project = state.project;
+  if (
+    !project
+    || proposalFailureType(command) !== message.type
+    || commandProjectRoot(command) !== project.root
+    || !sameBasis(command.basisRevision, state.basisRevision)
+  ) {
+    return false;
+  }
+  const proposal = message.proposal ?? null;
+  if (!proposal) return true;
+  if (
+    command.type === "proposal.history"
+    || command.type === "proposal.generate"
+    || command.type === "proposal.refresh-context"
+  ) {
+    return false;
+  }
+  const target = proposalTarget(state, command.proposalId);
+  return (
+    Boolean(target)
+    && sameProjectIdentity(proposal.project, project)
+    && proposalImmutableIdentityMatches(proposal, target as SpecificationProposal)
+    && failureProposalMayReplace(
+      command,
+      proposal,
+      target as SpecificationProposal,
+    )
+  );
 }
 
 function replaceHistoryProposal(
@@ -88,6 +409,9 @@ function beginCommand(
   input: CommandInput,
   status: SpecificationProposalState["status"],
 ) {
+  if (state.pendingCommands.length > 0) {
+    return { state, commands: [] };
+  }
   const result = enqueue(state, input);
   return {
     ...result,
@@ -102,15 +426,32 @@ function admitProposalResult(
   }>,
   expectedType: SpecificationProposalCommand["type"],
 ) {
-  const command = pendingCommand(state, message.commandId);
-  const resultBasisMatches = expectedType === "proposal.reject"
-    ? sameBasis(command?.basisRevision ?? null, state.basisRevision)
-    : sameBasis(command?.basisRevision ?? null, message.proposal.basisRevision);
+  const command = pendingCommand(state, message.commandId, message.correlationId);
+  const project = state.project;
+  const target = command && "proposalId" in command
+    ? proposalTarget(state, command.proposalId)
+    : null;
+  const proposalMatchesCommand = command?.type === "proposal.generate"
+    ? (
+        generatedProposalMatches(message.proposal, command)
+        && proposalSuccessSemanticsMatch(state, command, message.proposal, null)
+      )
+    : Boolean(
+        target
+        && command
+        && "proposalId" in command
+        && message.proposal.proposalId === command.proposalId
+        && proposalImmutableIdentityMatches(message.proposal, target)
+        && proposalSuccessSemanticsMatch(state, command, message.proposal, target)
+      );
   if (
     command?.type !== expectedType
-    || commandProjectRoot(command) !== state.project?.root
-    || message.projectRoot !== state.project.root
-    || !resultBasisMatches
+    || !project
+    || commandProjectRoot(command) !== project.root
+    || message.projectRoot !== project.root
+    || !sameBasis(command.basisRevision, state.basisRevision)
+    || !sameProjectIdentity(message.proposal.project, project)
+    || !proposalMatchesCommand
   ) return { state, commands: [] };
   const nextState: SpecificationProposalState = {
     ...state,
@@ -134,7 +475,10 @@ export function updateSpecificationProposal(
   message: SpecificationProposalMessage,
 ): CapabilityUpdate<SpecificationProposalState, SpecificationProposalCommand> {
   if (message.type === "proposal/context-changed") {
-    const projectChanged = state.project?.root !== message.project.root;
+    const projectChanged = (
+      !state.project
+      || !sameProjectIdentity(state.project, message.project)
+    );
     const basisChanged = !sameBasis(state.basisRevision, message.revision);
     const next: SpecificationProposalState = {
       ...state,
@@ -221,7 +565,13 @@ export function updateSpecificationProposal(
   }
   if (message.type === "proposal/refine-requested") {
     const prompt = state.refinementDraft.trim();
-    if (!prompt || !state.currentProposal || !state.project || !state.basisRevision) {
+    if (
+      !prompt
+      || !state.currentProposal
+      || terminalStatus(state.currentProposal.status)
+      || !state.project
+      || !state.basisRevision
+    ) {
       return { state, commands: [] };
     }
     return beginCommand(state, {
@@ -270,28 +620,60 @@ export function updateSpecificationProposal(
     };
   }
   if (message.type === "proposal/supporting-command-consumed") {
-    const command = pendingCommand(state, message.commandId);
+    const command = pendingCommand(state, message.commandId, message.correlationId);
     return command?.type === "proposal.refresh-context"
       ? { state: { ...state, pendingCommands: withoutCommand(state, message.commandId) }, commands: [] }
       : { state, commands: [] };
   }
 
   if (message.type === "proposal/history-loaded") {
-    const command = pendingCommand(state, message.commandId);
+    const command = pendingCommand(state, message.commandId, message.correlationId);
+    const project = state.project;
+    const proposalIds = new Set(message.history.proposals.map((entry) => entry.proposalId));
     if (
       command?.type !== "proposal.history"
-      || commandProjectRoot(command) !== state.project?.root
-      || message.projectRoot !== state.project.root
-      || message.history.projectRoot !== state.project.root
+      || !project
+      || commandProjectRoot(command) !== project.root
+      || message.projectRoot !== project.root
+      || message.history.projectRoot !== project.root
+      || !sameBasis(command.basisRevision, state.basisRevision)
+      || proposalIds.size !== message.history.proposals.length
+      || message.history.proposals.length > message.history.retentionLimit
+      || !proposalHistoryLineageMatches(
+        message.history.proposals,
+        message.history.truncated,
+      )
+      || message.history.proposals.some(
+        (proposal) => (
+          !sameProjectIdentity(proposal.project, project)
+          || !proposalRecordSemanticsMatch(proposal)
+        ),
+      )
+      || message.history.proposals.some((proposal) => {
+        const existing = state.history.find(
+          (entry) => entry.proposalId === proposal.proposalId,
+        );
+        return existing ? !historyProposalMayAdvance(existing, proposal) : false;
+      })
+      || (
+        !message.history.truncated
+        && state.history.some((proposal) => !proposalIds.has(proposal.proposalId))
+      )
     ) return { state, commands: [] };
-    const selected = message.history.proposals.find(
+    const mergedHistory = mergeProposalHistory(
+      state.history,
+      message.history.proposals,
+      message.history.retentionLimit,
+      message.history.truncated,
+    );
+    const selected = mergedHistory.find(
       (entry) => entry.proposalId === state.selectedProposalId,
-    ) ?? message.history.proposals[0] ?? null;
+    ) ?? mergedHistory[0] ?? null;
     return {
       state: {
         ...state,
         status: "idle",
-        history: message.history.proposals,
+        history: mergedHistory,
         retentionLimit: message.history.retentionLimit,
         historyTruncated: message.history.truncated,
         selectedProposalId: selected?.proposalId ?? null,
@@ -316,8 +698,10 @@ export function updateSpecificationProposal(
     return admitProposalResult(state, message, "proposal.reject");
   }
 
-  const command = pendingCommand(state, message.commandId);
-  if (!command) return { state, commands: [] };
+  const command = pendingCommand(state, message.commandId, message.correlationId);
+  if (!command || !proposalFailureMatches(state, command, message)) {
+    return { state, commands: [] };
+  }
   const proposal = message.proposal ?? null;
   const failedState: SpecificationProposalState = {
     ...state,
@@ -328,7 +712,11 @@ export function updateSpecificationProposal(
     error: message.error,
   };
   if (proposal?.status === "stale") {
-    return enqueue(failedState, { type: "proposal.refresh-context", reason: "stale" });
+    const refresh = enqueue(failedState, { type: "proposal.refresh-context", reason: "stale" });
+    return {
+      ...refresh,
+      state: { ...refresh.state, error: message.error },
+    };
   }
   return { state: failedState, commands: [] };
 }

@@ -18,6 +18,8 @@ for their subtree.
   `Goals -> Intent -> Product Definition -> Requirements -> Design -> Code -> Events -> Projection -> Delta -> Scenarios -> Gap Analysis -> Repricing`.
 - `specification/` defines `WHAT`. Design, build tenants, and code define
   `HOW`.
+- Products, applications, modules, graph functions, build tenants, and runtime
+  surfaces implement constitutional documents; they do not replace them.
 - Active surfaces stay present tense. Historical, provisional, or comparative
   material belongs in comments, design history, or release notes, not in live
   constitutional text.
@@ -26,6 +28,94 @@ for their subtree.
   design.
 - Missing traceability is a defect. Ungrounded code, unowned requirements, or
   design without requirement authority are process drift.
+- Product and requirement surfaces must provide enough operational lifecycle
+  signal for downstream design, or record a named gap. The canonical lifecycle
+  chain is: intent -> requirement -> build -> assurance -> release ->
+  deployment -> live usage -> observed telemetry -> retirement.
+- Design confirms lifecycle signal at the realization boundary. Implementation
+  precedent, prompt prose, local convention, and test fixtures cannot invent
+  missing lifecycle authority.
+
+### Design And Assurance Compression
+
+- At a material semantic boundary where Design Module Method applies, derive
+  Ontology, IACS, and domain, sequence, and state views from one semantic basis.
+  Co-evolution is admissible only when the complete material-relation set has no
+  unresolved member, is jointly satisfiable, and admits no materially
+  non-equivalent network under the governing Product, requirements, and
+  accepted design relations; design still owns structural `HOW`. Otherwise
+  gate the smallest causally closed affected set before retained implementation
+  establishes the unresolved, contradictory, or materially non-equivalent
+  relation. Outside an adopted Design Module Method boundary, retain the generic
+  no-unresolved-material-design-decision test.
+- Design/implementation bidirectionality carries evidence and falsification,
+  not reverse semantic authority. Material surprise re-enters design; serial
+  code repair does not establish design acceptance.
+- Judge proportionality by semantic ambiguity removed versus effective
+  reasoning complexity added. Rival authority, failure classification, and
+  evidence uncertainty are types or evidence of materially distinct
+  interpretations removed; downstream code, runtime states, tests, reviews, and
+  reconciliation paths are counterfactual evidence of that contraction, not an
+  independent numerator. Constrain agent procedure only where its variation
+  can affect a governed property; do not create per-clause rationale carriers.
+- Treat Ontology, Prime, IACS, views, modules, implementation, and tests as
+  projections of the same decision-complete network.
+- Apply Prime recursively to the complete candidate semantic-atom family and
+  every realization projection. Prime atoms are design relations, not files or
+  functions; every accepted atom records its admitted domain and governs every
+  admitted instance in it, and every proposed realization projection maps to
+  its accepted atom or atoms. Preserve root authority and count governance
+  cost.
+- Prove native constructability in the selected substrate before accepting
+  design; a bridge or future capability does not close the gap.
+- Identify the exact proof target and nearest weaker excluded property. Keep
+  semantic basis, evidence basis, and state projection distinct.
+- Implementer self-review is not independent review. An independent-review
+  claim requires a durably traceable exact subject and verdict in an existing
+  carrier. Ticket, milestone, and release claims close only at their own
+  evidence altitude; hashes, headings, and green counts cannot supply missing
+  semantics.
+- Product progress advances one explicitly selected unresolved Product-defined
+  outcome instance with a declared acceptance interval. Acceptance ends that
+  instance's progress authority while prior witnesses remain regression
+  evidence; the next already-defined outcome still requires explicit
+  Goals/work sequencing. Evidence cannot select, enlarge, or replace its
+  Product claim.
+- Method vocabulary and examples identify capabilities and authority
+  relations, not required downstream products or implementations. Bind concrete
+  realization and immutable identity in the consumer's own authority surfaces.
+- Within a Product-outcome-bearing wave, realization growth requires the
+  selected outcome, an admitted named bounded prerequisite to it, or an
+  admitted named bounded experiment whose stated observation discriminates a
+  stated decision for it. Admission or renewal belongs to the work-wave owner
+  or explicitly bounded proxy and is durably recorded in existing Goals or
+  ticket authority. Each prerequisite or experiment declares its provisional
+  bound and terminal condition and cannot enlarge Product, authorize downstream
+  work, confer promotion or closure, or waive applicable law. Acceptance of the
+  outcome, discharge of the prerequisite, resolution of the experiment
+  decision, another admitted terminal condition, exhaustion, rejection,
+  withdrawal, supersession, repricing of the basis away, or falsification ends
+  that authority. Evidence, active work state, prior admission, repair, or
+  continuation cannot renew it;
+  retained evidence or donor material does not inherit growth authority.
+- When both strategies are lawful and feasible, bounded evolution is the
+  rebuttable selection presumption when a working predecessor can reach the
+  admitted outcome without competing or ambiguous authority. It never requires
+  continuing an unsafe or inadmissible path. Fundamental re-adoption requires
+  explicit human comparative selection and an abort or re-entry condition.
+- Product-slice promotion requires singular authority across the full causal
+  closure of its acceptance path but does not close an enclosing migration.
+  Ticket and review wording cannot exclude causally applicable authority;
+  competing or ambiguous authority, safety failures, retained-behavior
+  regressions, and durable architectural decisions that foreclose an admitted
+  Product outcome remain blocking. Other observations remain repricing input
+  rather than automatic scope or ticket creation.
+- Negative proof exercises the real authority path and never manufactures the
+  refusal it later asserts.
+- Exact-candidate qualification declares the Product release subject,
+  release-scoped claims, and excluded source state. An immutable final-ready RC
+  receives exact review; final-delta proof preserves Product and release-scoped
+  bytes before human acceptance of the final carrier and final publication.
 
 ### Recursive Product Taxonomy
 
@@ -77,6 +167,8 @@ No bug, feature, issue, or request skips triage and jumps straight to code.
 
 Use this context for GTL, ABG, and ODD-shaped products in this workspace.
 
+- ODD, GTL, and ABG are normative capability roles and construction algebra,
+  not required repositories, packages, vendors, or runtime implementations.
 - An ODD product is:
   `typed domain assets or nodes + published graph functions + GTL module or public carrier + ABG runtime + projection or query surface + proof surface`.
 - Graph functions are the primary constructive carrier.
@@ -89,6 +181,15 @@ Use this context for GTL, ABG, and ODD-shaped products in this workspace.
   provenance, correction, and projection mechanics.
 - The product owns domain meaning, function catalog, policy overlays, query
   overlays, and domain proof interpretation.
+- The constructive loop consumes the selected Product outcome as external
+  authority. Models, gaps, ledgers, projections, assurance, edge closure, and
+  next-action machinery cannot author, select, enlarge, or accept it.
+- Target binding and admitted construction intent preserve the selected outcome
+  and any admitted bounded-basis refs for replay. An unresolved reprice returns
+  no action until lawful re-entry separately admits a new basis.
+- Apply ODD axioms only where causally relevant to the selected outcome and
+  affected published boundary; the axiom family does not authorize horizontal
+  work expansion.
 
 ### Work Tracking And Commentary
 
@@ -132,31 +233,39 @@ Apply these rules:
 - if the repo is ODD-shaped, do not collapse the constructive carrier back into
   imperative glue
 
-## Shared Method Source
+## Selected Method Basis
 
-The upstream shared methodology source of truth for this install lives under:
+This project is governed by one complete released STDO cut:
 
-- `<method-standards-root>`
+- version: `<stdo-version>`
+- immutable reference: `<stdo-release-ref>`
+- member inventory: `<stdo-inventory-ref-or-digest>`
+- installed or referenced standards root: `<method-standards-root>`
 
-Use these source documents when exact constitutional wording matters or when
-editing shared method:
+Use the selected cut when exact constitutional wording matters:
 
 - `SPEC_METHOD.md`
+- `DESIGN_MODULE_METHOD.md`
 - `ODD_METHOD.md`
+- `UX_METHOD.md`
+- `WORLD_MODEL_METHOD.md`
+- `IDENTITY_METHOD.md`
+- `RELEASE_METHOD.md`
 - `TICKET_METHOD.md`
 - `POSTING_GUIDE.md`
 - `WRITING_GUIDE.md`
+- `GLOSSARY_GUIDE.md`
 
-Repo-local installed copies such as `.genesis/docs/standards/` may describe one
-project's installed line, but they are local installs or mirrors, not the
-upstream source authority.
+Mutable `specification_methodology` source authors future releases. It is not
+operative authority for this consumer. An installed copy is authoritative only
+through the selected release identity above.
 
 ## Workspace Rules
 
 - Do not spread changes across sibling repos by drift. Work only in the named
   repo or in `specification_methodology` unless the task explicitly spans both.
-- If a methodological change is shared law, update `specification_methodology`
-  first and then update downstream installs only when requested or when the
-  task explicitly includes propagation.
+- If a methodological change is shared law, author it in
+  `specification_methodology`, publish a successor STDO version, and update this
+  consumer only through explicit version selection.
 - When writing posts, handoffs, or reviews, keep them commentary and do not
   present them as ratified specification or design.

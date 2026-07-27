@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Constraint / Guarantee
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-BOUNDARY-001`, `PO-OM-OBSERVE-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local control-plane realization in `B-OM-DEVCTRL-LOCAL-001`, subject to the exact deterministic validation. Host, shell, and Sidecar continuation cross typed reducers and named effect membranes; upstream Product and ABG truth remains authoritative. Unproved functional scenario cases remain explicit T-032 gaps and are not claimed delivered
+**Testcase Authority**: `build_tenants/react_vite/runtime/tests/test_developer_control_bootstrap.mjs`, `build_tenants/react_vite/runtime/tests/test_abg_run_observation.mjs`, `build_tenants/react_vite/runtime/tests/test_build_control_service.mjs`
 
 ### REQ-OM-BND-001 - odd_manager is a separate control-plane product boundary
 

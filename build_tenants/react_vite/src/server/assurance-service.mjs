@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import {
+  assuranceAttentionIdentity,
   assetDeliverySchema,
   assuranceLoadRequestSchema,
   assuranceSnapshotSchema,
@@ -77,6 +78,106 @@ function evidenceCheck(observation, evidenceKey, declaredDigest, evidenceRefs) {
   return { verified: true, detail: 'Evidence identity and digest match.', observed };
 }
 
+function sameExactStringList(left, right) {
+  return (
+    Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((entry, index) => entry === right[index])
+  );
+}
+
+function assessRegimeDecision(definition, decision) {
+  if (definition.regime === 'F_D') {
+    return {
+      status: 'satisfied',
+      detail: 'Evidence identity and digest match for the deterministic result.',
+    };
+  }
+  const requirement = definition.positiveDecisionRequirement;
+  if (!requirement || !decision || requirement.kind !== decision.kind) {
+    return {
+      status: definition.regime === 'F_H' ? 'waiting_human' : 'stale',
+      detail: definition.regime === 'F_H'
+        ? 'The catalog-admitted human decision has not been supplied.'
+        : 'The catalog-admitted probabilistic decision has not been supplied.',
+    };
+  }
+  if (
+    requirement.authorityRef !== decision.authorityRef
+    || !sameExactStringList(requirement.basisRefs, decision.basisRefs)
+  ) {
+    return {
+      status: 'stale',
+      detail: 'Decision authority or basis does not match the admitted Assurance Catalog.',
+    };
+  }
+  if (requirement.kind === 'human' && decision.kind === 'human') {
+    if (decision.decisionRef !== requirement.decisionRef) {
+      return {
+        status: 'stale',
+        detail: 'Human decision identity does not match the admitted Assurance Catalog.',
+      };
+    }
+    if (decision.outcome !== requirement.requiredOutcome) {
+      return {
+        status: 'failed',
+        detail: `Human ${decision.actorRef} recorded ${decision.outcome}; ${requirement.requiredOutcome} is required.`,
+      };
+    }
+    return {
+      status: 'satisfied',
+      detail: `Human ${decision.actorRef} recorded the catalog-admitted ${decision.outcome} decision.`,
+    };
+  }
+  if (requirement.kind === 'probabilistic' && decision.kind === 'probabilistic') {
+    if (decision.evaluatorRef !== requirement.evaluatorRef) {
+      return {
+        status: 'stale',
+        detail: 'Probabilistic evaluator identity does not match the admitted Assurance Catalog.',
+      };
+    }
+    const exactFacts = (
+      decision.facts.length === requirement.requiredFactRefs.length
+      && decision.facts.every((fact, index) => (
+        fact.factRef === requirement.requiredFactRefs[index]
+      ))
+    );
+    if (!exactFacts) {
+      return {
+        status: 'stale',
+        detail: 'Probabilistic decision facts do not exactly match the admitted Assurance Catalog.',
+      };
+    }
+    if (
+      decision.outcome === 'not_satisfied'
+      || decision.facts.some((fact) => fact.outcome === 'not_satisfied')
+    ) {
+      return {
+        status: 'failed',
+        detail: 'The catalog-admitted probabilistic decision did not satisfy its required facts.',
+      };
+    }
+    if (
+      decision.outcome !== 'satisfied'
+      || decision.facts.some((fact) => fact.outcome !== 'satisfied')
+    ) {
+      return {
+        status: 'stale',
+        detail: 'The catalog-admitted probabilistic decision is incomplete or inconclusive.',
+      };
+    }
+    return {
+      status: 'satisfied',
+      detail: 'Catalog-admitted probabilistic evaluator authority, basis, and required facts match.',
+    };
+  }
+  return {
+    status: 'stale',
+    detail: 'Decision regime does not match the admitted Assurance Catalog.',
+  };
+}
+
 function attentionForAssessment(project, execution, row, definition, observedAt, sourceKind) {
   if (['satisfied', 'delivered'].includes(row.status)) return null;
   const severity = ['failed', 'stale', 'missing'].includes(row.status)
@@ -86,7 +187,12 @@ function attentionForAssessment(project, execution, row, definition, observedAt,
       : 'warning';
   const identity = sourceKind === 'gate' ? row.gateRef : row.requirementRef;
   return attentionItemSchema.parse({
-    attentionId: `assurance:${execution?.executionId ?? 'unassessed'}:${identity}`,
+    attentionId: assuranceAttentionIdentity({
+      projectId: project.id,
+      executionId: execution?.executionId ?? null,
+      sourceKind,
+      sourceIdentity: identity,
+    }),
     correlationId: execution?.correlationId ?? `project:${project.id}:assurance`,
     project,
     executionId: execution?.executionId ?? null,
@@ -128,9 +234,12 @@ export function createAssuranceService(options) {
         throw new AssuranceError(`Build Execution not found: ${input.executionId}.`, { statusCode: 404 });
       }
 
+      const catalog = catalogAdmission.status === 'ready'
+        ? catalogAdmission.catalog
+        : null;
       let evidenceObservation = null;
       let evidenceError = null;
-      if (execution) {
+      if (execution && catalog) {
         try {
           evidenceObservation = buildControlService.evidence(execution.executionId, project.root);
         } catch (error) {
@@ -138,7 +247,6 @@ export function createAssuranceService(options) {
         }
       }
       const bundle = evidenceObservation?.bundle ?? null;
-      const catalog = catalogAdmission.catalog;
       const executionCurrent = execution ? sameProjectRevisionBasis(execution.revision, input.revision) : false;
       const bundleCurrent = execution && bundle
         ? sameProjectRevisionBasis(bundle.revision, execution.revision)
@@ -171,8 +279,9 @@ export function createAssuranceService(options) {
             status = 'unsupported';
             detail = 'The carrier reports this evaluator as unsupported.';
           } else if (status !== 'stale' && check.verified) {
-            status = 'satisfied';
-            detail = check.detail;
+            const decisionAssessment = assessRegimeDecision(definition, result.decision);
+            status = decisionAssessment.status;
+            detail = decisionAssessment.detail;
           } else if (status !== 'stale') {
             status = 'stale';
             detail = check.detail;
@@ -191,6 +300,7 @@ export function createAssuranceService(options) {
           producerRef: bundle?.producerRef ?? null,
           evidenceDigest: result?.digest ?? null,
           evidenceRefs: unique([...(result?.evidenceRefs ?? []), ...(check?.observed?.sourceRef ? [check.observed.sourceRef] : [])]),
+          decision: result?.decision ?? null,
           sourceRefs: unique([...definition.sourceRefs, ...(result?.sourceRefs ?? []), catalogAdmission.sourceRefs[0]]),
           assessedAt: observedAt,
         });
@@ -247,7 +357,7 @@ export function createAssuranceService(options) {
       if (catalogAdmission.status !== 'ready') {
         attentionItems.push(attentionItemSchema.parse({
           attentionId: `assurance-catalog:${project.id}`,
-          correlationId: `project:${project.id}:assurance`,
+          correlationId: execution?.correlationId ?? `project:${project.id}:assurance`,
           project,
           executionId: execution?.executionId ?? null,
           sourceKind: 'assurance-catalog',

@@ -4,7 +4,14 @@
 **Date**: 2026-07-01
 **Owns**: Single source of truth for migrating odd_manager from domain-specific
 observer assumptions to a general `.ai-workspace` browser with artifact viewers.
-**Implements**: `T-031`
+**Ticket**: `T-031`
+**Implements**: `PO-OM-BOUNDARY-001`; `PO-OM-OBSERVE-001`; `PO-OM-LENSES-001`; `PO-OM-DEVELOPER-001`; `PO-OM-AUDIT-001`; `REQ-OM-BND-*`; `REQ-OM-PROJ-*`; `REQ-OM-LNS-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/server/ai-workspace-observation-service.mjs`; `build_tenants/react_vite/src/features/sidecar/ai-workspace-browser.ts`; `build_tenants/react_vite/src/features/sidecar/ai-workspace-artifact-inspection.ts`; `build_tenants/react_vite/src/capabilities/run-observation/index.ts`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_ai_workspace_observation_service.mjs` :: `observation detects partial .ai-workspace features independently`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `ai-workspace viewer open replays to a first-class canvas tab without Cmd effects`; `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts` :: `AI Workspace delegates Tickets and Comments to canonical left navigators`
+**STDO-UX Bindings**: State=RunObservationState and SidecarState observation/surface slices; Msg=RunObservationMessage and SidecarMsg observation variants; Update=updateRunObservation and reduceSidecarState; Cmd=RunObservationCommand and SidecarCmd observation commands; Sub=declared bounded refresh and observation subscriptions; Ingress=asAiWorkspaceObservation plus ABG traversal surface storage and terminal validators; View=RunObservationView and the Sidecar AI Workspace projection; Membrane=developer-control and Sidecar command/subscription adapters; Replay=build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs :: ai-workspace viewer open replays to a first-class canvas tab without Cmd effects; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: forensic Run Inspector and terminal controls retain named navigation and fit at 390px
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001` in `DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md`; this design projects `P-OBSERVATION`, `P-REPLAY`, `P-AUTHORITY`, and `P-EVIDENCE`.
+**Accessibility Proof Scope**: AI Workspace and forensic navigation have keyboard/focus semantics, named status, representative contrast, terminal access, and responsive containment in the accepted proof bundle.
+**Implementation Acceptance**: Accepted for the manager-local read-only observation migration subject to the exact T-032 validation bundle. Upstream truth remains authoritative, and the exact 4.6 evidence grants no constructive authority.
 **Derives From**:
 - `specification/INTENT.md`
 - `specification/PRODUCT.md`
@@ -532,7 +539,8 @@ Exit:
 ### Phase 5 - ABG system projection
 
 Goal:
-Expose ABG 4.2 system facts as core manager-owned projection.
+Expose versioned, admitted GTL/ABG system facts as core manager-owned
+projection.
 
 Work:
 - Extract registry entries, graph-function selections, node-type entries,
@@ -684,7 +692,7 @@ flowchart LR
   SidecarState --> BrowserSummary[AiWorkspaceBrowserSummary]
   BrowserSummary --> ProjectBrowser[Project Browser summary and artifact rows]
   ProjectBrowser --> SurfaceOpen[viewer/open surface]
-  SurfaceOpen --> SurfaceAPI[/api/surface raw file]
+  SurfaceOpen --> SurfaceAPI["/api/surface raw file"]
   Contract --> ArtifactMatch[classified artifact lookup]
   SurfaceAPI --> ArtifactInspection[AiWorkspaceArtifactInspection]
   ArtifactMatch --> ArtifactInspection

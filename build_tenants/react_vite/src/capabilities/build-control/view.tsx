@@ -5,9 +5,8 @@ import type {
 import type { CapabilityViewProps } from "../../contracts/developer-control";
 import { CapabilityAvailability } from "../../components/primitives/CapabilityAvailability";
 import type { BuildControlMessage } from "./messages";
+import { buildExecutionCommandAvailability } from "./selectors";
 import type { BuildControlState } from "./state";
-
-const ACTIVE_STATES = new Set(["queued", "starting", "running", "waiting_human", "stale", "disconnected"]);
 
 function timeLabel(value: string | null) {
   if (!value) return "Not observed";
@@ -92,23 +91,17 @@ function ExecutionIdentity({ execution, request }: { execution: BuildExecution; 
 
 export function BuildControlView(props: CapabilityViewProps<BuildControlState, BuildControlMessage>) {
   const { state, contribution, dispatch } = props;
-  if (contribution.availability.kind !== "ready") return <UnavailableBuildControl {...props} />;
+  const hasExecutionHistory = Boolean(state.snapshot?.executions.length);
+  if (contribution.availability.kind !== "ready" && !hasExecutionHistory) {
+    return <UnavailableBuildControl {...props} />;
+  }
 
   const descriptor = state.snapshot?.descriptorAdmission.descriptor ?? null;
   const executions = orderedExecutions(state);
   const selected = executions.find((entry) => entry.executionId === state.selectedExecutionId) ?? null;
   const request = executionRequest(state, selected);
   const busy = state.status === "loading" || state.status === "submitting" || state.status === "cancelling" || state.status === "resuming";
-  const canCancel = Boolean(
-    selected
-    && ACTIVE_STATES.has(selected.state)
-    && descriptor?.supportedCommands.includes("cancel"),
-  );
-  const canResume = Boolean(
-    selected
-    && ["stale", "disconnected"].includes(selected.state)
-    && descriptor?.supportedCommands.includes("resume"),
-  );
+  const { canCancel, canResume } = buildExecutionCommandAvailability(selected, request);
 
   return (
     <section className="developer-capability build-control" aria-labelledby="build-control-heading">

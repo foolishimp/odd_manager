@@ -1,0 +1,62 @@
+{
+  "kind": "odd_manager_exact_read_only_observation_qualification",
+  "schemaVersion": "1",
+  "claim": {
+    "operation": "read_only_observation",
+    "subject": "odd_glc 0.1.0 on ABIogenesis 4.6.0-rc.3",
+    "exactReleasePairOnly": true,
+    "general46Compatibility": false,
+    "buildAvailabilityClaimed": false,
+    "runtimeDependencyRequired": false
+  },
+  "oddGlc": {
+    "packageName": "@odd-glc/route-one-typescript",
+    "packageVersion": "0.1.0",
+    "releaseTag": "v0.1.0",
+    "releaseTagCommit": "a878475e4609e2d74d3260eb36ee05c4657b1879",
+    "packageTarballSha256": "7e548f92ecd6b4442f9c9f1feb46dd2edd7e9610a7dae8706482fc65d80fa578",
+    "releaseSnapshotManifest": {
+      "file": "release-snapshot-manifest.json",
+      "bytes": 5631,
+      "sha256": "d8bbbd172cd011f68ae569f6c64bafb0e44eea002be2d55181270ae8de634eb1"
+    }
+  },
+  "abiogenesis": {
+    "packageName": "@abiogenesis/typescript-tenant",
+    "packageVersion": "4.6.0-rc.3",
+    "releaseTag": "v4.6.0-rc.3",
+    "releaseTagCommit": "f4f081f66ef8d3ce0c737ddb9d7530176711279a",
+    "sourceCommit": "5213301cdbfd35952badf19c27519caa9e7e6968",
+    "packageTarballSha256": "9cffb372c0dfc00983a5d0e882efbc3d0c3ac937a56f313000f35a4473358113",
+    "releaseSnapshotManifestSha256": "941d9a00198914120db7d7a1f466f4b3e2efe0fbd9659a71540267ca0f899bf4",
+    "productToolchainManifestDigest": "92b3f94dd32bca9368a9511d823cc8b6e2eae75cd7168c9e901d3cbe8eadf07d"
+  },
+  "liveProof": {
+    "kind": "installed_product_live_proof",
+    "scenarioId": "SCN-GLC-HELLO-WORLD-CLI-BASIC",
+    "file": "odd-glc-basic-cli-live-proof.json.gz.base64",
+    "encoding": "gzip+base64",
+    "decodedBytes": 925930,
+    "decodedSha256": "9a8bbce08257db6a5b808e629ca7dce5a6f62a293d3f29309e169930228ddfe8"
+  },
+  "expectedObservation": {
+    "state": "ready",
+    "identityId": "odd_glc",
+    "substratePackageVersion": "4.6.0-rc.3",
+    "eventCount": 602,
+    "projectedEventRowCount": 152,
+    "closedVectorCount": 8,
+    "catalogEntryCount": 47,
+    "diagnosticCount": 0
+  },
+  "expectedBuildAdmission": {
+    "status": "unavailable",
+    "descriptor": null,
+    "reason": "Project does not publish .odd/build-carrier.json."
+  },
+  "exclusions": [
+    "No odd_glc or ABIogenesis package is installed by this qualification.",
+    "No execution, submission, mutation, supervision, promotion, closure, or release authority is claimed.",
+    "No compatibility claim extends beyond the exact odd_glc 0.1.0 and ABIogenesis 4.6.0-rc.3 release pair."
+  ]
+}

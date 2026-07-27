@@ -4,8 +4,8 @@ title: Reprice odd_manager around the multi-project developer build control loop
 type: feature
 ticket_category: ordinary
 status: active
-review_status: ready_for_operator_review
-proof_status: manager_mvp_verified_live_odd_glc_blocked
+review_status: local_stdo_2_2_1_conformance_accepted_external_steel_thread_open
+proof_status: local_candidate_qualified_exact_abg46_observation_external_build_assure_open
 goal: establish-multi-project-developer-build-control
 owner: codex
 change_intent: >-
@@ -24,7 +24,7 @@ affected_boundary: >-
 priority: critical
 triaged_at: 2026-07-11
 created_at: 2026-07-11
-updated_at: 2026-07-12T00:03:57+10:00
+updated_at: 2026-07-27
 dependencies: []
 sprint: SPRINT-2026-07-10-abg46-observation-reprice
 related_work:
@@ -32,6 +32,16 @@ related_work:
 design_commentary:
   - .ai-workspace/comments/operator/20260711T025804Z_STRATEGY_modular-integrated-developer-control-capabilities.md
 governance_scope: STDO Method, ODD Method, STDO-UX Method, GTL/ABG command and runtime boundaries
+selected_method_release: STDO v2.2.1
+selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+growth_authority: none_review_only_local_prerequisite_exhausted
+prerequisite_status: accepted_and_exhausted
+admitted_prerequisite: >-
+  Restore the exact Goals to Intent to Product to requirements to design to
+  code and proof authority path for the already-selected developer-control
+  outcome, including STDO-UX design and executable-proof conformance, without
+  adding capability behavior or filling the external odd_glc carrier gap.
 intake_source: >-
   Operator persona refinement on 2026-07-11: the first odd_manager persona is
   a developer managing many Spec Method/ODD Projects who reviews and tunes
@@ -52,15 +62,18 @@ superseded_truth: >-
   specification outside the product, launch builds through terminal knowledge,
   and reconstruct gate or asset completion from separate observation surfaces.
 closure_law: >-
-  Close this product-reprice ticket only when live constitutional product truth
-  names the developer persona and primary interaction goal, defines the
-  multi-Project review-tune-build-assure loop, reconciles manager command
-  authority with GTL/ABG runtime ownership, and admits traceable requirements
-  and scenarios for portfolio observation, specification proposals, concurrent
-  build control, live supervision, attention handling, and gate/asset
-  assurance. Downstream design and tenant-local realization work must be
-  ticketed separately; a speculative Build button or shell-command wrapper is
-  not closure.
+  This law governs full T-032 closure; the named local STDO 2.2.1 conformance
+  prerequisite may reach its own terminal condition without closing the
+  external Build/Assure steel thread. Close this product-reprice ticket only
+  when live constitutional product truth names the developer persona and
+  primary interaction goal, defines the multi-Project
+  review-tune-build-assure loop, reconciles manager command authority with
+  GTL/ABG runtime ownership, and admits traceable requirements and scenarios
+  for portfolio observation, specification proposals, concurrent build
+  control, live supervision, attention handling, and gate/asset assurance.
+  Downstream design and tenant-local realization work must be ticketed
+  separately; a speculative Build button or shell-command wrapper is not
+  closure.
 evaluation_criteria:
   - The first primary persona is explicitly the developer operating multiple Spec Method/ODD-governed Projects through odd_glc or another admitted domain package.
   - The primary interaction goal is stated as moving selected Project revisions from governed specification through assured build completion.
@@ -98,6 +111,233 @@ non_closure_conditions:
 ---
 
 # T-032: Multi-Project Developer Build Control
+
+## STDO 2.2 Trace And STDO-UX Repair Admission
+
+The Product-owner instruction on 2026-07-26 admits one bounded prerequisite to
+the existing G-006 outcome:
+
+> Make the current `odd_manager` source boundary reconstructable from Goals
+> through Intent, Product, live requirements, accepted design, shipping code,
+> written testcase authority, and executable proof under STDO `v2.2.1` and its
+> adopted STDO-UX extension.
+
+The prerequisite owns only:
+
+- correcting reversed or circular authority links;
+- declaring the Product operational-lifecycle posture or exact named gaps;
+- separating stable Product meaning from mutable evidence and dependency
+  projections;
+- grounding every live requirement family and active design record through an
+  explicit `Implements:` relation;
+- mapping every live requirement to written testcase authority or honest
+  deferment;
+- mapping shipping source and executable proof carriers to requirement and
+  design authority;
+- reconciling the existing capability boundary with STDO-UX `State`, `Msg`,
+  pure `Update`, `Cmd`, `Sub`, ingress, effect-carrier, replay, and
+  accessibility law; and
+- adding deterministic conformance proof that rejects missing, contradictory,
+  stale, or orphaned links.
+
+It does not authorize a new Product outcome, Requirements View realization,
+external `odd_glc` carrier work, capability growth, general cleanup, or closure
+of the existing live-product residual.
+
+The prerequisite is exhausted by direct acceptance of one exact candidate
+whose trace and conformance claims pass, or earlier by rejection, withdrawal,
+supersession, repricing, or falsification. Its registry, tests, and retained
+code are evidence only and cannot select follow-on work.
+
+## Historical STDO 2.2 Review Freeze 2026-07-26
+
+As of 2026-07-26, T-032 remains open only for operator review and direct
+disposition of its existing claim. The implemented manager slices, plans,
+matrices, tests, and retained external-dependency evidence do not authorize
+continued realization. The missing odd_glc carriers and ABIogenesis promotion
+remain external closure dependencies; they are not an admitted odd_manager
+prerequisite, experiment, or downstream-work grant. A review finding may enter
+repair only through an explicitly admitted basis in this existing owner. The
+trace and STDO-UX prerequisite above was the sole repair admission at that
+freeze. Any other material continuation required a newly selected unresolved
+Product outcome or another named bounded prerequisite or experiment under
+`specification/GOALS.md`.
+
+## Superseding STDO-UX And Design-Method Disposition 2026-07-26
+
+Acceptance is withheld. This disposition supersedes every 2026-07-11 statement
+below that calls the manager-owned MVP implemented, accepted, closed, or
+automation-verified. The older execution notes and test counts remain
+historical evidence for functional slices; they are not current promotion,
+closure, or continuation authority.
+
+The bounded host cut now provisionally realizes one
+`DeveloperControlAggregateState` and `updateDeveloperControlAggregate`
+boundary, aggregate command lifecycle, and centrally derived Build/Portfolio
+subscriptions interpreted by thin React lifecycle adapters. That removes the
+former multiple-controller and directly installed polling claims. It does not
+accept the host or the wider product boundary.
+
+The remaining exact odd_manager-local gaps are:
+
+1. The shared `commandEnvelopeSchema` and `commandResultSchema` remain
+   declaration carriers with no runtime consumer. The aggregate runtime
+   delegates typed internal commands to capability-specific interpreters, so
+   the accepted schema-validated shared envelope/result boundary is not live.
+2. Subscription values are centrally derived and interpreted, but lifecycle
+   adapter installation and event-source failures have no typed subscription
+   failure message or replay path.
+3. `SidecarPanel.tsx` retains meaningful view-local state and direct HTTP,
+   storage, timer, WebSocket, and navigation effects, including continuation
+   and effect-handler controller responsibility. Selected reducer replay tests
+   do not establish that all meaningful next state is event-derived.
+4. `App.tsx` still owns selected Project bootstrap, registry/deep-link
+   admission, URL projection, persisted workspace, and theme continuation in
+   React state and conditional effects rather than a declared replayable
+   State/Msg/Update/Cmd/Sub shell boundary.
+5. Accessibility proof covers primary host/workbench tab behavior and selected
+   resize/navigation lanes only. Capability-internal controls, focus handoff
+   and recovery, live status, annotations, measured contrast, terminal and
+   forensic detail, and complete responsive placements remain open without
+   exemption.
+6. The materially changed boundary has no accepted Ontology,
+   Ontology-derived Irreducible Architectural Carrier Set, complete
+   `classDiagram`/`sequenceDiagram`/`stateDiagram-v2` view set, cross-view axiom
+   evaluation matrix, or accepted DESIGN_MODULE_METHOD verdict.
+7. The installed-development script proves an isolated candidate can install,
+   run the trace and runtime suites, build, serve, and execute the admitted
+   accessibility scenario. It does not provide decisive installed proof for
+   every operator-capability and significant-path claim in
+   `REQ-OM-VER-003`.
+8. The non-test `odd_glc` carriers and ABIogenesis promotion remain a separate
+   external dependency after the odd_manager-local gaps are repaired.
+
+The accepted design records remain future intent; their `Implements` maps,
+STDO-UX bindings, code entrypoints, and proof selectors are provisional
+evidence only. This review disposition authorizes no capability growth. Work
+remains bounded to the already admitted trace, STDO-UX, and design-method
+repair.
+
+## STDO 2.2.1 Closure And Exact 4.6 Qualification Admission 2026-07-27
+
+The Product-owner instruction on 2026-07-27 updates the selected method to the
+released STDO `v2.2.1` basis already named in this ticket and directs closure
+of the admitted local trace, STDO-UX, and design-method prerequisite after its
+deterministic gates pass.
+
+The same instruction admits one bounded compatibility-evidence operation:
+
+```text
+subject:
+  odd_glc 0.1.0 on ABIogenesis 4.6.0-rc.3
+operation:
+  exact immutable read-only observation qualification
+terminal condition:
+  exact release identities and proof digests verified;
+  server and client observation admission pass;
+  Build remains explicitly unavailable without a published descriptor
+```
+
+This operation may copy the immutable proof and release manifest into a
+self-contained qualification fixture. It may not add an odd_glc or
+ABIogenesis runtime dependency, publish a synthetic Build carrier, generalize
+the compatibility range, or close any Build/Assure scenario.
+
+ABIogenesis 5 is explicitly unselected until a released version exists and the
+Product owner admits a new basis. Neither the 4.6 qualification nor retained
+5.0 planning evidence selects that later work.
+
+The local prerequisite closes only on one exact candidate that demonstrates:
+
+1. exact 41-member STDO `v2.2.1` installation and aggregate;
+2. deterministic Product-to-requirement-to-design-to-code-and-proof
+   traceability;
+3. schema-consumed command envelope/result and replayable subscription
+   failures;
+4. replayable application-shell and Sidecar product-meaningful continuation
+   with validated ingress and declared effect edges;
+5. accepted decision-complete Ontology, whole-family Prime contraction, IACS,
+   class/sequence/state views, cross-view axiom evaluation, and module mapping;
+6. public accessibility proof for keyboard, focus, status, representative
+   WCAG AA contrast, terminal/forensic controls, and narrow layout;
+7. source and isolated installed-development runtime, build, and declared
+   operator significant-path proof; and
+8. exact `odd_glc` `0.1.0` / ABIogenesis `4.6.0-rc.3` read-only observation
+   admission with Build unavailable.
+
+When these gates pass and the Product-owner acceptance condition is applied,
+the admitted local prerequisite is `accepted` and its growth authority is
+exhausted. T-032 itself remains open only for its external live Build/Assure
+steel thread and the still-explicit functional scenario gaps. The earlier
+eight-gap list remains the discovery record for this repair; this section owns
+its final disposition.
+
+## Local STDO 2.2.1 Acceptance And Authority Exhaustion 2026-07-27
+
+The Product-owner instruction to update, close, validate, and commit this
+bounded 4.6-aligned version supplies direct acceptance of the exact local
+conformance subject after its declared gates passed. The admitted prerequisite
+is `accepted_and_exhausted`. Its retained design, source, tests, qualification
+fixtures, and proof may prevent regression; none may select more work.
+
+Exact acceptance evidence:
+
+- the installed standards projection contains exactly the 41 byte-identical
+  STDO `v2.2.1` members at release commit
+  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf` and recomputes aggregate
+  `df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`;
+- deterministic traceability passes 30/30 over 7 Product outcomes, 15
+  requirement families, 138 requirements, 16 active designs, 18 scenarios, 39
+  source carriers, 76 proof carriers, 41 standards members, 54 explicit
+  scenario proof gaps, and 856 edges;
+- source runtime passes 451/451, the exact 4.6 qualification passes 1/1,
+  TypeScript and contract compilation pass, the production build passes, and
+  10/10 Mermaid diagrams in active design carriers parse;
+- the complete browser matrix passes 48/48, including the bounded keyboard,
+  focus, status, representative WCAG AA contrast, terminal, forensic, and
+  narrow-layout proof;
+- a source-blind 665-member development candidate installs from its exact
+  dependency lock, repeats traceability and all runtime tests, builds, serves,
+  and passes all 17 declared operator-significant browser paths; and
+- independent release and compatibility audits confirm the exact STDO
+  projection and immutable `odd_glc` `0.1.0` / ABIogenesis `4.6.0-rc.3`
+  observation subject, including 602 proof-declared events, 152 bounded event
+  rows, 8 closed vectors, 47 catalog entries, and zero diagnostics.
+
+Final disposition of the 2026-07-26 eight-gap discovery record:
+
+1. The shared command envelope and result schemas are consumed at the
+   aggregate effect membrane and their correlated ingress is replay-tested.
+2. Subscription installation and event-source failures enter typed,
+   replayable failure messages and cannot be caller-spoofed.
+3. Sidecar product-meaningful storage, Project activation, continuation,
+   surface/folder loading, and tail-follow state are reducer-owned; React
+   retains projection ephemera only.
+4. Project/bootstrap, deep-link, URL, workspace, and theme continuation are
+   governed by the replayable application-shell State/Msg/Update/Cmd boundary.
+5. The admitted public accessibility scope has executable keyboard, focus,
+   status, contrast, terminal/forensic, and 390px proof. This is not a claim of
+   unbounded whole-product WCAG certification.
+6. The changed boundary has an accepted Ontology, whole-family Prime
+   contraction, IACS, class/sequence/state views, axiom evaluation, and module
+   projection under DESIGN_MODULE_METHOD.
+7. Installed-development proof now covers 17 declared significant operator
+   paths in addition to traceability, runtime, build, and serving.
+8. The non-test odd_glc Build Carrier Descriptor, adapter, Assurance Catalog,
+   evidence bundle, and resulting live steel thread remain external and open.
+
+T-032 therefore stays `active` only as the review owner for that external
+Build/Assure steel thread and the 54 explicit functional scenario gaps. Those
+gaps are not a remaining-row sweep and convey no odd_manager-local growth
+authority. Build remains unavailable for the exact 4.6 subject because its
+published package has no build descriptor. ABIogenesis 5 remains unselected
+until an immutable release exists and a new Product-owner admission names its
+basis.
+
+All execution notes below this disposition are retained historical evidence.
+Any present-tense acceptance or local-gap wording in those notes is superseded
+by this exact disposition; their external dependency facts remain live where
+they agree with current Product and Goals.
 
 ## Triage
 
@@ -230,27 +470,32 @@ The steel thread must prove the generic product contracts. It must not create an
 
 ## Execution Status 2026-07-11
 
-The product reprice and manager-owned MVP are implemented through W22. The
-capability host now composes one Portfolio, Project Workbench, Specification
-Proposal, Build Control, Assurance and Attention, and supporting Run
-Observation boundary around shared Project/revision Context and correlated
-commands. The generic Review -> Tune -> Build -> Assure journey, concurrent
-real-process supervision, negative authority paths, replay, runtime, desktop,
-and mobile proof are automation-verified.
+Functional product and manager slices exist through W22 as provisional
+evidence. The capability host renders Portfolio, Project Workbench,
+Specification Proposal, Build Control, Assurance and Attention, and supporting
+Run Observation around shared Project/revision Context and correlated
+capability messages. The 2026-07-11 automation exercised the generic Review ->
+Tune -> Build -> Assure journey, concurrent real-process supervision, selected
+negative authority paths, replay, runtime, desktop, and mobile behavior. It did
+not establish the aggregate host, shared command runtime, Sidecar controller,
+accessibility, or design-method closure required by the superseding disposition
+above.
 
 Production adapter installation is now an explicit manager-local,
 digest-pinned authority surface rather than an unimplemented constructor
 parameter. Product descriptors can name installed identities only; they cannot
 install modules or provide process plans.
 
-The final scenario audit also closes stale proposal regeneration, exact
-attention-source routing, context-preserving forensic drilldown, and
-stale/disconnected external execution recovery. Approval, retry, repair, and
-human decisions remain product-carrier-owned reactions; odd_manager exposes
-them only when an admitted catalog publishes the command.
+The final 2026-07-11 scenario audit supplies evidence for stale proposal
+regeneration, exact attention-source routing, context-preserving forensic
+drilldown, and stale/disconnected external execution recovery; it does not
+close the current acceptance gaps. Approval, retry, repair, and human decisions
+remain product-carrier-owned reactions; odd_manager exposes them only when an
+admitted catalog publishes the command.
 
-T-032 remains active for operator review and the named live odd_glc steel
-thread. odd_glc has not published its non-test Build Carrier Descriptor,
+T-032 remains open with acceptance withheld for the bounded local repair and
+the named external odd_glc dependency. odd_glc has not published its
+non-test Build Carrier Descriptor,
 execution adapter, Assurance Catalog, or build evidence bundle, and the
 upstream ABIogenesis candidate still requires F_H promotion. The manager fails
 closed at that boundary and does not substitute fixture or shell execution for
@@ -258,14 +503,20 @@ product truth.
 
 ## Prime Active Role 2026-07-11
 
-T-032 is the one active owner for the developer-control product and its live
-external steel thread. T-034 and T-035 are accepted completed capability
-slices. The manager-owned portions of T-036 through T-039 are also accepted;
-their repeated live-product residual is compressed here rather than copied
-across four active tickets.
+T-032 is the retained review and closure owner for the developer-control
+product and its external steel-thread claim. It does not own further
+realization without a new admission under the review freeze above. T-034 and
+T-035 and the manager-owned portions of T-036 through T-039 retain their
+historical completion records, but those records do not supply current
+implementation acceptance. Their evidence and repeated live-product residual
+are compressed here rather than copied across four active tickets.
 
-The remaining closure facts are exact:
+The remaining closure facts include both local method gaps and external
+carrier dependencies:
 
+- odd_manager must satisfy the aggregate-host, shared-runtime, subscription,
+  Sidecar-controller, accessibility, and DESIGN_MODULE_METHOD gaps in the
+  superseding disposition above;
 - odd_glc must publish a non-test Build Carrier Descriptor;
 - odd_glc must publish a digest-pinned execution adapter module;
 - odd_glc must publish an Assurance Catalog and matching build evidence bundle;
@@ -275,8 +526,9 @@ The remaining closure facts are exact:
 
 ## External Carrier Dependency Audit 2026-07-11
 
-The live external residual is sequenced by ABIogenesis `GOAL-035`, not by an
-odd_manager implementation gap. Its current dependency order is:
+The live external residual is sequenced by ABIogenesis `GOAL-035` and is
+independent of the odd_manager-local implementation and method gaps recorded
+above. Its current dependency order is:
 
 ```text
 DS-1  ABIogenesis T-223
@@ -298,14 +550,15 @@ substitute descriptor.
 
 ## Prime-Set Workbench UX Iteration 2026-07-11
 
-The live product posture now distinguishes the implemented manager MVP from
-that external steel-thread residual. The Project Workbench identity strip no
+The 2026-07-11 product posture distinguished the functional manager slices from
+the external steel-thread residual. The Project Workbench identity strip no
 longer projects an ambiguous global `READY`; admitted capability contributions
 remain the one availability truth and are now projected through phase controls
 and active module detail. This keeps Project identity, capability admission,
 build lifecycle, and assurance truth on separate clean boundaries.
 
-Final proof for this iteration:
+Historical automation evidence for this iteration, retained without acceptance
+authority:
 
 - `npm run test:runtime:node`: 266 tests, 262 passed, 4 environment-dependent
   screen tests skipped, 0 failed;

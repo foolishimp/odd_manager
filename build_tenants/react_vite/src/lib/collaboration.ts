@@ -1,5 +1,16 @@
 import type { WorkspaceProfile } from "./types";
-import type { ProjectRecord, ProjectRegistryResponse } from "../contracts/project";
+import {
+  fsBrowseResultSchema,
+  projectRegistryMutationResponseSchema,
+  projectRegistryRemovalResponseSchema,
+  projectRegistryResponseSchema,
+  type FsBrowseResult,
+  type FsEntry,
+  type ProjectRecord,
+  type ProjectRegistryMutationResponse,
+  type ProjectRegistryRemovalResponse,
+  type ProjectRegistryResponse,
+} from "@odd-manager/developer-control-contracts";
 
 export type TrainId = string;
 
@@ -16,21 +27,7 @@ export type WorkspaceScanResult = {
   profile: WorkspaceProfile | null;
 };
 
-export type FsEntry = {
-  name: string;
-  absolutePath: string;
-  kind?: "directory" | "file";
-  hasWorkspace: boolean;
-  markers: string[];
-  profile: WorkspaceProfile | null;
-};
-
-export type FsBrowseResult = {
-  path: string;
-  parent: string | null;
-  entries: FsEntry[];
-  truncated: boolean;
-};
+export type { FsBrowseResult, FsEntry };
 
 export type GBoardRecordSource = "comments" | "specification" | "requirements" | "design";
 export type GBoardRecordFormat = "markdown" | "yaml" | "text";
@@ -178,12 +175,27 @@ async function expectJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function expectValidatedJson<T>(
+  response: Response,
+  schema: { parse: (payload: unknown) => T },
+): Promise<T> {
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(payload || `Request failed with ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  return schema.parse(payload);
+}
+
 export async function browsePath(path?: string): Promise<FsBrowseResult> {
   const params = new URLSearchParams();
   if (path) params.set("path", path);
   params.set("refresh", String(Date.now()));
   const query = `?${params.toString()}`;
-  return expectJson<FsBrowseResult>(await fetch(`/api/fs/browse${query}`, { cache: "no-store" }));
+  return expectValidatedJson(
+    await fetch(`/api/fs/browse${query}`, { cache: "no-store" }),
+    fsBrowseResultSchema,
+  );
 }
 
 export async function scanForOddWorkspaces(root: string): Promise<WorkspaceScanResult[]> {
@@ -195,7 +207,10 @@ export async function scanForOddWorkspaces(root: string): Promise<WorkspaceScanR
 }
 
 export async function loadProjectRegistry(): Promise<ProjectRegistryResponse> {
-  return expectJson<ProjectRegistryResponse>(await fetch("/api/projects/registry"));
+  return expectValidatedJson(
+    await fetch("/api/projects/registry"),
+    projectRegistryResponseSchema,
+  );
 }
 
 export const PROJECT_REGISTRY_CHANGED_EVENT = "odd-manager:project-registry-changed";
@@ -215,13 +230,14 @@ function emitProjectRegistryChanged(
 export async function registerProject(
   root: string,
   options: { setActive?: boolean; label?: string | null } = {},
-): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  const result = await expectJson<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
+): Promise<ProjectRegistryMutationResponse> {
+  const result = await expectValidatedJson(
     await fetch("/api/projects/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ root, setActive: Boolean(options.setActive), label: options.label ?? undefined }),
     }),
+    projectRegistryMutationResponseSchema,
   );
   emitProjectRegistryChanged("registered", { project: result.project, projects: result.projects });
   return result;
@@ -229,13 +245,14 @@ export async function registerProject(
 
 export async function unregisterProject(
   id: string,
-): Promise<{ ok: boolean; removed: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  const result = await expectJson<{ ok: boolean; removed: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
+): Promise<ProjectRegistryRemovalResponse> {
+  const result = await expectValidatedJson(
     await fetch("/api/projects/unregister", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     }),
+    projectRegistryRemovalResponseSchema,
   );
   emitProjectRegistryChanged("unregistered", { projects: result.projects });
   return result;
@@ -244,8 +261,8 @@ export async function unregisterProject(
 export async function setActiveProject(
   idOrRoot: string,
   options: { registerIfMissing?: boolean } = {},
-): Promise<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }> {
-  const result = await expectJson<{ ok: boolean; project: ProjectRecord; projects: ProjectRecord[]; diagnostic: ProjectRegistryResponse["diagnostic"] }>(
+): Promise<ProjectRegistryMutationResponse> {
+  const result = await expectValidatedJson(
     await fetch("/api/projects/active", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -254,6 +271,7 @@ export async function setActiveProject(
         ...(options.registerIfMissing === undefined ? {} : { registerIfMissing: options.registerIfMissing }),
       }),
     }),
+    projectRegistryMutationResponseSchema,
   );
   emitProjectRegistryChanged("active", { project: result.project, projects: result.projects });
   return result;

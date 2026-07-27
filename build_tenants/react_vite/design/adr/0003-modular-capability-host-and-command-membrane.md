@@ -8,14 +8,23 @@
 **Supersedes**: ADR 0001's unrealized Redux Toolkit state-container and RTK Query command-interpreter choices
 **Retains From ADR 0001**: React functional views, typed contracts, runtime validation, one effect membrane, and replay proof
 **Derives From**: `build_tenants/common/design/DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md`
+**Implements**: `PO-OM-MODULES-001`; `PO-OM-DEVELOPER-001`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/host/aggregate.ts`; `build_tenants/react_vite/src/capabilities/host/DeveloperControlHost.tsx`; `build_tenants/react_vite/src/effects/command-runtime/developer-control-aggregate-runtime.ts`; `build_tenants/react_vite/src/contracts/developer-control/index.ts`; `build_tenants/react_vite/packages/developer-control-contracts/src/index.ts`; `build_tenants/react_vite/src/routes/WorkspaceRoute.tsx`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `host rejects late Project generations and admits only the exact latest Context command`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `aggregate Project switch retires prior Project work and ignores a late proposal completion`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `aggregate Project switch preserves only target-Project attention through Context admission`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `aggregate result admission binds the outer command to the exact inner identity`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `aggregate subscription ticks are admitted from the current declaration, not caller shape`; `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `each capability owns its structural public surfaces and cross-capability imports stay at host ports`
+**STDO-UX Bindings**: State=DeveloperControlAggregateState plus capability-owned immutable State records; Msg=DeveloperControlAggregateMessage plus capability-owned Msg unions; Update=updateDeveloperControlAggregate plus capability update functions; Cmd=DeveloperControlAggregateCommand plus capability command unions; Sub=DeveloperControlAggregateSubscription values admitted by the aggregate; Ingress=developer-control-contracts Zod schemas at HTTP, event, URL, command-envelope/result, and server seams; View=DeveloperControlHost and registered capability Views; Membrane=developer-control-aggregate-runtime plus thin aggregate command/subscription lifecycle adapters; Replay=build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs :: aggregate replay owns cross-capability command lifecycle and admitted run focus; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer-control status, custom tabs, and representative text/control tokens meet keyboard and AA expectations
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001` in `build_tenants/common/design/DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md`.
+**Accessibility Proof Scope**: Host/workbench semantics, keyboard focus, status announcement, representative contrast, terminal/forensic access, and desktop/390px containment are executable. No stricter screen-reader certification is claimed.
+**Implementation Acceptance**: Accepted for the manager-local modular host and command membrane subject to the exact T-032 validation bundle. External product carriers and functional steel-thread completion remain outside this ADR's acceptance.
 
 ## Context
 
 ADR 0001 selected Redux Toolkit, RTK Query, Zod, and a command middleware as
-the intended STDO-UX realization. The React tenant never installed Redux
-Toolkit, RTK Query, or Zod. The live Sidecar instead established a plain
-TypeScript reducer that emits typed pending commands, with React effects acting
-as command and subscription adapters.
+the intended STDO-UX realization. At this repricing point the React tenant had
+not installed Redux Toolkit, RTK Query, or Zod in the UI realization. The live
+Sidecar instead established a plain TypeScript reducer that emits typed pending
+commands, with React effects acting as command and subscription adapters.
+Shared contracts adopted Zod later; that ingress improvement does not close
+the host runtime gaps recorded above.
 
 T-032 now requires independently evolvable capabilities and a clean integrated
 host. Introducing Redux while decomposing more than 8,000 lines of existing

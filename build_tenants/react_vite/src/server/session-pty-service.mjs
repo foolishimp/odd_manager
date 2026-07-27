@@ -8,36 +8,31 @@
 // registry scan. screen writes screenlog.0 in the per-session directory;
 // xterm.js attach replays the transcript on connect and polls appended output.
 //
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import {
+  decodeScreenTranscriptFrame,
   isScreenAvailable,
   killScreenSession,
+  listAdmittedLiveScreenSessionIds,
   listScreenSessions,
+  loadScreenSessionRecord,
+  readScreenSessionTranscript,
+  readScreenSessionTranscriptBytes,
   rehydrateFromScreen,
   sendToScreenSession,
   spawnScreenSession,
+  statScreenSessionTranscript,
 } from './session-pty-screen.mjs';
+import { admitProjectWorkingDirectory } from './project-context-admission-service.mjs';
 
 const DEFAULT_SHELL = process.env.SHELL || '/bin/bash';
 
-function sessionsRegistry(projectRoot) {
-  return resolve(projectRoot, '.ai-workspace/runtime/sessions');
-}
-
-function sessionRecordPath(projectRoot, id) {
-  return join(sessionsRegistry(projectRoot), `${id}.json`);
-}
-
-function transcriptPath(projectRoot, id) {
-  return join(sessionsRegistry(projectRoot), `${id}.transcript`);
-}
-
 function loadSessionRecord(projectRoot, id) {
-  const path = sessionRecordPath(projectRoot, id);
-  if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, 'utf-8')); } catch { return null; }
+  try {
+    return loadScreenSessionRecord(projectRoot, id);
+  } catch {
+    return null;
+  }
 }
 
 function actionResult(ok, payload) {
@@ -67,9 +62,17 @@ export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, a
   if (!isScreenAvailable()) {
     return actionResult(false, { error: 'screen backplane unavailable: screen executable not found' });
   }
+  let admittedCwd;
+  try {
+    admittedCwd = admitProjectWorkingDirectory(projectRoot, cwd);
+  } catch (error) {
+    return actionResult(false, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return spawnScreenSession(projectRoot, {
     agentType,
-    cwd,
+    cwd: admittedCwd,
     command: command || DEFAULT_SHELL,
     args,
     contextAtSpawn,
@@ -80,7 +83,13 @@ export function spawnSession(projectRoot, { agentType = 'shell', cwd, command, a
 export function killSession(projectRoot, id) {
   const record = loadSessionRecord(projectRoot, id);
   if (record?.backplane === 'screen') {
-    return killScreenSession(projectRoot, id);
+    try {
+      return killScreenSession(projectRoot, record.id);
+    } catch (error) {
+      return actionResult(false, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return actionResult(false, { error: `screen session not found: ${id}` });
 }
@@ -88,31 +97,33 @@ export function killSession(projectRoot, id) {
 export function writeToSession(projectRoot, id, data) {
   const record = loadSessionRecord(projectRoot, id);
   if (record?.backplane === 'screen') {
-    return sendToScreenSession(id, data);
+    try {
+      return sendToScreenSession(projectRoot, record.id, data);
+    } catch (error) {
+      return actionResult(false, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return actionResult(false, { error: `session not live: ${id}` });
 }
 
 export function listLiveSessionIds(projectRoot = null) {
-  const screenIds = isScreenAvailable()
-    ? listScreenSessions()
-      .map((entry) => entry.id)
-      .filter((id) => !projectRoot || loadSessionRecord(projectRoot, id)?.backplane === 'screen')
-    : [];
-  return Array.from(new Set(screenIds));
+  if (!projectRoot || !isScreenAvailable()) return [];
+  try {
+    return listAdmittedLiveScreenSessionIds(projectRoot);
+  } catch {
+    return [];
+  }
 }
 
 // Replay transcript for a freshly-attached client.
 export function readTranscript(projectRoot, id) {
-  const record = loadSessionRecord(projectRoot, id);
-  const tPath = record?.transcript_ref ? resolve(projectRoot, record.transcript_ref) : transcriptPath(projectRoot, id);
-  if (!existsSync(tPath)) return '';
-  try { return readFileSync(tPath, 'utf-8'); } catch { return ''; }
-}
-
-function transcriptAbsolutePath(projectRoot, id) {
-  const record = loadSessionRecord(projectRoot, id);
-  return record?.transcript_ref ? resolve(projectRoot, record.transcript_ref) : transcriptPath(projectRoot, id);
+  try {
+    return readScreenSessionTranscript(projectRoot, id);
+  } catch {
+    return '';
+  }
 }
 
 // Attach a WebSocket to a live session. Replays transcript first then
@@ -121,33 +132,40 @@ function transcriptAbsolutePath(projectRoot, id) {
 function attachScreenWebSocket(projectRoot, id, ws) {
   const record = loadSessionRecord(projectRoot, id);
   const liveScreenIds = new Set(isScreenAvailable() ? listScreenSessions().map((entry) => entry.id) : []);
-  if (!record || record.backplane !== 'screen' || !liveScreenIds.has(id)) {
+  if (!record || record.backplane !== 'screen' || !liveScreenIds.has(record.screen_session_id)) {
     try { ws.send(JSON.stringify({ type: 'error', error: `session not live: ${id}` })); ws.close(); } catch { /* ignored */ }
     return;
   }
 
-  const tPath = transcriptAbsolutePath(projectRoot, id);
   let offset = 0;
   try {
-    const replay = readTranscript(projectRoot, id);
-    offset = Buffer.byteLength(replay);
-    ws.send(JSON.stringify({ type: 'replay', data: replay }));
+    const content = readScreenSessionTranscriptBytes(projectRoot, id);
+    const replay = decodeScreenTranscriptFrame(content);
+    offset = replay.nextOffset;
+    ws.send(JSON.stringify({ type: 'replay', data: replay.data }));
   } catch { /* ignored */ }
 
   const poll = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     let currentSize;
     try {
-      currentSize = statSync(tPath).size;
+      currentSize = statScreenSessionTranscript(projectRoot, id)?.size ?? 0;
     } catch {
+      try {
+        ws.send(JSON.stringify({ type: 'error', error: 'session transcript carrier is not admitted' }));
+        ws.close();
+      } catch {
+        // ignored
+      }
       return;
     }
+    if (currentSize < offset) offset = 0;
     if (currentSize <= offset) return;
     try {
-      const content = readFileSync(tPath);
-      const chunk = content.slice(offset, currentSize).toString('utf-8');
-      offset = currentSize;
-      if (chunk) ws.send(JSON.stringify({ type: 'output', data: chunk }));
+      const content = readScreenSessionTranscriptBytes(projectRoot, id);
+      const output = decodeScreenTranscriptFrame(content, offset, currentSize);
+      offset = output.nextOffset;
+      if (output.data) ws.send(JSON.stringify({ type: 'output', data: output.data }));
     } catch { /* ignored */ }
   }, 100);
   if (typeof poll.unref === 'function') poll.unref();
@@ -155,10 +173,24 @@ function attachScreenWebSocket(projectRoot, id, ws) {
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString('utf-8')); } catch { return; }
-    if (msg.type === 'input' && typeof msg.data === 'string') {
-      sendToScreenSession(id, msg.data);
-    } else if (msg.type === 'kill') {
-      killScreenSession(projectRoot, id);
+    try {
+      if (msg.type === 'input' && typeof msg.data === 'string') {
+        const result = sendToScreenSession(projectRoot, id, msg.data);
+        if (!result.ok) throw new Error(result.error);
+      } else if (msg.type === 'kill') {
+        const result = killScreenSession(projectRoot, id);
+        if (!result.ok) throw new Error(result.error);
+      }
+    } catch (error) {
+      try {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        ws.close();
+      } catch {
+        // ignored
+      }
     }
     // Screen resize is intentionally not claimed as native pty resize.
   });
@@ -174,16 +206,44 @@ export function attachWebSocket(projectRoot, id, ws) {
   try { ws.send(JSON.stringify({ type: 'error', error: `session not live: ${id}` })); ws.close(); } catch { /* ignored */ }
 }
 
+function rejectSessionUpgrade(socket, error) {
+  const statusCode = error?.statusCode === 403 ? 403 : 400;
+  const statusText = statusCode === 403 ? 'Forbidden' : 'Bad Request';
+  const body = JSON.stringify({
+    error: error instanceof Error ? error.message : String(error),
+  });
+  socket.end([
+    `HTTP/1.1 ${statusCode} ${statusText}`,
+    'Connection: close',
+    'Content-Type: application/json; charset=utf-8',
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    '',
+    body,
+  ].join('\r\n'));
+}
+
 // Mount a WebSocketServer on an existing http.Server. Path: /ws/sessions/:id.
-// Project root is resolved per-connection via the ?projectRoot= query string.
-export function mountSessionWebSocket(httpServer) {
+// Project root is admitted per connection through the exact Project registry.
+export function mountSessionWebSocket(httpServer, options = {}) {
+  if (typeof options.admitProjectRoot !== 'function') {
+    throw new Error('Session WebSocket requires Project Context admission.');
+  }
+  const defaultProjectRoot = options.defaultProjectRoot ?? process.cwd();
   const wss = new WebSocketServer({ noServer: true });
   httpServer.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
     const match = url.pathname.match(/^\/ws\/sessions\/([^/]+)$/);
     if (!match) return;
     const id = decodeURIComponent(match[1]);
-    const projectRoot = url.searchParams.get('projectRoot') || process.cwd();
+    let projectRoot;
+    try {
+      projectRoot = options.admitProjectRoot(
+        url.searchParams.get('projectRoot') || defaultProjectRoot,
+      );
+    } catch (error) {
+      rejectSessionUpgrade(socket, error);
+      return;
+    }
     wss.handleUpgrade(request, socket, head, (ws) => {
       attachWebSocket(projectRoot, id, ws);
     });

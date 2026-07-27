@@ -3,6 +3,13 @@
 **Status**: Active
 **Wave**: W16 structural shell, W17 MVP 1
 **Requirements**: REQ-OM-DEV-004, REQ-OM-DEV-006, REQ-OM-DEV-007, REQ-OM-CAP-002
+**Implements**: `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `REQ-OM-DEV-*`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/project-workbench/index.ts`; `build_tenants/react_vite/src/capabilities/host/index.ts`; `build_tenants/react_vite/src/routes/WorkspaceRoute.tsx`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `Project Workbench compresses admitted phase availability without a sidebar ledger`; `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts` :: `project-only deep link opens the modular developer Project Workbench`; `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts` :: `Project Workbench stays viewport-contained on mobile`
+**STDO-UX Bindings**: State=ProjectWorkbenchState; Msg=ProjectWorkbenchMessage; Update=updateProjectWorkbench; Cmd=ProjectWorkbenchCommand currently never; Sub=ProjectWorkbenchSubscription currently never; Ingress=admitted ManagerContext and CapabilityContribution records; View=ProjectWorkbenchView; Membrane=host-owned typed navigation boundary; Replay=build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs :: Project Workbench compresses admitted phase availability without a sidebar ledger; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer control and workbench tabs provide keyboard parity and named panels
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001` in the parent design; this module projects `P-CONTEXT`, `P-OWNERSHIP`, `P-REPLAY`, and `P-FAIL-CLOSED`.
+**Accessibility Proof Scope**: Workbench phase tabs, capability focus handoff, unavailable-state naming, representative contrast, and desktop/390px containment are exercised by the accepted parent proof bundle.
+**Implementation Acceptance**: Accepted for the manager-local Workbench composition module subject to the exact T-032 validation bundle. It does not imply that unavailable capability carriers are delivered.
 
 ## Responsibility
 

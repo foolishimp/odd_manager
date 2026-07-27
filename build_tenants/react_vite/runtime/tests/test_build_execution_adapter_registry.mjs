@@ -183,6 +183,45 @@ test('adapter registry rejects digest drift and the reserved fixture identity', 
   }
 });
 
+test('adapter import executes the pinned byte buffer when the installation source mutates after pinning', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'odd-manager-adapter-pin-race-'));
+  const registryPath = join(root, 'registry.json');
+  const adapterRef = 'execution-adapter://example/pin-race/v1';
+  try {
+    const { modulePath } = createAdapterModule(root);
+    const pinnedDigest = sha256(modulePath);
+    writeRegistry(registryPath, [{
+      adapterRef,
+      modulePath,
+      moduleSha256: pinnedDigest,
+      exportName: 'createExternalAdapter',
+      sourceRefs: ['adapter-install://example/pin-race/v1'],
+    }]);
+    let pinHookCount = 0;
+    const loaded = await loadBuildExecutionAdapterRegistry({
+      managerStateRoot: root,
+      registryPath,
+      afterAdapterBytesPinned({ adapterRef: observedRef, moduleDigest }) {
+        pinHookCount += 1;
+        assert.equal(observedRef, adapterRef);
+        assert.equal(moduleDigest, pinnedDigest);
+        writeFileSync(modulePath, `
+export function createExternalAdapter() {
+  throw new Error('mutable installation source was imported after pinning');
+}
+`, 'utf8');
+      },
+    });
+    assert.equal(pinHookCount, 1);
+    assert.notEqual(sha256(modulePath), pinnedDigest);
+    const adapter = loaded.adapters.get(adapterRef);
+    assert.deepEqual(adapter.validateInputs({ label: 'pinned-bytes' }), { label: 'pinned-bytes' });
+    assert.ok(adapter.sourceRefs.includes(`adapter-module-sha256://${pinnedDigest}`));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('production registry preserves optional reconnect and external-cancel adapter methods', async () => {
   const root = mkdtempSync(join(tmpdir(), 'odd-manager-adapter-lifecycle-'));
   const registryPath = join(root, 'registry.json');

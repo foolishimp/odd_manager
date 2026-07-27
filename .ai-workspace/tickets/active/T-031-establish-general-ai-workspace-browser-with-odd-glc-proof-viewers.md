@@ -23,8 +23,12 @@ affected_boundary: >-
   Sidecar reducer/UI, runtime targeting, and runtime/browser proof lanes
 priority: high
 created_at: 2026-07-01
-updated_at: 2026-07-12T00:03:57+10:00
+updated_at: 2026-07-26
 governance_scope: STDO Method, ODD Method, STDO-UX Method, current GTL/ABG observation
+selected_method_release: STDO v2.2.1
+selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+growth_authority: review_and_disposition_only
 intake_source: >-
   Operator test: use odd_manager to observe the odd_glc Hello World tests and
   make odd_glc a first-class citizen of odd_manager.
@@ -117,6 +121,16 @@ non_closure_conditions:
 ---
 
 # T-031: General .ai-workspace Browser With odd_glc Proof Viewers
+
+## STDO 2.2 Review Freeze
+
+As of 2026-07-26, T-031 remains open only for operator review and direct
+disposition of its existing claim. Its design, realization, tests, and evidence
+are retained review material; they do not select or authorize more
+Product-outcome-bearing work. A review finding may enter repair only through an
+explicitly admitted basis in this existing owner. Any other continuation
+requires a newly selected unresolved Product outcome or a named bounded
+prerequisite or experiment under `specification/GOALS.md`.
 
 ## Triage
 

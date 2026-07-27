@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Constraint / Guarantee
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `specification/GOALS.md` G-007
+**Product Outcomes**: `PO-OM-MODULES-001`, `PO-OM-DEVELOPER-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local modular composition boundary `B-OM-DEVCTRL-LOCAL-001` over `ONT-OM-DEVCTRL-001`, subject to exact validation. Runtime-parsed command envelopes/results, typed subscription failures, replayable App/Sidecar continuation, accessibility, IACS, three views, axiom evaluation, and module proof are installed; functional external-carrier cases remain separate scenario gaps
+**Testcase Authority**: `specification/scenarios/03-concurrent-build-attention-and-reentry.md`, `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs`, all module replay suites named by the active capability designs, `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts`
 
 ### REQ-OM-CAP-001 - Major developer capabilities are independently evolvable
 
@@ -58,6 +61,10 @@ Acceptance Criteria
 - correlation identity survives command interpretation and external response
 - integration effects are replayable without relying on view or effect-handler
   memory
+- an admitted periodic tick is single-flight for its capability load: a tick
+  arriving while that load is pending is coalesced without manufacturing a
+  follow-up, while explicit and mutation-driven refresh meaning remains owned
+  and replayed by the capability
 
 ### REQ-OM-CAP-005 - Capability availability is explicit
 

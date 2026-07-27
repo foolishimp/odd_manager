@@ -1,10 +1,9 @@
-import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
@@ -13,32 +12,14 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
+  fingerprintProjectSource,
   observeProjectRevision,
+  projectSourcePathExcluded,
   sameProjectRevisionBasis,
 } from './project-revision-service.mjs';
 
-const EXCLUDED_DIRECTORY_NAMES = new Set([
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  'coverage',
-  'test-results',
-  'playwright-report',
-  '__pycache__',
-  '.pytest_cache',
-]);
-
 function normalizedRelative(root, path) {
   return relative(root, path).split('\\').join('/');
-}
-
-function excluded(relativePath, name, isDirectory) {
-  if (isDirectory && EXCLUDED_DIRECTORY_NAMES.has(name)) return true;
-  return relativePath === '.ai-workspace/runtime'
-    || relativePath.startsWith('.ai-workspace/runtime/')
-    || relativePath === 'test_runs'
-    || relativePath.startsWith('test_runs/');
 }
 
 function isWithin(root, candidate) {
@@ -46,30 +27,45 @@ function isWithin(root, candidate) {
   return value === '' || (!value.startsWith('..') && !isAbsolute(value));
 }
 
-function fingerprintProject(root) {
-  const digest = createHash('sha256');
-  const queue = [root];
+function validateWorksiteSymlinks(destinationRoot) {
+  const realDestinationRoot = realpathSync(destinationRoot);
+  const queue = [destinationRoot];
   while (queue.length > 0) {
     const current = queue.shift();
     const entries = readdirSync(current, { withFileTypes: true })
       .sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
-      const path = join(current, entry.name);
-      const relativePath = normalizedRelative(root, path);
-      if (excluded(relativePath, entry.name, entry.isDirectory())) continue;
-      digest.update(relativePath);
-      digest.update('\0');
-      if (entry.isDirectory()) {
-        queue.push(path);
-      } else if (entry.isSymbolicLink()) {
-        digest.update(`symlink:${readlinkSync(path)}`);
-      } else if (entry.isFile()) {
-        digest.update(readFileSync(path));
+      const destinationPath = join(current, entry.name);
+      const relativePath = normalizedRelative(destinationRoot, destinationPath);
+      const stat = lstatSync(destinationPath);
+      if (stat.isDirectory()) {
+        queue.push(destinationPath);
+        continue;
       }
-      digest.update('\0');
+      if (!stat.isSymbolicLink()) continue;
+
+      const link = readlinkSync(destinationPath);
+      if (isAbsolute(link)) {
+        throw new Error(
+          `Project snapshot rejects external symlink: ${relativePath}; `
+          + 'absolute symlink targets are not self-contained',
+        );
+      }
+      const rebasedTarget = resolve(dirname(destinationPath), link);
+      if (!isWithin(destinationRoot, rebasedTarget)) {
+        throw new Error(`Project snapshot rejects symlink rebased outside worksite: ${relativePath}`);
+      }
+      let realTarget;
+      try {
+        realTarget = realpathSync(destinationPath);
+      } catch {
+        throw new Error(`Project snapshot rejects symlink target absent from worksite: ${relativePath}`);
+      }
+      if (!isWithin(realDestinationRoot, realTarget)) {
+        throw new Error(`Project snapshot rejects symlink resolving outside worksite: ${relativePath}`);
+      }
     }
   }
-  return `sha256:${digest.digest('hex')}`;
 }
 
 function copyProjectTree(sourceRoot, destinationRoot) {
@@ -83,22 +79,43 @@ function copyProjectTree(sourceRoot, destinationRoot) {
     for (const entry of entries) {
       const sourcePath = join(current, entry.name);
       const relativePath = normalizedRelative(sourceRoot, sourcePath);
-      if (excluded(relativePath, entry.name, entry.isDirectory())) continue;
+      const stat = lstatSync(sourcePath);
+      if (projectSourcePathExcluded(relativePath, entry.name, stat.isDirectory())) continue;
       const destinationPath = join(destinationRoot, relativePath);
-      if (entry.isDirectory()) {
+      if (stat.isDirectory()) {
         mkdirSync(destinationPath, { recursive: true });
         queue.push(sourcePath);
-      } else if (entry.isSymbolicLink()) {
+      } else if (stat.isSymbolicLink()) {
         const link = readlinkSync(sourcePath);
-        const resolvedTarget = resolve(dirname(sourcePath), link);
-        if (!isWithin(realSourceRoot, resolvedTarget)) {
+        if (isAbsolute(link)) {
+          throw new Error(
+            `Project snapshot rejects external symlink: ${relativePath}; `
+            + 'absolute symlink targets are not self-contained',
+          );
+        }
+        const sourceLexicalTarget = resolve(dirname(sourcePath), link);
+        if (!isWithin(sourceRoot, sourceLexicalTarget)) {
+          throw new Error(
+            `Project snapshot rejects symlink rebased outside Project basis: ${relativePath}`,
+          );
+        }
+        let realTarget;
+        try {
+          realTarget = realpathSync(sourcePath);
+        } catch {
+          throw new Error(`Project snapshot rejects unresolved symlink: ${relativePath}`);
+        }
+        if (!isWithin(realSourceRoot, realTarget)) {
           throw new Error(`Project snapshot rejects external symlink: ${relativePath}`);
         }
         mkdirSync(dirname(destinationPath), { recursive: true });
         symlinkSync(link, destinationPath);
-      } else if (entry.isFile()) {
+      } else if (stat.isFile()) {
         mkdirSync(dirname(destinationPath), { recursive: true });
         copyFileSync(sourcePath, destinationPath);
+        chmodSync(destinationPath, stat.mode & 0o777);
+      } else {
+        throw new Error(`Project snapshot rejects unsupported file type: ${relativePath}`);
       }
     }
   }
@@ -114,26 +131,31 @@ export function provisionProjectSnapshot(options) {
   if (!sameProjectRevisionBasis(options.revision, beforeRevision)) {
     throw new Error('Project Revision changed before worksite provisioning.');
   }
-  const beforeFingerprint = fingerprintProject(sourceRoot);
+  const beforeFingerprint = fingerprintProjectSource(sourceRoot);
   rmSync(destinationRoot, { recursive: true, force: true });
-  copyProjectTree(sourceRoot, destinationRoot);
-  const afterFingerprint = fingerprintProject(sourceRoot);
-  const worksiteFingerprint = fingerprintProject(destinationRoot);
-  const afterRevision = observeProjectRevision(sourceRoot, options.observedAt);
-  if (
-    beforeFingerprint !== afterFingerprint
-    || beforeFingerprint !== worksiteFingerprint
-    || !sameProjectRevisionBasis(beforeRevision, afterRevision)
-  ) {
+  try {
+    copyProjectTree(sourceRoot, destinationRoot);
+    validateWorksiteSymlinks(destinationRoot);
+    const afterFingerprint = fingerprintProjectSource(sourceRoot);
+    const worksiteFingerprint = fingerprintProjectSource(destinationRoot);
+    const afterRevision = observeProjectRevision(sourceRoot, options.observedAt);
+    if (
+      beforeFingerprint !== afterFingerprint
+      || beforeFingerprint !== worksiteFingerprint
+      || !sameProjectRevisionBasis(beforeRevision, afterRevision)
+    ) {
+      throw new Error('Project basis changed while the immutable worksite was provisioned.');
+    }
+    return {
+      path: destinationRoot,
+      digest: worksiteFingerprint,
+      sourceRefs: [
+        `project://${options.projectId}`,
+        `worksite-digest://${worksiteFingerprint.slice('sha256:'.length)}`,
+      ],
+    };
+  } catch (caught) {
     rmSync(destinationRoot, { recursive: true, force: true });
-    throw new Error('Project basis changed while the immutable worksite was provisioned.');
+    throw caught;
   }
-  return {
-    path: destinationRoot,
-    digest: worksiteFingerprint,
-    sourceRefs: [
-      `project://${options.projectId}`,
-      `worksite-digest://${worksiteFingerprint.slice('sha256:'.length)}`,
-    ],
-  };
 }

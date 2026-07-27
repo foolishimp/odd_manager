@@ -1,10 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { WebSocket } from 'ws';
 
 import {
+  attachGTermServer,
   closeAllGTermSessions,
   createGTermSession,
   isOddTermScreenAvailable,
@@ -46,9 +50,37 @@ async function freshOddTermModule() {
 
 test('OddTerm uses the Node GNU screen backend and streams appended output', { skip: screenSkip }, async () => {
   setup();
+  let httpServer = null;
+  let socketServer = null;
+  let socket = null;
   try {
     const session = createGTermSession(fixtureRoot, { label: 'node-screen-proof' });
     assert.equal(session.backend, 'node-screen-pty');
+
+    httpServer = createServer();
+    socketServer = attachGTermServer(httpServer, {
+      defaultWorkspaceRoot: fixtureRoot,
+      admitProjectRoot: (requestedRoot) => resolve(requestedRoot),
+    });
+    httpServer.listen(0, '127.0.0.1');
+    await once(httpServer, 'listening');
+    const address = httpServer.address();
+    assert.ok(address && typeof address === 'object');
+    const subscriptionId = `oddterm.attach:${fixtureRoot}:${session.id}`;
+    const query = new URLSearchParams({
+      workspaceRoot: fixtureRoot,
+      sessionId: session.id,
+      subscriptionId,
+    });
+    socket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/api/oddterm?${query.toString()}`,
+    );
+    const [readyBytes] = await once(socket, 'message');
+    const ready = JSON.parse(String(readyBytes));
+    assert.equal(ready.type, 'ready');
+    assert.equal(ready.workspaceRoot, fixtureRoot);
+    assert.equal(ready.sessionId, session.id);
+    assert.equal(ready.subscriptionId, subscriptionId);
 
     await new Promise((resolveWait) => setTimeout(resolveWait, 300));
     sendGTermSessionInput(fixtureRoot, session.id, "printf 'oddterm-node-screen-proof\\n'\r");
@@ -60,6 +92,11 @@ test('OddTerm uses the Node GNU screen backend and streams appended output', { s
 
     assert.ok(observed, 'expected screenlog tail to append command output');
   } finally {
+    socket?.terminate();
+    socketServer?.close();
+    if (httpServer?.listening) {
+      await new Promise((resolveClose) => httpServer.close(resolveClose));
+    }
     teardown();
   }
 });

@@ -232,7 +232,15 @@ export function updateDeveloperControlHost(
         ...state,
         contextStatus: "loading",
         requestedProjectRoot: command.projectRoot,
-        pendingCommands: [...state.pendingCommands, command],
+        pendingCommands: [
+          ...state.pendingCommands.filter(
+            (pending) => (
+              pending.type !== "host.resolve-context"
+              || pending.projectRoot !== command.projectRoot
+            ),
+          ),
+          command,
+        ],
         error: null,
       },
       commands: [command],
@@ -265,10 +273,7 @@ export function updateDeveloperControlHost(
       "succeeded",
       "Context carrier returned a validated bootstrap.",
     );
-    if (
-      state.requestedProjectRoot !== command.projectRoot
-      || message.bootstrap.context.project.root !== command.projectRoot
-    ) {
+    if (state.requestedProjectRoot !== command.projectRoot) {
       return {
         state: {
           ...state,
@@ -280,6 +285,26 @@ export function updateDeveloperControlHost(
               correlationId: message.correlationId,
               status: "rejected",
               detail: "Context result basis does not match the latest Project request.",
+            },
+          ],
+        },
+        commands: [],
+      };
+    }
+    if (message.bootstrap.context.project.root !== command.projectRoot) {
+      return {
+        state: {
+          ...state,
+          ...completion,
+          contextStatus: "error",
+          error: "Context result Project does not match the requested Project.",
+          commandResults: [
+            ...completion.commandResults.slice(0, -1),
+            {
+              commandId: message.commandId,
+              correlationId: message.correlationId,
+              status: "rejected",
+              detail: "Context result Project does not match the requested Project.",
             },
           ],
         },
@@ -312,7 +337,21 @@ export function updateDeveloperControlHost(
   if (message.type === "host/context-failed") {
     const command = commandForResult(state, message.commandId, message.correlationId);
     if (!command || command.type !== "host.resolve-context") {
-      return { state, commands: [] };
+      return {
+        state: {
+          ...state,
+          commandResults: [
+            ...state.commandResults,
+            {
+              commandId: message.commandId,
+              correlationId: message.correlationId,
+              status: "rejected" as const,
+              detail: "Context failure has no matching pending command.",
+            },
+          ].slice(-40),
+        },
+        commands: [],
+      };
     }
     const completion = completeCommand(
       state,
@@ -340,7 +379,12 @@ export function updateDeveloperControlHost(
       state: {
         ...state,
         requestedSurface: message.command.surface,
-        pendingCommands: [...state.pendingCommands, message.command],
+        pendingCommands: [
+          ...state.pendingCommands.filter(
+            (command) => command.type !== "host.project-navigation",
+          ),
+          message.command,
+        ],
         error: null,
       },
       commands: [message.command],
@@ -349,7 +393,12 @@ export function updateDeveloperControlHost(
 
   if (message.type === "host/navigation-admitted") {
     const command = commandForResult(state, message.commandId, message.correlationId);
-    if (!command || command.type !== "host.project-navigation" || command.surface !== message.surface) {
+    if (
+      !command
+      || command.type !== "host.project-navigation"
+      || command.surface !== message.surface
+      || state.requestedSurface !== command.surface
+    ) {
       return { state, commands: [] };
     }
     const completion = completeCommand(
@@ -371,7 +420,11 @@ export function updateDeveloperControlHost(
   }
 
   const command = commandForResult(state, message.commandId, message.correlationId);
-  if (!command || command.type !== "host.project-navigation") {
+  if (
+    !command
+    || command.type !== "host.project-navigation"
+    || state.requestedSurface !== command.surface
+  ) {
     return { state, commands: [] };
   }
   const completion = completeCommand(

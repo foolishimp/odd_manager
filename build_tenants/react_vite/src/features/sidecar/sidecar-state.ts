@@ -10,6 +10,7 @@ import type {
   TraversalVectorDetail,
   TraversalVectorVariant,
 } from '../../contracts/traversal';
+import type { SurfaceData } from '../../lib/types';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -37,6 +38,13 @@ export const SIDECAR_EXPLORER_PROVIDERS: SidecarExplorerProvider[] = [
   { id: 'history', label: 'Recent Paths', shortLabel: 'H' },
 ];
 
+export const SIDECAR_CANONICAL_PROVIDER_RELATIVE_PATHS = [
+  '.ai-workspace/tickets',
+  '.ai-workspace/comments',
+  'specification',
+  'build_tenants',
+] as const;
+
 export type SidecarPathHistorySource = 'browse' | 'provider' | 'pinned_folder' | 'history';
 
 export interface SidecarPathHistoryEntry {
@@ -45,6 +53,175 @@ export interface SidecarPathHistoryEntry {
   relativePath: string;
   source: SidecarPathHistorySource;
   timestamp: string;
+}
+
+export interface SidecarPinnedFoldersState {
+  projectRoot: string | null;
+  paths: string[];
+  activePath: string | null;
+  loaded: boolean;
+}
+
+export interface SidecarSurfaceLoadState {
+  projectRoot: string | null;
+  relativePath: string;
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  requestId: number;
+  surface: SurfaceData | null;
+  error: string | null;
+  tailFollow: boolean;
+}
+
+export interface SidecarFolderEntry {
+  name: string;
+  absolutePath: string;
+  kind?: 'directory' | 'file';
+  updatedAt?: string;
+  hasWorkspace?: boolean;
+  markers?: string[];
+}
+
+export interface SidecarFolderLoadState {
+  projectRoot: string;
+  path: string;
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  requestId: number;
+  entries: SidecarFolderEntry[];
+  truncated: boolean;
+  state: 'present' | 'missing' | 'not_directory';
+  error: string | null;
+  loadedAt: number | null;
+}
+
+export const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1_500;
+export const SIDECAR_RUN_REFRESH_MS = 30_000;
+
+export type SidecarSub =
+  | {
+      type: 'project-registry.changed';
+      subscriptionId: string;
+      projectRoot: string | null;
+    }
+  | {
+      type: 'surface.tail-follow';
+      subscriptionId: string;
+      projectRoot: string | null;
+      relativePath: string;
+      intervalMs: number;
+    }
+  | {
+      type: 'run.refresh';
+      subscriptionId: string;
+      workspaceRoot: string;
+      runId: string | null;
+      intervalMs: number;
+    }
+  | {
+      type: 'oddterm.attach';
+      subscriptionId: string;
+      projectRoot: string;
+      sessionId: string;
+    };
+
+export type OddTermReadyIdentity = {
+  workspaceRoot: string;
+  sessionId: string;
+  subscriptionId: string;
+};
+
+export function oddTermReadyMatchesSubscription(
+  subscription: Extract<SidecarSub, { type: 'oddterm.attach' }>,
+  ready: OddTermReadyIdentity,
+) {
+  return (
+    ready.workspaceRoot === subscription.projectRoot
+    && ready.sessionId === subscription.sessionId
+    && ready.subscriptionId === subscription.subscriptionId
+  );
+}
+
+export interface SidecarSubscriptionFailure {
+  subscriptionId: string;
+  subscriptionType: SidecarSub['type'];
+  error: string;
+}
+
+function sidecarActiveViewerTabs(state: SidecarState) {
+  const workspace = state.ui.viewerWorkspace;
+  return workspace.groups.flatMap((group) => {
+    if (!group.activeTabId) return [];
+    const tab = workspace.tabs.find((candidate) => candidate.id === group.activeTabId);
+    return tab ? [tab] : [];
+  });
+}
+
+export function sidecarSubscriptions(
+  state: SidecarState,
+  tailFollowIntervalMs = SIDECAR_TAIL_FOLLOW_REFRESH_MS,
+  runRefreshIntervalMs = SIDECAR_RUN_REFRESH_MS,
+): SidecarSub[] {
+  const admittedProjectRoot = state.context?.project.root ?? null;
+  const registryProjectRoot = state.activeLoadRoot ?? admittedProjectRoot;
+  const activeViewerTabs = sidecarActiveViewerTabs(state);
+  const subscriptions: SidecarSub[] = [{
+    type: 'project-registry.changed',
+    subscriptionId: `project-registry.changed:${registryProjectRoot ?? 'none'}`,
+    projectRoot: registryProjectRoot,
+  }];
+
+  for (const load of Object.values(state.surfaceLoads)) {
+    if (
+      !admittedProjectRoot
+      || !load.tailFollow
+      || load.projectRoot !== admittedProjectRoot
+      || !activeViewerTabs.some((tab) => tab.kind === 'surface' && tab.objectId === load.relativePath)
+    ) {
+      continue;
+    }
+    subscriptions.push({
+      type: 'surface.tail-follow',
+      subscriptionId: `surface.tail-follow:${load.projectRoot ?? 'none'}:${load.relativePath}`,
+      projectRoot: load.projectRoot,
+      relativePath: load.relativePath,
+      intervalMs: tailFollowIntervalMs,
+    });
+  }
+
+  if (
+    admittedProjectRoot
+    && state.traversal.workspaceRoot === admittedProjectRoot
+    && state.traversal.runStatus === 'ready'
+    && activeViewerTabs.some((tab) => tab.kind === 'traversal')
+  ) {
+    subscriptions.push({
+      type: 'run.refresh',
+      subscriptionId: `run.refresh:${admittedProjectRoot}:${state.traversal.selectedRunId ?? 'latest'}`,
+      workspaceRoot: admittedProjectRoot,
+      runId: state.traversal.selectedRunId,
+      intervalMs: runRefreshIntervalMs,
+    });
+  }
+
+  if (admittedProjectRoot && !state.ui.shellCollapsed) {
+    const activeSessionIds = new Set<string>();
+    for (const group of state.ui.terminalWorkspace.groups) {
+      if (!group.activeTabId) continue;
+      const tab = state.ui.terminalWorkspace.tabs.find((candidate) => candidate.id === group.activeTabId);
+      if (tab && state.sessions.records.some((session) => session.id === tab.sessionId)) {
+        activeSessionIds.add(tab.sessionId);
+      }
+    }
+    for (const sessionId of activeSessionIds) {
+      subscriptions.push({
+        type: 'oddterm.attach',
+        subscriptionId: `oddterm.attach:${admittedProjectRoot}:${sessionId}`,
+        projectRoot: admittedProjectRoot,
+        sessionId,
+      });
+    }
+  }
+
+  return subscriptions;
 }
 
 export const SIDECAR_PATH_HISTORY_LIMIT = 24;
@@ -269,6 +446,11 @@ export interface SidecarState {
   ticketBoard: SidecarTicketBoardState;
   selection: Selection;
   pathHistory: SidecarPathHistoryEntry[];
+  pathHistoryLoaded: boolean;
+  pinnedFolders: SidecarPinnedFoldersState;
+  initialSurfaceAppliedKey: string | null;
+  surfaceLoads: Record<string, SidecarSurfaceLoadState>;
+  folderLoads: Record<string, SidecarFolderLoadState>;
   activeSessionId: string | null;
   secondarySessionId: string | null;
   ui: {
@@ -288,36 +470,48 @@ export interface SidecarState {
   replyDraft: { parentId: string; body: string } | null;
   loading: boolean;
   activeLoadRoot: string | null;
+  activeLoadGeneration: number | null;
+  nextLoadGeneration: number;
+  /** A requested cross-Project history target; opened only after its Context loads. */
+  pendingHistorySurface: { projectId: string; projectRoot: string; relativePath: string } | null;
+  /** Suppresses the host's one initial-surface replay after a history target has opened. */
+  pendingHistoryInitialSurfaceRoot: string | null;
+  subscriptionFailures: SidecarSubscriptionFailure[];
   pendingCommands: PendingSidecarCmd[];
+  inFlightActions: PendingSidecarCmd[];
   nextCommandId: number;
 }
 
 export type SidecarLoadReason = 'initial' | 'project_selected' | 'action_completed' | 'session_refresh';
 
+export interface SidecarLoadPayload {
+  context?: ContextRecord | null;
+  projects?: ProjectRecord[];
+  comments?: CommentRecord[];
+  tickets?: TicketRecord[];
+  sessions?: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
+  aiWorkspaceObservation?: AiWorkspaceObservation | null;
+  pathHistory?: SidecarPathHistoryEntry[];
+  unreadIds?: string[];
+  selection?: Selection;
+  activeSessionId?: string | null;
+  secondarySessionId?: string | null;
+  ui?: SidecarState['ui'];
+  replyDraft?: { parentId: string; body: string } | null;
+  lastAction?: { ok: boolean; message?: string; error?: string } | null;
+  viewerAgent?: string;
+}
+
 export type SidecarMsg =
   | { type: 'load/request'; projectRoot: string | null; reason: SidecarLoadReason }
-  | { type: 'load/start'; projectRoot: string | null }
+  | { type: 'load/start'; projectRoot: string | null; generation: number }
   | {
       type: 'load/done';
       projectRoot: string | null;
-      payload: {
-        context?: ContextRecord | null;
-        projects?: ProjectRecord[];
-        comments?: CommentRecord[];
-        tickets?: TicketRecord[];
-        sessions?: { records: SessionRecord[]; diagnostic: SessionSurfaceDiagnostic | null };
-        aiWorkspaceObservation?: AiWorkspaceObservation | null;
-        pathHistory?: SidecarPathHistoryEntry[];
-        unreadIds?: string[];
-        selection?: Selection;
-        activeSessionId?: string | null;
-        secondarySessionId?: string | null;
-        ui?: SidecarState['ui'];
-        replyDraft?: { parentId: string; body: string } | null;
-        lastAction?: { ok: boolean; message?: string; error?: string } | null;
-        viewerAgent?: string;
-      }
+      generation: number;
+      payload: SidecarLoadPayload;
     }
+  | { type: 'load/failed'; projectRoot: string | null; generation: number; error: string; payload?: SidecarLoadPayload }
   | { type: 'cmd/dispatched'; ids: string[] }
   | { type: 'ui/toggle-workspace'; workspace: 'info' | 'shell'; collapsed?: boolean }
   | { type: 'ui/set-info-pinned'; pinned?: boolean }
@@ -355,7 +549,39 @@ export type SidecarMsg =
   | { type: 'terminal/focus-group'; groupId: SidecarTerminalGroupId }
   | { type: 'select'; kind: Exclude<SelectionKind, null>; id: string }
   | { type: 'path-history/load'; entries: unknown }
+  | { type: 'path-history/read-request' }
+  | { type: 'path-history/read-succeeded'; entries: unknown }
+  | { type: 'path-history/read-failed'; error: string }
+  | { type: 'path-history/write-succeeded' }
+  | { type: 'path-history/write-failed'; error: string }
   | { type: 'path-history/copy-request'; entry: SidecarPathHistoryEntry }
+  | { type: 'pinned-folders/read-request'; projectRoot: string }
+  | { type: 'pinned-folders/read-succeeded'; projectRoot: string; paths: unknown }
+  | { type: 'pinned-folders/read-failed'; projectRoot: string; error: string }
+  | { type: 'pinned-folders/set'; projectRoot: string; paths: string[]; activePath?: string | null }
+  | { type: 'pinned-folders/select'; projectRoot: string; path: string | null }
+  | { type: 'pinned-folders/write-succeeded'; projectRoot: string }
+  | { type: 'pinned-folders/write-failed'; projectRoot: string; error: string }
+  | { type: 'layout/profile-read-request'; contextKey: string }
+  | { type: 'layout/profile-read-succeeded'; contextKey: string; payload: unknown }
+  | { type: 'layout/profile-write-request'; contextKey: string; profile: SidecarLayoutProfile }
+  | { type: 'layout/profile-write-succeeded'; contextKey: string }
+  | { type: 'initial-surface/request'; surface: 'project-workbench' | 'run-inspector' | 'ticket-board' | 'ai-workspace'; projectRoot: string; hasRunFocus: boolean }
+  | { type: 'surface/load-request'; projectRoot: string | null; relativePath: string; refresh?: boolean }
+  | { type: 'surface/load-succeeded'; key: string; requestId: number; surface: SurfaceData }
+  | { type: 'surface/load-failed'; key: string; requestId: number; error: string }
+  | { type: 'surface/tail-follow-set'; projectRoot: string | null; relativePath: string; enabled: boolean }
+  | { type: 'surface/tail-ticked'; projectRoot: string | null; relativePath: string }
+  | { type: 'project-registry/changed'; subscriptionId: string; projectRoot: string | null }
+  | { type: 'run/refresh-ticked'; subscriptionId: string; workspaceRoot: string; runId: string | null }
+  | { type: 'subscription/ready'; subscriptionId: string; subscriptionType: SidecarSub['type'] }
+  | { type: 'subscription/failed'; subscriptionId: string; subscriptionType: SidecarSub['type']; error: string }
+  | { type: 'folder/load-request'; path: string }
+  | { type: 'folder/load-succeeded'; path: string; requestId: number; payload: unknown; loadedAt: number }
+  | { type: 'folder/load-failed'; path: string; requestId: number; error: string }
+  | { type: 'project/activate-request'; projectId: string; projectRoot: string; relativePath: string }
+  | { type: 'project/activate-succeeded'; projectId: string; projectRoot: string; relativePath: string }
+  | { type: 'project/activate-failed'; projectId: string; error: string }
   | { type: 'session/select'; id: string }
   | { type: 'session/select-secondary'; id: string | null }
   | { type: 'ticket/transition/request'; id: string; toLane: string }
@@ -365,7 +591,8 @@ export type SidecarMsg =
   | { type: 'reply/cancel' }
   | { type: 'reply/submit/request'; parentId: string; body: string }
   | { type: 'session/spawn/request'; groupId?: SidecarTerminalGroupId; cwd?: string | null; label?: string }
-  | { type: 'session/spawn/done'; record: SessionRecord; groupId: SidecarTerminalGroupId }
+  | { type: 'session/spawn/done'; projectRoot: string; record: SessionRecord; groupId: SidecarTerminalGroupId }
+  | { type: 'session/spawn/failed'; projectRoot: string | null; error: string }
   | { type: 'session/kill/request'; id: string }
   | { type: 'traversal/load'; workspaceRoot?: string | null; runId?: string | null; refresh?: boolean }
   | { type: 'run/focus-admitted'; focus: RunInspectorFocus | null }
@@ -396,16 +623,37 @@ export type SidecarMsg =
     }
   | { type: 'traversal/clear' }
   | { type: 'ticket-board/select'; id: string | null }
-  | { type: 'action/result'; ok: boolean; message?: string; error?: string; reload?: boolean };
+  | {
+      type: 'action/result';
+      commandId: string;
+      context: ContextRecord;
+      ok: boolean;
+      message?: string;
+      error?: string;
+    }
+  | { type: 'action/feedback'; ok: boolean; message?: string; error?: string };
 
 export type SidecarCmd =
   | { type: 'load'; projectRoot: string | null; reason: SidecarLoadReason }
-  | { type: 'ticket.transition'; id: string; toLane: string; projectRoot: string | null }
-  | { type: 'comment.toggleRead'; id: string; currentlyUnread: boolean; projectRoot: string | null }
-  | { type: 'comment.reply'; parentId: string; body: string; projectRoot: string | null }
-  | { type: 'clipboard.write'; text: string; label: string }
-  | { type: 'session.spawn'; projectRoot: string | null; groupId: SidecarTerminalGroupId; cwd: string | null; label: string | null }
-  | { type: 'session.kill'; id: string; projectRoot: string | null }
+  | { type: 'context.publish'; context: ContextRecord }
+  | { type: 'ticket.transition'; id: string; toLane: string; context: ContextRecord }
+  | { type: 'comment.toggleRead'; id: string; currentlyUnread: boolean; context: ContextRecord }
+  | { type: 'comment.reply'; parentId: string; body: string; context: ContextRecord }
+  | { type: 'clipboard.write'; text: string; label: string; context: ContextRecord }
+  | { type: 'storage.read'; scope: 'path-history' | 'pinned-folders' | 'layout-profile'; key: string; projectRoot?: string; contextKey?: string }
+  | { type: 'storage.write'; scope: 'path-history' | 'pinned-folders' | 'layout-profile'; key: string; value: unknown; projectRoot?: string; contextKey?: string }
+  | { type: 'project.activate'; projectId: string; projectRoot: string; relativePath: string }
+  | { type: 'surface.load'; key: string; requestId: number; projectRoot: string | null; relativePath: string }
+  | { type: 'folder.load'; projectRoot: string; path: string; requestId: number }
+  | {
+      type: 'session.spawn';
+      projectRoot: string | null;
+      groupId: SidecarTerminalGroupId;
+      cwd: string | null;
+      label: string | null;
+      existingSessionIds: string[];
+    }
+  | { type: 'session.kill'; id: string; context: ContextRecord }
   | { type: 'traversal.loadSummary'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
   | { type: 'run.loadObservation'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
   | {
@@ -420,7 +668,20 @@ export type SidecarCmd =
 export interface PendingSidecarCmd {
   id: string;
   cmd: SidecarCmd;
+  loadGeneration?: number;
 }
+
+type ResultBearingSidecarCmd = Extract<
+  SidecarCmd,
+  {
+    type:
+      | 'ticket.transition'
+      | 'comment.toggleRead'
+      | 'comment.reply'
+      | 'clipboard.write'
+      | 'session.kill';
+  }
+>;
 
 export const INITIAL_SIDECAR_STATE: SidecarState = {
   context: null,
@@ -434,6 +695,11 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   ticketBoard: { ...INITIAL_SIDECAR_TICKET_BOARD_STATE },
   selection: { kind: null, id: null },
   pathHistory: [],
+  pathHistoryLoaded: false,
+  pinnedFolders: { projectRoot: null, paths: [], activePath: null, loaded: false },
+  initialSurfaceAppliedKey: null,
+  surfaceLoads: {},
+  folderLoads: {},
   activeSessionId: null,
   secondarySessionId: null,
   ui: {
@@ -453,12 +719,243 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   replyDraft: null,
   loading: true,
   activeLoadRoot: null,
+  activeLoadGeneration: null,
+  nextLoadGeneration: 1,
+  pendingHistorySurface: null,
+  pendingHistoryInitialSurfaceRoot: null,
+  subscriptionFailures: [],
   pendingCommands: [],
+  inFlightActions: [],
   nextCommandId: 1,
 };
 
 function currentProjectRoot(state: SidecarState) {
   return state.context?.project.root ?? null;
+}
+
+function sidecarContextsEqual(
+  left: ContextRecord | null,
+  right: ContextRecord | null,
+) {
+  return (
+    left !== null
+    && right !== null
+    && left.project.id === right.project.id
+    && left.project.root === right.project.root
+    && left.project.odd_type === right.project.odd_type
+    && left.workspace.id === right.workspace.id
+    && left.workspace.profile === right.workspace.profile
+    && (left.session?.id ?? null) === (right.session?.id ?? null)
+  );
+}
+
+function isResultBearingSidecarCmd(cmd: SidecarCmd): cmd is ResultBearingSidecarCmd {
+  return (
+    cmd.type === 'ticket.transition'
+    || cmd.type === 'comment.toggleRead'
+    || cmd.type === 'comment.reply'
+    || cmd.type === 'clipboard.write'
+    || cmd.type === 'session.kill'
+  );
+}
+
+function pendingActionForResult(
+  state: SidecarState,
+  msg: Extract<SidecarMsg, { type: 'action/result' }>,
+) {
+  const pending = state.inFlightActions.find((entry) => entry.id === msg.commandId);
+  if (
+    !pending
+    || !isResultBearingSidecarCmd(pending.cmd)
+    || !sidecarContextsEqual(pending.cmd.context, msg.context)
+    || !sidecarContextsEqual(state.context, msg.context)
+    || (
+      state.activeLoadRoot !== null
+      && state.activeLoadRoot !== msg.context.project.root
+    )
+  ) {
+    return null;
+  }
+  return pending as PendingSidecarCmd & { cmd: ResultBearingSidecarCmd };
+}
+
+function actionResultReloads(cmd: ResultBearingSidecarCmd) {
+  return (
+    cmd.type === 'ticket.transition'
+    || cmd.type === 'comment.toggleRead'
+    || cmd.type === 'comment.reply'
+    || cmd.type === 'session.kill'
+  );
+}
+
+function retainActionsForCurrentContext(state: SidecarState) {
+  return state.inFlightActions.filter(
+    (entry) => (
+      isResultBearingSidecarCmd(entry.cmd)
+      && sidecarContextsEqual(entry.cmd.context, state.context)
+    ),
+  );
+}
+
+function isPathWithinProjectRoot(projectRoot: string, candidate: string) {
+  const normalizedRoot = projectRoot.replace(/\/+$/, '') || '/';
+  return candidate === normalizedRoot
+    || (normalizedRoot === '/' ? candidate.startsWith('/') : candidate.startsWith(`${normalizedRoot}/`));
+}
+
+function isBoundedRelativePath(path: string) {
+  return Boolean(path)
+    && !path.startsWith('/')
+    && !path.includes('\0')
+    && !path.split(/[\\/]+/).some((segment) => segment === '.' || segment === '..');
+}
+
+function surfaceMatchesLoad(load: SidecarSurfaceLoadState, surface: SurfaceData) {
+  if (
+    !load.projectRoot
+    || !isBoundedRelativePath(load.relativePath)
+    || surface.relative_path !== load.relativePath
+    || surface.path !== immediateChildPath(load.projectRoot, load.relativePath)
+    || !isPathWithinProjectRoot(load.projectRoot, surface.path)
+  ) {
+    return false;
+  }
+  if (surface.kind !== 'directory') return true;
+  const names = new Set<string>();
+  const paths = new Set<string>();
+  for (const entry of surface.entries) {
+    if (
+      !entry.name
+      || entry.name === '.'
+      || entry.name === '..'
+      || /[\\/]/.test(entry.name)
+      || entry.relative_path !== `${load.relativePath.replace(/[\\/]+$/, '')}/${entry.name}`
+      || names.has(entry.name)
+      || paths.has(entry.relative_path)
+    ) {
+      return false;
+    }
+    names.add(entry.name);
+    paths.add(entry.relative_path);
+  }
+  return true;
+}
+
+function admittedSidecarSubscription(
+  state: SidecarState,
+  subscriptionId: string,
+  subscriptionType: SidecarSub['type'],
+) {
+  return sidecarSubscriptions(state).find((subscription) => (
+    subscription.subscriptionId === subscriptionId && subscription.type === subscriptionType
+  )) ?? null;
+}
+
+function withoutSubscriptionFailure(state: SidecarState, subscriptionId: string) {
+  if (!state.subscriptionFailures.some((failure) => failure.subscriptionId === subscriptionId)) return state;
+  return {
+    ...state,
+    subscriptionFailures: state.subscriptionFailures.filter(
+      (failure) => failure.subscriptionId !== subscriptionId,
+    ),
+  };
+}
+
+export function sidecarSurfaceLoadKey(projectRoot: string | null, relativePath: string) {
+  return `${projectRoot ?? 'none'}:${relativePath}`;
+}
+
+function immediateChildPath(parent: string, name: string) {
+  const normalizedParent = parent.replace(/\/+$/, '') || '/';
+  return normalizedParent === '/' ? `/${name}` : `${normalizedParent}/${name}`;
+}
+
+function admittedFolderPayload(
+  value: unknown,
+  projectRoot: string,
+  requestedPath: string,
+): {
+  entries: SidecarFolderEntry[];
+  truncated: boolean;
+  state: 'present' | 'missing' | 'not_directory';
+} | null {
+  if (!isRecord(value)) return null;
+  if (
+    value.path !== requestedPath
+    || !isPathWithinProjectRoot(projectRoot, requestedPath)
+    || typeof value.truncated !== 'boolean'
+    || (value.state !== 'present' && value.state !== 'missing' && value.state !== 'not_directory')
+    || !Array.isArray(value.entries)
+  ) {
+    return null;
+  }
+  const entries: SidecarFolderEntry[] = [];
+  const names = new Set<string>();
+  const paths = new Set<string>();
+  for (const entry of value.entries) {
+    if (!isRecord(entry)) return null;
+    if (
+      typeof entry.name !== 'string'
+      || !entry.name
+      || entry.name === '.'
+      || entry.name === '..'
+      || /[\\/]/.test(entry.name)
+      || typeof entry.absolutePath !== 'string'
+      || entry.absolutePath !== immediateChildPath(requestedPath, entry.name)
+      || !isPathWithinProjectRoot(projectRoot, entry.absolutePath)
+      || (entry.kind !== 'directory' && entry.kind !== 'file')
+      || (entry.updatedAt !== undefined && typeof entry.updatedAt !== 'string')
+      || (entry.hasWorkspace !== undefined && typeof entry.hasWorkspace !== 'boolean')
+      || (
+        entry.markers !== undefined
+        && (!Array.isArray(entry.markers) || !entry.markers.every((marker) => typeof marker === 'string'))
+      )
+      || names.has(entry.name)
+      || paths.has(entry.absolutePath)
+    ) {
+      return null;
+    }
+    names.add(entry.name);
+    paths.add(entry.absolutePath);
+    entries.push({
+      name: entry.name,
+      absolutePath: entry.absolutePath,
+      kind: entry.kind,
+      updatedAt: entry.updatedAt as string | undefined,
+      hasWorkspace: entry.hasWorkspace as boolean | undefined,
+      markers: entry.markers as string[] | undefined,
+    });
+  }
+  if (value.state !== 'present' && entries.length > 0) return null;
+  return {
+    entries,
+    truncated: value.truncated,
+    state: value.state,
+  };
+}
+
+function normalizePinnedFolderPaths(value: unknown, projectRoot: string) {
+  if (!Array.isArray(value)) return [];
+  const normalizedRoot = projectRoot.replace(/\/+$/, '');
+  const canonicalProviderPaths = new Set(
+    SIDECAR_CANONICAL_PROVIDER_RELATIVE_PATHS.map((relativePath) => `${normalizedRoot}/${relativePath}`),
+  );
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const path = entry.trim().replace(/\/+$/, '');
+    if (!path || (path !== normalizedRoot && !path.startsWith(`${normalizedRoot}/`))) continue;
+    if (canonicalProviderPaths.has(path)) continue;
+    seen.add(path);
+  }
+  return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
+function pinnedFolderStoragePayloadIsCanonical(value: unknown, projectRoot: string) {
+  if (!Array.isArray(value)) return false;
+  const normalized = normalizePinnedFolderPaths(value, projectRoot);
+  return value.length === normalized.length
+    && value.every((entry, index) => entry === normalized[index]);
 }
 
 function traversalRequestedRoot(state: SidecarState, msg: Extract<SidecarMsg, { type: 'traversal/load' }>) {
@@ -1323,7 +1820,7 @@ function normalizeLoadedState(state: SidecarState) {
   const terminalWorkspace = normalizeTerminalWorkspace(state.ui.terminalWorkspace, state.sessions.records, activeSessionId);
   const terminalTab = activeTerminalTab(terminalWorkspace);
   const normalizedActiveSessionId = terminalTab?.sessionId ?? activeSessionId;
-  return {
+  const normalized = {
     ...state,
     activeSessionId: normalizedActiveSessionId,
     secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, normalizedActiveSessionId) ?? secondarySessionId,
@@ -1337,6 +1834,36 @@ function normalizeLoadedState(state: SidecarState) {
       documentViewers,
       terminalWorkspace,
     },
+  };
+  return {
+    ...normalized,
+    inFlightActions: retainActionsForCurrentContext(normalized),
+  };
+}
+
+function consumePendingHistorySurface(
+  state: SidecarState,
+  project: ContextRecord['project'],
+): SidecarState {
+  const pending = state.pendingHistorySurface;
+  if (
+    !pending
+    || pending.projectId !== project.id
+    || pending.projectRoot !== project.root
+  ) {
+    return state;
+  }
+  const viewerWorkspace = openViewerTab(
+    state.ui.viewerWorkspace,
+    'surface',
+    pending.relativePath,
+  );
+  return {
+    ...state,
+    pendingHistorySurface: null,
+    pendingHistoryInitialSurfaceRoot: pending.projectRoot,
+    selection: selectionFromViewerTab(activeViewerTab(viewerWorkspace)),
+    ui: { ...state.ui, viewerWorkspace },
   };
 }
 
@@ -1359,21 +1886,195 @@ function hasLoadProjectionPayload(payload: Extract<SidecarMsg, { type: 'load/don
   );
 }
 
+function expectedLoadProjectIdentity(
+  state: SidecarState,
+  requestedRoot: string | null,
+): { id: string; root: string } | null {
+  if (requestedRoot === null) return null;
+  if (state.pendingHistorySurface?.projectRoot === requestedRoot) {
+    return {
+      id: state.pendingHistorySurface.projectId,
+      root: state.pendingHistorySurface.projectRoot,
+    };
+  }
+  const registered = state.projects.find((project) => project.root === requestedRoot);
+  if (registered) return { id: registered.id, root: registered.root };
+  if (state.context?.project.root === requestedRoot) {
+    return { id: state.context.project.id, root: state.context.project.root };
+  }
+  return null;
+}
+
+function loadPayloadMatchesProjectIdentity(
+  state: SidecarState,
+  payload: SidecarLoadPayload,
+  requestedRoot: string | null,
+) {
+  const context = payload.context ?? null;
+  const contextRoot = payload.context?.project.root ?? null;
+  if (requestedRoot !== null && contextRoot !== null && contextRoot !== requestedRoot) return false;
+  const expectedIdentity = expectedLoadProjectIdentity(state, requestedRoot);
+  if (
+    context
+    && expectedIdentity
+    && (
+      context.project.id !== expectedIdentity.id
+      || context.project.root !== expectedIdentity.root
+    )
+  ) {
+    return false;
+  }
+  if (context && payload.projects) {
+    const contextProject = payload.projects.find(
+      (project) => project.root === context.project.root,
+    );
+    if (
+      !contextProject
+      || contextProject.id !== context.project.id
+      || contextProject.odd_type !== context.project.odd_type
+    ) {
+      return false;
+    }
+  }
+  const admittedRoot = requestedRoot ?? contextRoot;
+  if (
+    admittedRoot !== null
+    && payload.aiWorkspaceObservation
+    && payload.aiWorkspaceObservation.projectRoot !== admittedRoot
+  ) {
+    return false;
+  }
+  if (
+    admittedRoot !== null
+    && payload.sessions
+    && payload.sessions.records.some((record) => !isPathWithinProjectRoot(admittedRoot, record.cwd))
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function isLoadPayloadMismatch(state: SidecarState, requestedRoot: string | null) {
   return requestedRoot !== null && state.context?.project?.root !== requestedRoot;
 }
 
 export function updateSidecarState(state: SidecarState, msg: SidecarMsg): SidecarState {
   switch (msg.type) {
+    case 'subscription/ready':
+      if (!admittedSidecarSubscription(state, msg.subscriptionId, msg.subscriptionType)) return state;
+      return withoutSubscriptionFailure(state, msg.subscriptionId);
+    case 'subscription/failed': {
+      if (!admittedSidecarSubscription(state, msg.subscriptionId, msg.subscriptionType)) return state;
+      const failure: SidecarSubscriptionFailure = {
+        subscriptionId: msg.subscriptionId,
+        subscriptionType: msg.subscriptionType,
+        error: msg.error,
+      };
+      const current = state.subscriptionFailures.find(
+        (candidate) => candidate.subscriptionId === msg.subscriptionId,
+      );
+      if (
+        current
+        && current.subscriptionType === failure.subscriptionType
+        && current.error === failure.error
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        subscriptionFailures: [
+          ...state.subscriptionFailures.filter(
+            (candidate) => candidate.subscriptionId !== msg.subscriptionId,
+          ),
+          failure,
+        ],
+      };
+    }
+    case 'project-registry/changed': {
+      const subscription = admittedSidecarSubscription(
+        state,
+        msg.subscriptionId,
+        'project-registry.changed',
+      );
+      if (
+        subscription?.type !== 'project-registry.changed'
+        || subscription.projectRoot !== msg.projectRoot
+      ) {
+        return state;
+      }
+      return updateSidecarState(
+        withoutSubscriptionFailure(state, msg.subscriptionId),
+        { type: 'load/request', projectRoot: msg.projectRoot, reason: 'action_completed' },
+      );
+    }
+    case 'run/refresh-ticked': {
+      const subscription = admittedSidecarSubscription(state, msg.subscriptionId, 'run.refresh');
+      if (
+        subscription?.type !== 'run.refresh'
+        || subscription.workspaceRoot !== msg.workspaceRoot
+        || subscription.runId !== msg.runId
+      ) {
+        return state;
+      }
+      return updateSidecarState(
+        withoutSubscriptionFailure(state, msg.subscriptionId),
+        {
+          type: 'traversal/load',
+          workspaceRoot: msg.workspaceRoot,
+          runId: msg.runId,
+          refresh: true,
+        },
+      );
+    }
     case 'run/focus-admitted':
       return { ...state, runFocus: msg.focus };
     case 'load/request':
-      return { ...state, loading: true, activeLoadRoot: msg.projectRoot };
+      return {
+        ...state,
+        loading: true,
+        activeLoadRoot: msg.projectRoot,
+        activeLoadGeneration: state.nextLoadGeneration,
+        inFlightActions: msg.projectRoot !== currentProjectRoot(state)
+          ? []
+          : state.inFlightActions,
+        subscriptionFailures: [],
+        pendingHistoryInitialSurfaceRoot: state.pendingHistoryInitialSurfaceRoot === msg.projectRoot
+          ? state.pendingHistoryInitialSurfaceRoot
+          : null,
+      };
     case 'load/start':
-      return { ...state, loading: true, activeLoadRoot: msg.projectRoot };
-    case 'load/done':
-      if (state.activeLoadRoot !== msg.projectRoot) {
+      if (
+        state.activeLoadRoot !== msg.projectRoot
+        || state.activeLoadGeneration !== msg.generation
+      ) {
         return state;
+      }
+      return {
+        ...state,
+        loading: true,
+        activeLoadRoot: msg.projectRoot,
+        pendingHistoryInitialSurfaceRoot: state.pendingHistoryInitialSurfaceRoot === msg.projectRoot
+          ? state.pendingHistoryInitialSurfaceRoot
+          : null,
+      };
+    case 'load/done':
+      if (
+        state.activeLoadRoot !== msg.projectRoot
+        || state.activeLoadGeneration !== msg.generation
+      ) {
+        return state;
+      }
+      if (!loadPayloadMatchesProjectIdentity(state, msg.payload, msg.projectRoot)) {
+        return normalizeLoadedState({
+          ...state,
+          loading: false,
+          activeLoadRoot: null,
+          activeLoadGeneration: null,
+          lastAction: {
+            ok: false,
+            error: 'load rejected: response identities do not belong to the requested Project',
+          },
+        });
       }
       if (!hasLoadProjectionPayload(msg.payload)) {
         const next = normalizeLoadedState({
@@ -1381,6 +2082,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           ...(msg.payload.lastAction ? { lastAction: msg.payload.lastAction } : {}),
           loading: false,
           activeLoadRoot: null,
+          activeLoadGeneration: null,
         });
         if (isLoadPayloadMismatch(state, msg.projectRoot)) {
           return {
@@ -1399,7 +2101,52 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         }
         return next;
       }
-      return normalizeLoadedState({ ...state, ...msg.payload, loading: false, activeLoadRoot: null });
+      {
+        const loaded = normalizeLoadedState({
+          ...state,
+          ...msg.payload,
+          loading: false,
+          activeLoadRoot: null,
+          activeLoadGeneration: null,
+        });
+        return msg.payload.context
+          ? consumePendingHistorySurface(loaded, msg.payload.context.project)
+          : loaded;
+      }
+    case 'load/failed':
+      if (
+        state.activeLoadRoot !== msg.projectRoot
+        || state.activeLoadGeneration !== msg.generation
+      ) return state;
+      if (msg.payload && !loadPayloadMatchesProjectIdentity(state, msg.payload, msg.projectRoot)) {
+        return normalizeLoadedState({
+          ...state,
+          loading: false,
+          activeLoadRoot: null,
+          activeLoadGeneration: null,
+          lastAction: {
+            ok: false,
+            error: 'load rejected: failure payload identities do not belong to the requested Project',
+          },
+        });
+      }
+      {
+        const loaded = normalizeLoadedState({
+          ...state,
+          ...(msg.payload ?? {}),
+          loading: false,
+          activeLoadRoot: null,
+          activeLoadGeneration: null,
+          lastAction: { ok: false, error: msg.error },
+        });
+        if (
+          !msg.payload?.context
+          || msg.payload.context.project.root !== msg.projectRoot
+        ) {
+          return loaded;
+        }
+        return consumePendingHistorySurface(loaded, msg.payload.context.project);
+      }
     case 'cmd/dispatched': {
       const dispatched = new Set(msg.ids);
       return { ...state, pendingCommands: state.pendingCommands.filter((entry) => !dispatched.has(entry.id)) };
@@ -1584,6 +2331,10 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         },
       };
     }
+    case 'layout/profile-read-succeeded':
+      return updateSidecarState(state, {
+        type: 'layout/profile-loaded', contextKey: msg.contextKey, payload: msg.payload,
+      });
     case 'layout/profile-load-failed':
       return { ...state, lastAction: { ok: false, error: `layout profile load failed: ${msg.error}` } };
     case 'layout/profile-save-failed':
@@ -1892,9 +2643,213 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       };
     }
     case 'path-history/load':
-      return { ...state, pathHistory: normalizePathHistory(msg.entries) };
+    case 'path-history/read-succeeded':
+      return { ...state, pathHistory: normalizePathHistory(msg.entries), pathHistoryLoaded: true };
+    case 'path-history/read-failed':
+      return { ...state, pathHistoryLoaded: true, lastAction: { ok: false, error: `path history load failed: ${msg.error}` } };
+    case 'path-history/write-failed':
+      return { ...state, lastAction: { ok: false, error: `path history save failed: ${msg.error}` } };
+    case 'path-history/write-succeeded':
+      return state;
     case 'path-history/copy-request':
-      return { ...state, pathHistory: appendPathHistory(state.pathHistory, msg.entry) };
+      return { ...state, pathHistory: appendPathHistory(state.pathHistory, msg.entry), pathHistoryLoaded: true };
+    case 'pinned-folders/read-succeeded': {
+      const paths = normalizePinnedFolderPaths(msg.paths, msg.projectRoot);
+      return {
+        ...state,
+        pinnedFolders: { projectRoot: msg.projectRoot, paths, activePath: null, loaded: true },
+      };
+    }
+    case 'pinned-folders/read-failed':
+      return {
+        ...state,
+        pinnedFolders: { projectRoot: msg.projectRoot, paths: [], activePath: null, loaded: true },
+        lastAction: { ok: false, error: `pinned folders load failed: ${msg.error}` },
+      };
+    case 'pinned-folders/set': {
+      const paths = normalizePinnedFolderPaths(msg.paths, msg.projectRoot);
+      const activePath = msg.activePath && paths.includes(msg.activePath) ? msg.activePath : null;
+      return {
+        ...state,
+        pinnedFolders: { projectRoot: msg.projectRoot, paths, activePath, loaded: true },
+      };
+    }
+    case 'pinned-folders/select':
+      if (state.pinnedFolders.projectRoot !== msg.projectRoot) return state;
+      return {
+        ...state,
+        pinnedFolders: {
+          ...state.pinnedFolders,
+          activePath: msg.path && state.pinnedFolders.paths.includes(msg.path) ? msg.path : null,
+        },
+      };
+    case 'pinned-folders/write-failed':
+      return { ...state, lastAction: { ok: false, error: `pinned folders save failed: ${msg.error}` } };
+    case 'pinned-folders/write-succeeded':
+      return state;
+    case 'initial-surface/request': {
+      const key = `${msg.projectRoot}:${msg.surface}:${msg.hasRunFocus ? 'focus' : 'plain'}`;
+      if (state.pendingHistoryInitialSurfaceRoot === msg.projectRoot) {
+        return {
+          ...state,
+          initialSurfaceAppliedKey: key,
+          pendingHistoryInitialSurfaceRoot: null,
+        };
+      }
+      if (state.initialSurfaceAppliedKey === key || currentProjectRoot(state) !== msg.projectRoot) return state;
+      let next: SidecarState = { ...state, initialSurfaceAppliedKey: key };
+      if (msg.surface === 'run-inspector') {
+        if (msg.hasRunFocus) {
+          next = updateSidecarState(next, { type: 'ui/toggle-workspace', workspace: 'info', collapsed: true });
+          next = updateSidecarState(next, { type: 'ui/toggle-workspace', workspace: 'shell', collapsed: true });
+        }
+        next = updateSidecarState(next, { type: 'viewer/open', kind: 'traversal', id: msg.projectRoot });
+        return updateSidecarState(next, { type: 'traversal/load', workspaceRoot: msg.projectRoot });
+      }
+      return updateSidecarState(next, {
+        type: 'viewer/open',
+        kind: msg.surface === 'ticket-board' ? 'ticket-board' : 'ai-workspace',
+        id: msg.projectRoot,
+      });
+    }
+    case 'surface/load-request': {
+      if (
+        msg.projectRoot === null
+        || msg.projectRoot !== currentProjectRoot(state)
+        || !isBoundedRelativePath(msg.relativePath)
+      ) {
+        return state;
+      }
+      const key = sidecarSurfaceLoadKey(msg.projectRoot, msg.relativePath);
+      const previous = state.surfaceLoads[key];
+      const requestId = (previous?.requestId ?? 0) + 1;
+      return {
+        ...state,
+        surfaceLoads: {
+          ...state.surfaceLoads,
+          [key]: { projectRoot: msg.projectRoot, relativePath: msg.relativePath, status: 'loading', requestId, surface: previous?.surface ?? null, error: null, tailFollow: previous?.tailFollow ?? false },
+        },
+      };
+    }
+    case 'surface/load-succeeded': {
+      const current = state.surfaceLoads[msg.key];
+      if (!current || current.requestId !== msg.requestId) return state;
+      if (!surfaceMatchesLoad(current, msg.surface)) {
+        return {
+          ...state,
+          surfaceLoads: {
+            ...state.surfaceLoads,
+            [msg.key]: {
+              ...current,
+              status: 'error',
+              error: 'surface response rejected: identity does not match the requested Project surface',
+            },
+          },
+        };
+      }
+      return { ...state, surfaceLoads: { ...state.surfaceLoads, [msg.key]: { ...current, status: 'ready', surface: msg.surface, error: null } } };
+    }
+    case 'surface/load-failed': {
+      const current = state.surfaceLoads[msg.key];
+      if (!current || current.requestId !== msg.requestId) return state;
+      return { ...state, surfaceLoads: { ...state.surfaceLoads, [msg.key]: { ...current, status: 'error', error: msg.error } } };
+    }
+    case 'surface/tail-follow-set': {
+      const key = sidecarSurfaceLoadKey(msg.projectRoot, msg.relativePath);
+      const current = state.surfaceLoads[key] ?? { projectRoot: msg.projectRoot, relativePath: msg.relativePath, status: 'idle' as const, requestId: 0, surface: null, error: null, tailFollow: false };
+      return { ...state, surfaceLoads: { ...state.surfaceLoads, [key]: { ...current, tailFollow: msg.enabled } } };
+    }
+    case 'surface/tail-ticked': {
+      const subscription = sidecarSubscriptions(state).find((candidate) => (
+        candidate.type === 'surface.tail-follow'
+        && candidate.projectRoot === msg.projectRoot
+        && candidate.relativePath === msg.relativePath
+      ));
+      if (!subscription) return state;
+      return updateSidecarState(
+        withoutSubscriptionFailure(state, subscription.subscriptionId),
+        { type: 'surface/load-request', projectRoot: msg.projectRoot, relativePath: msg.relativePath, refresh: true },
+      );
+    }
+    case 'folder/load-request': {
+      const projectRoot = currentProjectRoot(state);
+      if (!projectRoot || !isPathWithinProjectRoot(projectRoot, msg.path)) return state;
+      const previous = state.folderLoads[msg.path];
+      const requestId = (previous?.requestId ?? 0) + 1;
+      return {
+        ...state,
+        folderLoads: {
+          ...state.folderLoads,
+          [msg.path]: {
+            projectRoot,
+            path: msg.path,
+            status: 'loading',
+            requestId,
+            entries: previous?.entries ?? [],
+            truncated: previous?.truncated ?? false,
+            state: previous?.state ?? 'present',
+            error: null,
+            loadedAt: previous?.loadedAt ?? null,
+          },
+        },
+      };
+    }
+    case 'folder/load-succeeded': {
+      const current = state.folderLoads[msg.path];
+      if (!current || current.requestId !== msg.requestId) return state;
+      if (current.projectRoot !== currentProjectRoot(state)) return state;
+      const payload = admittedFolderPayload(msg.payload, current.projectRoot, msg.path);
+      if (!payload) {
+        return {
+          ...state,
+          folderLoads: {
+            ...state.folderLoads,
+            [msg.path]: {
+              ...current,
+              status: 'error',
+              error: 'folder response rejected: identity or child ancestry is invalid',
+            },
+          },
+        };
+      }
+      return {
+        ...state,
+        folderLoads: {
+          ...state.folderLoads,
+          [msg.path]: {
+            ...current,
+            status: 'ready',
+            entries: payload.entries,
+            truncated: payload.truncated,
+            state: payload.state,
+            error: null,
+            loadedAt: msg.loadedAt,
+          },
+        },
+      };
+    }
+    case 'folder/load-failed': {
+      const current = state.folderLoads[msg.path];
+      if (!current || current.requestId !== msg.requestId) return state;
+      return { ...state, folderLoads: { ...state.folderLoads, [msg.path]: { ...current, status: 'error', error: msg.error } } };
+    }
+    case 'project/activate-request':
+      return { ...state, lastAction: null };
+    case 'project/activate-succeeded':
+      return {
+        ...state,
+        pendingHistorySurface: {
+          projectId: msg.projectId,
+          projectRoot: msg.projectRoot,
+          relativePath: msg.relativePath,
+        },
+        selection: { kind: 'project', id: msg.projectId },
+      };
+    case 'project/activate-failed':
+      return {
+        ...state,
+        lastAction: { ok: false, error: `Project activation failed: ${msg.error}` },
+      };
     case 'select': {
       const viewerWorkspace = openViewerTab(state.ui.viewerWorkspace, msg.kind, msg.id);
       const terminalWorkspace = msg.kind === 'session'
@@ -1921,6 +2876,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             project: { id: project.id, root: project.root, odd_type: project.odd_type },
           };
           next.traversal = reconciledTraversalState(state.traversal, project.root);
+          next.inFlightActions = retainActionsForCurrentContext(next);
         }
       }
       return next;
@@ -1953,6 +2909,12 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       };
     }
     case 'session/spawn/done': {
+      if (
+        state.context?.project.root !== msg.projectRoot
+        || !isPathWithinProjectRoot(msg.projectRoot, msg.record.cwd)
+      ) {
+        return state;
+      }
       const records = state.sessions.records.some((session) => session.id === msg.record.id)
         ? state.sessions.records.map((session) => (session.id === msg.record.id ? msg.record : session))
         : [...state.sessions.records, msg.record];
@@ -1963,6 +2925,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         sessions,
         activeSessionId: msg.record.id,
         secondarySessionId: secondarySessionIdFromTerminalWorkspace(terminalWorkspace, msg.record.id),
+        lastAction: { ok: true, message: `spawned ${msg.record.id}` },
         ui: {
           ...state.ui,
           shellLayout: terminalWorkspace.split,
@@ -1970,6 +2933,9 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         },
       };
     }
+    case 'session/spawn/failed':
+      if (currentProjectRoot(state) !== msg.projectRoot) return state;
+      return { ...state, lastAction: { ok: false, error: msg.error } };
     case 'reply/open':
       return { ...state, replyDraft: { parentId: msg.parentId, body: '' } };
     case 'reply/edit':
@@ -2120,7 +3086,21 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         : null;
       return { ...state, ticketBoard: { workspaceRoot, selectedTicketId } };
     }
-    case 'action/result':
+    case 'action/result': {
+      const pending = pendingActionForResult(state, msg);
+      if (!pending) return state;
+      return {
+        ...state,
+        inFlightActions: state.inFlightActions.filter(
+          (entry) => entry.id !== pending.id,
+        ),
+        lastAction: { ok: msg.ok, message: msg.message, error: msg.error },
+        replyDraft: msg.ok && pending.cmd.type === 'comment.reply'
+          ? null
+          : state.replyDraft,
+      };
+    }
+    case 'action/feedback':
       return { ...state, lastAction: { ok: msg.ok, message: msg.message, error: msg.error } };
     default:
       return state;
@@ -2131,24 +3111,89 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
   switch (msg.type) {
     case 'load/request':
       return [{ type: 'load', projectRoot: msg.projectRoot, reason: msg.reason }];
+    case 'load/done':
+    case 'load/failed': {
+      const pending = state.pendingHistorySurface;
+      const payload = msg.payload;
+      const context = payload?.context;
+      if (
+        state.activeLoadRoot !== msg.projectRoot
+        || state.activeLoadGeneration !== msg.generation
+        || !pending
+        || pending.projectRoot !== msg.projectRoot
+        || !payload
+        || !context
+        || context.project.root !== msg.projectRoot
+        || context.project.id !== pending.projectId
+        || !loadPayloadMatchesProjectIdentity(state, payload, msg.projectRoot)
+      ) {
+        return [];
+      }
+      return [{ type: 'context.publish', context }];
+    }
     case 'select': {
       if (msg.kind !== 'project') return [];
       const project = state.projects.find((candidate) => candidate.id === msg.id);
       return project ? [{ type: 'load', projectRoot: project.root, reason: 'project_selected' }] : [];
     }
     case 'ticket/transition/request':
-      return [{ type: 'ticket.transition', id: msg.id, toLane: msg.toLane, projectRoot: currentProjectRoot(state) }];
+      return state.context
+        ? [{ type: 'ticket.transition', id: msg.id, toLane: msg.toLane, context: state.context }]
+        : [];
     case 'comment/toggle-read/request':
-      return [{
-        type: 'comment.toggleRead',
-        id: msg.id,
-        currentlyUnread: msg.currentlyUnread,
-        projectRoot: currentProjectRoot(state),
-      }];
+      return state.context
+        ? [{
+          type: 'comment.toggleRead',
+          id: msg.id,
+          currentlyUnread: msg.currentlyUnread,
+          context: state.context,
+        }]
+        : [];
     case 'reply/submit/request':
-      return [{ type: 'comment.reply', parentId: msg.parentId, body: msg.body, projectRoot: currentProjectRoot(state) }];
+      return state.context
+        ? [{ type: 'comment.reply', parentId: msg.parentId, body: msg.body, context: state.context }]
+        : [];
     case 'path-history/copy-request':
-      return [{ type: 'clipboard.write', text: msg.entry.absolutePath, label: msg.entry.relativePath }];
+      return [
+        ...(state.context
+          ? [{
+            type: 'clipboard.write' as const,
+            text: msg.entry.absolutePath,
+            label: msg.entry.relativePath,
+            context: state.context,
+          }]
+          : []),
+        { type: 'storage.write', scope: 'path-history', key: 'oman-sidecar-path-history', value: appendPathHistory(state.pathHistory, msg.entry) },
+      ];
+    case 'path-history/read-request':
+      return [{ type: 'storage.read', scope: 'path-history', key: 'oman-sidecar-path-history' }];
+    case 'pinned-folders/read-request':
+      return [{ type: 'storage.read', scope: 'pinned-folders', key: `oman-sidecar-pinned-folders:${msg.projectRoot}`, projectRoot: msg.projectRoot }];
+    case 'pinned-folders/read-succeeded': {
+      if (pinnedFolderStoragePayloadIsCanonical(msg.paths, msg.projectRoot)) return [];
+      return [{
+        type: 'storage.write',
+        scope: 'pinned-folders',
+        key: `oman-sidecar-pinned-folders:${msg.projectRoot}`,
+        projectRoot: msg.projectRoot,
+        value: normalizePinnedFolderPaths(msg.paths, msg.projectRoot),
+      }];
+    }
+    case 'pinned-folders/set':
+      return [{ type: 'storage.write', scope: 'pinned-folders', key: `oman-sidecar-pinned-folders:${msg.projectRoot}`, projectRoot: msg.projectRoot, value: normalizePinnedFolderPaths(msg.paths, msg.projectRoot) }];
+    case 'layout/profile-read-request':
+      return [{ type: 'storage.read', scope: 'layout-profile', key: `oman-sidecar-layout:${msg.contextKey}`, contextKey: msg.contextKey }];
+    case 'layout/profile-write-request':
+      return [{ type: 'storage.write', scope: 'layout-profile', key: `oman-sidecar-layout:${msg.contextKey}`, contextKey: msg.contextKey, value: msg.profile }];
+    case 'project/activate-request':
+      return [{
+        type: 'project.activate',
+        projectId: msg.projectId,
+        projectRoot: msg.projectRoot,
+        relativePath: msg.relativePath,
+      }];
+    case 'project/activate-succeeded':
+      return [{ type: 'load', projectRoot: msg.projectRoot, reason: 'project_selected' }];
     case 'session/spawn/request':
       return [{
         type: 'session.spawn',
@@ -2156,13 +3201,47 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
         groupId: msg.groupId ?? state.ui.terminalWorkspace.activeGroupId,
         cwd: msg.cwd ?? null,
         label: msg.label ?? null,
+        existingSessionIds: state.sessions.records.map((session) => session.id),
       }];
     case 'session/kill/request':
-      return [{ type: 'session.kill', id: msg.id, projectRoot: currentProjectRoot(state) }];
-    case 'action/result':
-      return msg.ok && msg.reload
-        ? [{ type: 'load', projectRoot: currentProjectRoot(state), reason: 'action_completed' }]
+      return state.context
+        ? [{ type: 'session.kill', id: msg.id, context: state.context }]
         : [];
+    case 'action/result': {
+      const pending = pendingActionForResult(state, msg);
+      return pending && msg.ok && actionResultReloads(pending.cmd)
+        ? [{
+          type: 'load',
+          projectRoot: pending.cmd.context.project.root,
+          reason: 'action_completed',
+        }]
+        : [];
+    }
+    case 'project-registry/changed': {
+      const subscription = admittedSidecarSubscription(
+        state,
+        msg.subscriptionId,
+        'project-registry.changed',
+      );
+      return subscription?.type === 'project-registry.changed'
+        && subscription.projectRoot === msg.projectRoot
+        ? [{ type: 'load', projectRoot: msg.projectRoot, reason: 'action_completed' }]
+        : [];
+    }
+    case 'run/refresh-ticked': {
+      const subscription = admittedSidecarSubscription(state, msg.subscriptionId, 'run.refresh');
+      if (
+        subscription?.type !== 'run.refresh'
+        || subscription.workspaceRoot !== msg.workspaceRoot
+        || subscription.runId !== msg.runId
+      ) {
+        return [];
+      }
+      return [
+        { type: 'run.loadObservation', workspaceRoot: msg.workspaceRoot, runId: msg.runId, refresh: true },
+        { type: 'traversal.loadSummary', workspaceRoot: msg.workspaceRoot, runId: msg.runId, refresh: true },
+      ];
+    }
     case 'traversal/load': {
       const workspaceRoot = traversalRequestedRoot(state, msg);
       const runId = traversalRequestedRunId(state, msg);
@@ -2171,6 +3250,51 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
         { type: 'run.loadObservation', workspaceRoot, runId, refresh },
         { type: 'traversal.loadSummary', workspaceRoot, runId, refresh },
       ];
+    }
+    case 'initial-surface/request':
+      if (state.pendingHistoryInitialSurfaceRoot === msg.projectRoot) return [];
+      if (state.initialSurfaceAppliedKey === `${msg.projectRoot}:${msg.surface}:${msg.hasRunFocus ? 'focus' : 'plain'}` || currentProjectRoot(state) !== msg.projectRoot) return [];
+      return msg.surface === 'run-inspector'
+        ? [
+          { type: 'run.loadObservation', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId, refresh: false },
+          { type: 'traversal.loadSummary', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId, refresh: false },
+        ]
+        : [];
+    case 'surface/load-request': {
+      if (
+        msg.projectRoot === null
+        || msg.projectRoot !== currentProjectRoot(state)
+        || !isBoundedRelativePath(msg.relativePath)
+      ) {
+        return [];
+      }
+      const key = sidecarSurfaceLoadKey(msg.projectRoot, msg.relativePath);
+      const nextRequestId = (state.surfaceLoads[key]?.requestId ?? 0) + 1;
+      return [{ type: 'surface.load', key, requestId: nextRequestId, projectRoot: msg.projectRoot, relativePath: msg.relativePath }];
+    }
+    case 'surface/tail-ticked': {
+      const subscription = sidecarSubscriptions(state).find((candidate) => (
+        candidate.type === 'surface.tail-follow'
+        && candidate.projectRoot === msg.projectRoot
+        && candidate.relativePath === msg.relativePath
+      ));
+      if (!subscription) return [];
+      const key = sidecarSurfaceLoadKey(msg.projectRoot, msg.relativePath);
+      const current = state.surfaceLoads[key];
+      return current
+        ? [{ type: 'surface.load', key, requestId: current.requestId + 1, projectRoot: msg.projectRoot, relativePath: msg.relativePath }]
+        : [];
+    }
+    case 'folder/load-request': {
+      const projectRoot = currentProjectRoot(state);
+      return projectRoot && isPathWithinProjectRoot(projectRoot, msg.path)
+        ? [{
+          type: 'folder.load',
+          projectRoot,
+          path: msg.path,
+          requestId: (state.folderLoads[msg.path]?.requestId ?? 0) + 1,
+        }]
+        : [];
     }
     case 'run/select':
       return [
@@ -2199,14 +3323,40 @@ export function reduceSidecarState(state: SidecarState, msg: SidecarMsg) {
   const commands = describeSidecarCommands(state, msg);
   let next = updateSidecarState(state, msg);
   if (commands.length > 0) {
-    const pendingCommands = commands.map((cmd, index) => ({
-      id: `cmd-${state.nextCommandId + index}`,
-      cmd,
-    }));
+    let nextLoadGeneration = state.nextLoadGeneration;
+    const pendingCommands = commands.map((cmd, index) => {
+      const pending: PendingSidecarCmd = {
+        id: `cmd-${state.nextCommandId + index}`,
+        cmd,
+      };
+      if (cmd.type === 'load') {
+        pending.loadGeneration = nextLoadGeneration;
+        nextLoadGeneration += 1;
+      }
+      return pending;
+    });
+    const resultBearing = pendingCommands.filter(
+      (entry) => isResultBearingSidecarCmd(entry.cmd),
+    );
+    const latestLoad = [...pendingCommands].reverse().find(
+      (entry) => entry.cmd.type === 'load',
+    );
     next = {
       ...next,
       pendingCommands: [...next.pendingCommands, ...pendingCommands],
+      inFlightActions: [...next.inFlightActions, ...resultBearing],
       nextCommandId: state.nextCommandId + pendingCommands.length,
+      nextLoadGeneration,
+      ...(latestLoad?.cmd.type === 'load'
+        ? {
+          loading: true,
+          activeLoadRoot: latestLoad.cmd.projectRoot,
+          activeLoadGeneration: latestLoad.loadGeneration ?? null,
+          inFlightActions: latestLoad.cmd.projectRoot !== currentProjectRoot(next)
+            ? []
+            : [...next.inFlightActions, ...resultBearing],
+        }
+        : {}),
     };
   }
   return { state: next, commands };

@@ -13,20 +13,36 @@ import ts from 'typescript';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
+const ingressValidationModulePath = resolve(here, '../../src/features/sidecar/sidecar-ingress-validation.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
 const developerControlHostPath = resolve(here, '../../src/capabilities/host/DeveloperControlHost.tsx');
+const developerControlAggregatePath = resolve(here, '../../src/capabilities/host/aggregate.ts');
 const buildPortfolioViewPath = resolve(here, '../../src/capabilities/build-portfolio/view.tsx');
 const buildPortfolioStatePath = resolve(here, '../../src/capabilities/build-portfolio/state.ts');
 const buildPortfolioRuntimePath = resolve(here, '../../src/effects/command-runtime/build-portfolio-command-runtime.ts');
 const appShellPath = resolve(here, '../../src/layout/AppShell.tsx');
 const serverIndexPath = resolve(here, '../../src/server/index.mjs');
+const oddTermServerPath = resolve(here, '../../src/server/oddterm-pool-service.mjs');
 const collaborationPath = resolve(here, '../../src/lib/collaboration.ts');
 const stylesPath = resolve(here, '../../src/app/styles.css');
 const documentViewerPath = resolve(here, '../../src/components/DocumentViewer.tsx');
 
 async function loadStateModule() {
   const source = readFileSync(stateModulePath, 'utf-8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2020,
+      target: ts.ScriptTarget.ES2020,
+      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+    },
+  }).outputText;
+  const encoded = Buffer.from(compiled, 'utf-8').toString('base64');
+  return import(`data:text/javascript;base64,${encoded}`);
+}
+
+async function loadIngressValidationModule() {
+  const source = readFileSync(ingressValidationModulePath, 'utf-8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2020,
@@ -81,6 +97,56 @@ function baseState(module) {
   };
 }
 
+function subscriptionReadyState(module) {
+  const state = baseState(module);
+  const projectRoot = state.context.project.root;
+  return {
+    ...state,
+    surfaceLoads: {
+      [`${projectRoot}:logs/stdout.log`]: {
+        projectRoot,
+        relativePath: 'logs/stdout.log',
+        status: 'ready',
+        requestId: 1,
+        surface: { kind: 'file', relative_path: 'logs/stdout.log', content: 'ready' },
+        error: null,
+        tailFollow: true,
+      },
+    },
+    traversal: {
+      ...module.INITIAL_SIDECAR_TRAVERSAL_STATE,
+      workspaceRoot: projectRoot,
+      requestedRunId: 'run-1',
+      selectedRunId: 'run-1',
+      runStatus: 'ready',
+    },
+    ui: {
+      ...state.ui,
+      shellCollapsed: false,
+      viewerWorkspace: {
+        split: 'split-horizontal',
+        activeGroupId: 'main',
+        tabs: [
+          { id: 'traversal:workspace', kind: 'traversal', objectId: projectRoot },
+          { id: 'surface:logs/stdout.log', kind: 'surface', objectId: 'logs/stdout.log' },
+        ],
+        groups: [
+          { id: 'main', tabIds: ['traversal:workspace'], activeTabId: 'traversal:workspace' },
+          { id: 'secondary', tabIds: ['surface:logs/stdout.log'], activeTabId: 'surface:logs/stdout.log' },
+        ],
+        ratios: [0.5, 0.5],
+      },
+      terminalWorkspace: {
+        split: 'single',
+        activeGroupId: 'main',
+        tabs: [{ id: 'session:sess-1', sessionId: 'sess-1' }],
+        groups: [{ id: 'main', tabIds: ['session:sess-1'], activeTabId: 'session:sess-1' }],
+        ratios: [1],
+      },
+    },
+  };
+}
+
 function observationFor(projectRoot, featureState = 'present') {
   return {
     kind: 'ai_workspace_observation',
@@ -116,6 +182,69 @@ function observationFor(projectRoot, featureState = 'present') {
   };
 }
 
+function validIngressContext(projectRoot = '/workspace/odd_manager') {
+  const projectId = projectRoot.split('/').filter(Boolean).pop() ?? 'unknown';
+  return {
+    project: { id: projectId, root: projectRoot, odd_type: 'unknown' },
+    workspace: { id: 'react_vite', profile: 'unknown' },
+    session: null,
+  };
+}
+
+function validIngressProject(projectRoot = '/workspace/odd_manager') {
+  const projectId = projectRoot.split('/').filter(Boolean).pop() ?? 'unknown';
+  return {
+    id: projectId,
+    name: 'odd_manager',
+    root: projectRoot,
+    odd_type: 'unknown',
+    has_ai_workspace: true,
+    has_genesis: true,
+    installed_packages: ['odd_stdo'],
+    build_tenants: ['react_vite'],
+    registry_source: 'registry',
+    registered_at: null,
+    updated_at: null,
+    tags: [],
+    is_active: true,
+  };
+}
+
+function validIngressTicket(id = 'T-100') {
+  return {
+    id,
+    lane: 'active',
+    sourcePath: `.ai-workspace/tickets/active/${id}.md`,
+    title: 'Bound ingress',
+    type: 'build',
+    status: 'Active',
+    raw: { id },
+  };
+}
+
+function validIngressComment(filename = '20260727T010101Z_REVIEW_ingress.md') {
+  return {
+    id: `codex/${filename.replace(/\.md$/, '')}`,
+    author: 'codex',
+    sourcePath: `.ai-workspace/comments/codex/${filename}`,
+    filename,
+    raw: {},
+  };
+}
+
+function validIngressSession(id = 'sess-new') {
+  return {
+    id,
+    agent_type: 'shell',
+    cwd: '/workspace/odd_manager',
+    status: 'running',
+    transcript_ref: null,
+    source_path: null,
+    context_at_spawn: { project: 'Odd Manager', workspace: 'react_vite', odd_type: 'unknown' },
+    raw: {},
+  };
+}
+
 function readSidecarCssBlock() {
   const styles = readFileSync(stylesPath, 'utf-8');
   const start = styles.indexOf('.sidecar-panel');
@@ -138,6 +267,240 @@ test('project selection replays to new Context and emits load Cmd', async () => 
   ]);
 });
 
+test('cross-Project recent-path activation is a typed effect and opens only after the target Context loads', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const requested = module.replaySidecarMessages(initial, [{
+    type: 'project/activate-request',
+    projectId: 'data_mapper',
+    projectRoot: '/workspace/data_mapper',
+    relativePath: 'specification/PRODUCT.md',
+  }]);
+  assert.deepEqual(requested.commands, [{
+    type: 'project.activate',
+    projectId: 'data_mapper',
+    projectRoot: '/workspace/data_mapper',
+    relativePath: 'specification/PRODUCT.md',
+  }]);
+  const admitted = module.replaySidecarMessages(requested.state, [{
+    type: 'project/activate-succeeded',
+    projectId: 'data_mapper',
+    projectRoot: '/workspace/data_mapper',
+    relativePath: 'specification/PRODUCT.md',
+  }]);
+  assert.deepEqual(admitted.commands, [{
+    type: 'load', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+  ]);
+  const loading = module.replaySidecarMessages(admitted.state, [{
+    type: 'load/request', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+  ]).state;
+  const loaded = module.replaySidecarMessages(loading, [{
+    type: 'load/done',
+    projectRoot: '/workspace/data_mapper',
+    generation: 2,
+    payload: {
+      context: {
+        project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+        workspace: { id: 'scala_sbt', profile: 'unknown' },
+        session: null,
+      },
+    },
+  }]);
+  assert.deepEqual(loaded.commands, [{
+    type: 'context.publish',
+    context: {
+      project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+      workspace: { id: 'scala_sbt', profile: 'unknown' },
+      session: null,
+    },
+  }]);
+  assert.equal(loaded.state.pendingHistorySurface, null);
+  assert.equal(loaded.state.pendingHistoryInitialSurfaceRoot, '/workspace/data_mapper');
+  assert.equal(loaded.state.selection.kind, 'surface');
+  assert.equal(loaded.state.selection.id, 'specification/PRODUCT.md');
+  const hostRootSynchronized = module.replaySidecarMessages(loaded.state, [{
+    type: 'initial-surface/request',
+    surface: 'ai-workspace',
+    projectRoot: '/workspace/data_mapper',
+    hasRunFocus: false,
+  }]);
+  assert.deepEqual(hostRootSynchronized.commands, []);
+  assert.equal(hostRootSynchronized.state.pendingHistoryInitialSurfaceRoot, null);
+  assert.equal(hostRootSynchronized.state.initialSurfaceAppliedKey, '/workspace/data_mapper:ai-workspace:plain');
+  assert.equal(hostRootSynchronized.state.selection.kind, 'surface');
+  assert.equal(hostRootSynchronized.state.selection.id, 'specification/PRODUCT.md');
+
+  const failed = module.updateSidecarState(initial, {
+    type: 'project/activate-failed', projectId: 'data_mapper', error: 'registry denied',
+  });
+  assert.match(failed.lastAction.error, /registry denied/);
+});
+
+test('cross-Project partial load failure publishes the admitted target Context without splitting the outer host', async () => {
+  const module = await loadStateModule();
+  const targetContext = {
+    project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+    workspace: { id: 'scala_sbt', profile: 'unknown' },
+    session: null,
+  };
+  const result = module.replaySidecarMessages(baseState(module), [
+    {
+      type: 'project/activate-request',
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    },
+    {
+      type: 'project/activate-succeeded',
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    },
+    { type: 'load/start', projectRoot: '/workspace/data_mapper', generation: 1 },
+    {
+      type: 'load/failed',
+      projectRoot: '/workspace/data_mapper',
+      generation: 1,
+      error: 'load failed: tickets: upstream unavailable',
+      payload: {
+        context: targetContext,
+        projects: [{
+          id: 'data_mapper',
+          root: '/workspace/data_mapper',
+          odd_type: 'unknown',
+          has_ai_workspace: true,
+          has_genesis: true,
+          installed_packages: [],
+          build_tenants: ['scala_sbt'],
+        }],
+        tickets: [],
+        comments: [],
+        sessions: { records: [], diagnostic: null },
+        unreadIds: [],
+        aiWorkspaceObservation: observationFor('/workspace/data_mapper'),
+      },
+    },
+  ]);
+
+  assert.deepEqual(result.commands, [
+    {
+      type: 'project.activate',
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    },
+    { type: 'load', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
+    { type: 'context.publish', context: targetContext },
+  ]);
+  assert.equal(result.state.context.project.root, '/workspace/data_mapper');
+  assert.equal(result.state.loading, false);
+  assert.equal(result.state.activeLoadRoot, null);
+  assert.deepEqual(result.state.tickets, []);
+  assert.match(result.state.lastAction.error, /tickets: upstream unavailable/);
+  assert.equal(result.state.pendingHistorySurface, null);
+  assert.equal(result.state.pendingHistoryInitialSurfaceRoot, '/workspace/data_mapper');
+  assert.deepEqual(result.state.selection, {
+    kind: 'surface',
+    id: 'specification/PRODUCT.md',
+  });
+  const activeViewerGroup = result.state.ui.viewerWorkspace.groups.find(
+    (group) => group.id === result.state.ui.viewerWorkspace.activeGroupId,
+  );
+  const activeViewer = result.state.ui.viewerWorkspace.tabs.find(
+    (tab) => tab.id === activeViewerGroup.activeTabId,
+  );
+  assert.deepEqual(activeViewer, {
+    id: 'surface:specification/PRODUCT.md',
+    kind: 'surface',
+    objectId: 'specification/PRODUCT.md',
+  });
+
+  const initialSurface = module.replaySidecarMessages(result.state, [{
+    type: 'initial-surface/request',
+    surface: 'ai-workspace',
+    projectRoot: '/workspace/data_mapper',
+    hasRunFocus: false,
+  }]);
+  assert.deepEqual(initialSurface.commands, []);
+  assert.equal(initialSurface.state.pendingHistoryInitialSurfaceRoot, null);
+  assert.deepEqual(initialSurface.state.selection, {
+    kind: 'surface',
+    id: 'specification/PRODUCT.md',
+  });
+  assert.match(initialSurface.state.lastAction.error, /tickets: upstream unavailable/);
+});
+
+test('same-root wrong-Project-id load results cannot publish, replace Context, or consume pending history', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const pending = module.replaySidecarMessages(initial, [
+    {
+      type: 'project/activate-request',
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    },
+    {
+      type: 'project/activate-succeeded',
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    },
+    { type: 'load/start', projectRoot: '/workspace/data_mapper', generation: 1 },
+  ]).state;
+  const wrongIdentityPayload = {
+    context: {
+      project: { id: 'same-root-impostor', root: '/workspace/data_mapper', odd_type: 'unknown' },
+      workspace: { id: 'scala_sbt', profile: 'unknown' },
+      session: null,
+    },
+    projects: [{
+      id: 'same-root-impostor',
+      root: '/workspace/data_mapper',
+      odd_type: 'unknown',
+      has_ai_workspace: true,
+      has_genesis: true,
+      installed_packages: [],
+      build_tenants: ['scala_sbt'],
+    }],
+    tickets: [],
+  };
+
+  for (const message of [
+    {
+      type: 'load/done',
+      projectRoot: '/workspace/data_mapper',
+      generation: 1,
+      payload: wrongIdentityPayload,
+    },
+    {
+      type: 'load/failed',
+      projectRoot: '/workspace/data_mapper',
+      generation: 1,
+      error: 'load failed: optional surface unavailable',
+      payload: wrongIdentityPayload,
+    },
+  ]) {
+    const rejected = module.replaySidecarMessages(pending, [message]);
+    assert.deepEqual(rejected.commands, []);
+    assert.deepEqual(rejected.state.context, initial.context);
+    assert.deepEqual(rejected.state.pendingHistorySurface, {
+      projectId: 'data_mapper',
+      projectRoot: '/workspace/data_mapper',
+      relativePath: 'specification/PRODUCT.md',
+    });
+    assert.equal(rejected.state.pendingHistoryInitialSurfaceRoot, null);
+    assert.deepEqual(rejected.state.selection, { kind: 'project', id: 'data_mapper' });
+    assert.equal(
+      rejected.state.ui.viewerWorkspace.tabs.some(
+        (tab) => tab.kind === 'surface' && tab.objectId === 'specification/PRODUCT.md',
+      ),
+      false,
+    );
+    assert.match(rejected.state.lastAction.error, /identities do not belong/);
+  }
+});
+
 test('stale project load result cannot overwrite a newer requested root', async () => {
   const module = await loadStateModule();
   const requested = module.replaySidecarMessages(baseState(module), [
@@ -147,6 +510,7 @@ test('stale project load result cannot overwrite a newer requested root', async 
   const stale = module.updateSidecarState(requested, {
     type: 'load/done',
     projectRoot: '/workspace/odd_manager',
+    generation: 1,
     payload: {
       context: {
         project: { id: 'odd_manager', root: '/workspace/odd_manager', odd_type: 'unknown' },
@@ -165,6 +529,7 @@ test('stale project load result cannot overwrite a newer requested root', async 
   const current = module.updateSidecarState(stale, {
     type: 'load/done',
     projectRoot: '/workspace/data_mapper',
+    generation: 1,
     payload: {
       context: {
         project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
@@ -182,14 +547,337 @@ test('stale project load result cannot overwrite a newer requested root', async 
   assert.equal(current.aiWorkspaceObservation.features[0].state, 'present');
 });
 
+test('same-root load generations reject older success and failure projections', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const first = module.replaySidecarMessages(initial, [{
+    type: 'load/request',
+    projectRoot: '/workspace/odd_manager',
+    reason: 'action_completed',
+  }]);
+  assert.equal(first.state.activeLoadGeneration, 1);
+  const second = module.replaySidecarMessages(first.state, [{
+    type: 'load/request',
+    projectRoot: '/workspace/odd_manager',
+    reason: 'action_completed',
+  }]);
+  assert.equal(second.state.activeLoadGeneration, 2);
+
+  const staleDone = module.updateSidecarState(second.state, {
+    type: 'load/done',
+    projectRoot: '/workspace/odd_manager',
+    generation: 1,
+    payload: {
+      tickets: [{ id: 'STALE', title: 'stale', lane: 'active', status: 'active' }],
+    },
+  });
+  assert.equal(staleDone, second.state);
+  const staleFailed = module.updateSidecarState(second.state, {
+    type: 'load/failed',
+    projectRoot: '/workspace/odd_manager',
+    generation: 1,
+    error: 'older request failed late',
+  });
+  assert.equal(staleFailed, second.state);
+
+  const current = module.updateSidecarState(second.state, {
+    type: 'load/done',
+    projectRoot: '/workspace/odd_manager',
+    generation: 2,
+    payload: {
+      tickets: [{ id: 'CURRENT', title: 'current', lane: 'active', status: 'active' }],
+    },
+  });
+  assert.equal(current.loading, false);
+  assert.equal(current.activeLoadGeneration, null);
+  assert.equal(current.tickets[0].id, 'CURRENT');
+
+  const duplicate = module.updateSidecarState(current, {
+    type: 'load/done',
+    projectRoot: '/workspace/odd_manager',
+    generation: 2,
+    payload: {
+      tickets: [{ id: 'DUPLICATE', title: 'duplicate', lane: 'active', status: 'active' }],
+    },
+  });
+  assert.equal(duplicate, current);
+});
+
+test('Sidecar collection ingress admits complete identities and rejects malformed, duplicate, or cross-Project rows', async () => {
+  const ingress = await loadIngressValidationModule();
+  const context = ingress.asSidecarContextRecord(
+    validIngressContext(),
+    '/workspace/odd_manager',
+  );
+  const projects = ingress.asSidecarProjectCollection([validIngressProject()]);
+  ingress.assertContextProjectInCollection(context, projects);
+  assert.equal(projects[0].root, '/workspace/odd_manager');
+  assert.throws(
+    () => ingress.asSidecarContextRecord(validIngressContext('/workspace/other'), '/workspace/odd_manager'),
+    /root mismatch/,
+  );
+  assert.throws(
+    () => ingress.asSidecarProjectCollection([validIngressProject(), { ...validIngressProject(), root: '/workspace/other' }]),
+    /duplicate identity/,
+  );
+  assert.throws(
+    () => ingress.assertContextProjectInCollection(context, [{ ...validIngressProject(), odd_type: 'other' }]),
+    /disagrees/,
+  );
+  assert.throws(
+    () => ingress.assertContextProjectInCollection(context, [{
+      ...validIngressProject(),
+      id: 'same-root-impostor',
+    }]),
+    /Project identity/,
+  );
+
+  const tickets = ingress.asSidecarTicketCollection([validIngressTicket()]);
+  assert.equal(tickets[0].id, 'T-100');
+  assert.throws(
+    () => ingress.asSidecarTicketCollection([
+      validIngressTicket(),
+      { ...validIngressTicket(), sourcePath: '.ai-workspace/tickets/active/T-100-copy.md' },
+    ]),
+    /duplicate identity/,
+  );
+  assert.throws(
+    () => ingress.asSidecarTicketCollection([{ ...validIngressTicket(), sourcePath: '../outside.md' }]),
+    /bounded relative path/,
+  );
+
+  const comment = validIngressComment();
+  const comments = ingress.asSidecarCommentCollection([comment]);
+  assert.equal(comments[0].id, comment.id);
+  assert.throws(
+    () => ingress.asSidecarCommentCollection([{ ...comment, id: 'codex/wrong' }]),
+    /disagrees/,
+  );
+  assert.throws(
+    () => ingress.asSidecarCommentCollection([comment, { ...comment }]),
+    /duplicate identity/,
+  );
+
+  const sessions = ingress.asSidecarSessionCollection({
+    records: [validIngressSession()],
+    diagnostic: {
+      backplane: 'oddterm',
+      registry_root: '.ai-workspace/runtime/oddterm',
+      notes: ['live'],
+      runtime: { reconnect: true },
+    },
+  }, '/workspace/odd_manager');
+  assert.equal(sessions.records[0].id, 'sess-new');
+  assert.throws(
+    () => ingress.asSidecarSessionCollection({
+      records: [{ ...validIngressSession(), cwd: '/workspace/other' }],
+      diagnostic: { backplane: 'oddterm' },
+    }, '/workspace/odd_manager'),
+    /outside admitted Project root/,
+  );
+  assert.throws(
+    () => ingress.asSidecarSessionCollection({
+      records: [validIngressSession(), { ...validIngressSession() }],
+      diagnostic: { backplane: 'oddterm' },
+    }, '/workspace/odd_manager'),
+    /duplicate identity/,
+  );
+  assert.throws(
+    () => ingress.asSidecarSessionCollection({
+      records: [],
+      diagnostic: { backplane: 'invented' },
+    }, '/workspace/odd_manager'),
+    /unsupported/,
+  );
+
+  assert.deepEqual(
+    ingress.asSidecarUnreadIds({ unread_ids: [comment.id] }, comments),
+    [comment.id],
+  );
+  assert.throws(
+    () => ingress.asSidecarUnreadIds({ unread_ids: ['codex/missing'] }, comments),
+    /unknown Comment/,
+  );
+});
+
+test('Sidecar surface, folder, and spawn ingress bind exact requested identity and safe ancestry', async () => {
+  const ingress = await loadIngressValidationModule();
+  const surface = ingress.asSidecarSurfaceData({
+    kind: 'directory',
+    relative_path: 'specification',
+    path: '/workspace/odd_manager/specification',
+    entries: [{
+      name: 'PRODUCT.md',
+      kind: 'file',
+      relative_path: 'specification/PRODUCT.md',
+    }],
+    truncated: false,
+  }, '/workspace/odd_manager', 'specification');
+  assert.equal(surface.relative_path, 'specification');
+  assert.throws(
+    () => ingress.asSidecarSurfaceData({
+      kind: 'file',
+      relative_path: 'specification/OTHER.md',
+      path: '/workspace/odd_manager/specification/OTHER.md',
+      content: 'wrong',
+    }, '/workspace/odd_manager', 'specification/PRODUCT.md'),
+    /relative path mismatch/,
+  );
+  assert.throws(
+    () => ingress.asSidecarSurfaceData({
+      kind: 'directory',
+      relative_path: 'specification',
+      path: '/workspace/odd_manager/specification',
+      entries: [
+        { name: 'PRODUCT.md', kind: 'file', relative_path: 'specification/PRODUCT.md' },
+        { name: 'PRODUCT.md', kind: 'file', relative_path: 'specification/PRODUCT.md' },
+      ],
+      truncated: false,
+    }, '/workspace/odd_manager', 'specification'),
+    /duplicate identity/,
+  );
+
+  const folder = ingress.asSidecarFolderResponse({
+    path: '/workspace/odd_manager/specification',
+    entries: [{
+      name: 'PRODUCT.md',
+      absolutePath: '/workspace/odd_manager/specification/PRODUCT.md',
+      kind: 'file',
+    }],
+    truncated: false,
+    state: 'present',
+  }, '/workspace/odd_manager', '/workspace/odd_manager/specification');
+  assert.equal(folder.entries[0].name, 'PRODUCT.md');
+  assert.throws(
+    () => ingress.asSidecarFolderResponse({
+      path: '/workspace/odd_manager/other',
+      entries: [],
+      truncated: false,
+      state: 'present',
+    }, '/workspace/odd_manager', '/workspace/odd_manager/specification'),
+    /folder path mismatch/,
+  );
+  assert.throws(
+    () => ingress.asSidecarFolderResponse({
+      path: '/workspace/odd_manager/specification',
+      entries: [{
+        name: '../outside',
+        absolutePath: '/workspace/odd_manager/outside',
+        kind: 'file',
+      }],
+      truncated: false,
+      state: 'present',
+    }, '/workspace/odd_manager', '/workspace/odd_manager/specification'),
+    /immediate child/,
+  );
+
+  const spawned = ingress.asSidecarSpawnResult(
+    { ok: true, ...validIngressSession() },
+    '/workspace/odd_manager',
+    null,
+    ['sess-1'],
+  );
+  assert.equal(spawned.id, 'sess-new');
+  assert.throws(
+    () => ingress.asSidecarSpawnResult(
+      { ok: true, ...validIngressSession('sess-1') },
+      '/workspace/odd_manager',
+      null,
+      ['sess-1'],
+    ),
+    /reused existing Session identity/,
+  );
+  assert.throws(
+    () => ingress.asSidecarSpawnResult(
+      { ok: true, ...validIngressSession(), cwd: '/workspace/odd_manager/other' },
+      '/workspace/odd_manager',
+      null,
+      [],
+    ),
+    /cwd mismatch/,
+  );
+});
+
+test('typed Sidecar load and spawn failures retire only their admitted Project basis', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const loading = module.updateSidecarState(initial, {
+    type: 'load/request',
+    projectRoot: '/workspace/data_mapper',
+    reason: 'project_selected',
+  });
+  const rejected = module.updateSidecarState(loading, {
+    type: 'load/done',
+    projectRoot: '/workspace/data_mapper',
+    generation: 1,
+    payload: { context: validIngressContext('/workspace/odd_manager') },
+  });
+  assert.equal(rejected.context.project.root, '/workspace/odd_manager');
+  assert.equal(rejected.loading, false);
+  assert.equal(rejected.activeLoadRoot, null);
+  assert.match(rejected.lastAction.error, /response identities/);
+
+  const safeContext = {
+    ...validIngressContext('/workspace/data_mapper'),
+    project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+  };
+  const failed = module.updateSidecarState(loading, {
+    type: 'load/failed',
+    projectRoot: '/workspace/data_mapper',
+    generation: 1,
+    error: 'load failed: tickets malformed',
+    payload: { context: safeContext, tickets: [] },
+  });
+  assert.equal(failed.context.project.root, '/workspace/data_mapper');
+  assert.deepEqual(failed.tickets, []);
+  assert.equal(failed.loading, false);
+  assert.match(failed.lastAction.error, /tickets malformed/);
+  const staleFailure = module.updateSidecarState(loading, {
+    type: 'load/failed',
+    projectRoot: '/workspace/other',
+    generation: 1,
+    error: 'stale',
+  });
+  assert.equal(staleFailure, loading);
+
+  const wrongSpawn = module.updateSidecarState(initial, {
+    type: 'session/spawn/done',
+    projectRoot: '/workspace/other',
+    groupId: 'main',
+    record: validIngressSession(),
+  });
+  assert.equal(wrongSpawn, initial);
+  const admittedSpawn = module.updateSidecarState(initial, {
+    type: 'session/spawn/done',
+    projectRoot: '/workspace/odd_manager',
+    groupId: 'main',
+    record: validIngressSession(),
+  });
+  assert.ok(admittedSpawn.sessions.records.some((session) => session.id === 'sess-new'));
+  assert.deepEqual(admittedSpawn.lastAction, { ok: true, message: 'spawned sess-new' });
+  const spawnFailure = module.updateSidecarState(initial, {
+    type: 'session/spawn/failed',
+    projectRoot: '/workspace/odd_manager',
+    error: 'session spawn failed: malformed result',
+  });
+  assert.match(spawnFailure.lastAction.error, /malformed result/);
+});
+
 test('ticket transition request and result replay exposes transition Cmd and reload intent', async () => {
   const module = await loadStateModule();
-  const result = module.replaySidecarMessages(baseState(module), [
+  const initial = baseState(module);
+  const result = module.replaySidecarMessages(initial, [
     { type: 'ticket/transition/request', id: 'T-100', toLane: 'completed' },
-    { type: 'action/result', ok: true, message: 'T-100: active -> completed', reload: true },
+    {
+      type: 'action/result',
+      commandId: 'cmd-1',
+      context: initial.context,
+      ok: true,
+      message: 'T-100: active -> completed',
+    },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'ticket.transition', id: 'T-100', toLane: 'completed', projectRoot: '/workspace/odd_manager' },
+    { type: 'ticket.transition', id: 'T-100', toLane: 'completed', context: initial.context },
     { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
   ]);
   assert.deepEqual(result.state.lastAction, { ok: true, message: 'T-100: active -> completed', error: undefined });
@@ -197,16 +885,22 @@ test('ticket transition request and result replay exposes transition Cmd and rel
 
 test('comment reply draft, submit request, result, and cancel replay deterministically', async () => {
   const module = await loadStateModule();
+  const initial = baseState(module);
   const parentId = 'codex/20260427T010101Z_REVIEW_note';
-  const result = module.replaySidecarMessages(baseState(module), [
+  const result = module.replaySidecarMessages(initial, [
     { type: 'reply/open', parentId },
     { type: 'reply/edit', body: 'reply body' },
     { type: 'reply/submit/request', parentId, body: 'reply body' },
-    { type: 'action/result', ok: true, message: 'reply created', reload: true },
-    { type: 'reply/cancel' },
+    {
+      type: 'action/result',
+      commandId: 'cmd-1',
+      context: initial.context,
+      ok: true,
+      message: 'reply created',
+    },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'comment.reply', parentId, body: 'reply body', projectRoot: '/workspace/odd_manager' },
+    { type: 'comment.reply', parentId, body: 'reply body', context: initial.context },
     { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
   ]);
   assert.equal(result.state.replyDraft, null);
@@ -215,6 +909,7 @@ test('comment reply draft, submit request, result, and cancel replay determinist
 
 test('path history copy request appends recent path and emits clipboard Cmd', async () => {
   const module = await loadStateModule();
+  const initial = baseState(module);
   const entry = {
     absolutePath: '/workspace/odd_manager/specification/PRODUCT.md',
     projectRoot: '/workspace/odd_manager',
@@ -222,11 +917,12 @@ test('path history copy request appends recent path and emits clipboard Cmd', as
     source: 'provider',
     timestamp: '2026-04-29T00:00:00.000Z',
   };
-  const result = module.replaySidecarMessages(baseState(module), [
+  const result = module.replaySidecarMessages(initial, [
     { type: 'path-history/copy-request', entry },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'clipboard.write', text: entry.absolutePath, label: entry.relativePath },
+    { type: 'clipboard.write', text: entry.absolutePath, label: entry.relativePath, context: initial.context },
+    { type: 'storage.write', scope: 'path-history', key: 'oman-sidecar-path-history', value: [entry] },
   ]);
   assert.deepEqual(result.state.pathHistory, [entry]);
 });
@@ -263,23 +959,284 @@ test('path history dedupes, moves latest to front, and keeps bounded retention',
   );
 });
 
-test('session spawn and kill replay exposes session Cmds with current project root', async () => {
+test('storage ingress is typed, validates pinned folders, and initial surface continuation is one reducer transition', async () => {
   const module = await loadStateModule();
-  const result = module.replaySidecarMessages(baseState(module), [
+  const initial = baseState(module);
+  const historyRead = module.replaySidecarMessages(initial, [{ type: 'path-history/read-request' }]);
+  assert.deepEqual(historyRead.commands, [{ type: 'storage.read', scope: 'path-history', key: 'oman-sidecar-path-history' }]);
+
+  const pinned = module.replaySidecarMessages(initial, [{
+    type: 'pinned-folders/read-succeeded',
+    projectRoot: '/workspace/odd_manager',
+    paths: [
+      '/workspace/odd_manager/specification',
+      '/workspace/odd_manager/docs',
+      '/outside',
+      42,
+    ],
+  }]);
+  assert.deepEqual(pinned.state.pinnedFolders.paths, ['/workspace/odd_manager/docs']);
+  assert.deepEqual(pinned.commands, [{
+    type: 'storage.write',
+    scope: 'pinned-folders',
+    key: 'oman-sidecar-pinned-folders:/workspace/odd_manager',
+    projectRoot: '/workspace/odd_manager',
+    value: ['/workspace/odd_manager/docs'],
+  }]);
+  const persisted = module.replaySidecarMessages(pinned.state, [{
+    type: 'pinned-folders/set',
+    projectRoot: '/workspace/odd_manager',
+    paths: ['/workspace/odd_manager/notes'],
+    activePath: '/workspace/odd_manager/notes',
+  }]);
+  assert.deepEqual(persisted.commands, [{
+    type: 'storage.write',
+    scope: 'pinned-folders',
+    key: 'oman-sidecar-pinned-folders:/workspace/odd_manager',
+    projectRoot: '/workspace/odd_manager',
+    value: ['/workspace/odd_manager/notes'],
+  }]);
+
+  const initialSurface = module.replaySidecarMessages(initial, [{
+    type: 'initial-surface/request',
+    surface: 'run-inspector',
+    projectRoot: '/workspace/odd_manager',
+    hasRunFocus: true,
+  }]);
+  assert.equal(initialSurface.state.initialSurfaceAppliedKey, '/workspace/odd_manager:run-inspector:focus');
+  assert.equal(initialSurface.state.selection.kind, 'traversal');
+  assert.deepEqual(initialSurface.commands.map((command) => command.type), [
+    'run.loadObservation', 'traversal.loadSummary',
+  ]);
+});
+
+test('session spawn and correlated kill replay expose commands on the admitted Context', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const result = module.replaySidecarMessages(initial, [
     { type: 'session/spawn/request' },
-    { type: 'action/result', ok: true, message: 'spawned sess-2', reload: true },
     { type: 'select', kind: 'session', id: 'sess-1' },
     { type: 'session/kill/request', id: 'sess-1' },
-    { type: 'action/result', ok: true, message: 'killed sess-1', reload: true },
+    {
+      type: 'action/result',
+      commandId: 'cmd-2',
+      context: initial.context,
+      ok: true,
+      message: 'killed sess-1',
+    },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'main', cwd: null, label: null },
-    { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
-    { type: 'session.kill', id: 'sess-1', projectRoot: '/workspace/odd_manager' },
+    {
+      type: 'session.spawn',
+      projectRoot: '/workspace/odd_manager',
+      groupId: 'main',
+      cwd: null,
+      label: null,
+      existingSessionIds: ['sess-1'],
+    },
+    { type: 'session.kill', id: 'sess-1', context: initial.context },
     { type: 'load', projectRoot: '/workspace/odd_manager', reason: 'action_completed' },
   ]);
   assert.equal(result.state.selection.kind, 'session');
   assert.equal(result.state.selection.id, 'sess-1');
+});
+
+test('Sidecar action results retain exact command and Context identity through terminal admission', async (t) => {
+  const module = await loadStateModule();
+  const parentId = 'codex/20260427T010101Z_REVIEW_note';
+  const clipboardEntry = {
+    absolutePath: '/workspace/odd_manager/specification/PRODUCT.md',
+    projectRoot: '/workspace/odd_manager',
+    relativePath: 'specification/PRODUCT.md',
+    source: 'provider',
+    timestamp: '2026-04-29T00:00:00.000Z',
+  };
+  const cases = [
+    {
+      label: 'ticket transition',
+      commandType: 'ticket.transition',
+      messages: [{ type: 'ticket/transition/request', id: 'T-100', toLane: 'completed' }],
+      reloads: true,
+    },
+    {
+      label: 'comment read toggle',
+      commandType: 'comment.toggleRead',
+      messages: [{
+        type: 'comment/toggle-read/request',
+        id: parentId,
+        currentlyUnread: true,
+      }],
+      reloads: true,
+    },
+    {
+      label: 'comment reply',
+      commandType: 'comment.reply',
+      messages: [
+        { type: 'reply/open', parentId },
+        { type: 'reply/edit', body: 'reply body' },
+        { type: 'reply/submit/request', parentId, body: 'reply body' },
+      ],
+      reloads: true,
+      clearsReply: true,
+    },
+    {
+      label: 'session kill',
+      commandType: 'session.kill',
+      messages: [{ type: 'session/kill/request', id: 'sess-1' }],
+      reloads: true,
+    },
+    {
+      label: 'clipboard copy',
+      commandType: 'clipboard.write',
+      messages: [{ type: 'path-history/copy-request', entry: clipboardEntry }],
+      reloads: false,
+    },
+  ];
+
+  for (const actionCase of cases) {
+    await t.test(actionCase.label, () => {
+      const initial = baseState(module);
+      const issued = module.replaySidecarMessages(initial, actionCase.messages);
+      const pending = issued.state.inFlightActions.find(
+        (entry) => entry.cmd.type === actionCase.commandType,
+      );
+      assert.ok(pending);
+      assert.deepEqual(pending.cmd.context, initial.context);
+      const dispatched = module.updateSidecarState(issued.state, {
+        type: 'cmd/dispatched',
+        ids: issued.state.pendingCommands.map((entry) => entry.id),
+      });
+      assert.ok(dispatched.inFlightActions.some((entry) => entry.id === pending.id));
+
+      const wrongCommand = module.replaySidecarMessages(dispatched, [{
+        type: 'action/result',
+        commandId: 'cmd-foreign',
+        context: initial.context,
+        ok: true,
+        message: 'foreign result',
+      }]);
+      assert.equal(wrongCommand.state, dispatched);
+      assert.deepEqual(wrongCommand.commands, []);
+
+      const wrongContext = {
+        ...initial.context,
+        workspace: { ...initial.context.workspace, id: 'foreign-workspace' },
+      };
+      const foreign = module.replaySidecarMessages(dispatched, [{
+        type: 'action/result',
+        commandId: pending.id,
+        context: wrongContext,
+        ok: true,
+        message: 'foreign result',
+      }]);
+      assert.equal(foreign.state, dispatched);
+      assert.deepEqual(foreign.commands, []);
+
+      const admitted = module.replaySidecarMessages(dispatched, [{
+        type: 'action/result',
+        commandId: pending.id,
+        context: initial.context,
+        ok: true,
+        message: `${actionCase.label} complete`,
+      }]);
+      assert.equal(
+        admitted.state.inFlightActions.some((entry) => entry.id === pending.id),
+        false,
+      );
+      assert.deepEqual(admitted.state.lastAction, {
+        ok: true,
+        message: `${actionCase.label} complete`,
+        error: undefined,
+      });
+      assert.equal(
+        admitted.commands.some((command) => command.type === 'load'),
+        actionCase.reloads,
+      );
+      if (actionCase.clearsReply) assert.equal(admitted.state.replyDraft, null);
+
+      const duplicate = module.replaySidecarMessages(admitted.state, [{
+        type: 'action/result',
+        commandId: pending.id,
+        context: initial.context,
+        ok: true,
+        message: 'duplicate',
+      }]);
+      assert.equal(duplicate.state, admitted.state);
+      assert.deepEqual(duplicate.commands, []);
+    });
+  }
+});
+
+test('failed action results retire exactly one command without reload', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const issued = module.replaySidecarMessages(initial, [{
+    type: 'ticket/transition/request',
+    id: 'T-100',
+    toLane: 'completed',
+  }]);
+  const pending = issued.state.inFlightActions[0];
+  const failed = module.replaySidecarMessages(issued.state, [{
+    type: 'action/result',
+    commandId: pending.id,
+    context: initial.context,
+    ok: false,
+    error: 'transition refused',
+  }]);
+  assert.equal(failed.commands.filter((command) => command.type === 'load').length, 0);
+  assert.equal(failed.state.inFlightActions.length, 0);
+  assert.deepEqual(failed.state.lastAction, {
+    ok: false,
+    message: undefined,
+    error: 'transition refused',
+  });
+});
+
+test('Project transition retires Project-A action results before Project B becomes current', async () => {
+  const module = await loadStateModule();
+  const initial = baseState(module);
+  const issued = module.replaySidecarMessages(initial, [{
+    type: 'ticket/transition/request',
+    id: 'T-100',
+    toLane: 'completed',
+  }]);
+  const pending = issued.state.inFlightActions[0];
+  const dispatched = module.updateSidecarState(issued.state, {
+    type: 'cmd/dispatched',
+    ids: [pending.id],
+  });
+  const switching = module.replaySidecarMessages(dispatched, [{
+    type: 'load/request',
+    projectRoot: '/workspace/data_mapper',
+    reason: 'project_selected',
+  }]);
+  assert.deepEqual(switching.state.inFlightActions, []);
+  const admitted = module.replaySidecarMessages(switching.state, [{
+    type: 'load/done',
+    projectRoot: '/workspace/data_mapper',
+    generation: 1,
+    payload: {
+      context: {
+        project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
+        workspace: { id: 'scala_sbt', profile: 'unknown' },
+        session: null,
+      },
+      tickets: [{ id: 'T-B', title: 'Project B', lane: 'active', status: 'active' }],
+    },
+  }]);
+  assert.equal(admitted.state.context.project.id, 'data_mapper');
+  const late = module.replaySidecarMessages(admitted.state, [{
+    type: 'action/result',
+    commandId: pending.id,
+    context: initial.context,
+    ok: true,
+    message: 'late Project-A transition',
+  }]);
+  assert.equal(late.state, admitted.state);
+  assert.deepEqual(late.commands, []);
+  assert.equal(late.state.context.project.id, 'data_mapper');
+  assert.equal(late.state.tickets[0].id, 'T-B');
+  assert.notEqual(late.state.lastAction?.message, 'late Project-A transition');
 });
 
 test('workspace collapse replay changes UI state without Cmd effects', async () => {
@@ -315,6 +1272,357 @@ test('selection flyout pin replay opens the browser without Cmd effects', async 
   assert.deepEqual(result.commands, []);
   assert.equal(result.state.ui.infoCollapsed, false);
   assert.equal(result.state.ui.infoPinned, true);
+});
+
+test('surface and folder loads replay success, failure, refresh, stale responses, and tail follow deterministically', async () => {
+  const module = await loadStateModule();
+  const initial = module.replaySidecarMessages(baseState(module), [{
+    type: 'viewer/open', kind: 'surface', id: 'logs/stdout.log',
+  }]).state;
+  const request = module.replaySidecarMessages(initial, [{
+    type: 'surface/load-request', projectRoot: '/workspace/odd_manager', relativePath: 'logs/stdout.log',
+  }]);
+  const key = '/workspace/odd_manager:logs/stdout.log';
+  assert.deepEqual(request.commands, [{ type: 'surface.load', key, requestId: 1, projectRoot: '/workspace/odd_manager', relativePath: 'logs/stdout.log' }]);
+  const stale = module.replaySidecarMessages(request.state, [{
+    type: 'surface/load-succeeded', key, requestId: 0, surface: {
+      kind: 'file',
+      relative_path: 'logs/stdout.log',
+      path: '/workspace/odd_manager/logs/stdout.log',
+      content: 'stale',
+    },
+  }]);
+  assert.equal(stale.state.surfaceLoads[key].surface, null);
+  const ready = module.replaySidecarMessages(stale.state, [{
+    type: 'surface/load-succeeded', key, requestId: 1, surface: {
+      kind: 'file',
+      relative_path: 'logs/stdout.log',
+      path: '/workspace/odd_manager/logs/stdout.log',
+      content: 'current',
+    },
+  }]);
+  assert.equal(ready.state.surfaceLoads[key].surface.content, 'current');
+  const followed = module.replaySidecarMessages(ready.state, [{
+    type: 'surface/tail-follow-set', projectRoot: '/workspace/odd_manager', relativePath: 'logs/stdout.log', enabled: true,
+  }, {
+    type: 'surface/tail-ticked', projectRoot: '/workspace/odd_manager', relativePath: 'logs/stdout.log',
+  }]);
+  assert.deepEqual(followed.commands, [{ type: 'surface.load', key, requestId: 2, projectRoot: '/workspace/odd_manager', relativePath: 'logs/stdout.log' }]);
+  const failed = module.replaySidecarMessages(followed.state, [{ type: 'surface/load-failed', key, requestId: 2, error: 'offline' }]);
+  assert.equal(failed.state.surfaceLoads[key].status, 'error');
+  const folder = module.replaySidecarMessages(initial, [{ type: 'folder/load-request', path: '/workspace/odd_manager/specification' }]);
+  assert.deepEqual(folder.commands, [{
+    type: 'folder.load',
+    projectRoot: '/workspace/odd_manager',
+    path: '/workspace/odd_manager/specification',
+    requestId: 1,
+  }]);
+  const folderReady = module.replaySidecarMessages(folder.state, [{
+    type: 'folder/load-succeeded', path: '/workspace/odd_manager/specification', requestId: 1, loadedAt: 7,
+    payload: {
+      path: '/workspace/odd_manager/specification',
+      entries: [{ name: 'PRODUCT.md', absolutePath: '/workspace/odd_manager/specification/PRODUCT.md', kind: 'file' }],
+      truncated: false,
+      state: 'present',
+    },
+  }]);
+  assert.equal(folderReady.state.folderLoads['/workspace/odd_manager/specification'].entries[0].name, 'PRODUCT.md');
+});
+
+test('surface and folder replay rejects wrong identity, traversal, and duplicates without replacing admitted data', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const relativePath = 'logs/stdout.log';
+  const key = `${projectRoot}:${relativePath}`;
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'surface/load-request', projectRoot, relativePath },
+    {
+      type: 'surface/load-succeeded',
+      key,
+      requestId: 1,
+      surface: {
+        kind: 'file',
+        relative_path: relativePath,
+        path: `${projectRoot}/${relativePath}`,
+        content: 'admitted',
+      },
+    },
+    { type: 'surface/load-request', projectRoot, relativePath, refresh: true },
+  ]).state;
+  const wrongSurface = module.updateSidecarState(ready, {
+    type: 'surface/load-succeeded',
+    key,
+    requestId: 2,
+    surface: {
+      kind: 'file',
+      relative_path: 'logs/other.log',
+      path: `${projectRoot}/logs/other.log`,
+      content: 'wrong',
+    },
+  });
+  assert.equal(wrongSurface.surfaceLoads[key].status, 'error');
+  assert.equal(wrongSurface.surfaceLoads[key].surface.content, 'admitted');
+
+  const folderPath = `${projectRoot}/specification`;
+  const folderReady = module.replaySidecarMessages(baseState(module), [
+    { type: 'folder/load-request', path: folderPath },
+    {
+      type: 'folder/load-succeeded',
+      path: folderPath,
+      requestId: 1,
+      loadedAt: 1,
+      payload: {
+        path: folderPath,
+        entries: [{
+          name: 'PRODUCT.md',
+          absolutePath: `${folderPath}/PRODUCT.md`,
+          kind: 'file',
+        }],
+        truncated: false,
+        state: 'present',
+      },
+    },
+    { type: 'folder/load-request', path: folderPath },
+  ]).state;
+  const duplicateFolder = module.updateSidecarState(folderReady, {
+    type: 'folder/load-succeeded',
+    path: folderPath,
+    requestId: 2,
+    loadedAt: 2,
+    payload: {
+      path: folderPath,
+      entries: [
+        { name: 'PRODUCT.md', absolutePath: `${folderPath}/PRODUCT.md`, kind: 'file' },
+        { name: 'PRODUCT.md', absolutePath: `${folderPath}/PRODUCT.md`, kind: 'file' },
+      ],
+      truncated: false,
+      state: 'present',
+    },
+  });
+  assert.equal(duplicateFolder.folderLoads[folderPath].status, 'error');
+  assert.equal(duplicateFolder.folderLoads[folderPath].entries.length, 1);
+  assert.equal(duplicateFolder.folderLoads[folderPath].entries[0].name, 'PRODUCT.md');
+
+  const traversal = module.replaySidecarMessages(baseState(module), [{
+    type: 'folder/load-request',
+    path: '/workspace/other',
+  }]);
+  assert.deepEqual(traversal.commands, []);
+  assert.equal(traversal.state.folderLoads['/workspace/other'], undefined);
+});
+
+test('Sidecar subscriptions are state-derived and run refresh failures replay through typed Msg values', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const state = subscriptionReadyState(module);
+
+  const subscriptions = module.sidecarSubscriptions(state, 1_500, 30_000);
+  assert.deepEqual(subscriptions, [
+    {
+      type: 'project-registry.changed',
+      subscriptionId: `project-registry.changed:${projectRoot}`,
+      projectRoot,
+    },
+    {
+      type: 'surface.tail-follow',
+      subscriptionId: `surface.tail-follow:${projectRoot}:logs/stdout.log`,
+      projectRoot,
+      relativePath: 'logs/stdout.log',
+      intervalMs: 1_500,
+    },
+    {
+      type: 'run.refresh',
+      subscriptionId: `run.refresh:${projectRoot}:run-1`,
+      workspaceRoot: projectRoot,
+      runId: 'run-1',
+      intervalMs: 30_000,
+    },
+    {
+      type: 'oddterm.attach',
+      subscriptionId: `oddterm.attach:${projectRoot}:sess-1`,
+      projectRoot,
+      sessionId: 'sess-1',
+    },
+  ]);
+
+  const runSubscription = subscriptions.find((subscription) => subscription.type === 'run.refresh');
+  assert.ok(runSubscription);
+  const failed = module.replaySidecarMessages(state, [{
+    type: 'subscription/failed',
+    subscriptionId: runSubscription.subscriptionId,
+    subscriptionType: runSubscription.type,
+    error: 'timer unavailable',
+  }]);
+  assert.deepEqual(failed.commands, []);
+  assert.deepEqual(failed.state.subscriptionFailures, [{
+    subscriptionId: runSubscription.subscriptionId,
+    subscriptionType: 'run.refresh',
+    error: 'timer unavailable',
+  }]);
+
+  const refreshed = module.replaySidecarMessages(failed.state, [{
+    type: 'run/refresh-ticked',
+    subscriptionId: runSubscription.subscriptionId,
+    workspaceRoot: projectRoot,
+    runId: 'run-1',
+  }]);
+  assert.deepEqual(refreshed.commands, [
+    { type: 'run.loadObservation', workspaceRoot: projectRoot, runId: 'run-1', refresh: true },
+    { type: 'traversal.loadSummary', workspaceRoot: projectRoot, runId: 'run-1', refresh: true },
+  ]);
+  assert.equal(refreshed.state.traversal.runStatus, 'loading');
+  assert.deepEqual(refreshed.state.subscriptionFailures, []);
+
+  const staleFailure = module.replaySidecarMessages(refreshed.state, [{
+    type: 'subscription/failed',
+    subscriptionId: runSubscription.subscriptionId,
+    subscriptionType: runSubscription.type,
+    error: 'late timer error',
+  }]);
+  assert.deepEqual(staleFailure.state.subscriptionFailures, []);
+});
+
+test('pending cross-Project load cannot rebind source-Project subscriptions to the target root', async () => {
+  const module = await loadStateModule();
+  const sourceRoot = '/workspace/odd_manager';
+  const targetRoot = '/workspace/data_mapper';
+  const pending = module.replaySidecarMessages(subscriptionReadyState(module), [{
+    type: 'load/request',
+    projectRoot: targetRoot,
+    reason: 'project_selected',
+  }]);
+  const subscriptions = module.sidecarSubscriptions(pending.state, 1_500, 30_000);
+  assert.deepEqual(subscriptions.find((subscription) => subscription.type === 'project-registry.changed'), {
+    type: 'project-registry.changed',
+    subscriptionId: `project-registry.changed:${targetRoot}`,
+    projectRoot: targetRoot,
+  });
+  assert.deepEqual(
+    subscriptions
+      .filter((subscription) => subscription.type !== 'project-registry.changed')
+      .map((subscription) => ({
+        type: subscription.type,
+        root: subscription.type === 'run.refresh'
+          ? subscription.workspaceRoot
+          : subscription.projectRoot,
+      })),
+    [
+      { type: 'surface.tail-follow', root: sourceRoot },
+      { type: 'run.refresh', root: sourceRoot },
+      { type: 'oddterm.attach', root: sourceRoot },
+    ],
+  );
+  assert.equal(
+    subscriptions.some((subscription) => (
+      subscription.type === 'oddterm.attach'
+      && subscription.projectRoot === targetRoot
+      && subscription.sessionId === 'sess-1'
+    )),
+    false,
+  );
+
+  const forgedTargetFailure = module.replaySidecarMessages(pending.state, [{
+    type: 'subscription/failed',
+    subscriptionId: `oddterm.attach:${targetRoot}:sess-1`,
+    subscriptionType: 'oddterm.attach',
+    error: 'stale source session rebound to target',
+  }]);
+  assert.deepEqual(forgedTargetFailure.state.subscriptionFailures, []);
+});
+
+test('Sidecar subscription adapters consume declared values and return typed lifecycle messages', async () => {
+  const stateSource = readFileSync(stateModulePath, 'utf-8');
+  const panelSource = readFileSync(sidecarPanelPath, 'utf-8');
+  const runInspectorSource = panelSource.slice(
+    panelSource.indexOf('function RunInspector'),
+    panelSource.indexOf('function RunOverview'),
+  );
+  const terminalSource = panelSource.slice(
+    panelSource.indexOf('function SidecarTerminal'),
+    panelSource.indexOf('function MetaGrid'),
+  );
+
+  for (const subscriptionType of [
+    'project-registry.changed',
+    'surface.tail-follow',
+    'run.refresh',
+    'oddterm.attach',
+  ]) {
+    assert.match(stateSource, new RegExp(`type: '${subscriptionType.replace('.', '\\.')}'`));
+  }
+  assert.match(stateSource, /type: 'subscription\/failed'; subscriptionId: string; subscriptionType: SidecarSub\['type'\]; error: string/);
+  assert.match(stateSource, /case 'run\/refresh-ticked':[\s\S]*run\.loadObservation[\s\S]*traversal\.loadSummary/);
+  assert.match(panelSource, /type: 'project-registry\/changed'[\s\S]*projectRegistrySubscription\.subscriptionId/);
+  assert.match(runInspectorSource, /runRefreshSubscription[\s\S]*type: 'run\/refresh-ticked'/);
+  assert.doesNotMatch(runInspectorSource, /setInterval\([\s\S]{0,500}type: 'traversal\/load'/);
+  assert.match(
+    terminalSource,
+    /oddTermSocketUrl\([\s\S]*subscription\.projectRoot,[\s\S]*subscription\.sessionId,[\s\S]*subscription\.subscriptionId,[\s\S]*\)/,
+  );
+  assert.match(terminalSource, /type: 'subscription\/failed'[\s\S]*subscription\.subscriptionId/);
+  assert.match(
+    terminalSource,
+    /!oddTermReadyMatchesSubscription\(subscription, payload\)[\s\S]*reportSubscriptionFailure\(error\);[\s\S]*attachedSocket\.close\(\)/,
+  );
+  const openHandler = terminalSource.slice(
+    terminalSource.indexOf("attachedSocket.addEventListener('open'"),
+    terminalSource.indexOf("attachedSocket.addEventListener('message'"),
+  );
+  const readyHandler = terminalSource.slice(
+    terminalSource.indexOf("if (payload.type === 'ready')"),
+    terminalSource.indexOf("if (payload.type === 'resize_ack')"),
+  );
+  assert.doesNotMatch(openHandler, /setConnectionStatus\('connected'\)/);
+  assert.doesNotMatch(openHandler, /scheduleFitAndResize\(true\)/);
+  assert.doesNotMatch(readyHandler, /scheduleFitAndResize\(true\);\s*terminal\.focus\(\)/);
+  assert.match(
+    readyHandler,
+    /!oddTermReadyMatchesSubscription\(subscription, payload\)[\s\S]*attachedSocket\.close\(\);[\s\S]*setConnectionStatus\('connected'\)[\s\S]*type: 'subscription\/ready'[\s\S]*scheduleFitAndResize\(true\)[\s\S]*if \(activeRef\.current\) terminal\.focus\(\)/,
+  );
+  assert.match(
+    terminalSource,
+    /useLayoutEffect\(\(\) => \{[\s\S]*activeRef\.current = active;[\s\S]*active && statusRef\.current === 'connected'[\s\S]*terminalRef\.current\?\.focus\(\);[\s\S]*\}, \[active\]\);/,
+  );
+  assert.match(
+    terminalSource,
+    /statusRef\.current !== 'connected'[\s\S]*socket\.readyState !== WebSocket\.OPEN[\s\S]*return false/,
+  );
+  assert.match(
+    terminalSource,
+    /statusRef\.current !== 'connected'[\s\S]*OddTerm event received before ready admission[\s\S]*attachedSocket\.close\(\)/,
+  );
+  const module = await loadStateModule();
+  const subscription = {
+    type: 'oddterm.attach',
+    subscriptionId: 'oddterm.attach:/workspace/project-a:session-a',
+    projectRoot: '/workspace/project-a',
+    sessionId: 'session-a',
+  };
+  assert.equal(module.oddTermReadyMatchesSubscription(subscription, {
+    workspaceRoot: subscription.projectRoot,
+    sessionId: subscription.sessionId,
+    subscriptionId: subscription.subscriptionId,
+  }), true);
+  assert.equal(module.oddTermReadyMatchesSubscription(subscription, {
+    workspaceRoot: subscription.projectRoot,
+    sessionId: 'session-b',
+    subscriptionId: subscription.subscriptionId,
+  }), false);
+  assert.equal(module.oddTermReadyMatchesSubscription(subscription, {
+    workspaceRoot: subscription.projectRoot,
+    sessionId: subscription.sessionId,
+    subscriptionId: 'oddterm.attach:/workspace/project-a:retired-session',
+  }), false);
+
+  const serverSource = readFileSync(oddTermServerPath, 'utf8');
+  assert.match(
+    serverSource,
+    /sessionId: session\.id,[\s\S]*subscriptionId: oddTermSubscriptionBySocket\.get\(socket\)/,
+  );
+  assert.match(
+    serverSource,
+    /const subscriptionId = url\.searchParams\.get\("subscriptionId"\);[\s\S]*attachSocketToSession\(session, socket, subscriptionId\)/,
+  );
 });
 
 test('section minimize and restore replay independently without Cmd effects', async () => {
@@ -527,6 +1835,7 @@ test('document viewer zoom state is scoped to surface tabs and persists in layou
 test('shared document viewer adapter governs Markdown, code, HTML, PDF, and selectable text', () => {
   const source = readFileSync(documentViewerPath, 'utf-8');
   const sidecarSource = readFileSync(sidecarPanelPath, 'utf-8');
+  const sidecarStateSource = readFileSync(stateModulePath, 'utf-8');
   const serverSource = readFileSync(serverIndexPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
 
@@ -614,16 +1923,16 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer__surface-picker\s*\{[^}]*display:\s*inline-flex;[^}]*font-size:\s*0\.68rem;/s);
   assert.match(styles, /\.document-viewer__surface-picker\s+select\s*\{[^}]*width:\s*clamp\(9rem,\s*18vw,\s*17rem\);/s);
   assert.match(sidecarSource, /<DocumentViewer[\s\S]*?scrollMode="outer"/);
-  assert.match(sidecarSource, /const \[tailFollowEnabled,\s*setTailFollowEnabled\] = useState\(tailFollowSurface\)/);
+  assert.match(sidecarSource, /const tailFollowEnabled = load\?\.tailFollow \?\? tailFollowSurface;/);
   assert.match(sidecarSource, /const \[rawTailSurface,\s*setRawTailSurface\] = useState\(false\)/);
   assert.match(sidecarSource, /setRawTailSurface\(false\)/);
-  assert.match(sidecarSource, /tailFollowSurface && tailFollowEnabled && typeof window !== 'undefined'/);
+  assert.match(sidecarSource, /if \(!tailFollowSurface \|\| !tailFollowEnabled \|\| !tailFollowSubscription\) return undefined;/);
   assert.match(sidecarSource, /const renderedContent = tailFollowSurface && !rawTailSurface[\s\S]*\? formatTailSurfaceContent\(surface\.content\)[\s\S]*: surface\.content;/);
   assert.match(sidecarSource, /followAppends=\{tailFollowSurface && tailFollowEnabled\}/);
   assert.match(sidecarSource, /tailFollowAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeAvailable=\{tailFollowSurface\}/);
   assert.match(sidecarSource, /rawModeEnabled=\{rawTailSurface\}/);
-  assert.match(sidecarSource, /onTailFollowToggle=\{\(\) => setTailFollowEnabled\(\(enabled\) => !enabled\)\}/);
+  assert.match(sidecarSource, /onTailFollowToggle=\{\(\) => dispatch\(\{ type: 'surface\/tail-follow-set', projectRoot, relativePath, enabled: !tailFollowEnabled \}\)\}/);
   assert.match(sidecarSource, /onRawModeToggle=\{\(\) => setRawTailSurface\(\(raw\) => !raw\)\}/);
   assert.match(sidecarSource, /onZoomBy=\{\(delta\) => dispatch\(\{ type: 'document\/zoom', tabId, delta \}\)\}/);
   assert.match(sidecarSource, /descriptor\.format === 'pdf'[\s\S]*?surfaceRawUrl\(projectRoot,\s*surface\.relative_path\)/);
@@ -633,7 +1942,7 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(serverSource, /url\.pathname === "\/api\/surface\/raw"/);
   assert.match(serverSource, /writeRawSurface\(response,\s*workspaceRoot,\s*relativePath,\s*\{\s*headOnly:\s*request\.method === "HEAD"\s*\}\)/);
   assert.match(serverSource, /"Content-Disposition": `inline; filename\*=UTF-8''\$\{encodeURIComponent\(basename\(resolved\.target\)\)\}`/);
-  assert.match(sidecarSource, /const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1500/);
+  assert.match(sidecarStateSource, /export const SIDECAR_TAIL_FOLLOW_REFRESH_MS = 1_500/);
   assert.match(sidecarSource, /function isTailFollowSurfacePath/);
   assert.match(sidecarSource, /filename === 'terminal\.transcript'/);
   assert.match(sidecarSource, /filename === 'screenlog\.0'/);
@@ -651,7 +1960,8 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(sidecarSource, /\[filtered \$\{hiddenThinkingEvents\} thinking-token telemetry/);
   assert.match(serverSource, /updatedAt: session\.lastOutputAt \?\? session\.lastResizeAt \?\? session\.createdAt \?\? null/);
   assert.match(serverSource, /lastOutputAt: session\.lastOutputAt/);
-  assert.match(sidecarSource, /window\.setInterval\(\(\) => loadSurface\(false\), SIDECAR_TAIL_FOLLOW_REFRESH_MS\)/);
+  assert.match(sidecarSource, /sidecarSubscriptions\([\s\S]*sidecarState,[\s\S]*SIDECAR_TAIL_FOLLOW_REFRESH_MS,[\s\S]*SIDECAR_RUN_REFRESH_MS/);
+  assert.match(sidecarSource, /window\.setInterval\([\s\S]*type: 'surface\/tail-ticked'[\s\S]*tailFollowSubscription\.intervalMs/);
   assert.match(styles, /\.document-viewer__content\s*\{[^}]*width:\s*var\(--document-viewer-layout-width,\s*100%\);[^}]*max-width:\s*var\(--document-viewer-layout-width,\s*100%\);/s);
   assert.match(styles, /\.document-viewer__viewport\.is-fit-width\s+\.document-viewer__content/s);
   assert.match(styles, /\.markdown-viewer__table-wrap\s*\{[^}]*width:\s*min\(100%,\s*100cqw\);[^}]*max-width:\s*100cqw;[^}]*overflow-x:\s*auto;/s);
@@ -669,13 +1979,15 @@ test('shared document viewer adapter governs Markdown, code, HTML, PDF, and sele
   assert.match(styles, /\.document-viewer__highlight pre\s*\{[^}]*overflow:\s*visible;/s);
 });
 
-test('Sidecar load keeps registry context available when a workspace-scoped surface fails', () => {
+test('Sidecar load keeps validated registry context available through a typed workspace-surface failure', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
   const stateSource = readFileSync(stateModulePath, 'utf-8');
   assert.match(source, /settleSurface\('projects'/);
   assert.match(source, /payload\.projects = projects\.value/);
-  assert.match(source, /load partial:/);
-  assert.doesNotMatch(source, /const error = `load failed:/);
+  assert.match(source, /type: 'load\/failed'/);
+  assert.match(source, /error: `load failed:/);
+  assert.doesNotMatch(source, /load partial:/);
+  assert.match(stateSource, /case 'load\/failed':/);
   assert.doesNotMatch(stateSource, /\{ id: 'projects', label: 'Projects'/);
 });
 
@@ -683,7 +1995,7 @@ test('Sidecar browser requests uncapped filesystem entries while generic browse 
   const source = readFileSync(sidecarPanelPath, 'utf-8');
   const serverSource = readFileSync(serverIndexPath, 'utf-8');
   const collaborationSource = readFileSync(collaborationPath, 'utf-8');
-  assert.match(source, /\/api\/fs\/browse\?path=\$\{encodeURIComponent\(path\)\}&includeFiles=1&includeHidden=1&maxEntries=0/);
+  assert.match(source, /\/api\/fs\/browse\?path=\$\{encodeURIComponent\(cmd\.path\)\}&includeFiles=1&includeHidden=1&maxEntries=0/);
   assert.match(source, /&refresh=\$\{Date\.now\(\)\}`,[\s\S]*?\{ cache: 'no-store' \}/);
   assert.match(source, /No child entries\./);
   assert.match(source, /Showing first 500 entries\./);
@@ -702,9 +2014,9 @@ test('directory surface tabs reuse the Sidecar folder browser and open entries a
 
   assert.match(source, /function DirectorySurfaceBrowser/);
   assert.match(source, /function DirectorySurfaceNode/);
-  assert.match(source, /return <DirectorySurfaceBrowser projectRoot=\{projectRoot\} surface=\{surface\} dispatch=\{dispatch\} \/>;/);
+  assert.match(source, /return <DirectorySurfaceBrowser projectRoot=\{projectRoot\} surface=\{surface\} sidecarState=\{sidecarState\} dispatch=\{dispatch\} \/>;/);
   assert.doesNotMatch(source, /sidecar-surface-entry-list[\s\S]*surface\.entries\.map/);
-  assert.match(source, /const payload = await fetchJson\(`\/api\/surface\?\$\{params\.toString\(\)\}`\) as SurfaceData;/);
+  assert.match(source, /dispatch\(\{ type: 'surface\/load-request', projectRoot, relativePath \}\);/);
   assert.match(source, /<NavigatorSortToolbar[\s\S]*sort=\{navigatorSort\}/);
   assert.match(source, /<NavigatorTreeGroup[\s\S]*label=\{label\}[\s\S]*extraControls=\{controls\}/);
   assert.match(source, /className="sidecar-folder-tree sidecar-folder-tree--surface-tab"/);
@@ -717,26 +2029,30 @@ test('directory surface tabs reuse the Sidecar folder browser and open entries a
 
 test('Build Portfolio activation promotes one active Project root while Sidecar stays on that Context', () => {
   const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const stateSource = readFileSync(stateModulePath, 'utf-8');
   const routeSource = readFileSync(workspaceRoutePath, 'utf-8');
   const hostSource = readFileSync(developerControlHostPath, 'utf-8');
+  const aggregateSource = readFileSync(developerControlAggregatePath, 'utf-8');
   const appShellSource = readFileSync(appShellPath, 'utf-8');
   const styles = readFileSync(stylesPath, 'utf-8');
   assert.match(source, /const currentProjectRoot = state\.activeLoadRoot \?\? state\.context\?\.project\.root \?\? projectRoot \?\? null;/);
-  assert.match(source, /await setActiveProject\(project\.id\)/);
-  assert.doesNotMatch(source, /registerIfMissing: false/);
+  assert.match(source, /type: 'project\/activate-request'/);
+  assert.match(source, /if \(cmd\.type === 'project\.activate'\)/);
+  assert.match(source, /await setActiveProject\(cmd\.projectId, \{ registerIfMissing: false \}\)/);
   assert.match(routeSource, /<DeveloperControlHost[\s\S]*projectRoot=\{workspaceRoot\}[\s\S]*onProjectRootChange=\{onProjectRootChange\}/);
-  assert.match(hostSource, /if \(!portfolioState\.activatedProjectRoot\) return;/);
-  assert.match(hostSource, /dispatchPortfolio\(\{ type: "portfolio\/project-activation-consumed" \}\);/);
-  assert.match(hostSource, /if \(nextRoot !== projectRoot\) onProjectRootChange\(nextRoot\);/);
-  assert.match(hostSource, /<SidecarPanel[\s\S]*projectRoot=\{projectRoot\}[\s\S]*onContextChange=\{\(context\) => \{/);
-  assert.match(hostSource, /if \(context\.project\.root !== projectRoot\) \{[\s\S]*onProjectRootChange\(context\.project\.root\);/);
+  assert.match(aggregateSource, /if \(next\.portfolio\.activatedProjectRoot\)/);
+  assert.match(aggregateSource, /type: "portfolio\/project-activation-consumed"/);
+  assert.match(aggregateSource, /type: "aggregate\.activate-project"/);
+  assert.match(hostSource, /const handleSidecarContextChange = useCallback\(\(context: ContextRecord\) => \{[\s\S]*type: "aggregate\/project-activation-requested",[\s\S]*projectRoot: context\.project\.root,[\s\S]*\}, \[\]\);/);
+  assert.match(hostSource, /<SidecarPanel[\s\S]*projectRoot=\{state\.projectRoot\}[\s\S]*onContextChange=\{handleSidecarContextChange\}/);
   assert.doesNotMatch(routeSource, /selectedPage|ManagerWorld|RequirementsWorkspace|ProcessWorkspace|RuntimePanel|BuilderPanel|GraphWorkspace|HomePanel|InspectorPanel|WorldModelPanel|OddBoardWidget|OddTermWorkspaceWidget/);
   assert.doesNotMatch(appShellSource, /manager-nav|shell__control-card--status|Single STDO-UX workbench|<strong>Sidecar<\/strong>/);
   assert.match(appShellSource, /className="secondary shell__icon-button"/);
   assert.match(styles, /\.shell--sidecar \.shell__title > div\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*baseline;/s);
   assert.match(styles, /\.shell--sidecar \.shell__header\s*\{[^}]*grid-template-columns:\s*minmax\(10rem,\s*1fr\) auto;[^}]*padding:\s*0\.14rem 0\.28rem;/s);
-  assert.match(source, /const contextWasSelectedHere = pendingProjectContextRoot\.current === contextRoot;/);
-  assert.match(source, /if \(projectRoot && contextRoot !== projectRoot && !contextWasSelectedHere\) return;/);
+  assert.match(source, /publishContext: onContextChange/);
+  assert.match(stateSource, /case 'load\/done':[\s\S]*type: 'context\.publish'/);
+  assert.doesNotMatch(source, /const contextWasSelectedHere = state\.pendingHistorySurface/);
   assert.match(source, /projectRootOverride=\{currentProjectRoot\}/);
   assert.match(source, /const projectRoot = projectRootOverride \?\? state\.context\?\.project\.root \?\? null;/);
   assert.match(source, /return normalizedPath === root \|\| normalizedPath\.startsWith\(`\$\{root\}\/`\);/);
@@ -1052,12 +2368,20 @@ test('empty terminal split group can be targeted for session select and spawn', 
     { type: 'session/spawn/request' },
     {
       type: 'session/spawn/done',
+      projectRoot: '/workspace/odd_manager',
       groupId: 'secondary',
       record: { id: 'sess-3', agent_type: 'shell', cwd: '/workspace/odd_manager', status: 'running' },
     },
   ]);
   assert.deepEqual(spawned.commands, [
-    { type: 'session.spawn', projectRoot: '/workspace/odd_manager', groupId: 'secondary', cwd: null, label: null },
+    {
+      type: 'session.spawn',
+      projectRoot: '/workspace/odd_manager',
+      groupId: 'secondary',
+      cwd: null,
+      label: null,
+      existingSessionIds: ['sess-1', 'sess-2'],
+    },
   ]);
   const spawnedSecondary = spawned.state.ui.terminalWorkspace.groups.find((group) => group.id === 'secondary');
   assert.equal(spawnedSecondary.activeTabId, 'session:sess-3');
@@ -1208,6 +2532,10 @@ test('sidecar density grammar collapses terminal chrome into the selected-pane t
     source.indexOf('function TerminalGroupPane'),
     source.indexOf('function TerminalTabBody'),
   );
+  const terminalTabBodySource = source.slice(
+    source.indexOf('function TerminalTabBody'),
+    source.indexOf('function SessionTerminalWindow'),
+  );
   const sessionWindowSource = source.slice(
     source.indexOf('function SessionTerminalWindow'),
     source.indexOf('type TerminalStatus'),
@@ -1223,9 +2551,13 @@ test('sidecar density grammar collapses terminal chrome into the selected-pane t
   assert.match(terminalWorkspaceSource, /className="sidecar-terminal-toolbar__tabs"/);
   assert.doesNotMatch(terminalWorkspaceSource, /sidecar-shell-manager/);
   assert.doesNotMatch(terminalGroupSource, /sidecar-terminal-tabs/);
+  assert.match(
+    terminalTabBodySource,
+    /state\.ui\.terminalWorkspace\.activeGroupId === group\.id[\s\S]*group\.activeTabId === tab\.id/,
+  );
   assert.doesNotMatch(sessionWindowSource, /<MetaGrid/);
   assert.doesNotMatch(sessionWindowSource, /sidecar-session-window__body/);
-  assert.match(sessionWindowSource, /<SidecarTerminal session=\{session\} projectRoot=\{projectRoot\} \/>/);
+  assert.match(sessionWindowSource, /<SidecarTerminal active=\{active\} subscription=\{subscription\} dispatch=\{dispatch\} \/>/);
   assert.doesNotMatch(sidecarTerminalSource, /agent-console__terminal-bar/);
   assert.match(source, /const ODDTERM_RESIZE_DEBOUNCE_MS = 180;/);
   assert.match(source, /const ODDTERM_RESIZE_MAX_WAIT_MS = 900;/);
@@ -1706,6 +3038,7 @@ test('Project switch clears all run-scoped state without requiring a traversal r
     {
       type: 'load/done',
       projectRoot: '/workspace/data_mapper',
+      generation: 1,
       payload: {
         context: { project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'fixture' }, workspace: { id: 'scala_sbt', profile: 'fixture' }, session: null },
       },
@@ -1728,6 +3061,7 @@ test('run shell targeting emits a Project-owned session command with admitted cw
     groupId: 'main',
     cwd: '/workspace/odd_manager/test_runs/run-a/instance',
     label: 'SCN-RUN-A shell',
+    existingSessionIds: ['sess-1'],
   }]);
 });
 
@@ -1965,6 +3299,7 @@ test('ticket board selection clears when a different workspace root loads (stale
     {
       type: 'load/done',
       projectRoot: '/workspace/data_mapper',
+      generation: 2,
       payload: {
         context: {
           project: { id: 'data_mapper', root: '/workspace/data_mapper', odd_type: 'unknown' },
@@ -1991,6 +3326,7 @@ test('ticket board selection survives a same-root reload that still carries the 
     {
       type: 'load/done',
       projectRoot: '/workspace/odd_manager',
+      generation: 1,
       payload: {
         tickets: [
           { id: 'T-100', title: 'Fix mapping', lane: 'completed', status: 'done' },
@@ -2007,6 +3343,7 @@ test('ticket board selection survives a same-root reload that still carries the 
     {
       type: 'load/done',
       projectRoot: '/workspace/odd_manager',
+      generation: 2,
       payload: { tickets: [{ id: 'T-101', title: 'New ticket', lane: 'active', status: 'active' }] },
     },
   ]);

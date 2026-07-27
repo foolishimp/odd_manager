@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `specification/GOALS.md` G-006
+**Product Outcomes**: `PO-OM-DEVELOPER-001`, `PO-OM-BOUNDARY-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local typed admission/supervision boundary in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. The exact odd_glc 0.1.0 / ABIogenesis 4.6.0-rc.3 proof qualifies read-only observation only; live odd_glc Build remains unavailable, and its functional scenarios remain open
+**Testcase Authority**: `specification/scenarios/02-developer-review-tune-build-assure.md`, `specification/scenarios/03-concurrent-build-attention-and-reentry.md`, `build_tenants/react_vite/runtime/tests/test_build_control_replay.mjs`, `build_tenants/react_vite/runtime/tests/test_build_control_service.mjs`, `build_tenants/react_vite/runtime/tests/test_build_execution_adapter_registry.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts`
 
 ### REQ-OM-BLD-001 - Every build starts from a typed admitted request
 
@@ -109,6 +112,9 @@ connectivity failure.
 
 Acceptance Criteria
 - event, polling, or subscription freshness is visible
+- periodic Build polling is single-flight while a snapshot load is pending;
+  an explicit refresh or accepted cancellation result retains exactly one
+  follow-up load, consumed after the pending load succeeds or fails
 - stale and disconnected states are distinct from queued, waiting, failed, or
   converged states
 - reconnect resumes the known Build Execution where backend identity remains

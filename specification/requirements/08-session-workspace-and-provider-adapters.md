@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-OPERATE-001`, `PO-OM-MODULES-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the implemented session/provider-adapter subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Session state is reducer-owned, websocket ingress is validated, and terminal/DOM/socket objects remain effect-private; unproved provider scenarios remain explicit gaps
+**Testcase Authority**: `specification/scenarios/04-project-workbench-collaboration-and-observation.md`, `build_tenants/react_vite/runtime/tests/test_session_asset_surface.mjs`, `build_tenants/react_vite/runtime/tests/test_session_pty.mjs`, `build_tenants/react_vite/runtime/tests/test_oddterm_node_screen.mjs`, `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`
 
 ### REQ-OM-SES-001 - The product provides a durable session workspace
 

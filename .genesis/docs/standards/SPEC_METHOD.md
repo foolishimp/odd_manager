@@ -1,30 +1,5 @@
 # Spec-Driven Homeostatic Methodology
 
-**Status**: Approved
-**Date**: 2026-03-24
-**Derived from**: 20260324T142230_NOTE_spec-driven-homeostatic-methodology.md
-**Repriced**: 2026-03-24 — Verification Layers and Renewal Path added, derived from product-owner scenario analysis (20260324T165057_PRODUCT_SCENARIOS_abg-gtl-first-10.md)
-**Repriced**: 2026-04-07 — Product definition layer made explicit in the constitutional chain, bootstrap rule, and spec-driven method
-**Repriced**: 2026-04-07 — Goals layer made explicit in the constitutional chain, bootstrap rule, and spec-driven method
-**Repriced**: 2026-04-15 — Recursive product taxonomy raised into the baseline method and spec-method terminology tightened around product-definition surfaces
-**Repriced**: 2026-04-15 — Baseline ambiguity terms made substrate-agnostic, trace-closure and anti-drift rules consolidated, and source-versus-installed authority paths made explicit
-**Repriced**: 2026-04-18 — Core interface refactors strengthened into inside-out migration waves with explicit consumer audits, bridge prohibition, and proof-last closure
-
-This document defines the philosophical baseline for spec-driven development.
-
-It states why specification is authority, what the constitutional chain is, and
-what counts as sufficiency, drift, proof, and repricing.
-
-It is intentionally general.
-
-Where a product is realized as a graph-native system, this baseline is refined
-by a stronger constitutional method such as `GRAPH_METHOD.md`.
-
-Use `GLOSSARY_GUIDE.md` for shared terminology across recursive product,
-graph-native, and world-model work.
-
----
-
 ## Canonical Compression
 
 Spec-driven development treats specification as constitutional source, not
@@ -39,8 +14,11 @@ durable form of that design record. The SDLC is a governed disambiguation
 pipeline: each major boundary reduces the space of lawful interpretations and
 must surface major ambiguity explicitly. Ambiguity detection is mandatory;
 blocking or escalation is policy-driven by declared risk appetite, except for
-hard-stop prerequisite failures. Scenarios verify operational meaning where
-capability claims need end-to-end proof. Code realizes decisions. Design must
+hard-stop prerequisite failures. Products, applications, modules, graph
+functions, build tenants, and runtime surfaces are implementations of the
+constitutional documents, not substitutes for them. Scenarios verify
+operational meaning where capability claims need end-to-end proof. Code
+realizes decisions. Design must
 be derivable from requirements, which are themselves derivable from goals,
 intent, and product definition; code must be derivable from requirements and
 design. Iteration is cumulative repricing, not waterfall.
@@ -51,7 +29,8 @@ Shipping behavior must trace back to constitutional authority. Live
 constitutional surfaces are versioned history and must change by supersession
 or withdrawal, not silent in-place mutation. New intent emerges from real use
 cases hitting the current model through explicit gap analysis, not ad hoc
-pressure.
+pressure. Sprints are execution-control batches for pricing proof cost and
+forcing close review; they are not authority layers and cannot hide drift.
 
 ---
 
@@ -70,6 +49,41 @@ interfaces, constraints, and evidence surfaces, then let lawful processing
 derive and realize work from that declared surface.
 
 Imperative procedure still exists, but it is subordinate to declared authority.
+
+---
+
+## Probabilistic Work Boundary
+
+Spec-driven development exists to govern the boundary around work, not to absorb
+the worker's internal solution strategy into the framework.
+
+For any probabilistic, agentic, or delegated work unit, the live specification
+and design should declare:
+
+- the input and output contract
+- the required context
+- the capability or role expectation
+- the admissible evidence and evaluator regime
+- the provenance obligation
+- the lawful stop, hold, gap, continuation, or completion states
+
+The worker, tool, agent, or domain implementation owns the internal HOW inside
+that declared boundary unless the product explicitly promotes part of that HOW
+into reusable declared structure.
+
+Deterministic checks and validation are evidence surfaces. They may optimize or
+prove a domain-local path where the domain can make part of the work precise.
+They do not authorize the methodology, runtime, or framework to absorb domain
+solution strategy as constitutional law.
+
+In graph-native refinements such as `ODD_METHOD.md`, this boundary is usually
+one vector or edge traversal. The traversal is the admissible external space.
+Any unconstrained part of an F_P worker's reasoning remains hidden
+worker-internal traversal and must be forced back through declared contracts,
+evidence, provenance, and control truth.
+
+If a framework layer begins prescribing domain solution strategy beyond the
+declared work contract and control truth, it has crossed its authority boundary.
 
 ---
 
@@ -165,6 +179,10 @@ The work is not genuinely spec-driven if any of these fail:
 10. A capability claim has no operational evidence.
 11. Drift is discovered, but the constitutional source is not repriced.
 12. A major ambiguity at a constitutional or realization boundary is neither recorded nor explicitly governed.
+13. A material product, module, function, application, runtime surface, or
+    capability has no declared operational lifecycle signal and no recorded
+    gap for unanswered release, deployment, live-use, telemetry, or retirement
+    questions.
 
 ---
 
@@ -202,6 +220,35 @@ Structurally, `requirements/` is a folder under `specification/`. Requirements m
 This is one expression of the broader declarative bias: we prefer declaring requirement structure and family boundaries over maintaining one imperative catch-all document.
 
 So if project-specific design and code disappeared, recovery would proceed through this methodology plus the surviving domain specification. Methodology alone can bootstrap the process; methodology plus domain specification can reconstruct the project.
+
+---
+
+## One Constitutional Surface And Version Boundary (`STDO-SURFACE-001`)
+
+The shared methodology is modular in authorship and singular in authority.
+Each law has one owning standard; other standards consume it by reference. The
+standards become operative only as one complete released STDO version.
+
+A released cut identifies its exact member set, member digests, review basis,
+human acceptance, and immutable identity. Compressions, templates, comments,
+candidate work, installed copies, and mutable source are derived, evidential, or
+authoring surfaces. They cannot become a selectable partial constitution or
+reinterpret the owning standards.
+
+STDO owns normative construction algebra, authority relations, abstract state
+and transition laws, admissibility conditions, necessary causal order, and
+evidence invariants. Consumers own concrete Product realization: instantiated
+types and schemas, files, tools, runtime and orchestration machinery, tests,
+and executable conformance implementation. A concrete form is method law only
+when the method explicitly accepts it as an interoperability boundary.
+
+A shared-method amendment cannot create an executable tool, workflow engine,
+runtime, assurance system, or consumer realization as STDO Product scope
+without separate explicit human authorization. An agent recording a ruling
+cannot widen its subject, implication, authority, or change class.
+
+Only a released method version is publication authority. Mutable method source
+may author a future cut; it must not silently govern a consumer.
 
 ---
 
@@ -250,6 +297,65 @@ Where a project uses build tenants, that split remains exact:
 - `specification/` is the shared constitutional `WHAT`
 - `build_tenants/` contains one or more independent `HOW` realizations of that shared `WHAT`
 - tenant-local realization is derivative unless and until the governing truth is ratified in specification
+
+---
+
+## Sprint Execution Boundary
+
+A sprint is a bounded execution-control surface.
+
+It is not a new layer in the constitutional chain.
+
+A sprint may batch work, coordinate tickets or iteration entries, price proof
+cost, and force close review under existing Goals, Intent, Product Definition,
+Requirements, and Design authority. It must not create, supersede, weaken, or
+override that authority.
+
+A lawful sprint states at least:
+
+- the goal or work-wave it serves
+- the upstream authority surfaces it depends on
+- the scope it admits
+- the product, requirement, design, runtime, data-contract, or governance
+  boundaries it excludes
+- the change classes it expects to contain
+- the local proof or compliance debt, if any, that may be deferred during the
+  sprint
+- the closure trigger and closure law
+- the paydown or repricing path for debt discovered at close
+
+Sprints exist because proof cost is not uniform. For some work, especially
+projection-surface and UX iteration, proving every micro-change before the next
+change can cost more than making the bounded change visible and correcting it
+at close. That optimization is lawful only when the deferred cost remains local,
+visible, bounded, and repayable.
+
+Deferred compliance inside a sprint is escrow, not acceptance. It cannot satisfy
+method, release, or product closure until it is paid down, explicitly accepted
+under the governing method, or repriced into the appropriate upstream surface.
+
+A sprint may be recommended for close when any of these become true:
+
+- its timebox expires
+- the intended scope has been reached
+- accumulated changed surface area makes continued iteration more expensive
+  than review
+- review uncertainty makes more work unsafe without reconciliation
+- discovered gaps suggest the sprint boundary is no longer the right container
+
+Sprint close is a forensic reconciliation event, not automatic approval. Close
+review compares the accumulated work and evidence against the governing
+authority, classifies each gap, accepts compliant work, opens paydown work for
+local debt, and escalates any authority drift through the lawful change class.
+
+If a sprint discovers a goal, intent, product, requirement, design, runtime,
+data-contract, governance, or other product-truth change, the sprint manifest
+does not authorize landing that change. The work must be split, escalated,
+repriced, or carried as explicit paydown according to the governing method.
+
+`TICKET_METHOD.md` defines the sprint and ticket mechanics. Domain refinements,
+such as `UX_METHOD.md`, may define when sprint compliance escrow is an
+appropriate cost optimization for that domain.
 
 ---
 
@@ -315,6 +421,55 @@ stops regardless of risk appetite. Typical hard-stop classes include:
 The methodology is therefore not "eliminate all ambiguity before work." It is
 "make ambiguity visible, govern it explicitly, and reduce it progressively until
 downstream realization is sufficiently constrained."
+
+---
+
+## Operational Lifecycle Sufficiency Rule
+
+Constitutional specification must treat a designed thing as more than its build
+shape.
+
+Any material product, application, module, graph function, runtime surface,
+plugin surface, public interface, data surface, or capability has an operational
+lifecycle. The canonical operational lifecycle chain is:
+
+```text
+intent
+  -> requirement
+  -> build
+  -> assurance
+  -> release
+  -> deployment
+  -> live usage
+  -> observed telemetry
+  -> retirement
+```
+
+`PRODUCT.md` and the requirement surface do not need to prescribe the detailed
+implementation mechanism for every phase. They do need to provide enough
+constitutional signal for downstream design to derive the intended lifecycle,
+or explicitly record the unresolved ambiguity.
+
+For product definition, this means naming the current product boundary, intended
+use context, release/install posture, live-use posture, observability posture,
+and retirement or supersession posture where those materially affect the
+product's meaning.
+
+For requirements, this means stating any invariant obligation that governs
+build, assurance, release, deployment, live usage, telemetry, retirement,
+ownership, source truth, authority boundary, or downstream interpretation. A
+requirement may defer a phase only by naming the deferment and the surface that
+will own its later resolution.
+
+This rule is an ambiguity detector, not a demand that every requirement become
+a release plan. If a phase is not applicable, say why. If the phase is unknown,
+record a named gap such as `Gap:` or `Unanswered:`. Silent absence is not a
+valid lifecycle answer.
+
+When the lifecycle signal is missing, downstream design may not fill the gap by
+local convention, implementation precedent, prompt prose, or test fixture. It
+must reprice the appropriate constitutional surface or carry the ambiguity as
+explicit, governed debt.
 
 ---
 
@@ -387,6 +542,152 @@ For the declared change span, the framework must prove:
 
 If that proof is missing, the change remains open even if one local artifact already looks correct.
 
+When a code/test mismatch appears during ticketed work, implementation behavior
+is evidence but not authority. The mismatch is reconciled through the admitted
+ticket, its intake triage, its lawful re-entry point, and the governing
+requirement, design, module, graph, carrier, or closure surface. `TICKET_METHOD.md`
+defines the ticket-local test-case authority rule.
+
+---
+
+## Product Outcome Conservation (`STDO-UP-013`)
+
+Every Product-outcome-bearing work wave identifies one explicitly selected,
+unresolved, directly verifiable Product-defined outcome and declares the
+acceptance interval for that instance. Product-progress claims and promotion
+onto the supported Product path are judged against that same outcome.
+
+Evidence distinguishes material advance, prerequisite readiness, preservation,
+and regression. Only material advance projects Product progress. Prerequisite
+work names the Product obligation it enables and remains bounded. Preservation
+is useful evidence but is not progress.
+
+The exact bound outcome instance stops selecting later Product-progress work
+when the owning authority accepts it. Its witnesses remain regression and
+preservation evidence. Acceptance exhausts only that instance and its declared
+acceptance interval. It does not discharge an enduring guarantee, recurring
+obligation, or broader Product family beyond the accepted instance. Further
+work against the accepted instance is preservation, a named bounded
+prerequisite for another admitted outcome, or a new change requiring lawful
+repricing; it is not additional progress against the accepted instance.
+
+Selecting the next unresolved outcome already defined by Product is a Goals and
+work-sequencing decision. Changing an outcome's meaning or scope, or introducing
+a new Product outcome, requires lawful re-entry at Product.
+
+Evidence evaluates and constrains its bound Product claim. Completion of a
+proof surface, matrix, coverage ledger, inventory, design-method artifact, test
+suite, or other evidence surface cannot by itself select, enlarge, or replace
+the Product outcome. If an assurance capability is explicitly defined as
+Product behavior, delivery of that capability is judged as Product progress;
+its evidence still does not author the claim. The same artifact may be Product
+output for one claim and evidence for another only when those roles are
+declared separately.
+
+Within a Product-outcome-bearing work wave, material realization growth derives
+authority from the selected unresolved Product outcome, an admitted named
+bounded prerequisite to it, or an admitted named bounded experiment whose
+stated observation discriminates a stated decision for it. A prerequisite or
+experiment authorizes only its declared provisional bound. It does not select
+or enlarge the Product outcome, authorize downstream work, confer promotion or
+closure, or waive applicable Prime, design, safety, authority, or release law.
+
+Admission or renewal of a prerequisite or experiment belongs to the authority
+owning the selected work wave, or its explicitly bounded proxy, and is recorded
+in the existing durable Goals or ticket authority. The admitted basis states
+its provisional bound and exhaustion or falsification condition. Satisfaction
+of an experiment's stated decision-discriminating observation exhausts that
+experiment. Drafting or validating a ticket or execution contract, retaining
+active status, or holding a prior admission cannot create, extend, or renew the
+basis.
+
+Acceptance of the selected outcome, discharge of an admitted prerequisite, or
+resolution of an admitted experiment's stated decision exhausts that basis. A
+basis or bound also ends when another admitted terminal condition is reached or
+it is rejected, withdrawn, superseded, repriced away, or falsified by evidence.
+Ended authority cannot be renewed by repair, continuation, evidence, active
+ticket or run state, or prior admission; further material work requires a new
+admission by the owning authority or its explicitly bounded proxy.
+
+Retention as supported Product behavior, required evidence, regression
+protection, or bounded donor material does not confer further growth authority.
+Consumers own deletion, archival, quarantine, and salvage mechanics. Salvage
+carries only the explicitly re-adopted semantics; it does not inherit the
+enclosing work's authority, dependencies, completion claim, or power to select
+further work.
+
+A regression or unresolved gap blocks further promotion on the affected path
+until repaired, repriced, or accepted by the owning authority. It does not
+globally serialize independent work. Parallel work may proceed under its own
+admitted basis but cannot be laundered into the governed outcome's progress
+claim.
+
+Outcome success is necessary delivery evidence, not complete Product or release
+closure.
+
+## Proportional Method And Delivery (`STDO-UP-014`)
+
+Proportionality is the relation between semantic ambiguity removed and
+effective reasoning complexity introduced. A method obligation is proportional
+when its contraction of the admissible interpretation space justifies the
+additional concepts, relations, projections, and evidence that an agent must
+hold together to reach a correct decision.
+
+Effective reasoning complexity includes independent concepts and authority
+surfaces, cross-document joins, exceptions and branching, states and
+transitions, duplicated representations requiring reconciliation, and the
+detail required to decide the governed question. It is not raw line count,
+artifact count, or context-window size. Detailed algebra, Ontology, IACS,
+Prime, or semantic views may be highly proportional when they eliminate rival
+interpretations. A short additional ticket, receipt, or summary may be
+disproportionate when it creates another truth surface without reducing
+uncertainty.
+
+A proportional method deliberately constrains the admissible reasoning and
+realization space. Each constraint must identify the semantic ambiguity it
+removes and must contract enough of the admissible interpretation space to
+justify the reasoning complexity it introduces. Rival authority, uncertainty
+over failure classification, and evidence uncertainty count only where they
+leave materially distinct admissible semantic, authority, outcome, or
+acceptance interpretations. They measure or evidence the same interpretation
+space removed; they are not independent proportional benefits.
+
+The method does not prescribe an internal decomposition, search,
+collaboration, tool, or synthesis procedure when variation in that procedure
+cannot affect a governed semantic, authority, evidence, safety, or release
+property. Increased agent capability may enlarge the bounded relation an agent
+can resolve; it does not grant authority, weaken an invariant, or waive
+acceptance.
+
+The owning law may justify one coherent constraint family once. This does not
+require a rationale field, receipt, or repeated audit for every clause or
+consumer application.
+
+For symbolic design, materially divergent implementation paths, runtime states,
+tests, reviews, and reconciliation joins are counterfactual evidence of the
+semantic alternatives that the design contracts. They are not an independent
+numerator. When one bounded symbolic model can resolve those material
+alternatives within effective reasoning capacity, resolving it at design
+altitude is proportional even when the model is detailed. A prior design
+surface that removes no material semantic alternative remains
+disproportionate.
+
+A method addition is disproportionate when it duplicates truth, increases
+reconciliation paths, or expands the bounded reasoning surface without
+materially reducing ambiguity. Existing obligations should absorb new detail
+where they can do so without weakening ownership or meaning.
+
+Delivery priority applies the same relation to the current Product outcome,
+likelihood, impact, reversibility, dependency, and cost of delayed Product
+feedback. Probability informs lawful priority; it does not waive authority,
+integrity, safety, retained release claims, or another hard stop.
+
+The default priority is work that exposes or advances the smallest supported
+Product path and its highest-value likely failures. Defensive or prerequisite
+work that displaces that path identifies the affected claim, evidence basis,
+bounded effort, return condition, and expected Product consequence. This is a
+priority relation, not a fixed global execution sequence or scheduling runtime.
+
 ---
 
 ## Core Interface Migration Rule
@@ -395,8 +696,8 @@ Core interface changes are not ordinary local patches.
 
 Where a change alters a load-bearing contract, carrier, resolver, provider,
 projection law, closure law, or other shared interface that multiple surfaces
-depend on, the work must be handled as an **inside-out migration wave** rather
-than as incremental patching.
+depend on, the work must be handled as a constitutional migration rather than
+as incremental patching.
 
 The governing rule is:
 
@@ -405,7 +706,9 @@ The governing rule is:
 - audit every producer and every consumer of the impacted interface
 - migrate each producer and consumer to the new contract
 - chase every downstream effect until no superseded closure law remains
-- run proof only after the migration wave is complete
+- run complete migration-closure proof only after the migration wave is
+  complete; bounded Product-slice proof remains governed by the path-relative
+  promotion rule below
 
 This rule exists because partial interface migration creates recurring drift:
 
@@ -416,6 +719,82 @@ This rule exists because partial interface migration creates recurring drift:
 - tests go green while architecture remains split
 
 Spec-driven development forbids declaring such a state complete.
+
+### Constitutional Migration Options
+
+Core interface and major implementation replacement work has two lawful
+constitutional strategies:
+
+- **Inside-Out Hard-Break Migration**: use this when the project remains on the
+  same implementation line and the authoritative source truth is being replaced
+  in place. The work proceeds from source carrier outward through a sequence of
+  deliberate breaks and repairs.
+- **Fundamental Re-Adoption Migration**: use this when the rewrite is major and
+  the project is intentionally re-deriving itself on a materially different
+  implementation basis, such as a new runtime model, carrier model, type
+  system, execution substrate, or realization tree. The prior implementation is
+  moved sideways and treated as reference material, not live authority.
+
+Where bounded evolution and fundamental re-adoption are both lawful and
+feasible, and a working predecessor can reach the admitted Product outcome
+without retaining competing or ambiguous authority, evolution on the supported
+Product path is the rebuttable selection presumption. This does not require
+continuing an unsafe or constitutionally inadmissible predecessor path. It
+conserves accepted predecessor semantics and Product feedback; it does not
+require preserving an internal implementation or public mechanism that Product
+authority explicitly supersedes.
+
+When bounded evolution includes a core-interface migration, it uses the
+Inside-Out Hard-Break strategy. Bounded evolution is a strategy-selection
+presumption, not a third migration strategy.
+
+Fundamental re-adoption requires explicit selection by the human authority
+owning the affected Product boundary. The selection compares re-adoption with
+bounded evolution across Product value, feedback latency, authority risk,
+reversibility, total cost, and retained predecessor semantics. It also states a
+bounded abort or re-entry condition. Implementation scale or architectural
+preference alone does not select re-adoption.
+
+Both strategies share these non-negotiable rules:
+
+- no proxy interface partial implementation may stand in for the new contract in
+  any acceptance path
+- no bridge or fallback path may remain silently authoritative
+- promotion of an affected Product outcome requires one unambiguous
+  authoritative path for that outcome
+- competing or ambiguous executable authority on the promoted acceptance path
+  blocks that outcome
+- residual material from the superseded interface family outside the promoted
+  path may be deferred only when it is explicitly non-authoritative for the
+  promoted outcome or governs an explicitly specified, disjoint Product or
+  compatibility scope with deterministic routing, cannot falsify current or
+  retained Product claims, and retains a bounded migration, qualification, or
+  release disposition
+- tests are leak detectors and proof surfaces, not the migration plan
+
+For this rule, the affected acceptance path is the full causal closure of the
+outcome: every admitted entrypoint, producer, consumer, resolver, fallback,
+shared state surface, event, projection, and proof surface capable of changing,
+interpreting, or closing the outcome. Singular authority means one governing
+authority across that closure, not one selected successful trace. If the same
+request, fact, identity, state, or projection is admissible to old and new
+authority, authority is competing and promotion blocks.
+
+Product-slice promotion and complete migration closure are distinct claims. An
+intermediate Product outcome may be promoted while its enclosing migration
+remains open only when the outcome's acceptance path has singular authority and
+the residual implementation satisfies the deferment rule above. That promotion
+does not close the migration or waive its final retirement criteria. The
+slice's identity and acceptance criteria derive from Product plus every causally
+applicable live requirement, accepted design relation, and retained predecessor
+claim. Ticket or review wording cannot narrow that authority away.
+
+Active migration status does not renew an accepted slice's exhausted growth
+authority. Work that only discharges already admitted removal, demotion, and
+migration-closure proof obligations may continue within that existing bound
+without claiming further Product progress. Further material producer or
+consumer growth requires another still-live basis admitted under
+`STDO-UP-013`; ticket activity alone is not that basis.
 
 ### What Counts As A Core Interface
 
@@ -436,12 +815,15 @@ now," it is a core interface change.
 
 Every core interface migration must explicitly declare:
 
-1. the new authoritative contract
-2. the superseded contract or surface
-3. the authoritative closure law for the new contract
-4. the full set of producers of the old and new contract
-5. the full set of consumers of the old and new contract
-6. every projection, report, status surface, and proof surface that derives from it
+1. the exact affected migration scope
+2. every explicitly excluded or disjoint Product or compatibility scope and its
+   deterministic routing relation
+3. the new authoritative contract
+4. the superseded contract or surface
+5. the authoritative closure law for the new contract
+6. the full set of producers of the old and new contract
+7. the full set of consumers of the old and new contract
+8. every projection, report, status surface, and proof surface that derives from it
 
 Every old path must then be classified as one of:
 
@@ -460,7 +842,10 @@ For a core interface migration:
 - no compatibility alias may remain authoritative
 - no fallback identity law may remain as silent runtime behavior
 - no bridge path may participate in acceptance as if it were the new contract
-- no old reader or writer may remain authoritative once the new contract exists
+- no old reader or writer may remain authoritative for the promoted outcome
+  once the new contract governs that outcome
+- no proxy or partial implementation of the new interface may stand between old
+  and new truth as if it were completion
 
 The only lawful exception is an explicit compatibility feature retained as part
 of the live product. In that case the compatibility path must be:
@@ -486,21 +871,77 @@ Therefore:
 - if the authoritative carrier can close while a projection still depends on an
   older law, the migration is incomplete
 
+### Inside-Out First Sequencing
+
+Inside-out hard-break migrations must proceed from the new authoritative source
+carrier outward.
+
+Therefore:
+
+- the full best-guess interface family must be discovered before proof is used
+  as closure evidence, including producers, consumers, projections, prompts,
+  reports, wrappers, replay paths, ingest paths, bootstrap paths, and proof
+  surfaces
+- authoritative producer and source-carrier work comes before downstream
+  consumer, projection, prompt, dossier, report, or review-surface hardening
+- downstream exploration may exist only as isolated non-authoritative work; it
+  must not land in public runtime, projection, prompt, report, or proof entry
+  points until the source carrier is published and admitted
+- a downstream projection ticket must not close while the source-carrier ticket
+  it depends on is still open
+- dependency direction must reflect this order explicitly so the ticket set
+  exposes the migration wave from source truth to downstream read models
+
+### Hard-Break Discipline
+
+Inside-out migration is a hard-break sequence over one interface family.
+
+The migration wave is the ordered set of those breaks. It is not a separate mode
+that permits competing or ambiguous dual truth over the same request, fact,
+identity, state, or projection. Explicitly specified, deterministically routed,
+non-overlapping Product or compatibility scopes may coexist while the enclosing
+migration remains open.
+
+For each break:
+
+1. publish or admit the new deepest authoritative source carrier
+2. deliberately sever one old authoritative seam
+3. keep that seam broken
+4. repair outward from source truth to consumers, then projections, then
+   prompts/reports, then proof surfaces
+5. run negative proof that the severed seam is rejected rather than merely
+   unused
+
+During this sequence:
+
+- tests may discover missed interfaces, but they do not replace the required
+  interface inventory
+- newly discovered affected interfaces remain part of the same migration wave
+  unless the work is explicitly repriced upward
+- re-enabling the old seam through wrappers, fallbacks, projections, or prompt
+  paths is a migration defect
+
 ### Proof-Last Rule For Core Interface Changes
 
-Proof is not valid while producers and consumers are split across old and new
-contracts.
+Complete migration-closure proof is not valid while producers and consumers
+are split across old and new contracts. Bounded Product-slice proof may establish
+only the exact intermediate outcome permitted by the path-relative promotion
+rule; it cannot establish migration closure.
 
 Therefore:
 
 - tests that pass only because bridge-state semantics remain alive do not count
   as closure proof
 - green local tests do not overrule a split architecture
-- proof belongs after migration, not during a partially migrated state
+- migration-closure proof belongs after migration, not during a partially
+  migrated state
+- per-break proof must show the severed old seam is rejected or fails closed
+  before downstream hardening can count as progress
 
 ### Closure Criterion
 
-A core interface migration is complete only when all of the following are true:
+A core interface migration is complete across its declared affected scope only
+when all of the following are true:
 
 - every authoritative producer writes the new contract
 - every authoritative consumer reads the new contract
@@ -512,6 +953,10 @@ A core interface migration is complete only when all of the following are true:
 
 Until those conditions hold, the work remains an active migration wave rather
 than a completed refactor.
+
+An accepted intermediate Product slice within that wave must therefore name the
+slice it closes and keep the enclosing migration visibly open. It must not
+project slice acceptance as migration, qualification, or release closure.
 
 ---
 
@@ -540,6 +985,35 @@ a separate release process surface such as `RELEASE_METHOD.md`.
 
 The following rules govern how constitutional claims are proved in practice.
 
+### Proof Target Identity And Adequacy (`STDO-UP-001`)
+
+Every load-bearing proof identifies the exact subject, intended property,
+governing basis, relation between witness and claim, nearest weaker excluded
+property, and falsification condition before selecting its witness. Without
+those relations, the result is evidence discovery rather than closure-grade
+proof.
+
+Packaging, syntax, compilation, file presence, invocation, or local behavior
+must not substitute for semantic, authority-bearing, installed, release, or
+end-to-end proof merely because the weaker property is easier to measure.
+
+### Semantic, Evidence, And Projection Separation (`STDO-UP-008`)
+
+The method distinguishes:
+
+- **semantic basis**: constitutional and accepted-design relations defining
+  what a claim means;
+- **evidence basis**: exact artifacts, events, logs, tests, and observations
+  used to evaluate it; and
+- **state projection**: a current view derived from admitted semantic and
+  evidence bases.
+
+Evidence change may invalidate a verdict without changing law. Projection
+change may invalidate a view without changing semantic truth. Semantic change
+requires lawful re-entry and invalidates affected downstream acceptance. A
+broad digest may conservatively invalidate review, but it does not prove that
+every semantic relation changed.
+
 ## Verification Layers
 
 Each layer in the chain preserves a distinct kind of truth:
@@ -555,6 +1029,114 @@ Without scenarios, important capabilities can appear "covered" because the words
 Scenarios are the product-owner layer. They are concrete, end-to-end use cases that validate the chain from intent to realized behavior. When a scenario cannot be written, the capability is not yet real. When a scenario fails, the gap is between the system's actual behavior and its claimed capability — not between the spec's words and the spec's other words.
 
 Scenarios do not replace requirement categories. They primarily validate capability claims and other behavior with concrete operational meaning. Constraints, governance rules, and verification-infrastructure requirements may require different evidence in addition to, or instead of, end-to-end scenarios.
+
+---
+
+## Testing Strategy Taxonomy
+
+Every executable proof surface must declare its authority source.
+
+For ticketed work, the immediate proof authority is the admitted ticket and its
+triage path. Tests derive from the ticket's lawful re-entry point and the
+governing constitutional or realization-law surfaces it cites; they do not
+derive expected results from current implementation behavior.
+
+Authority source is not the same thing as execution breadth. A test may be
+small or broad, fast or slow, deterministic or live, but it still derives from
+one of two primary authorities:
+
+1. **Design/module conformance tests**
+2. **UAT / acceptance tests**
+
+Design/module conformance tests derive from realization authority:
+
+- governing design
+- module ownership
+- IACS or equivalent carrier inventory
+- structural carrier diagrams when present
+- boundary-local fail-closed law
+
+They answer:
+
+- did the implementation realize the module or design boundary correctly?
+
+Unit tests are design/module conformance tests. Module integration tests,
+negative tests, and fail-closed tests may also be design/module conformance
+tests when their proof target is a designed module boundary rather than a user
+scenario.
+
+UAT / acceptance tests derive from constitutional user or product authority:
+
+- requirements
+- acceptance criteria
+- declared scenarios or use cases
+- product-level release or qualification claims
+
+They answer:
+
+- does the composed product satisfy the claimed requirement or scenario?
+
+Under this method, only sandbox tests or an explicitly equivalent isolated
+composed-product proof lane may be called UAT / acceptance tests.
+
+A sandbox test must exercise the deployed, installed, or otherwise runnable
+product form through declared application, public, runtime, or control surfaces.
+It must be driven by a requirement-sourced scenario or acceptance case. Direct
+source-level unit tests, helper tests, and module integration tests may be
+valuable proof, but they are not UAT and cannot close user acceptance by
+themselves.
+
+Sandbox UAT has two lawful execution modes:
+
+- **Harnessed sandbox UAT**: exercises the full composed product path with a
+  deterministic, fake, recorded, or injected worker/result surface.
+- **Live sandbox UAT**: exercises the full composed product path with a real
+  configured worker, tool, agent, service, or other external probabilistic
+  transport where the product depends on that live boundary.
+
+Harnessed sandbox UAT proves composition, orchestration, control, projection,
+archive, and scenario wiring without relying on live probabilistic execution.
+It is the right lane for deterministic reproducibility.
+
+Live sandbox UAT proves that the same scenario can cross the real external
+probabilistic boundary and return evidence through the declared result,
+evaluation, provenance, and projection surfaces. Where a product or release
+claim depends on live probabilistic compute, semantic green, unit green, module
+integration green, and harnessed sandbox green are necessary but not sufficient
+for live acceptance.
+
+Terminology rules:
+
+- `unit` names module/design conformance scope, not user acceptance.
+- `integration` names execution breadth, not authority source.
+- `sandbox` names composed-product acceptance execution.
+- `harnessed`, `fake`, `recorded`, or `deterministic` name non-live sandbox
+  execution.
+- `live` is reserved for real external worker or transport execution. A status
+  projection named "live" is not live UAT unless it crosses that real boundary.
+
+If a project uses different local filenames or runner labels, the local test
+surface must still map each executable lane back to this taxonomy before
+claiming closure.
+
+### Fixture And Proof Portability Rule
+
+Required closure lanes must be reproducible from the declared source boundary.
+
+A unit, semantic, or module-design conformance lane must not depend on an
+undeclared local path, sibling workspace, operator home directory, or mutable
+external fixture.
+
+If a proof needs external project evidence, one of these must be true:
+
+- a minimal fixture is checked into the source boundary
+- a fixture manifest declares the external source, version, and acquisition or
+  binding rule
+- the test is classified as harnessed sandbox, live sandbox, reference
+  comparison, or optional local evidence rather than required semantic closure
+
+Missing external fixtures must fail with a governed diagnostic that names the
+fixture authority and lane. They must not masquerade as product semantic failure.
 
 ---
 
@@ -817,6 +1399,20 @@ In that case:
 - every carry-forward is intentional and should land in the correct layer: goals, intent, product, requirements, design, guide, or template
 - old design and code may be used as reference implementations, but they do not govern the new constitutional surface unless explicitly re-derived and re-adopted
 - absence from the new constitutional surface means "not yet adopted" and carries no automatic authority from the prior line
+- the prior implementation may be moved sideways as a reference line, but that
+  sideways line has no live implementation authority in the new line
+- every inherited module, interface, carrier, projection, and proof surface must
+  be explicitly classified before reuse
+
+The required implementation classifications are:
+
+- `carry_across`: the module remains materially the same and is intentionally
+  re-adopted into the new line
+- `redundant`: the module is no longer needed in the new line
+- `rewrite`: the module remains needed but must be rebuilt under the new
+  requirements and design
+
+Unclassified inherited implementation is a defect.
 
 The purpose of this rule is to prevent accidental law from leaking through migration by mere inheritance. Fundamental migration is controlled adoption, not passive preservation.
 
@@ -824,9 +1420,20 @@ When performing a fundamental migration:
 
 1. Declare the migration line and treat the prior line as source material.
 2. Establish fresh constitutional surfaces for method, goals, intent, product, requirements, and design.
-3. Classify inherited material as adopted, superseded, deferred, or orphaned.
-4. Copy forward only what is intentionally retained.
-5. Re-derive downstream design and code from the new constitutional surfaces, not from ambient precedent.
+3. Move the prior implementation sideways if needed so it cannot continue as ambient live authority.
+4. Classify inherited constitutional material as adopted, superseded, deferred, or orphaned.
+5. Classify inherited implementation material as `carry_across`, `redundant`, or `rewrite`.
+6. Copy forward only what is intentionally retained.
+7. Re-derive downstream design and code from the new constitutional surfaces, not from ambient precedent.
+
+For a fundamental migration:
+
+- `carry_across` does not mean automatic copy-forward; it means explicit
+  re-adoption under the new line
+- direct runtime, projection, prompt, proof, or review dependence on the
+  sideways implementation line is bridge debt
+- proxy interfaces that partially imitate the target line while still depending
+  on the sideways line are not lawful closure
 
 This is a lawful form of supersession, not a violation of live-surface immutability, because the new line is creating a new constitutional surface rather than silently mutating the old one.
 
@@ -834,18 +1441,27 @@ This is a lawful form of supersession, not a violation of live-surface immutabil
 
 ## Transformation Wave Rule
 
-Refactor and migration should be understood as a transformation wave over mutable implementation surfaces.
+Refactor and migration should be understood as a transformation wave over
+mutable implementation surfaces.
 
 While the wave is in flight:
 
-- temporary mixed-state implementation may exist
-- transitional adapters or scaffolds may exist
-- refactor state may still carry traces of the prior operative model
+- temporary mixed-state implementation may exist only below the current break
+  boundary and only as explicitly non-authoritative plumbing
+- transitional adapters or scaffolds may exist only when they are named,
+  bounded, and outside the acceptance path
+- refactor state may still carry traces of the prior operative model, but never
+  as competing or ambiguous dual authority over the same request, fact,
+  identity, state, or projection
 
-When the wave lands:
+Explicitly specified, deterministically routed, non-overlapping Product or
+compatibility scopes are not competing authority under this rule. They may
+coexist while the enclosing migration remains visibly open.
 
-- only the new current operative surface remains live
-- prior operative paths are erased from the live product
+When the wave lands across its declared affected scope:
+
+- only the new current operative surface remains live for that scope
+- prior operative paths for that scope are erased from the live product
 - the path taken to get there survives only in version control, event history, and superseded records
 - mixed old/new operative models are not a stable end state
 
@@ -904,8 +1520,8 @@ The active specification layers have distinct constitutional roles:
 
 - **Goals** orient the current bounded work wave. They shall not be used as a substitute requirement surface.
 - **Intent** states why the system exists and what directional change is in or out of scope. It shall not carry optional realization detail unless that detail is itself constitutional.
-- **Product** states the current concrete product definition and bridges intent to requirements. It is not a release note surface.
-- **Requirements** state stable obligations that must be true. They shall carry explicit acceptance criteria and remain sufficient for downstream design derivation.
+- **Product** states the current concrete product definition and bridges intent to requirements. It is not a release note surface. It shall carry enough operational lifecycle signal for downstream requirements and design to understand intended use, release/install posture, live-use posture, observability posture, and retirement or supersession posture where those materially affect product meaning.
+- **Requirements** state stable obligations that must be true. They shall carry explicit acceptance criteria and remain sufficient for downstream design derivation, including lifecycle obligations or named lifecycle ambiguity gaps where build, assurance, release, deployment, live usage, telemetry, or retirement materially affect the obligation.
 - **Design** states how requirement truth is realized. It is downstream of requirements and may choose structure, interfaces, carriers, packaging, and tenant boundaries.
 - **ADRs** are durable design memory. They are not a second requirement surface.
 
@@ -940,9 +1556,13 @@ The target constitutional shape for a project is:
 
 The authoritative path split is:
 
-- source methodology authority lives in the source workspace under
-  `specification_methodology/specification/standards/`
+- mutable methodology authoring lives in the source workspace under
+  `specification_methodology/specification/standards/` and governs only a
+  future candidate cut
+- released methodology authority is the exact immutable STDO version selected
+  by the consumer
 - installed methodology distribution lives under `.genesis/docs/standards/`
+  and must match that selected release
 - project-owned constitutional surfaces live under `specification/`
 
 Projects shall not create a competing local methodology root such as
@@ -950,15 +1570,17 @@ Projects shall not create a competing local methodology root such as
 
 Method authority is singular:
 
-- source methodology authority in the methodology source workspace
-- installed methodology authority in `.genesis/docs/standards/`
+- selected immutable STDO release authority, projected into the installed
+  `.genesis/docs/standards/` distribution
 - project constitutional authority in `specification/`
 
-When editing or repricing methodology, the source path is authoritative.
+When editing or repricing methodology, the mutable source path is authoring
+authority for the candidate being constructed. It is not operative consumer
+law before release and explicit selection.
 
 When operating inside an installed workspace, the installed path is the
-operative local distribution of that source authority until a new release or
-install refreshes it.
+operative local distribution of the selected immutable release until the
+consumer explicitly adopts and installs another released cut.
 
 If the realization model is tenanted, the target project topology also includes:
 
@@ -1032,13 +1654,24 @@ When a feature is introduced or changed:
 1. Update **Goals** if the current bounded work wave or overriding concerns have changed.
 2. Update **Intent** if the purpose or scope has changed.
 3. Update **Product** if the current product realization, terms, boundaries, or end-state shape have changed.
-4. Update **Requirements** so the invariant truths are explicit as a decomposition of the product definition, and classify each new or changed requirement by category.
-5. Update or write **Design** so the governing structural choice is explicit. ADRs are one valid design form.
+4. Update **Requirements** so the invariant truths are explicit as a decomposition of the product definition, including any lifecycle obligations or named lifecycle ambiguity gaps, and classify each new or changed requirement by category.
+5. Establish or update **Design** so it owns the governing structural `HOW`.
+   When `DESIGN_MODULE_METHOD.md` applies, use its decision-completeness rule:
+   design, implementation, and tests may co-evolve only when
+   `co_evolution_admissible(B)` holds. Otherwise accept the smallest causally
+   closed affected design set before retained implementation establishes an
+   unresolved, contradictory, or materially non-equivalent relation.
+
+   When `DESIGN_MODULE_METHOD.md` does not apply, design, implementation, and
+   tests may co-evolve when upstream truth leaves no unresolved material design
+   decision. When such a decision remains, accept the affected design before
+   retained implementation establishes it. ADRs are one valid design form.
 6. Write **Scenarios** for capability claims that require operational proof, and define other evidence surfaces for non-capability requirements where appropriate.
 7. Prefer declarative expression of the problem and acceptance surface before adding imperative mechanism.
 8. Check the reconstruction boundary: can the current goals support the current intent, can the current intent support the current product, can the current product support the intended requirements, can the current requirements support the intended design, and can the current design support the intended implementation?
 9. Record any major ambiguity discovered at the active boundary, and govern it according to declared risk appetite rather than silent convenience.
-10. Only then implement **Code**.
+10. Develop **Code** under the selected design relation and reconcile design,
+    implementation, and tests before promotion or closure.
 11. Use **Events, Projection, and Delta** to verify whether reality still satisfies the requirements.
 
 When bootstrapping a project or repricing a requirement surface:
@@ -1073,15 +1706,39 @@ change class selected there.
 
 ## ADR Conventions
 
-Each ADR should explicitly include:
+Each ADR shall explicitly include:
 
 | Field | Purpose |
 |-------|---------|
+| `Status:` | `active`, `superseded`, or `retired` |
 | `Implements:` | REQ-* IDs this ADR makes true |
 | `Derives from:` | INT-* or strategy document that motivated the decision |
 | `Supersedes:` | Prior ADR or doctrine this replaces |
+| `Superseded by:` | Successor ADR when this ADR is `Status: superseded` |
 | `Retained special case:` | When earlier behavior is intentionally retained as a special case of the current surface |
 
 Write ADRs per decision boundary, not per requirement file. The question is: "what design choice makes these ACs true?" That is the ADR boundary.
 
 If a requirement names an operational mechanism, the ADR must name that mechanism too. If a requirement expands the event taxonomy, the EC ADR must be repriced immediately — event semantics must not drift into a second constitution.
+
+### ADR Folder Convention
+
+ADRs are stored in an `adrs/` subdirectory under the design surface that owns the decision.
+
+- tenant-local build-tenant ADRs: `build_tenants/<tenant-path>/design/adrs/`
+- shared or cross-tenant ADRs: `build_tenants/common/design/adrs/`
+- non-tenanted or project-local ADRs: `<governing-design-surface>/adrs/`
+
+The `<tenant-path>` is one or more path segments that uniquely identify the
+build tenant within `build_tenants/`. Both capability-oriented
+`<product-family>/<realization-variant>` paths and single-label
+`<realization-variant>` paths are lawful, provided the project's
+`build_tenants/TENANT_REGISTRY.md` records the tenant identity used. The
+recommended scaffold is `<product-family>/<realization-variant>`; existing
+single-segment layouts remain conformant and do not require migration.
+
+The governing design surface is the closest design surface whose authority owns the decision. ADRs must not be placed in comments, generated views, runtime archives, or requirement folders.
+
+Filename convention is `ADR-<local-id>-short-slug.md`. The local ID is unique within the owning `adrs/` directory. Numeric IDs such as `ADR-001-...` are the default; namespace-prefixed IDs such as `ADR-GM-005-...` are allowed when the owning design surface already uses them.
+
+A `REGISTRY.md` index alongside the ADR files is recommended for tooling and review but is not required. The constitutional source remains each ADR file; a registry is a read model that may drift unless tooling maintains it.

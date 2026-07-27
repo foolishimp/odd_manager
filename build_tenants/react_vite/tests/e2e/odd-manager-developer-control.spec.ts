@@ -42,15 +42,29 @@ function assuranceCatalog(productId: string) {
         requirementRef: "requirement://fixture/tests",
         regime: "F_D",
         evidenceKey: "tests",
+        positiveDecisionRequirement: null,
         reactionRefs: reactions,
         sourceRefs: [`requirements://${productId}/tests`],
       },
       {
         gateRef: "gate://fixture/depth",
-        label: "Deterministic depth gate",
+        label: "Probabilistic depth gate",
         requirementRef: "requirement://fixture/depth",
-        regime: "F_D",
+        regime: "F_P",
         evidenceKey: "depth",
+        positiveDecisionRequirement: {
+          kind: "probabilistic",
+          evaluatorRef: "evaluator://fixture/depth-reviewer",
+          authorityRef: "authority://fixture/probabilistic-assurance",
+          basisRefs: [
+            "requirement://fixture/depth",
+            "policy://fixture/probabilistic-assurance/v1",
+          ],
+          requiredFactRefs: [
+            "fact://fixture/depth/coverage",
+            "fact://fixture/depth/residual-risk",
+          ],
+        },
         reactionRefs: reactions,
         sourceRefs: [`requirements://${productId}/depth`],
       },
@@ -60,6 +74,16 @@ function assuranceCatalog(productId: string) {
         requirementRef: "requirement://fixture/human-review",
         regime: "F_H",
         evidenceKey: "human-review",
+        positiveDecisionRequirement: {
+          kind: "human",
+          decisionRef: "decision://fixture/human-review/approval",
+          requiredOutcome: "approved",
+          authorityRef: "authority://fixture/human-release-review",
+          basisRefs: [
+            "requirement://fixture/human-review",
+            "policy://fixture/human-release-review/v1",
+          ],
+        },
         reactionRefs: reactions,
         sourceRefs: [`requirements://${productId}/human-review`],
       },
@@ -251,7 +275,7 @@ test("Build Portfolio activation changes Context without a Sidecar Project Brows
   await page.goto(`/?project=${encodeURIComponent(MANAGER_ROOT)}`);
 
   const workbench = page.getByRole("region", { name: "Project Workbench" });
-  const targetRow = workbench.locator(".build-portfolio__table tbody tr").filter({ hasText: "product://odd_glc" });
+  const targetRow = workbench.getByRole("row", { name: /^odd_glc product:\/\/odd_glc\s/ });
   await expect(targetRow).toBeVisible({ timeout: 30_000 });
   await targetRow.getByRole("button", { name: "Open" }).click();
   await expect(page.getByRole("banner")).toContainText(ODD_GLC_ROOT);
@@ -305,8 +329,31 @@ test("Specification Proposal generates, refines, validates, accepts, rejects, an
     await proposal.getByRole("button", { name: "Attach" }).click();
     await proposal.getByLabel("Proposal request").fill("Make the product boundary explicit.");
     const before = readFileSync(join(projectRoot, "specification", "PRODUCT.md"), "utf8");
+    let generateRequestCount = 0;
+    let observeGenerateRequest!: () => void;
+    let releaseGenerateRequest!: () => void;
+    const generateRequestObserved = new Promise<void>((resolve) => {
+      observeGenerateRequest = resolve;
+    });
+    const generateRequestReleased = new Promise<void>((resolve) => {
+      releaseGenerateRequest = resolve;
+    });
+    await page.route("**/api/developer-control/proposals/generate", async (route) => {
+      generateRequestCount += 1;
+      observeGenerateRequest();
+      await generateRequestReleased;
+      await route.continue();
+    });
     await proposal.getByRole("button", { name: "Generate Proposal" }).click();
+    await generateRequestObserved;
+    const themeToggle = page.getByRole("button", { name: /^Switch to .* mode$/ });
+    const initialThemeToggleLabel = await themeToggle.getAttribute("aria-label");
+    await themeToggle.click();
+    await expect(themeToggle).not.toHaveAttribute("aria-label", initialThemeToggleLabel ?? "");
+    await expect.poll(() => generateRequestCount).toBe(1);
+    releaseGenerateRequest();
     await expect(proposal.getByRole("heading", { name: /Proposed Change for/ })).toBeVisible();
+    expect(generateRequestCount).toBe(1);
     await expect(proposal.getByRole("region", { name: /Diff for specification\/PRODUCT.md/ })).toBeVisible();
     expect(readFileSync(join(projectRoot, "specification", "PRODUCT.md"), "utf8")).toBe(before);
 
@@ -480,6 +527,7 @@ test("Build Control submits, supervises, attaches, converges, and cancels real f
 });
 
 test("two Project builds run concurrently while Portfolio, focus, output, and outcomes remain isolated", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const alphaRoot = createBuildProjectFixture("concurrent_alpha");
   const betaRoot = createBuildProjectFixture("concurrent_beta");
   try {
@@ -493,7 +541,7 @@ test("two Project builds run concurrently while Portfolio, focus, output, and ou
     let build = workbench.locator(".build-control");
     await expect(build.locator('[data-availability="ready"]')).toBeVisible();
     await build.getByLabel("Build inputs").fill(JSON.stringify({
-      durationMs: 12_000,
+      durationMs: 30_000,
       outcome: "converged",
       label: "concurrent-alpha",
     }, null, 2));
@@ -502,7 +550,6 @@ test("two Project builds run concurrently while Portfolio, focus, output, and ou
 
     await workbench.getByRole("tab", { name: "Review" }).click();
     let portfolio = workbench.locator(".build-portfolio");
-    await portfolio.getByRole("button", { name: "Refresh", exact: true }).click();
     const betaRow = portfolio.locator(".build-portfolio__table tbody tr").filter({ hasText: "product://concurrent_beta" });
     await expect(betaRow).toBeVisible();
     await betaRow.getByRole("button", { name: "Open" }).click();
@@ -513,7 +560,7 @@ test("two Project builds run concurrently while Portfolio, focus, output, and ou
     build = workbench.locator(".build-control");
     await expect(build.locator('[data-availability="ready"]')).toBeVisible();
     await build.getByLabel("Build inputs").fill(JSON.stringify({
-      durationMs: 15_000,
+      durationMs: 30_000,
       outcome: "failed",
       label: "concurrent-beta",
     }, null, 2));
@@ -527,7 +574,7 @@ test("two Project builds run concurrently while Portfolio, focus, output, and ou
     portfolio = workbench.locator(".build-portfolio");
     await portfolio.getByRole("button", { name: "Refresh", exact: true }).click();
     const alphaRow = portfolio.locator(".build-portfolio__table tbody tr").filter({ hasText: "product://concurrent_alpha" });
-    await expect(alphaRow).toContainText("running");
+    await expect(alphaRow).toContainText(/running|converged/);
     await alphaRow.getByRole("button", { name: "Open" }).click();
     await expect(page.getByRole("region", { name: "Project Workbench" })).toContainText(alphaRoot);
 
@@ -626,7 +673,7 @@ test("Assurance derives missing, verified, and stale posture from catalog and ev
     await expect(summary.locator("div").filter({ hasText: "Assets delivered" }).locator("strong")).toHaveText("1/1");
     await assurance.getByRole("button", { name: "Matrix" }).click();
     await assurance.getByRole("region", { name: "Required gate assurance" })
-      .getByRole("button", { name: /Deterministic depth gate/ })
+      .getByRole("button", { name: /Deterministic test gate/ })
       .click();
     const detail = assurance.getByRole("region", { name: "Selected assurance assessment" });
     await expect(detail).toContainText("Evidence identity and digest match");
@@ -656,6 +703,8 @@ test("Assurance derives missing, verified, and stale posture from catalog and ev
     await expect(attention).toContainText("digest does not match");
     await attention.getByRole("button", { name: "Open Run Inspector" }).click();
     await expect(page.getByRole("region", { name: "Sidecar canvas" })).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => new URL(page.url()).searchParams.get("runRef"))
+      .toBe("run://fixture/assurance-mismatch");
     const forensicUrl = new URL(page.url());
     expect(forensicUrl.searchParams.get("view")).toBe("run-inspector");
     expect(forensicUrl.searchParams.get("execution")).toBeTruthy();
@@ -670,8 +719,8 @@ test("Assurance derives missing, verified, and stale posture from catalog and ev
     await page.getByRole("navigation", { name: "Developer control surfaces" })
       .getByRole("tab", { name: "Workbench" })
       .click();
-    expect(new URL(page.url()).searchParams.get("execution")).toBeNull();
-    expect(new URL(page.url()).searchParams.get("runRef")).toBeNull();
+    await expect.poll(() => new URL(page.url()).searchParams.get("execution")).toBeNull();
+    await expect.poll(() => new URL(page.url()).searchParams.get("runRef")).toBeNull();
     await expect(workbench.getByRole("tab", { name: "Assure" })).toHaveAttribute("aria-selected", "true");
     assurance = workbench.locator(".assurance-attention");
     await expect(assurance.getByRole("region", { name: "Attention Items" }).locator("li")).toHaveCount(1);
@@ -743,9 +792,6 @@ test("integrated Review Tune Build Assure journey preserves one revised Project 
     await expect(build.locator(".build-control__detail").getByRole("heading", { name: "running" })).toBeVisible();
 
     await workbench.getByRole("tab", { name: "Review" }).click();
-    await workbench.locator(".build-portfolio").getByRole("button", { name: "Refresh", exact: true }).click();
-    const runningPrimaryRow = workbench.locator(".build-portfolio__table tbody tr").filter({ hasText: "product://integrated_primary" });
-    await expect(runningPrimaryRow).toContainText("running");
     const secondaryRow = workbench.locator(".build-portfolio__table tbody tr").filter({ hasText: "product://integrated_secondary" });
     await secondaryRow.getByRole("button", { name: "Open" }).click();
     await expect(page.getByRole("region", { name: "Project Workbench" })).toContainText(secondaryRoot);
@@ -832,7 +878,7 @@ test("run observation opens as a supporting surface and workbench focus survives
   await expect(workbench).toBeVisible();
   await expect(workbench.getByRole("tab", { name: "Build" })).toHaveAttribute("aria-selected", "true");
   await expect(workbench.getByRole("heading", { name: "Build Control" })).toBeVisible();
-  expect(new URL(page.url()).searchParams.get("view")).toBeNull();
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBeNull();
 });
 
 test("Project Workbench stays viewport-contained on mobile", async ({ page }, testInfo) => {

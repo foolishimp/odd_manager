@@ -1,19 +1,5 @@
 # Writing Guide
 
-**Governance**: Maintained by the methodology author. Read-only for agents unless explicitly asked to revise it.
-
-**Scope**: Applies to human-facing prose written for this repo, including the practical writing of goals, intent, product, requirements, design documents, and ADRs.
-
----
-
-## Purpose
-
-This guide exists to keep repository prose direct, technical, and non-generic.
-
-Its main job is to suppress AI-sounding writing.
-
----
-
 ## Core Rule
 
 Write as if the reader is technically fluent and short on time.

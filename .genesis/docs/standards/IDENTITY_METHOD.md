@@ -1,19 +1,5 @@
 # Identity Method
 
-**Governance**: Maintained by the methodology author.
-
-**Scope**: Shared identity and naming method for constitutional surfaces,
-runtime artifacts, and derived domain products.
-
-**Relation**: Composes with `SPEC_METHOD.md`, `ODD_METHOD.md`,
-`WORLD_MODEL_METHOD.md`, and `RELEASE_METHOD.md`.
-
-Use this method when defining, parsing, publishing, or overriding identities
-for requirements, design surfaces, scenarios, runtime artifacts, and other
-governed objects.
-
----
-
 ## Position
 
 Identity must be:
@@ -131,7 +117,7 @@ than silently reusing the old one for a different object.
 Identity may be:
 
 - opaque, such as a GUID or UUID
-- human-readable, such as `REQ-F-ODDSVC-001`
+- human-readable, such as `REQ-F-CAPABILITY-001`
 - hybrid, where one component is readable and another is opaque
 
 The governing rule is:
@@ -161,14 +147,15 @@ should be available.
 
 Examples:
 
-- `(odd_sdlc, requirement, REQ-F-ODDSVC-001)`
-- `(odd_sdlc, requirement_family, REQ-F-ODDSVC)`
-- `(abiogenesis, run, 550e8400-e29b-41d4-a716-446655440000)`
-- `(abiogenesis, release, 3.1.0-rc.1)`
+- `(<product-authority>, requirement, REQ-F-CAPABILITY-001)`
+- `(<product-authority>, requirement_family, REQ-F-CAPABILITY)`
+- `(<runtime-authority>, run, 550e8400-e29b-41d4-a716-446655440000)`
+- `(<release-authority>, release, 1.0.0-rc.1)`
 
 The important point is that:
 
-- `REQ-F-ODDSVC` and `REQ-F-ODDSVC-001` are not the same kind of identity
+- `REQ-F-CAPABILITY` and `REQ-F-CAPABILITY-001` are not the same kind of
+  identity
 - a runtime `run_id` and a domain requirement id do not belong to the same
   semantic category even if both serialize as strings
 
@@ -223,13 +210,39 @@ their meaning.
 
 ---
 
+## Authority Identity And Conservation (`STDO-UP-004`)
+
+Authority is an identity-bearing semantic relation, not a display label,
+capability string, actor identity, or reachable code path. Its identity
+preserves owner, kind, governed subject, scope, and governing basis.
+
+Composition, delegation, adapters, projections, wrappers, and registries may
+restrict or faithfully carry admitted authority. They must not silently widen
+scope, add a role, increase cardinality, change kind, or reconstruct authority
+from actor identity, payload shape, or available capability. Elevation,
+transfer, split, merge, proxy grant, revocation, and retirement require an
+explicit authority decision and identifiable basis.
+
+Human authority may act directly or through an explicitly admitted bounded
+proxy. Proxy actor identity and human-authority identity remain distinct;
+graph-native surfaces may project the relation as `F_H`. A proxy grant names
+its grantor, actor, subject, scope, permitted and excluded decisions, validity,
+delegation rights, revocation, and provenance.
+
+A direct or proxied decision preserves its source, subject and basis, acting
+identity and mode, scope, change class, disposition, and supersession. Recording
+a ruling cannot widen it. Proxy authority does not make implementer self-review
+independent or confer unrelated runtime or domain authority.
+
+---
+
 ## Default Formats And Overrides
 
-### ABG Defaults
+### Defaults From A Bound ABG Realization
 
-ABG may publish default identity generators, validators, and normalizers for
-its own runtime surfaces and for common default ODD surface kinds used by
-default `F_D` helpers.
+A consumer-bound realization of the ABG role may publish default identity
+generators, validators, and normalizers for its own runtime surfaces and for
+common default ODD surface kinds used by default `F_D` helpers.
 
 These defaults are:
 
@@ -258,9 +271,9 @@ code.
 
 ### Override Publication Surface
 
-When a domain overrides ABG defaults, the override must be published in a
-lawful domain authority surface rather than inferred only from implementation
-code.
+When a domain overrides defaults published by its bound ABG realization, the
+override must be published in a lawful domain authority surface rather than
+inferred only from implementation code.
 
 At minimum, the domain should publish:
 
@@ -348,17 +361,18 @@ If those questions cannot be answered, the identity surface is under-defined.
 
 ### Lawful
 
-- runtime event ids generated as UUIDs by ABG
-- requirement ids such as `REQ-F-ODDSVC-001` when the domain defines them as
+- runtime event ids generated as UUIDs by a consumer-bound realization of the
+  ABG role
+- requirement ids such as `REQ-F-CAPABILITY-001` when the domain defines them as
   concrete `requirement` identities
-- family ids such as `REQ-F-ODDSVC` when the domain defines them separately as
+- family ids such as `REQ-F-CAPABILITY` when the domain defines them separately as
   `requirement_family`
-- acceptance-criterion ids such as `REQ-F-ODDSVC-001-AC-01` when the domain
+- acceptance-criterion ids such as `REQ-F-CAPABILITY-001-AC-01` when the domain
   defines them as a separate `acceptance_criterion` identity kind
 
 ### Unlawful
 
-- treating `REQ-F-ODDSVC-*` or `REQ-F-ODDSVC` as a concrete requirement merely
+- treating `REQ-F-CAPABILITY-*` or `REQ-F-CAPABILITY` as a concrete requirement merely
   because a broad regex matched it
 - using release version as the identity of every live source object
 - assuming a readable string is globally unique without its authority and kind

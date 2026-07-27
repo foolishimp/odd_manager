@@ -2,8 +2,8 @@
 Status: accepted
 Date: 2026-07-11
 Governance:
-  - specification_methodology/specification/standards/DESIGN_MODULE_METHOD.md
-  - specification_methodology/specification/standards/UX_METHOD.md
+  - .genesis/docs/standards/DESIGN_MODULE_METHOD.md
+  - .genesis/docs/standards/UX_METHOD.md
 Derives from:
   - build_tenants/common/design/DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md
 Supersedes: none
@@ -11,6 +11,14 @@ Superseded by: none
 ---
 
 # ADR-001: Canonical UX Functions And Projection Instances
+
+**Implements**: `PO-OM-OBSERVE-001`; `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `PO-OM-AUDIT-001`; `REQ-OM-CAP-*`; `REQ-OM-INS-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/run-observation/index.ts`; `build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx`; `build_tenants/react_vite/src/features/sidecar/sidecar-state.ts`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs` :: `each capability owns its structural public surfaces and cross-capability imports stay at host ports`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `shared document viewer adapter governs Markdown, code, HTML, PDF, and selectable text`
+**STDO-UX Bindings**: State=canonical function-owned State plus instance-local ephemera; Msg=canonical function-owned Msg; Update=canonical function pure Update; Cmd=canonical function Cmd; Sub=canonical function subscriptions; Ingress=canonical function validation of admitted source truth; View=named pure projection hosted by authority-neutral wrappers; Membrane=canonical command runtime or Sidecar effect adapter; Replay=build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs :: each capability owns its structural public surfaces and cross-capability imports stay at host ports; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer control and workbench tabs provide keyboard parity and named panels
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001`; this ADR projects `P-OWNERSHIP`, `P-OBSERVATION`, and `P-REPLAY`.
+**Accessibility Proof Scope**: Public canonical placements exercised by the declared operator bundle retain keyboard/focus semantics, named controls/status, representative contrast, and responsive containment.
+**Implementation Acceptance**: Accepted for the manager-local canonical-function/projection relation subject to the exact T-032 validation bundle. A new placement still requires its own module binding and proof; this ADR is not blanket evidence for untested future placements.
 
 ## Context
 

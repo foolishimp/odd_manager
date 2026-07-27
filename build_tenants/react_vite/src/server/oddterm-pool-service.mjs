@@ -1,14 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
-  mkdirSync,
   readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   appendConversationEntry,
@@ -21,11 +17,20 @@ import {
   stripTerminalControlText,
   updateConversationMetadata,
 } from "./conversation-history-service.mjs";
+import { admitProjectWorkingDirectory } from "./project-context-admission-service.mjs";
+import {
+  admitProjectRuntimeDirectory,
+  admitProjectRuntimeFile,
+  readProjectRuntimeFile,
+  statProjectRuntimeFile,
+  writeProjectRuntimeFile,
+} from "./project-runtime-carrier-service.mjs";
 import {
   appendLiveRoomMessage,
   firstMeaningfulLine,
   sessionParticipantId,
 } from "./oddchat-room-service.mjs";
+import { decodeScreenTranscriptFrame } from "./session-pty-screen.mjs";
 
 const workspaceStores = new Map();
 const SCREEN_POLL_INTERVAL_MS = 100;
@@ -34,6 +39,9 @@ const ODDTERM_RESIZE_MIN_COLS = 20;
 const ODDTERM_RESIZE_MIN_ROWS = 6;
 const ODDTERM_RESIZE_MAX_COLS = 300;
 const ODDTERM_RESIZE_MAX_ROWS = 120;
+const oddTermSubscriptionBySocket = new WeakMap();
+const ODDTERM_RUNTIME_SEGMENTS = [".ai-workspace", "runtime", "oddterm"];
+const ODDTERM_SESSION_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 function isPidAlive(pid) {
   const parsed = Number(pid);
@@ -55,24 +63,137 @@ function sendJson(socket, payload) {
   socket.send(JSON.stringify(payload));
 }
 
-function runtimeRoot(workspaceRoot) {
-  return resolve(workspaceRoot, ".ai-workspace/runtime/oddterm");
+function admittedSessionId(value) {
+  const sessionId = String(value ?? "");
+  if (!ODDTERM_SESSION_ID.test(sessionId)) {
+    throw new Error("terminal session identity is not canonical");
+  }
+  return sessionId;
 }
 
-function sessionRoot(workspaceRoot, sessionId) {
-  return join(runtimeRoot(workspaceRoot), sessionId);
+function runtimeRoot(workspaceRoot, create = false) {
+  return admitProjectRuntimeDirectory(workspaceRoot, ODDTERM_RUNTIME_SEGMENTS, { create });
 }
 
-function sessionMetaPath(workspaceRoot, sessionId) {
-  return join(sessionRoot(workspaceRoot, sessionId), "meta.json");
+function sessionSegments(sessionId) {
+  return [...ODDTERM_RUNTIME_SEGMENTS, admittedSessionId(sessionId)];
 }
 
-function sessionTranscriptPath(workspaceRoot, sessionId) {
-  return join(sessionRoot(workspaceRoot, sessionId), "screenlog.0");
+function sessionRoot(workspaceRoot, sessionId, create = false) {
+  return admitProjectRuntimeDirectory(workspaceRoot, sessionSegments(sessionId), { create });
 }
 
-function screenSessionName(sessionId) {
-  return `oddterm_${String(sessionId).replace(/[^A-Za-z0-9_.-]/g, "_").replace(/-/g, "")}`;
+function sessionMetaPath(workspaceRoot, sessionId, mustExist = false) {
+  return admitProjectRuntimeFile(workspaceRoot, sessionSegments(sessionId), "meta.json", {
+    mustExist,
+  });
+}
+
+function sessionTranscriptPath(workspaceRoot, sessionId, mustExist = false) {
+  return admitProjectRuntimeFile(workspaceRoot, sessionSegments(sessionId), "screenlog.0", {
+    mustExist,
+  });
+}
+
+function screenSessionName(workspaceRoot, sessionId) {
+  const projectKey = createHash("sha256")
+    .update(resolve(workspaceRoot))
+    .digest("hex")
+    .slice(0, 12);
+  return `oddterm_${projectKey}_${admittedSessionId(sessionId).replace(/-/g, "")}`;
+}
+
+function canonicalSessionAuthority(session, options = {}) {
+  const id = admittedSessionId(session.id);
+  const workspaceRoot = resolve(session.workspaceRoot);
+  const cwd = admitProjectWorkingDirectory(workspaceRoot, session.cwd);
+  const root = sessionRoot(workspaceRoot, id, options.createDirectory === true);
+  const metaPath = sessionMetaPath(workspaceRoot, id, options.requireMeta === true);
+  const transcriptPath = sessionTranscriptPath(
+    workspaceRoot,
+    id,
+    options.requireTranscript === true,
+  );
+  const canonicalScreenSessionId = screenSessionName(workspaceRoot, id);
+  if (session.workspaceRoot !== workspaceRoot) {
+    throw new Error("terminal session Project binding is not canonical");
+  }
+  if (session.screenSessionId && session.screenSessionId !== canonicalScreenSessionId) {
+    throw new Error("terminal screen identity does not match the canonical session identity");
+  }
+  if (session.metaPath && resolve(session.metaPath) !== metaPath) {
+    throw new Error("terminal metadata carrier does not match the canonical session identity");
+  }
+  if (session.transcriptPath && resolve(session.transcriptPath) !== transcriptPath) {
+    throw new Error("terminal transcript carrier does not match the canonical session identity");
+  }
+  if (options.requireMeta === true) {
+    let meta;
+    try {
+      meta = JSON.parse(readProjectRuntimeFile(
+        workspaceRoot,
+        sessionSegments(id),
+        "meta.json",
+        { encoding: "utf8" },
+      ));
+    } catch {
+      throw new Error("terminal metadata carrier is invalid");
+    }
+    admittedPersistedSession({ workspaceRoot }, session, meta);
+    if (
+      Boolean(meta.archived) !== Boolean(session.archived)
+      || (meta.backend ?? null) !== (session.backend ?? null)
+      || meta.status !== session.status
+    ) {
+      throw new Error("terminal metadata lifecycle does not match the admitted session");
+    }
+  }
+  return {
+    id,
+    workspaceRoot,
+    cwd,
+    root,
+    metaPath,
+    transcriptPath,
+    screenSessionId: canonicalScreenSessionId,
+  };
+}
+
+function admittedPersistedSession(store, session, meta) {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    throw new Error("terminal metadata must be an object");
+  }
+  if (meta.id !== session.id) {
+    throw new Error("terminal metadata identity does not match its directory");
+  }
+  if (meta.workspaceRoot !== store.workspaceRoot) {
+    throw new Error("terminal metadata Project binding does not match the admitted Project");
+  }
+  const cwd = admitProjectWorkingDirectory(store.workspaceRoot, meta.cwd);
+  const screenSessionId = screenSessionName(store.workspaceRoot, session.id);
+  const transcriptPath = sessionTranscriptPath(store.workspaceRoot, session.id);
+  const conversationHistoryId = sessionConversationHistoryId(session.id);
+  if (meta.screenSessionId !== screenSessionId) {
+    throw new Error("terminal metadata screen identity is not canonical");
+  }
+  if (typeof meta.transcriptPath !== "string" || resolve(meta.transcriptPath) !== transcriptPath) {
+    throw new Error("terminal metadata transcript carrier is not canonical");
+  }
+  if (
+    meta.conversationHistoryId !== undefined
+    && meta.conversationHistoryId !== conversationHistoryId
+  ) {
+    throw new Error("terminal metadata conversation identity is not canonical");
+  }
+  if (![null, "node-screen-pty", "node-screen-pty-unavailable"].includes(meta.backend ?? null)) {
+    throw new Error("terminal metadata backend is unsupported");
+  }
+  return {
+    cwd,
+    screenSessionId,
+    transcriptPath,
+    conversationHistoryId,
+  };
 }
 
 function parseScreenSessions(text) {
@@ -121,10 +242,16 @@ export function isOddTermScreenAvailable() {
 }
 
 function screenSessionEntry(session) {
-  if (!session.screenSessionId) {
+  let authority;
+  try {
+    authority = canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: session.backend === "node-screen-pty",
+    });
+  } catch {
     return null;
   }
-  return listScreenSessions().find((entry) => entry.id === session.screenSessionId) ?? null;
+  return listScreenSessions().find((entry) => entry.id === authority.screenSessionId) ?? null;
 }
 
 function isScreenSessionLive(session) {
@@ -165,13 +292,19 @@ function normalizeScreenInput(data) {
 }
 
 function sendToScreen(session, data) {
-  if (!session.screenSessionId) {
+  let authority;
+  try {
+    authority = canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: true,
+    });
+  } catch (error) {
     return {
       ok: false,
-      error: "terminal screen session is unavailable",
+      error: error instanceof Error ? error.message : String(error),
     };
   }
-  const result = spawnSync("screen", ["-S", session.screenSessionId, "-p", "0", "-X", "stuff", normalizeScreenInput(data)], {
+  const result = spawnSync("screen", ["-S", authority.screenSessionId, "-p", "0", "-X", "stuff", normalizeScreenInput(data)], {
     encoding: "utf8",
   });
   if (result.status === 0) {
@@ -221,16 +354,22 @@ function normalizeResizePayload(payload) {
 }
 
 function resizeScreen(session, cols, rows) {
-  if (!session.screenSessionId) {
+  let authority;
+  try {
+    authority = canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: true,
+    });
+  } catch (error) {
     return {
       ok: false,
-      error: "terminal screen session is unavailable",
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 
   const widthResult = spawnSync(
     "screen",
-    ["-S", session.screenSessionId, "-p", "0", "-X", "width", "-w", String(cols), String(rows)],
+    ["-S", authority.screenSessionId, "-p", "0", "-X", "width", "-w", String(cols), String(rows)],
     { encoding: "utf8" },
   );
   if (widthResult.status === 0) {
@@ -239,7 +378,7 @@ function resizeScreen(session, cols, rows) {
 
   const heightResult = spawnSync(
     "screen",
-    ["-S", session.screenSessionId, "-p", "0", "-X", "height", "-w", String(rows), String(cols)],
+    ["-S", authority.screenSessionId, "-p", "0", "-X", "height", "-w", String(rows), String(cols)],
     { encoding: "utf8" },
   );
   if (heightResult.status === 0) {
@@ -297,10 +436,17 @@ function resizeGTermBackend(session, payload) {
 }
 
 function quitScreen(session) {
-  if (!session.screenSessionId) {
-    return;
+  let authority;
+  try {
+    authority = canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: true,
+    });
+  } catch {
+    return false;
   }
-  spawnSync("screen", ["-S", session.screenSessionId, "-X", "quit"], { encoding: "utf8" });
+  const result = spawnSync("screen", ["-S", authority.screenSessionId, "-X", "quit"], { encoding: "utf8" });
+  return result.status === 0;
 }
 
 function serializeSession(session) {
@@ -330,8 +476,18 @@ function serializeSession(session) {
 }
 
 function persistSessionMeta(session) {
-  writeFileSync(
-    session.metaPath,
+  const authority = canonicalSessionAuthority(session, {
+    createDirectory: true,
+  });
+  session.workspaceRoot = authority.workspaceRoot;
+  session.cwd = authority.cwd;
+  session.screenSessionId = authority.screenSessionId;
+  session.transcriptPath = authority.transcriptPath;
+  session.metaPath = authority.metaPath;
+  writeProjectRuntimeFile(
+    authority.workspaceRoot,
+    sessionSegments(authority.id),
+    "meta.json",
     JSON.stringify(
       {
         ...serializeSession(session),
@@ -342,7 +498,7 @@ function persistSessionMeta(session) {
       null,
       2,
     ),
-    "utf8",
+    { encoding: "utf8" },
   );
 }
 
@@ -357,11 +513,21 @@ function sessionScreenEntry(screenSessions, screenSessionId) {
   return screenSessions.find((entry) => entry.id === screenSessionId) ?? null;
 }
 
-function initialScreenLogOffset(meta, transcriptPath) {
-  if (Number.isFinite(meta.screenLogOffset)) {
-    return meta.screenLogOffset;
+function initialScreenLogOffset(workspaceRoot, sessionId, meta) {
+  let size = 0;
+  try {
+    size = statProjectRuntimeFile(
+      workspaceRoot,
+      sessionSegments(sessionId),
+      "screenlog.0",
+    ).size;
+  } catch {
+    size = 0;
   }
-  return existsSync(transcriptPath) ? statSync(transcriptPath).size : 0;
+  if (Number.isFinite(meta.screenLogOffset)) {
+    return Math.max(0, Math.min(meta.screenLogOffset, size));
+  }
+  return size;
 }
 
 function emptySessionFromDisk(store, sessionId) {
@@ -375,7 +541,7 @@ function emptySessionFromDisk(store, sessionId) {
     shell: null,
     pid: null,
     backend: null,
-    screenSessionId: screenSessionName(sessionId),
+    screenSessionId: screenSessionName(store.workspaceRoot, sessionId),
     transcriptPath: sessionTranscriptPath(store.workspaceRoot, sessionId),
     screenLogOffset: null,
     pollTimer: null,
@@ -398,16 +564,17 @@ function emptySessionFromDisk(store, sessionId) {
 }
 
 function hydrateSessionFromDisk(store, session, meta, screenSessions) {
-  const screenSessionId = meta.screenSessionId || session.screenSessionId || screenSessionName(session.id);
-  const transcriptPath = meta.transcriptPath || session.transcriptPath || sessionTranscriptPath(store.workspaceRoot, session.id);
-  const screenBacked = meta.backend === "node-screen-pty" || session.backend === "node-screen-pty" || Boolean(meta.screenSessionId);
+  const admitted = admittedPersistedSession(store, session, meta);
+  const screenSessionId = admitted.screenSessionId;
+  const transcriptPath = admitted.transcriptPath;
+  const screenBacked = meta.backend === "node-screen-pty";
   const screenEntry = screenBacked ? sessionScreenEntry(screenSessions, screenSessionId) : null;
   const live = Boolean(screenEntry);
   const previousStatus = session.status;
   const previousPid = session.pid;
 
   session.workspaceRoot = store.workspaceRoot;
-  session.cwd = typeof meta.cwd === "string" && meta.cwd.trim() ? resolve(meta.cwd) : (session.cwd ?? store.workspaceRoot);
+  session.cwd = admitted.cwd;
   session.label = meta.label || session.label || session.id;
   session.archived = Boolean(meta.archived);
   session.status = live ? "live" : meta.status === "error" ? "error" : "closed";
@@ -416,7 +583,7 @@ function hydrateSessionFromDisk(store, session, meta, screenSessions) {
   session.backend = meta.backend ?? session.backend ?? (screenBacked ? "node-screen-pty" : null);
   session.screenSessionId = screenSessionId;
   session.transcriptPath = transcriptPath;
-  const diskOffset = initialScreenLogOffset(meta, transcriptPath);
+  const diskOffset = initialScreenLogOffset(store.workspaceRoot, session.id, meta);
   if (!Number.isFinite(session.screenLogOffset)) {
     session.screenLogOffset = diskOffset;
   } else if (Number.isFinite(meta.screenLogOffset) && meta.screenLogOffset > session.screenLogOffset) {
@@ -426,7 +593,7 @@ function hydrateSessionFromDisk(store, session, meta, screenSessions) {
   session.attachedTrainId = meta.attachedTrainId ?? session.attachedTrainId ?? null;
   session.attachedStationId = meta.attachedStationId ?? session.attachedStationId ?? null;
   session.attachedEdgeId = meta.attachedEdgeId ?? session.attachedEdgeId ?? null;
-  session.conversationHistoryId = meta.conversationHistoryId ?? session.conversationHistoryId ?? sessionConversationHistoryId(session.id);
+  session.conversationHistoryId = admitted.conversationHistoryId;
   session.createdAt = meta.createdAt ?? session.createdAt ?? null;
   session.lastOutputAt = meta.lastOutputAt ?? session.lastOutputAt ?? null;
   session.exitCode = meta.exitCode ?? session.exitCode ?? null;
@@ -474,7 +641,12 @@ function hydrateSessionFromDisk(store, session, meta, screenSessions) {
     clearScreenMonitor(session);
   }
 
-  if (previousStatus !== session.status || previousPid !== session.pid) {
+  if (
+    previousStatus !== session.status
+    || previousPid !== session.pid
+    || meta.status !== session.status
+    || meta.pid !== session.pid
+  ) {
     persistSessionMeta(session);
   }
 
@@ -493,28 +665,59 @@ function removeArchivedSession(store, sessionId) {
   }
 }
 
-function refreshSessionsFromDisk(store) {
-  const root = runtimeRoot(store.workspaceRoot);
-  if (!existsSync(root)) {
+function rejectPersistedSession(store, sessionId, error) {
+  const existing = store.sessions.get(sessionId);
+  if (!existing) {
     return;
   }
+  clearScreenMonitor(existing);
+  existing.status = "error";
+  existing.backend = null;
+  existing.pid = null;
+  existing.screenSessionId = null;
+  existing.transcriptPath = null;
+  for (const socket of existing.clients) {
+    sendJson(socket, {
+      type: "error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    try {
+      socket.close();
+    } catch {
+      // Best effort.
+    }
+  }
+  existing.clients.clear();
+  store.sessions.delete(sessionId);
+  if (store.activeSessionId === sessionId) {
+    store.activeSessionId = null;
+  }
+}
+
+function refreshSessionsFromDisk(store) {
+  const root = runtimeRoot(store.workspaceRoot);
 
   const directories = readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && ODDTERM_SESSION_ID.test(entry.name))
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
   const screenSessions = directories.length > 0 && isOddTermScreenAvailable() ? listScreenSessions() : [];
 
   for (const sessionId of directories) {
-    const metaPath = sessionMetaPath(store.workspaceRoot, sessionId);
-    if (!existsSync(metaPath)) {
-      continue;
-    }
-
+    const session = store.sessions.get(sessionId) ?? emptySessionFromDisk(store, sessionId);
     let meta;
     try {
-      meta = JSON.parse(readFileSync(metaPath, "utf8"));
-    } catch {
+      sessionRoot(store.workspaceRoot, sessionId);
+      sessionMetaPath(store.workspaceRoot, sessionId, true);
+      meta = JSON.parse(readProjectRuntimeFile(
+        store.workspaceRoot,
+        sessionSegments(sessionId),
+        "meta.json",
+        { encoding: "utf8" },
+      ));
+      admittedPersistedSession(store, session, meta);
+    } catch (error) {
+      rejectPersistedSession(store, sessionId, error);
       continue;
     }
 
@@ -523,9 +726,12 @@ function refreshSessionsFromDisk(store) {
       continue;
     }
 
-    const session = store.sessions.get(sessionId) ?? emptySessionFromDisk(store, sessionId);
-    hydrateSessionFromDisk(store, session, meta, screenSessions);
-    store.sessions.set(sessionId, session);
+    try {
+      hydrateSessionFromDisk(store, session, meta, screenSessions);
+      store.sessions.set(sessionId, session);
+    } catch (error) {
+      rejectPersistedSession(store, sessionId, error);
+    }
   }
 
   if (!store.activeSessionId || !store.sessions.has(store.activeSessionId)) {
@@ -536,9 +742,9 @@ function refreshSessionsFromDisk(store) {
 
 function ensureWorkspaceStore(workspaceRoot) {
   const root = resolve(workspaceRoot);
+  runtimeRoot(root, true);
   let store = workspaceStores.get(root);
   if (!store) {
-    mkdirSync(runtimeRoot(root), { recursive: true });
     store = {
       workspaceRoot: root,
       activeSessionId: null,
@@ -590,17 +796,37 @@ function reconcileSessionLiveness(store) {
 
 function broadcast(session, payload) {
   for (const socket of session.clients) {
-    sendJson(socket, payload);
+    sendJson(
+      socket,
+      payload?.type === "ready"
+        ? {
+            ...payload,
+            sessionId: session.id,
+            subscriptionId: oddTermSubscriptionBySocket.get(socket)
+              ?? `oddterm.attach:${session.workspaceRoot}:${session.id}`,
+          }
+        : payload,
+    );
   }
 }
 
-function ingestScreenTranscript(session) {
-  if (!session.transcriptPath || !existsSync(session.transcriptPath)) {
+function ingestScreenTranscript(session, options = {}) {
+  let authority;
+  try {
+    authority = canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: true,
+    });
+  } catch {
     return;
   }
   let currentSize;
   try {
-    currentSize = statSync(session.transcriptPath).size;
+    currentSize = statProjectRuntimeFile(
+      authority.workspaceRoot,
+      sessionSegments(authority.id),
+      "screenlog.0",
+    ).size;
   } catch {
     return;
   }
@@ -611,13 +837,22 @@ function ingestScreenTranscript(session) {
     return;
   }
   try {
-    const content = readFileSync(session.transcriptPath);
-    const chunk = content.subarray(session.screenLogOffset, currentSize).toString("utf8");
-    session.screenLogOffset = currentSize;
-    if (!chunk) {
+    const content = readProjectRuntimeFile(
+      authority.workspaceRoot,
+      sessionSegments(authority.id),
+      "screenlog.0",
+    );
+    const output = decodeScreenTranscriptFrame(
+      content,
+      session.screenLogOffset,
+      currentSize,
+      options,
+    );
+    session.screenLogOffset = output.nextOffset;
+    if (!output.data) {
       return;
     }
-    const payload = { type: "data", data: chunk };
+    const payload = { type: "data", data: output.data };
     recordTerminalPayload(session, payload);
     persistSessionMeta(session);
     broadcast(session, payload);
@@ -630,7 +865,7 @@ function markScreenSessionClosed(session, exitCode = 0, signal = null) {
   if (session.status !== "live") {
     return;
   }
-  ingestScreenTranscript(session);
+  ingestScreenTranscript(session, { final: true });
   session.status = "closed";
   session.exitCode = exitCode;
   session.signal = signal;
@@ -684,14 +919,29 @@ function startScreenBackend(session) {
   }
 
   const shell = resolveShell();
+  const authority = canonicalSessionAuthority(session, {
+    createDirectory: true,
+    requireMeta: true,
+  });
   session.shell = shell.label;
   session.backend = "node-screen-pty";
-  session.screenSessionId = session.screenSessionId || screenSessionName(session.id);
-  session.transcriptPath = session.transcriptPath || sessionTranscriptPath(session.workspaceRoot, session.id);
-  mkdirSync(sessionRoot(session.workspaceRoot, session.id), { recursive: true });
-  writeFileSync(session.transcriptPath, "", "utf8");
-  writeFileSync(join(sessionRoot(session.workspaceRoot, session.id), "screenrc"), "deflog on\nlogfile flush 0\n", "utf8");
+  session.screenSessionId = authority.screenSessionId;
+  session.transcriptPath = writeProjectRuntimeFile(
+    authority.workspaceRoot,
+    sessionSegments(authority.id),
+    "screenlog.0",
+    "",
+    { encoding: "utf8" },
+  );
+  writeProjectRuntimeFile(
+    authority.workspaceRoot,
+    sessionSegments(authority.id),
+    "screenrc",
+    "deflog on\nlogfile flush 0\n",
+    { encoding: "utf8" },
+  );
   session.screenLogOffset = 0;
+  persistSessionMeta(session);
 
   const screenArgs = [
     "-c",
@@ -707,7 +957,7 @@ function startScreenBackend(session) {
     ...shell.args,
   ];
   const result = spawnSync("screen", screenArgs, {
-    cwd: sessionRoot(session.workspaceRoot, session.id),
+    cwd: authority.root,
     env: screenEnv(session),
     encoding: "utf8",
   });
@@ -754,6 +1004,17 @@ function writeGTermBackend(session, payload) {
       error: "oddterm backend is unavailable",
     };
   }
+  try {
+    canonicalSessionAuthority(session, {
+      requireMeta: true,
+      requireTranscript: true,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
   if (payload?.type === "input" && typeof payload.data === "string") {
     return sendToScreen(session, payload.data);
   }
@@ -761,7 +1022,12 @@ function writeGTermBackend(session, payload) {
     return resizeGTermBackend(session, payload);
   }
   if (payload?.type === "close") {
-    quitScreen(session);
+    if (!quitScreen(session)) {
+      return {
+        ok: false,
+        error: "terminal screen session could not be closed",
+      };
+    }
     markScreenSessionClosed(session, 0, null);
     return { ok: true };
   }
@@ -1037,15 +1303,15 @@ function recordTerminalPayload(session, payload) {
 }
 
 function createSession(workspaceRoot, options = {}) {
+  const admittedCwd = admitProjectWorkingDirectory(workspaceRoot, options.cwd);
   const store = ensureWorkspaceStore(workspaceRoot);
   const sessionId = randomUUID();
-  const sessionDirectory = sessionRoot(store.workspaceRoot, sessionId);
-  mkdirSync(sessionDirectory, { recursive: true });
+  sessionRoot(store.workspaceRoot, sessionId, true);
 
   const session = {
     id: sessionId,
     workspaceRoot: store.workspaceRoot,
-    cwd: options.cwd ? resolve(options.cwd) : store.workspaceRoot,
+    cwd: admittedCwd,
     label: options.label?.trim() || `shell-${store.sessions.size + 1}`,
     archived: false,
     status: "live",
@@ -1063,7 +1329,7 @@ function createSession(workspaceRoot, options = {}) {
     clients: new Set(),
     metaPath: sessionMetaPath(store.workspaceRoot, sessionId),
     historyBytes: 0,
-    screenSessionId: screenSessionName(sessionId),
+    screenSessionId: screenSessionName(store.workspaceRoot, sessionId),
     transcriptPath: sessionTranscriptPath(store.workspaceRoot, sessionId),
     screenLogOffset: 0,
     pollTimer: null,
@@ -1124,13 +1390,19 @@ function replayHistory(session, socket) {
   }
 }
 
-function attachSocketToSession(session, socket) {
+function attachSocketToSession(session, socket, subscriptionId) {
   session.clients.add(socket);
+  oddTermSubscriptionBySocket.set(
+    socket,
+    subscriptionId || `oddterm.attach:${session.workspaceRoot}:${session.id}`,
+  );
 
   if (session.shell || session.pid || session.backend) {
     sendJson(socket, {
       type: "ready",
       workspaceRoot: session.workspaceRoot,
+      sessionId: session.id,
+      subscriptionId: oddTermSubscriptionBySocket.get(socket),
       shell: session.shell ?? "shell",
       pid: session.pid ?? 0,
       backend: session.backend ?? "backend-service",
@@ -1211,12 +1483,16 @@ export function createGTermSession(workspaceRoot, options = {}) {
 }
 
 export function ensureGTermSession(workspaceRoot, options = {}) {
+  const admittedCwd = admitProjectWorkingDirectory(workspaceRoot, options.cwd);
   const store = ensureWorkspaceStore(workspaceRoot);
   const existing = resolveSessionByLabel(store, options.label);
   if (existing) {
     return serializeSession(existing);
   }
-  return serializeSession(createSession(workspaceRoot, options));
+  return serializeSession(createSession(workspaceRoot, {
+    ...options,
+    cwd: admittedCwd,
+  }));
 }
 
 export function renameGTermSession(workspaceRoot, sessionId, label) {
@@ -1343,14 +1619,22 @@ export function loadGTermPoolState(workspaceRoot) {
 }
 
 export function readGTermSessionTail(workspaceRoot, sessionId, lineCount = 120) {
-  const historyId = sessionConversationHistoryId(sessionId);
+  const session = resolveSession(workspaceRoot, sessionId);
+  if (!session) {
+    throw new Error("terminal session not found");
+  }
+  canonicalSessionAuthority(session, {
+    requireMeta: true,
+    requireTranscript: session.backend === "node-screen-pty",
+  });
+  const historyId = session.conversationHistoryId;
   const extracted = extractConversationRange(resolve(workspaceRoot), historyId, {
     entryCount: Math.max(1, lineCount),
     sanitizeTerminalText: true,
   });
 
   return {
-    session: loadGTermPoolState(workspaceRoot).sessions.find((entry) => entry.id === sessionId) ?? null,
+    session: serializeSession(session),
     chunks: extracted.entries,
     text: extracted.text,
   };
@@ -1525,12 +1809,32 @@ export function sendGTermSessionRoomInput(
   return serializeSession(session);
 }
 
-export function attachGTermServer(server, { defaultWorkspaceRoot }) {
+function rejectGTermUpgrade(socket, error) {
+  const statusCode = error?.statusCode === 403 ? 403 : 400;
+  const statusText = statusCode === 403 ? "Forbidden" : "Bad Request";
+  const body = JSON.stringify({
+    error: error instanceof Error ? error.message : String(error),
+  });
+  socket.end([
+    `HTTP/1.1 ${statusCode} ${statusText}`,
+    "Connection: close",
+    "Content-Type: application/json; charset=utf-8",
+    `Content-Length: ${Buffer.byteLength(body)}`,
+    "",
+    body,
+  ].join("\r\n"));
+}
+
+export function attachGTermServer(server, { defaultWorkspaceRoot, admitProjectRoot }) {
+  if (typeof admitProjectRoot !== "function") {
+    throw new Error("OddTerm WebSocket requires Project Context admission.");
+  }
   const socketServer = new WebSocketServer({ noServer: true });
 
-  socketServer.on("connection", (socket, request, url) => {
-    const workspaceRoot = resolve(url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot);
+  socketServer.on("connection", (socket, request, context) => {
+    const { url, workspaceRoot } = context;
     const sessionId = url.searchParams.get("sessionId");
+    const subscriptionId = url.searchParams.get("subscriptionId");
     let session = sessionId ? resolveSession(workspaceRoot, sessionId) : null;
     if (sessionId && !session) {
       sendJson(socket, {
@@ -1546,7 +1850,7 @@ export function attachGTermServer(server, { defaultWorkspaceRoot }) {
       edgeId: url.searchParams.get("edgeId") || null,
     });
 
-    attachSocketToSession(session, socket);
+    attachSocketToSession(session, socket, subscriptionId);
   });
 
   server.on("upgrade", (request, socket, head) => {
@@ -1557,12 +1861,21 @@ export function attachGTermServer(server, { defaultWorkspaceRoot }) {
 
     const url = new URL(request.url, "http://127.0.0.1");
     if (url.pathname !== "/api/oddterm") {
-      socket.destroy();
+      return;
+    }
+
+    let workspaceRoot;
+    try {
+      workspaceRoot = admitProjectRoot(
+        url.searchParams.get("workspaceRoot") || defaultWorkspaceRoot,
+      );
+    } catch (error) {
+      rejectGTermUpgrade(socket, error);
       return;
     }
 
     socketServer.handleUpgrade(request, socket, head, (websocket) => {
-      socketServer.emit("connection", websocket, request, url);
+      socketServer.emit("connection", websocket, request, { url, workspaceRoot });
     });
   });
 

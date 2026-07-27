@@ -1,7 +1,11 @@
 # Product
 
 **Status**: Active
-**Derived From**: `specification/INTENT.md`, `.genesis/docs/standards/SPEC_METHOD.md`, `.genesis/docs/standards/GRAPH_METHOD.md`
+**Derived From**: `specification/GOALS.md`, `specification/INTENT.md`,
+`.genesis/docs/standards/SPEC_METHOD.md`,
+`.genesis/docs/standards/ODD_METHOD.md`,
+`.genesis/docs/standards/DESIGN_MODULE_METHOD.md`, and
+`.genesis/docs/standards/UX_METHOD.md`
 **Purpose**: Define the current control-plane product realization for `odd_manager`
 
 ## Product Position
@@ -76,6 +80,29 @@ It is not:
 Its job is to make current truth legible and operable without inventing a rival
 semantic center.
 
+## Product Outcome Identities
+
+These identities label existing Product outcomes so downstream authority can
+name its immediate Product edge without copying Product prose.
+
+- `PO-OM-BOUNDARY-001` — remain a separate control-plane product subordinate
+  to GTL/ABG and admitted domain-package truth.
+- `PO-OM-OBSERVE-001` — make canonical declaration, runtime, evidence,
+  provenance, and closure truth legible without creating a shadow runtime.
+- `PO-OM-OPERATE-001` — provide attributable Project-scoped workbench,
+  collaboration, file, session, and operator-control surfaces.
+- `PO-OM-LENSES-001` — provide requirement-first and process-first entry
+  lenses over one shared world model, with honest unavailable states where an
+  admitted domain carrier is absent.
+- `PO-OM-DEVELOPER-001` — let the developer move selected Project revisions
+  through `Review -> Tune -> Build -> Assure` to evidence-backed,
+  gate-complete outcomes.
+- `PO-OM-MODULES-001` — compose independently evolvable capabilities through
+  shared Context, contracts, commands, subscriptions, navigation, and
+  evidence under STDO-UX.
+- `PO-OM-AUDIT-001` — keep Product claims reconstructable and auditable from
+  source authority through runtime and proof.
+
 ## Primary Persona And Interaction Goal
 
 The first primary persona is the developer managing multiple Spec Method and
@@ -123,6 +150,91 @@ that no longer match live upstream truth.
 
 Compatibility may be kept only where it lowers migration cost without distorting
 current constitutional or design truth.
+
+### Exact ABIogenesis 4.6-Aligned Observation Subject
+
+The current source-development compatibility subject is deliberately narrow:
+
+> `odd_manager` can read and validate the immutable `odd_glc` `0.1.0`
+> Basic-CLI proof produced on ABIogenesis `4.6.0-rc.3`.
+
+The exact basis is:
+
+- `odd_glc` package `@odd-glc/route-one-typescript@0.1.0`, tag commit
+  `a878475e4609e2d74d3260eb36ee05c4657b1879`;
+- ABIogenesis package `@abiogenesis/typescript-tenant@4.6.0-rc.3`, tag
+  `v4.6.0-rc.3`, snapshot commit
+  `f4f081f66ef8d3ce0c737ddb9d7530176711279a`;
+- live proof SHA-256
+  `9a8bbce08257db6a5b808e629ca7dce5a6f62a293d3f29309e169930228ddfe8`.
+
+The qualification admits the exact proof through both the server projection
+and client validator, reports the proof-declared 602-event total, and admits
+152 bounded event rows, 8 closed vectors, 47 catalog entries, and zero manager
+diagnostics.
+
+This is not a general ABIogenesis 4.6 compatibility range. It does not claim:
+
+- an `odd_glc` Build Carrier Descriptor, execution adapter, or Assurance
+  Catalog;
+- manager submission, supervision, repair, or assurance through `odd_glc`;
+- a rerun of every `odd_glc` data-mapper campaign on `4.6.0-rc.3`;
+- compatibility with a different 4.6 candidate or an unselected final tag; or
+- compatibility with ABIogenesis 5.
+
+Build remains explicitly unavailable when `.odd/build-carrier.json` is absent.
+The evidence bundle is a retained compatibility qualification, not runtime
+authority and not a dependency of `odd_manager`.
+
+## Operational Lifecycle Posture
+
+`odd_manager` is a pre-release source product. Its operational lifecycle is
+therefore explicit:
+
+- **release and installation** — no supported release or install contract
+  exists yet. Source-development execution is proof evidence, not an install
+  claim. Packaging, upgrade, rollback, and release qualification remain
+  deferred until a release outcome is selected.
+- **deployment** — no production deployment topology, service-level objective,
+  or multi-user authorization contract is claimed. The current local
+  single-operator carrier is a realization tenant, not a supported deployment
+  class. Deployment design remains deferred until selected by Product.
+- **live use** — Product commands fail closed when an admitted external
+  carrier, revision basis, evidence source, or authority contract is absent.
+  Fixture and harnessed execution cannot be represented as live Product use.
+- **observability and telemetry** — source attribution, runtime observation,
+  replay, diagnostics, and proof are Product behavior. Operational telemetry
+  for a future deployed manager service is not yet defined and remains
+  deferred with deployment.
+- **retirement** — there is no released product line to retire. Pre-release
+  surfaces may be superseded forward-only with explicit design and source
+  reconciliation. Release deprecation, data migration, and retirement policy
+  remain deferred until the first release contract exists.
+
+These deferments are lifecycle boundaries, not permission to imply that the
+missing operational claims are delivered.
+
+## Governance Basis
+
+`odd_manager` selects the complete immutable STDO `v2.2.1` release at commit
+`8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`, with the 41-member standards
+member-set digest
+`df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`.
+The operative local distribution is `.genesis/docs/standards/` and must remain
+byte-identical to that release.
+
+`SPEC_METHOD.md` supplies the general constitutional method.
+`ODD_METHOD.md` supplies graph-native ODD product-authoring and
+traversal-governance law. `DESIGN_MODULE_METHOD.md` and `UX_METHOD.md` govern
+the applicable design and interaction boundaries. Mutable methodology source,
+candidate cuts, and historical local method members do not govern this
+consumer.
+
+This selection changes the method basis only. It does not alter Product
+outcomes, current goal selection, accepted design, ticket topology, runtime
+behavior, or evidence status. Another STDO release becomes operative only
+through explicit Product-owner selection and installation of its complete
+immutable member set.
 
 ## Product Terms
 
@@ -599,38 +711,3 @@ The current product definition of `odd_manager` is:
   `build_tenants/common/design/AI_WORKSPACE_OBSERVABILITY_MIGRATION.md`
 - a project whose installer-seeded `build_tenants/odd_manager/python/` surface
   remains starter scaffold only, not the chosen control-surface carrier
-
-The current active implementation target is:
-
-- `build_tenants/react_vite/`
-- current core observation contract: versioned, source-attributed GTL/ABG run
-  truth discovered through the selected Project topology
-- current reference product: `odd_glc` data-mapper proof and event carriers
-- current process-first surface: generic Sidecar Run Inspector with no
-  privileged domain adapter
-
-## Current Implementation Posture
-
-The React tenant realizes the modular developer-control foundation and the
-generic manager MVP. It provides Project registration and deep links, Build
-Portfolio, the goal-oriented Project Workbench, attributable Specification
-Proposals, typed Build Request admission, bounded single and concurrent build
-supervision, gate/asset Assurance and Attention, durable shells, tickets,
-files, AI Workspace observation, and deep Run Inspector and traversal
-projections. These capabilities compose through one shared Project/revision
-Context and typed command membrane without taking GTL traversal or ABG runtime
-closure authority.
-
-The manager-owned `Review -> Tune -> Build -> Assure` path is proven against
-admitted dynamic product fixtures and a digest-pinned production adapter
-contract. It is not yet proven against the named live `odd_glc` data-mapper
-product carrier. `odd_glc` must publish its declarations-only non-test Build
-Carrier Descriptor, execution adapter, Assurance Catalog, and matching build
-evidence bundle, and the required ABIogenesis candidate must complete F_H
-promotion. Until those external product facts exist, odd_manager reports the
-capabilities as unavailable and does not substitute a test harness, browser
-command, or shell path for product truth.
-
-AI Workspace and Run Inspector remain supporting observation and forensic
-capabilities inside this loop. They are not alternative product centers or
-evidence authorities.

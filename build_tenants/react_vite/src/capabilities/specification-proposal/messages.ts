@@ -7,6 +7,7 @@ import type {
 
 type ProposalCommandFailure = {
   commandId: string;
+  correlationId: string;
   error: string;
   proposal?: SpecificationProposal | null;
 };
@@ -26,34 +27,39 @@ export type SpecificationProposalMessage =
   | { type: "proposal/reject-requested"; actorRef: string }
   | { type: "proposal/history-requested" }
   | { type: "proposal/selected"; proposalId: string }
-  | { type: "proposal/supporting-command-consumed"; commandId: string }
+  | { type: "proposal/supporting-command-consumed"; commandId: string; correlationId: string }
   | {
       type: "proposal/history-loaded";
       commandId: string;
+      correlationId: string;
       projectRoot: string;
       history: SpecificationProposalHistory;
     }
   | {
       type: "proposal/generated";
       commandId: string;
+      correlationId: string;
       projectRoot: string;
       proposal: SpecificationProposal;
     }
   | {
       type: "proposal/validated";
       commandId: string;
+      correlationId: string;
       projectRoot: string;
       proposal: SpecificationProposal;
     }
   | {
       type: "proposal/accepted";
       commandId: string;
+      correlationId: string;
       projectRoot: string;
       proposal: SpecificationProposal;
     }
   | {
       type: "proposal/rejected";
       commandId: string;
+      correlationId: string;
       projectRoot: string;
       proposal: SpecificationProposal;
     }

@@ -5,15 +5,23 @@
 - status: open
 - goal: realize-ai-workspace-topology-and-agent-interoperability
 - opened_at: 2026-05-17T00:00:00+10:00
-- updated_at: 2026-05-30T22:35:48+10:00
+- updated_at: 2026-07-26
 - governance_scope: STDO-UX Method
+- selected_method_release: STDO v2.2.1
+- selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+- selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+- growth_authority: review_and_disposition_only
+
+This sprint remains open only for operator review and direct disposition of its
+retained closure claim. Its completed ticket and evidence do not authorize
+further realization.
 
 ## Authority
 
 - specification/PRODUCT.md
 - specification/requirements/04-orientation-and-navigation.md
 - specification/requirements/10-entry-lenses-and-delivery-workspaces.md
-- .ai-workspace/tickets/active/B-078-sidecar-project-favourites-browse-cleanup.md
+- .ai-workspace/tickets/completed/B-078-sidecar-project-favourites-browse-cleanup.md
 - .ai-workspace/tickets/completed/B-058-remove-info-shell-selector-and-clarify-folder-pinning.md
 - .ai-workspace/tickets/completed/B-060-make-browse-a-real-filesystem-navigator-not-pin-recovery.md
 
@@ -35,7 +43,7 @@ chrome. The displaced capability is rehomed into Sidecar-native surfaces:
 
 ## Included Tickets
 
-- B-078: active
+- B-078: completed; retained for review
 
 ## Closure Gates
 

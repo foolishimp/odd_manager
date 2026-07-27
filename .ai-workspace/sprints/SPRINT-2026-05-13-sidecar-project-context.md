@@ -5,7 +5,15 @@
 - status: open
 - goal: realize-ai-workspace-topology-and-agent-interoperability
 - opened_at: 2026-05-13T09:04:20+10:00
-- updated_at: 2026-05-13T09:18:20+10:00
+- updated_at: 2026-07-26
+- selected_method_release: STDO v2.2.1
+- selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+- selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+- growth_authority: review_and_disposition_only
+
+This sprint remains open only for review and direct disposition of its retained
+closure claim. Its completed ticket and evidence do not authorize further
+realization.
 
 ## Authority
 
@@ -13,21 +21,23 @@
 - specification/requirements/04-orientation-and-navigation.md
 - specification/requirements/10-entry-lenses-and-delivery-workspaces.md
 - build_tenants/react_vite/design/widgets/sidecar-session-workspace.md
-- .ai-workspace/tickets/active/B-076-fix-project-selector-sidebar-context-switch.md
+- .ai-workspace/tickets/completed/B-076-fix-project-selector-sidebar-context-switch.md
 
 ## Scope
 
-This sprint keeps B-076 open until Sidecar project selection, visible context,
+This sprint kept B-076 open until Sidecar project selection, visible context,
 Browse roots, Recent Paths, pinned folders, and project-scoped API calls all
-share one active Project root without requiring a full browser reload.
+shared one active Project root without requiring a full browser reload. B-076
+is now completed; those conditions form the retained closure claim under
+review.
 
 The recovered failure mode is root drift: a Sidecar project tab or Browse view
 can load one workspace while the shell title/control still advertises another
-Project. That is treated as active sprint work, not closed delivery.
+Project. Further work on that failure mode requires a new admitted basis.
 
 ## Included Tickets
 
-- B-076: active
+- B-076: completed; retained for review
 
 ## Current Evidence
 

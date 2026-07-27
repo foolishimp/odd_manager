@@ -1,20 +1,5 @@
 # World Model Method
 
-**Status**: Approved
-**Date**: 2026-04-15
-**Derived from**: `odd_domain` product and methodology R&D, repriced into a
-single constitutional world-model method surface
-
-This document defines the constitutional method for world-model construction.
-
-It governs world-model semantics, representation, publication, composition, and
-downstream projection.
-
-It is method-level. It currently carries the governing representation and
-publication law for world-model work.
-
----
-
 ## Position
 
 Most institutional systems preserve values and lose the semantic context needed
@@ -66,7 +51,8 @@ Within the world-model domain, this document is the primary method surface.
 
 Where a product is both graph-native and world-model-driven:
 
-- `GRAPH_METHOD.md` governs graph-native execution shape and traversal law
+- `ODD_METHOD.md` governs graph-native execution shape, traversal law, and
+  ODD product-authoring structure
 - `WORLD_MODEL_METHOD.md` governs world-model semantics, publication, and
   composition law
 
@@ -159,6 +145,12 @@ A world model is a governed semantic layer built over existing source systems.
 
 It is descriptive before it is generative.
 
+Its primary semantic unit is the published Markov-object cut: an
+identity-bearing, evidence-backed, bounded semantic cut projected from the
+attribute ledger. Generic references to a "world-model object" are shorthand
+for this unit unless the text explicitly names a looser candidate or
+intermediate surface.
+
 It should make explicit:
 
 - what objects are treated as real in a bounded context
@@ -177,6 +169,154 @@ A world model is not:
 - a generic catalog entry
 - a copied data warehouse
 - a schema registry pretending to be comprehension
+
+---
+
+## Theoretical Underpinnings Of The Markov Object
+
+The method treats "Markov object" as a load-bearing construct, not as
+borrowed vocabulary.
+
+A Markov object is a stable self-bounding pattern in a constraint
+structure whose internal state can be reasoned about through its
+effective blanket. The term is substrate-neutral. The same topology is
+expected wherever a constraint structure admits stable configurations:
+
+- biological systems (Friston's original setting)
+- the natural-language traces those systems emit
+- learned representations built over those traces (LLMs)
+- the engineered institutional systems descended from both
+
+The working claim is that world-model construction is possible because
+this topology propagates across substrates. What domain experts
+recognize as "objects" in an institutional system is the same kind of
+structure Friston described for biological systems, re-expressed
+through another substrate. The method is the practice of making that
+structure explicit, traceable, and publishable.
+
+### What An Effective Blanket Actually Is
+
+The naive reading of "blanket" is set-theoretic: a fixed set of member
+states partitioning internal from external. That reading does not
+survive contact with real representations.
+
+- For any attribute basis over a domain (schema columns, SAE
+  dictionary, feature set, vocabulary), the set of attributes that
+  "fire" for an object is not a crisp partition. Overwriting
+  attributes outside that apparent set still leaks partial identity
+  transfer.
+- The attributes that do fire have only partial alignment with the
+  object's identity. Each alone is insufficient. The basis
+  distributes object identity across many atoms.
+
+The load-bearing reading is geometric.
+
+- The effective blanket is a low-rank projection in the representation
+  space along which object identity is preserved under treatment.
+- The attribute basis is evidence for that projection. The projection
+  is not a column-membership predicate.
+- A published Markov object cut is an identity direction together with
+  the distributed attribute evidence supporting it.
+
+This reading is consistent with candidate evidence from a learned
+representation system. The evidence is direction-level and
+behavioural; the formal conditional-independence condition that
+would promote the Markov-object construct from candidate to
+established remains future work in the companion program. See the
+companion research surface at
+[`foolishimp/constraint_emergence_ontology` → `markov_object_research/empirical_results.md`](https://github.com/foolishimp/constraint_emergence_ontology/blob/main/markov_object_research/empirical_results.md)
+§15 for the specific experiments that discriminate geometric blanket
+from set-membership blanket, and the candidate-alignment table for
+this method's Markov-object construct.
+
+### Four Working Refinements Indicated By The Empirical Program
+
+Four findings from the empirical program constrain how the method
+treats Markov objects. They are working refinements: the program has
+produced candidate evidence for them, not a formal closure. The
+method adopts them as the best current reading of the construct.
+
+1. **Identity is a translation, not a variance axis.** Object
+   identity appears as a mean offset in representation space, not as
+   the dominant-variance direction. World-model construction that
+   characterizes objects by "the biggest source of variance in the
+   attribute set" will miss identity. Characterize by
+   typical-offset-from-a-null-peer instead.
+
+2. **Attribute schemas sense and fragment.** Any fixed attribute
+   basis will partially align with and partially distribute a given
+   object's identity. A published cut must expose the identity axis,
+   not only the attribute profile. Schemas are evidence, not
+   ontology.
+
+3. **Core identity, not core size, is diagnostic.** A sparse invariant
+   with semantically loaded content is a lawful Markov object. A
+   rich attribute cluster without invariants under context variation
+   is not. More columns do not buy more objecthood.
+
+4. **Boundary is interventional, not structural.** The test for
+   "is this the object's blanket?" is: does projection along this
+   direction preserve identity under plausible treatments? It is not:
+   which attributes are in the member-set? The Representation Law
+   should be read this way.
+
+These refinements do not weaken the Markov-object construct. They
+sharpen it into a construct that can be operationally validated and
+reproduced in published cuts.
+
+### Epistemic Status Of The Construct
+
+The method commits to the Markov-object construct as load-bearing
+working vocabulary. The empirical program that sharpens it is at
+candidate status: it reports evidence consistent with the
+geometric-blanket reading but does not close the
+conditional-independence condition that would formally establish a
+Markov object in the statistical sense.
+
+Adopting this method does not require that the empirical program be
+complete. Method commitments that depend on a formally established
+conditional-independence object — for example, claims that a
+published Markov-object cut *is* the blanket rather than a candidate
+for it — must be read as working commitments, open to revision when
+the companion program produces a conditional-independence result.
+
+Promotion gate. The outstanding experimental result that would promote
+the construct from candidate to established is a direction-native
+conditional-independence test: given the identity projection,
+residual variation along remaining components should be independent
+of the target under plausible treatments. Until such a test runs and
+succeeds at a meaningful threshold, published cuts that invoke this
+method should be read as candidate cuts of a candidate construct,
+not as certified blankets of formally-established objects.
+
+This epistemic status is inherited downstream. Tooling that
+materializes Markov-object cuts under this method should default to a
+candidate-class publication kind and reserve any formally-closed
+publication kind for cuts backed by a real promotion-gate result.
+
+### Relation To Design Module Method
+
+The Markov-object framing here gives a theoretical account of a design pressure
+that also appears in `DESIGN_MODULE_METHOD.md`.
+
+If a Markov object is read as a candidate identity-bearing cut, then good
+software boundary design should prefer:
+
+- the smallest lawful carrier set that preserves the boundary's real authority
+- subordinate payloads staying subordinate unless they carry independent
+  authority
+- resistance to boundary inflation, where many sensed fragments are promoted
+  into peer objects without irreducible need
+- strongly typed semantic boundaries so identity-bearing cuts are not left
+  fuzzy, reconstructive, or controller-owned
+
+This document does not make the empirical Markov-object program a prerequisite
+for all design work. The relation runs the other way:
+
+- `WORLD_MODEL_METHOD.md` gives one theoretical framing for why these boundary
+  disciplines are sound
+- `DESIGN_MODULE_METHOD.md` gives the general engineering law that remains valid
+  even outside world-model products
 
 ---
 
@@ -265,7 +405,7 @@ highest semantic authority.
 
 ### Probability Belongs In The Epistemic Overlay
 
-The canonical world-model object should remain semantic and bounded.
+The canonical published Markov-object cut should remain semantic and bounded.
 
 Probability belongs in uncertainty, ranking, anomaly, and alignment overlays,
 not in the ontological identity of the published object itself.
@@ -297,7 +437,7 @@ layer.
 That layer consists of:
 
 - published domain artifacts
-- their bounded fragments and published object cuts
+- their bounded fragments and published Markov-object cuts
 - explicit treatments, covariance edges, adjoint mappings, and temporal
   reference artifacts
 - composed world models built by reference from those published artifacts
@@ -359,8 +499,13 @@ A bounded published slice inside a published domain artifact.
 
 ### World Model Object
 
-A machine-reasonable representation of something treated as real in the
-institutional operating model.
+A generic shorthand for something treated as real in the institutional
+operating model.
+
+This term is intentionally weaker than `Markov Object`. It is useful during
+observation, extraction, review, and discussion. It is not the preferred name
+for the primary published semantic unit once the builder has constructed a
+governed identity-bearing cut.
 
 ### Assurance
 
@@ -391,7 +536,20 @@ A stable self-bounding world-model object whose internal state can be reasoned
 about through its effective blanket.
 
 The published Markov object is an immutable object cut projected from the
-attribute ledger, not an in-place mutable record.
+attribute ledger, not an in-place mutable record. The cut is an identity
+direction together with the distributed attribute evidence that supports
+it, not an enumeration of member columns.
+
+Within this method, the published Markov-object cut is the canonical semantic
+unit for object publication, composition, and downstream projection. Builder
+projects may begin with looser object candidates, but world-model publication
+should converge them into Markov-object cuts or explicitly leave them as
+non-object artifacts such as treatment surfaces, covariance edges, or temporal
+reference artifacts.
+
+Full theoretical treatment in *Theoretical Underpinnings Of The Markov
+Object*. Construction and storage obligations in *Markov Object
+Construction Law*.
 
 ### Treatment Surface
 
@@ -486,7 +644,8 @@ claims and later object cuts, not by mutating prior accepted entries in place.
 
 ### 6. Bound
 
-Identify bounded contexts and the objects that actually cohere inside them.
+Identify bounded contexts and the candidate Markov objects that actually cohere
+inside them.
 
 Reject schema-first modeling and vocabulary-cluster modeling.
 
@@ -494,8 +653,8 @@ Define local boundaries in terms of function, authority, state, and adjacency.
 
 ### 7. Materialize
 
-Project world-model objects and Markov object cuts from the attribute ledger
-with enough semantic context for alignment and reasoning.
+Project Markov-object cuts from the attribute ledger with enough semantic
+context for alignment and reasoning.
 
 Sparse first publication is lawful if the object is bounded, distinguishable,
 and evidence-backed.
@@ -518,15 +677,16 @@ authority.
 
 ### 10. Compose
 
-Stitch published domain artifacts and their fragments into higher-order world
-models without erasing local authority.
+Stitch published domain artifacts, their fragments, and their published
+Markov-object cuts into higher-order world models without erasing local
+authority.
 
 Composition is recursive, inspectable, and bounded.
 
 ### 11. Align (Optional)
 
 Use the semantic kernel as a tether for probabilistic alignment across domains,
-artifacts, and projections.
+Markov-object cuts, artifacts, and projections.
 
 This stage may produce:
 
@@ -583,9 +743,9 @@ dedicated query plane.
 
 ## Representation Law
 
-Every published object must be prompt-sufficient for reasoning.
+Every published Markov-object cut must be prompt-sufficient for reasoning.
 
-At minimum, the object should make visible:
+At minimum, the cut should make visible:
 
 - identity
 - boundary
@@ -596,27 +756,33 @@ At minimum, the object should make visible:
 - covariance
 - ambiguity
 
-Markov objects must additionally make their effective blanket explicit.
+"Make the effective blanket explicit" means: identify
+the low-rank projection along which object identity is preserved under
+treatment, not enumerate a set of member attribute columns. Attribute
+schemas are evidence for the identity axis, not the axis itself. A
+well-formed Markov-object publication should therefore expose both the
+distributed attribute evidence and the projection that recovers identity
+from it.
 
 ---
 
 ## Materialization Law
 
-The materialized world-model object is an artifact of the world-model builder,
+The materialized Markov-object cut is an artifact of the world-model builder,
 not a raw artifact of the source system.
 
 The governing split is:
 
 - source systems remain sovereign for operational truth
 - the builder observes and comprehends that truth
-- the published world-model object is the canonical truth of the world-model
-  layer
+- the published Markov-object cut is the canonical object-level truth of the
+  world-model layer
 - projections are derived from that semantic artifact
 
 This is why published domain artifacts should be versioned and superseded
 explicitly.
 
-The versioned object is the builder's governed understanding of reality, not a
+The versioned cut is the builder's governed understanding of reality, not a
 claim that the source system emitted the object directly.
 
 More specifically:
@@ -624,10 +790,15 @@ More specifically:
 `source -> tracing -> assurance -> attribute ledger -> Markov object cut`
 
 The Markov object cut is the immutable projection, not the mutable source of
-truth.
+truth. "Projection" is literal: the cut is a low-rank identity direction
+over the distributed evidence in the ledger, accompanied by that
+evidence and its verification record. See *Markov Object Construction
+Law* for the full obligation.
 
 The attribute ledger is the accepted semantic record over which the object cut
-is projected.
+is projected. A single ledger state can support many different cuts at
+different identity directions and different context scopes; the cut
+records which direction was taken, not that the ledger *is* the cut.
 
 Every accepted object attribute should therefore be recoverable through:
 
@@ -694,6 +865,135 @@ claim record per accepted attribute fact.
 
 ---
 
+## Markov Object Construction Law
+
+A builder project constructs a Markov object cut by a directional,
+interventional procedure. The framework below is both how the object is
+*built* and the minimum structure that must be *stored* when the cut is
+published.
+
+### 1. Paired Evidence Collection
+
+For a candidate object, assemble attribute-ledger evidence across
+context variation together with evidence for at least one null peer:
+
+- multiple contexts in which the candidate is instantiated
+- a null-peer instance: a structurally similar thing that lacks the
+  candidate's identity content, observed in the same contexts
+- paired ledger entries covering `(candidate, context)` and
+  `(null, context)` so identity-carrying signal can be separated from
+  context-carrying signal
+
+The paired evidence is the raw material of the cut. The ledger entries
+remain distributed; they are not the object.
+
+### 2. Identity-Direction Extraction
+
+Derive the identity axis as a low-rank projection over the paired
+evidence. The canonical form is the mean offset:
+
+`d(object) = μ(evidence_object) − μ(evidence_null)`
+
+taken across contexts. Supervised variants (linear discriminant,
+logistic-regression normal, difference-in-conditional-means) are
+admissible when they target mean offset rather than within-class
+variance.
+
+Principal-component and maximum-variance constructions are not
+admissible as identity directions. They capture within-pair
+variation, not the identity offset.
+
+The identity direction is not an attribute column. It is a geometric
+combination over columns.
+
+### 3. Verification By Treatment
+
+A candidate identity direction is accepted only if projection along
+it preserves object identity under held-out treatments. The builder
+must record at least one acceptable verification:
+
+- α-sweep: apply `x − α · d` on held-out contexts, show expected
+  identity shift and its saturation behaviour
+- transplant: apply `x + α · d` to null-peer instances, show
+  identity acquisition
+- boundary test: overwrite attributes outside the projection support
+  and show identity survives (this is what discriminates geometric
+  blanket from set-membership blanket)
+
+A direction that has no acceptable verification is a candidate, not an
+accepted Markov object. Publishing an unverified direction is a
+violation of the Representation Law.
+
+### 4. Core And Coat Decomposition
+
+For candidates that appear in multiple contexts, decompose the
+attribute evidence into:
+
+- **invariant core**: attributes whose contribution to the identity
+  direction is stable across ≥ N of N contexts
+- **context coat**: attributes selected by the specific context,
+  carrying contextual reinterpretation rather than identity per se
+
+Both are evidence. The core carries identity. The coat carries
+treatment. The coat/core ratio is a characterization, not a quality
+metric.
+
+### 5. Null-Peer Discrimination
+
+Before publication, discriminate an accepted Markov object from an
+incidental attribute cluster by null-peer comparison:
+
+- is the candidate's core size in a range that null peers also hit?
+  Yes is expected and acceptable. Size is not diagnostic.
+- are the identity-loaded attributes in the core unique to the
+  candidate among its null peers? They should be.
+- does the candidate's identity direction transfer more cleanly than
+  a random diagonal in the representation? It should.
+
+Failure on the uniqueness and transfer tests means the cluster is
+not yet a lawful Markov object, even if its invariants are
+internally consistent.
+
+### 6. Cut Publication
+
+A published Markov object cut must make visible, at minimum:
+
+- **identity direction**: the projection (representation-space
+  vector or equivalent geometric description)
+- **attribute evidence**: core + coat, traced to ledger entries
+- **verification record**: treatments used, outcomes observed,
+  held-out contexts evaluated
+- **boundary characterization**: projection support on which identity
+  was preserved under treatment
+- **null-peer comparison**: what similar things were tested, what
+  was accepted, what was rejected
+- **effective coordinate**: α along direction for this instance,
+  where applicable
+
+A cut is an immutable projection. Revising the identity direction —
+because new contexts or new evidence became available — produces a
+new cut that supersedes the prior one. Prior cuts are never mutated
+in place (see Publication Law).
+
+### 7. Storage Shape
+
+The stored cut is not a row in a table and not a membership list. It
+is a package:
+
+- the geometric object (identity direction and projection support)
+- the distributed evidence (pointers into the attribute ledger)
+- the verification trace (treatments, contexts, outcomes)
+- the provenance and authority record (who accepted, on what
+  assurance basis)
+- the supersession record (which cut this replaces, if any)
+
+A storage layout that loses any of these surfaces is not a lawful
+Markov-object storage layout. Query planes and projection surfaces
+derived from stored cuts are downstream conveniences and do not
+substitute for this storage shape.
+
+---
+
 ## Saturation Law
 
 World-model construction is iterative.
@@ -717,7 +1017,8 @@ does not.
 
 Do not build one central monolith first.
 
-Build local published domain artifacts, then stitch them.
+Build local published domain artifacts and their Markov-object cuts, then
+stitch them.
 
 Composition must preserve:
 
@@ -877,7 +1178,7 @@ The result is:
 
 - published domain artifacts as the durable semantic publication units
 - composed world models built from those published artifacts
-- inspectable object packets
+- inspectable Markov-object packets
 - explicit treatment and covariance semantics
 - epistemic correspondence overlays grounded in the same semantic substrate
 - temporal reference artifacts for changing domain enumerations
@@ -893,3 +1194,10 @@ The result is:
 - `SPEC_METHOD.md`: constitutional specification method
 - `RELEASE_METHOD.md`: method for releasing standards into installed workspaces
 - `TICKET_METHOD.md`: method for turning discovery into bounded execution work
+- [`foolishimp/constraint_emergence_ontology` → `markov_object_research/empirical_results.md`](https://github.com/foolishimp/constraint_emergence_ontology/blob/main/markov_object_research/empirical_results.md):
+  candidate empirical program on the Markov-object construct in a learned
+  representation system (GPT-2 + SAEs). Experiments 08–18 report evidence
+  consistent with the geometric-blanket reading, with causal and
+  discrimination results that sharpen this method's working construct while
+  leaving the formal conditional-independence promotion gate open. See §15 of
+  that document for the claim-by-claim alignment table.

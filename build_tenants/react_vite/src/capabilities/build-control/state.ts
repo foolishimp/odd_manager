@@ -35,6 +35,7 @@ export type BuildControlState = {
   selectedExecutionId: string | null;
   attached: BuildAttachResponse | null;
   pendingCommands: BuildControlCommand[];
+  refreshQueued: boolean;
   commandSequence: number;
   error: string | null;
 };
@@ -49,6 +50,7 @@ export function createBuildControlState(): BuildControlState {
     selectedExecutionId: null,
     attached: null,
     pendingCommands: [],
+    refreshQueued: false,
     commandSequence: 0,
     error: null,
   };
@@ -59,5 +61,6 @@ export const INITIAL_BUILD_CONTROL_STATE = createBuildControlState();
 export type BuildControlSubscription = {
   type: "build.poll";
   projectRoot: string;
+  basisRevision: ProjectRevision | null;
   intervalMs: number;
 };

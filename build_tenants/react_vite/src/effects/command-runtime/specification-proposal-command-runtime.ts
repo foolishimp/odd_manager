@@ -51,6 +51,7 @@ export async function interpretSpecificationProposalCommand(
       return {
         type: "proposal/history-loaded",
         commandId: command.commandId,
+        correlationId: command.correlationId,
         projectRoot: root,
         history: specificationProposalHistorySchema.parse(await responsePayload(response)),
       };
@@ -93,6 +94,7 @@ export async function interpretSpecificationProposalCommand(
     return {
       type: messageType,
       commandId: command.commandId,
+      correlationId: command.correlationId,
       projectRoot: root,
       proposal,
     } as SpecificationProposalMessage;
@@ -103,6 +105,7 @@ export async function interpretSpecificationProposalCommand(
     return {
       type: failureType(command),
       commandId: command.commandId,
+      correlationId: command.correlationId,
       error: caught instanceof Error ? caught.message : String(caught),
       proposal: candidate?.success ? candidate.data : null,
     } as SpecificationProposalMessage;

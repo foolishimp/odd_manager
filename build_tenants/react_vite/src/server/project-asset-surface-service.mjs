@@ -356,11 +356,7 @@ function setActiveProject(managerWorkspaceRoot, identityOrRoot, options = {}) {
       throw new Error(`Project root is not a directory: ${identityOrRoot}`);
     }
     if (options.registerIfMissing === false) {
-      const nextRegistry = writeRegistry(managerWorkspaceRoot, {
-        ...registry,
-        active_project_root: root,
-      });
-      return describeProjectAt(projectDisplayNameFromRoot(root), root, null, nextRegistry.active_project_root);
+      throw new Error(`Project is not registered: ${identityOrRoot}`);
     }
     registerProject(managerWorkspaceRoot, root);
     registry = readRegistry(managerWorkspaceRoot);

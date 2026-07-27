@@ -15,7 +15,7 @@ It tests that `odd_manager` can present one shared project reality through both
 a requirement-first and a process-first framing without creating dead-end
 widgets, disconnected truth, or rival work-tracking authority.
 
-## Scenario 1 - BA inspects one requirement end to end
+## SCN-OM-LNS-001 - BA inspects one requirement end to end
 
 Actor: business analyst or product manager
 
@@ -38,7 +38,7 @@ Expected outcomes
 - the operator can determine whether the requirement is specified, implemented,
   proved, blocked, or still open
 
-## Scenario 2 - Scrum master starts from process activity
+## SCN-OM-LNS-002 - Scrum master starts from process activity
 
 Actor: scrum master or delivery lead
 
@@ -73,3 +73,23 @@ Expected outcomes
   text
 - divergence path: entry-lens-specific filtering changes framing without
   changing the underlying object truth
+
+## Executable Proof Bindings
+
+Each row is one written testcase authority. `Scenario proof` means the named
+composed-product test directly asserts only the bounded case in that row; it
+does not promote the whole requirement or family. A gap or deferment is not an
+executable proof claim.
+
+| Scenario | Requirement | Requirement-specific authority case | Proof posture | Proof selector or gap |
+| --- | --- | --- | --- | --- |
+| `SCN-OM-LNS-001` | `REQ-OM-LNS-001` | Show that requirement-first and process-first lenses project the same selected requirement identity and source truth | Deferred | none — no requirement-first realization outcome or admitted carrier is selected |
+| `SCN-OM-LNS-001` | `REQ-OM-LNS-002` | Enter Requirements View from a human-readable requirement and keep that requirement as the primary frame through drill-down | Deferred | none — no requirement-first realization outcome or admitted carrier is selected |
+| `SCN-OM-LNS-001` | `REQ-OM-LNS-004` | Reuse the same widget contract across both entry lenses without copying an independent truth model | Deferred | none — no cross-domain requirement carrier is installed for this widget family |
+| `SCN-OM-LNS-001` | `REQ-OM-LNS-007` | Expose specification, design, implementation, proof, and work posture from one selected requirement | Deferred | none — no requirement-first realization outcome or admitted carrier is selected |
+| `SCN-OM-LNS-001` | `REQ-OM-LNS-009` | Keep board and session tools reachable while a requirement remains the primary work frame | Deferred | none — no requirement-first realization outcome or admitted carrier is selected |
+| `SCN-OM-LNS-002` | `REQ-OM-LNS-003` | Traverse Review, Tune, Build, and Assure from process activity while preserving one selected Project basis | Scenario proof | `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts :: integrated Review Tune Build Assure journey preserves one revised Project basis across concurrent work` |
+| `SCN-OM-LNS-002` | `REQ-OM-LNS-005` | Collapse and restore independent supporting sections without losing their selected Project context | Scenario proof | `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts :: sidecar sections minimize and restore independently` |
+| `SCN-OM-LNS-002` | `REQ-OM-LNS-006` | Open an actionable portfolio attention total into its admitted Tune, Build, or Assure target | Scenario proof | `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts :: portfolio attention names and opens its admitted Tune, Build, or Assure target` |
+| `SCN-OM-LNS-002` | `REQ-OM-LNS-008` | Compare ticket status authority with comment discussion from the same process-selected concern | Executable proof gap | none — no composed-product testcase compares ticket and comment authority in one delivery view |
+| `SCN-OM-LNS-002` | `REQ-OM-LNS-010` | Resolve a registered Project identity to its non-empty Project Workbench landing surface | Scenario proof | `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts :: project-only deep link opens the modular developer Project Workbench` |

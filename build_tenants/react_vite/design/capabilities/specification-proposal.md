@@ -6,6 +6,13 @@
 **Requirements**: REQ-OM-SPC-001 through REQ-OM-SPC-008
 **Governance**: STDO-UX (`DESIGN_MODULE_METHOD`, `UX_METHOD`)
 **Common ADR**: `build_tenants/common/design/adrs/ADR-001-canonical-ux-functions-and-projection-instances.md`
+**Implements**: `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `PO-OM-AUDIT-001`; `REQ-OM-SPC-*`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/capabilities/specification-proposal/index.ts`; `build_tenants/react_vite/src/effects/command-runtime/specification-proposal-command-runtime.ts`; `build_tenants/react_vite/src/server/specification-proposal-service.mjs`; `build_tenants/react_vite/src/server/specification-proposal-provider.mjs`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_specification_proposal_replay.mjs` :: `proposal Msg replay preserves one generate, validate, and accept command path`; `build_tenants/react_vite/runtime/tests/test_specification_proposal_service.mjs` :: `proposal generation, validation, and acceptance preserve candidate truth until one atomic apply`; `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts` :: `Specification Proposal generates, refines, validates, accepts, rejects, and preserves lineage`
+**STDO-UX Bindings**: State=SpecificationProposalState; Msg=SpecificationProposalMessage; Update=updateSpecificationProposal; Cmd=SpecificationProposalCommand; Sub=SpecificationProposalSubscription currently never with commands result-driven; Ingress=proposal request response decision and history schemas in developer-control-contracts; View=SpecificationProposalView; Membrane=specification-proposal-command-runtime and specification-proposal-service; Replay=build_tenants/react_vite/runtime/tests/test_specification_proposal_replay.mjs :: proposal Msg replay preserves one generate, validate, and accept command path; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts :: developer control and workbench tabs provide keyboard parity and named panels
+**Accepted Ontology And Design Basis**: `ONT-OM-DEVCTRL-001` and `B-OM-DEVCTRL-LOCAL-001` in the parent design; this module projects `P-CONTEXT`, `P-OWNERSHIP`, `P-COMMAND`, `P-RESULT`, `P-REPLAY`, and `P-AUTHORITY`.
+**Accessibility Proof Scope**: Tune navigation, proposal interaction controls, focus/status semantics, representative contrast, and responsive containment are part of the accepted operator proof bundle.
+**Implementation Acceptance**: Accepted for the manager-local proposal module subject to the exact T-032 validation bundle. Agent output remains candidate truth until deterministic validation and an explicit admitted decision.
 
 ## Responsibility
 
@@ -167,6 +174,21 @@ the history projection. Truncation is oldest-first and explicit. Accepted
 source remains constitutional authority; proposal history remains workflow
 evidence.
 
+Each Project has one elected persistence and decision owner. A contender
+durably publishes a complete, uniquely named choosing claim, advances that
+claim to a held claim with a bakery ticket, and wins only when its `(ticket,
+token)` is the lowest active held claim and no other active claim is still
+choosing. In-process callers also enter one FIFO lane before that durable
+cross-process election.
+
+Fresh malformed legacy claims block. Once aged, malformed, empty, truncated,
+or locally abandoned claims may be ignored, but recovery never deletes them.
+Parsed live or process-liveness-indeterminate owners continue to block after
+aging. Non-regular or unreadable claim carriers are indeterminate and always
+block. Release may remove only the exact claim whose process, owner instance,
+acquisition time, and token still match the releasing owner; a replaced or
+newly published owner is retained.
+
 ## State And Messages
 
 `SpecificationProposalState` owns:
@@ -211,8 +233,30 @@ proposal/selected
 proposal/supporting-command-consumed
 ```
 
-Late results are admitted only when command identity, Project root, and basis
-still match the pending command.
+Late results are admitted only when command identity, exact Project identity,
+and current command basis still match the pending command. Generation results
+must also preserve the commanded prompt, predecessor, attachment refs, and
+basis. Validate, accept, reject, and optional failure proposal carriers must
+name the commanded proposal and preserve its immutable Project, basis,
+participant, creation, prompt, patch, attachment, affected-surface, and
+predecessor identity. History may span earlier revisions, but every member must
+belong to the exact admitted Project and proposal identities must be unique.
+Only one proposal command is admitted at a time, so an older history response
+cannot race a later validate or decision result. A non-truncated history must
+contain every named predecessor; truncated history may name an explicitly
+retained predecessor outside the bounded projection. Self-predecessors and
+cycles are rejected. A later history observation may advance a non-terminal
+record, but it cannot rewrite immutable identity or downgrade an accepted,
+rejected, or superseded record.
+
+Provider work may run concurrently, but persistence admits only the elected
+Project commit owner. Each commit reloads the latest store, target lifecycle,
+and Project basis before merging. Independent root proposals may both persist;
+a refinement whose predecessor became accepted, rejected, or superseded is
+rejected. Accepted, rejected, and superseded proposals have exhausted their
+growth authority and cannot be validated, accepted, rejected, or refined.
+Their evidence and donor material cannot select a successor without a fresh,
+separately admitted no-predecessor request.
 
 `proposal/context-attached` has one semantic meaning with two admitted entry
 skins. A manual Attach interaction omits `sourceRef` and consumes the visible
@@ -249,15 +293,46 @@ proposal `invalid` or `stale`; acceptance remains unavailable.
 
 Acceptance:
 
-1. acquires one manager-owned proposal lock for the Project;
-2. reloads the persisted proposal;
-3. requires `valid` status and no non-passing validation rows;
-4. re-observes and compares the exact Project and specification basis;
-5. reruns `git apply --check`;
-6. applies the patch once through `git apply`;
-7. observes the resulting Project Revision;
-8. persists the attributed accepted decision and resulting revision;
-9. releases the lock.
+1. acquires the elected manager-owned proposal claim for the Project and
+   reconciles any prior acceptance journal;
+2. reloads the persisted proposal, refuses exhausted growth authority, and
+   requires `valid` status with no non-passing validation rows;
+3. durably records the exact basis, proposal identity, patch, and patch digest
+   in a preparing acceptance journal;
+4. re-observes the exact Project and specification basis, reruns deterministic
+   patch checks, records probing intent, applies the patch as a probe, and
+   records the exact expected resulting Project Revision;
+5. reverse-checks the probe, durably records rollback intent before removing
+   it, then requires restoration of the exact original basis;
+6. durably records the attributed accepted carrier and expected result, then
+   rechecks the exact basis immediately before the final apply;
+7. applies the patch, requires the observed result to equal the probed expected
+   Project Revision, and durably records that source-applied phase;
+8. atomically persists the accepted proposal, records store commitment, clears
+   the journal, and releases only its exact claim.
+
+A normal failure or detected concurrent writer rolls back the candidate patch
+only after the manager's apply returned success and reverse applicability
+proves its presence. An apply that did not return success never authorizes
+reversal of a matching external writer. Candidate absence is rechecked after a
+rollback before the journal is cleared. Once the accepted store carrier is
+durable, it is the irreversible decision commit point: later journal-write or
+cleanup failure retains accepted source and decision truth for recovery rather
+than rolling source back.
+
+On restart, journal recovery runs under the same elected claim. Preparing and
+ready phases prove no manager mutation is live and never attribute matching
+external bytes as acceptance. Probing and applying phases record intent but not
+successful mutation: exact basis may clear them, while any non-basis state
+retains the journal and blocks without changing source. Probe-applied proves a
+successful manager probe and permits entry into a journaled causal rollback.
+Every reverse operation first records a reverting phase; exact basis may clear
+that phase, while any non-basis state blocks because rollback completion is not
+yet durable. Only a durable source-applied or store-committed phase with the
+exact expected source result may roll the attributed accepted carrier forward;
+a source-applied mismatch may enter the same journaled causal rollback.
+Ambiguous source, decision, or patch state retains the journal and blocks
+proposal work instead of guessing or weakening acceptance law.
 
 Basis mismatch marks the proposal `stale`, refreshes shared Project Context,
 and changes no source. Regeneration invokes the same generation carrier on the
@@ -287,7 +362,11 @@ the same State/Msg/Update/Cmd module under common ADR-001.
 
 - shared schemas reject malformed proposal and command payloads;
 - service tests prove generate, validate, refine, accept, reject, stale basis,
-  bounded history, and no-write-before-acceptance;
+  bounded history, exhausted-lifecycle refusal, exact claim ownership,
+  concurrent-writer rollback, crash recovery, and no-write-before-acceptance;
+- an HTTP boundary regression proves accepted, rejected, and superseded
+  validate, accept, reject, and refinement requests remain `409` refusals
+  through the public route;
 - reducer replay proves success, failure, stale/late result, and command gating;
 - structural proof confirms one proposal module and one command interpreter;
 - browser proof covers context attachment, structured diff, validation,

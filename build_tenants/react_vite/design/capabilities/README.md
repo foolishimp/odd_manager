@@ -25,3 +25,17 @@ the host. Capability-to-capability imports are forbidden.
 
 The structural shell is not the capability MVP. Each module reports its
 availability and functional posture separately.
+
+## Current Implementation And Design-Method Disposition
+
+The registry and each module's `Implements`, STDO-UX binding, code-entrypoint,
+and executable-proof metadata project the accepted manager-local boundary
+`B-OM-DEVCTRL-LOCAL-001` and Ontology `ONT-OM-DEVCTRL-001` in the parent
+design. The aggregate consumes the shared command-envelope/result schemas,
+subscription failures are typed and replayable, and application/Sidecar
+continuation crosses named reducers and effect membranes.
+
+Acceptance is limited to this manager-owned structural and interaction
+boundary and remains subject to the exact T-032 deterministic validation
+bundle. It does not make an absent external carrier available, establish
+functional Build/Assure completion, or close the live odd_glc steel thread.

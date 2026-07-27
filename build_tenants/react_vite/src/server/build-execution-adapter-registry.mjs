@@ -6,7 +6,6 @@ import {
   realpathSync,
 } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
   buildExecutionAdapterRegistrySchema,
 } from '@odd-manager/developer-control-contracts';
@@ -128,10 +127,17 @@ export async function loadBuildExecutionAdapterRegistry(options) {
         `Execution adapter digest mismatch for ${entry.adapterRef}: expected ${entry.moduleSha256}, observed ${moduleDigest}.`,
       );
     }
+    if (typeof options.afterAdapterBytesPinned === 'function') {
+      await options.afterAdapterBytesPinned(Object.freeze({
+        adapterRef: entry.adapterRef,
+        modulePath: realModulePath,
+        moduleDigest,
+      }));
+    }
 
     let namespace;
     try {
-      const moduleUrl = `${pathToFileURL(realModulePath).href}?sha256=${moduleDigest}`;
+      const moduleUrl = `data:text/javascript;base64,${moduleBytes.toString('base64')}#sha256=${moduleDigest}`;
       namespace = await import(moduleUrl);
     } catch (error) {
       throw new BuildExecutionAdapterRegistryError(
@@ -148,9 +154,7 @@ export async function loadBuildExecutionAdapterRegistry(options) {
     try {
       candidate = await factory(Object.freeze({
         adapterRef: entry.adapterRef,
-        registryPath,
         registryDigest,
-        modulePath: realModulePath,
         moduleDigest,
       }));
     } catch (error) {

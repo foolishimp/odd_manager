@@ -2,8 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -48,6 +51,14 @@ const DEFAULT_RECOVERY_DISCONNECT_MS = 1_500;
 const TERMINAL_STATES = new Set(['converged', 'failed', 'cancelled']);
 const SLOT_STATES = new Set(['starting', 'running']);
 const RECOVERED_STALE_REF = 'supervisor://odd_manager/recovered-stale';
+const RECOVERED_GATED_LAUNCH_REF = 'supervisor://odd_manager/recovered-gated-launch-abort';
+const PROCESS_LAUNCH_GATE_REF = 'supervisor://odd_manager/process-launch-gate/v1';
+const PROCESS_LAUNCH_GATE_SCRIPT = [
+  'IFS= read -r odd_manager_launch_token || exit 125',
+  '[ "$odd_manager_launch_token" = "$1" ] || exit 126',
+  'shift',
+  'exec "$@"',
+].join('; ');
 
 export class BuildControlError extends Error {
   constructor(message, options = {}) {
@@ -69,6 +80,28 @@ function projectStoreId(projectRoot) {
 function isPathWithin(root, candidate) {
   const value = relative(resolve(root), resolve(candidate));
   return value === '' || (!value.startsWith('..') && !isAbsolute(value));
+}
+
+function normalizedAdapterSourceRefs(adapter) {
+  const refs = Array.isArray(adapter?.sourceRefs) && adapter.sourceRefs.length > 0
+    ? adapter.sourceRefs
+    : [adapter?.adapterRef];
+  return [...new Set(refs.filter((entry) => typeof entry === 'string' && entry.length > 0))].sort();
+}
+
+function adapterBindingFor(adapter) {
+  return {
+    adapterRef: adapter.adapterRef,
+    sourceRefs: normalizedAdapterSourceRefs(adapter),
+  };
+}
+
+function adapterMatchesBinding(adapter, binding) {
+  return Boolean(
+    adapter
+    && adapter.adapterRef === binding.adapterRef
+    && JSON.stringify(normalizedAdapterSourceRefs(adapter)) === JSON.stringify(binding.sourceRefs),
+  );
 }
 
 function validateInternalProcessPlan(value, paths, adapter) {
@@ -117,11 +150,79 @@ function readTail(path, maxBytes) {
 
 function validateStore(value) {
   if (!value || value.schemaVersion !== '1') throw new Error('unsupported build-control store version');
-  return {
+  if (!Array.isArray(value.requests) || !Array.isArray(value.executions)) {
+    throw new Error('build-control store requests and executions must be arrays');
+  }
+  const admitted = {
     schemaVersion: '1',
-    requests: Array.isArray(value.requests) ? value.requests.map((entry) => buildRequestSchema.parse(entry)) : [],
-    executions: Array.isArray(value.executions) ? value.executions.map((entry) => buildExecutionSchema.parse(entry)) : [],
+    requests: value.requests.map((entry) => buildRequestSchema.parse(entry)),
+    executions: value.executions.map((entry) => buildExecutionSchema.parse(entry)),
   };
+  const requestById = new Map();
+  const requestCorrelationIds = new Set();
+  for (const request of admitted.requests) {
+    if (requestById.has(request.requestId)) {
+      throw new Error(`duplicate Build Request identity: ${request.requestId}`);
+    }
+    if (requestCorrelationIds.has(request.correlationId)) {
+      throw new Error(`duplicate Build Request correlation identity: ${request.correlationId}`);
+    }
+    requestById.set(request.requestId, request);
+    requestCorrelationIds.add(request.correlationId);
+  }
+
+  const executionIds = new Set();
+  const executionCorrelationIds = new Set();
+  const executionCountByRequest = new Map();
+  for (const execution of admitted.executions) {
+    if (executionIds.has(execution.executionId)) {
+      throw new Error(`duplicate Build Execution identity: ${execution.executionId}`);
+    }
+    if (executionCorrelationIds.has(execution.correlationId)) {
+      throw new Error(`duplicate Build Execution correlation identity: ${execution.correlationId}`);
+    }
+    executionIds.add(execution.executionId);
+    executionCorrelationIds.add(execution.correlationId);
+    const request = requestById.get(execution.requestId);
+    if (!request) {
+      throw new Error(
+        `Build Execution ${execution.executionId} references missing Build Request ${execution.requestId}`,
+      );
+    }
+    if (execution.correlationId !== request.correlationId) {
+      throw new Error(
+        `Build Execution ${execution.executionId} correlation does not match Build Request ${request.requestId}`,
+      );
+    }
+    if (JSON.stringify(execution.project) !== JSON.stringify(request.project)) {
+      throw new Error(
+        `Build Execution ${execution.executionId} Project does not match Build Request ${request.requestId}`,
+      );
+    }
+    if (JSON.stringify(execution.revision) !== JSON.stringify(request.revision)) {
+      throw new Error(
+        `Build Execution ${execution.executionId} Project Revision does not match Build Request ${request.requestId}`,
+      );
+    }
+    executionCountByRequest.set(
+      request.requestId,
+      (executionCountByRequest.get(request.requestId) ?? 0) + 1,
+    );
+  }
+
+  for (const request of admitted.requests) {
+    if (executionCountByRequest.get(request.requestId) !== 1) {
+      throw new Error(`Build Request ${request.requestId} must relate to exactly one Build Execution`);
+    }
+    if (
+      executionIds.has(request.requestId)
+      || requestCorrelationIds.has(request.requestId)
+      || executionIds.has(request.correlationId)
+    ) {
+      throw new Error(`Build Request ${request.requestId} reuses a request, execution, or correlation identity`);
+    }
+  }
+  return admitted;
 }
 
 function validateFixtureInput(value) {
@@ -155,6 +256,7 @@ function validateFixtureInput(value) {
 function createFixtureAdapter() {
   return {
     adapterRef: FIXTURE_EXECUTION_ADAPTER_REF,
+    sourceRefs: [FIXTURE_EXECUTION_ADAPTER_REF],
     validateInputs: validateFixtureInput,
     createProcessPlan({ request, execution, paths }) {
       const input = validateFixtureInput(request.inputs);
@@ -196,6 +298,8 @@ export function createBuildControlService(options) {
   const now = options.now ?? (() => new Date().toISOString());
   const idFactory = options.idFactory ?? ((kind) => `${kind}-${randomUUID()}`);
   const spawnProcess = options.spawnProcess ?? spawn;
+  const afterSpawnBeforeRunningPersist = options.afterSpawnBeforeRunningPersist ?? (() => true);
+  const beforeStoreCommit = options.beforeStoreCommit ?? (() => {});
   const outputTailBytes = Number(options.outputTailBytes ?? DEFAULT_OUTPUT_TAIL_BYTES);
   const recoveryDisconnectMs = Number(options.recoveryDisconnectMs ?? DEFAULT_RECOVERY_DISCONNECT_MS);
   if (!Number.isFinite(recoveryDisconnectMs) || recoveryDisconnectMs < 0) {
@@ -228,35 +332,76 @@ export function createBuildControlService(options) {
     }
   }
 
-  function writeStore() {
-    normalizeQueuePositions();
-    const admitted = validateStore(store);
+  function writeStore(candidateStore = store) {
+    const normalized = normalizeQueuePositions(candidateStore);
+    const admitted = validateStore(normalized);
     mkdirSync(storeRoot, { recursive: true });
     const temporaryPath = `${storePath}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(temporaryPath, `${JSON.stringify(admitted, null, 2)}\n`, 'utf8');
-    renameSync(temporaryPath, storePath);
-    store = admitted;
+    let temporaryDescriptor = null;
+    try {
+      temporaryDescriptor = openSync(temporaryPath, 'wx', 0o600);
+      writeFileSync(temporaryDescriptor, `${JSON.stringify(admitted, null, 2)}\n`, 'utf8');
+      fsyncSync(temporaryDescriptor);
+      closeSync(temporaryDescriptor);
+      temporaryDescriptor = null;
+      beforeStoreCommit(Object.freeze({
+        storePath,
+        temporaryPath,
+        store: admitted,
+      }));
+      renameSync(temporaryPath, storePath);
+      const directoryDescriptor = openSync(storeRoot, 'r');
+      try {
+        fsyncSync(directoryDescriptor);
+      } finally {
+        closeSync(directoryDescriptor);
+      }
+      store = admitted;
+      return admitted;
+    } catch (error) {
+      if (temporaryDescriptor !== null) {
+        try {
+          closeSync(temporaryDescriptor);
+        } catch {
+          // Preserve the original durable-store failure.
+        }
+      }
+      rmSync(temporaryPath, { force: true });
+      throw error;
+    }
   }
 
-  function normalizeQueuePositions() {
+  function normalizeQueuePositions(candidateStore) {
     let position = 0;
-    store.executions = store.executions.map((execution) => {
+    let queueObservedAt = null;
+    const withQueuePosition = (execution, queuePosition) => {
+      if (execution.queuePosition === queuePosition) return execution;
+      queueObservedAt ??= now();
+      const previousTime = Date.parse(execution.updatedAt);
+      const observedTime = Date.parse(queueObservedAt);
+      const updatedAt = new Date(Math.max(observedTime, previousTime + 1)).toISOString();
+      return { ...execution, queuePosition, updatedAt };
+    };
+    const executions = candidateStore.executions.map((execution) => {
       if (execution.state !== 'queued') {
-        return execution.queuePosition === null ? execution : { ...execution, queuePosition: null };
+        return withQueuePosition(execution, null);
       }
-      const next = { ...execution, queuePosition: position };
+      const next = withQueuePosition(execution, position);
       position += 1;
       return next;
     });
+    return { ...candidateStore, executions };
   }
 
   function replaceExecution(next) {
     const admitted = buildExecutionSchema.parse(next);
-    store.executions = store.executions.map((entry) => (
-      entry.executionId === admitted.executionId ? admitted : entry
-    ));
-    writeStore();
-    return admitted;
+    const committed = writeStore({
+      ...store,
+      executions: store.executions.map((entry) => (
+        entry.executionId === admitted.executionId ? admitted : entry
+      )),
+    });
+    return committed.executions.find((entry) => entry.executionId === admitted.executionId);
   }
 
   function executionPaths(executionId) {
@@ -306,6 +451,24 @@ export function createBuildControlService(options) {
     });
   }
 
+  function persistCancelIntent(execution, actorRef, observedAt) {
+    if (execution.cancelRequestedAt !== null) {
+      if (execution.cancelledBy !== actorRef) {
+        throw new BuildControlError(
+          `Build cancellation is already attributed to ${execution.cancelledBy}.`,
+          { statusCode: 409, execution },
+        );
+      }
+      return execution;
+    }
+    return replaceExecution({
+      ...execution,
+      updatedAt: observedAt,
+      cancelRequestedAt: observedAt,
+      cancelledBy: actorRef,
+    });
+  }
+
   function schedulerProjection() {
     const runningCount = store.executions.filter((entry) => SLOT_STATES.has(entry.state)).length;
     const queuedCount = store.executions.filter((entry) => entry.state === 'queued').length;
@@ -323,6 +486,11 @@ export function createBuildControlService(options) {
       provisionerRefs: new Set(provisioners.keys()),
       adapterRefs: new Set(adapters.keys()),
     });
+  }
+
+  function adapterForRequest(request) {
+    const adapter = adapters.get(request.adapterBinding.adapterRef) ?? null;
+    return adapterMatchesBinding(adapter, request.adapterBinding) ? adapter : null;
   }
 
   function requestForExecution(execution) {
@@ -370,19 +538,15 @@ export function createBuildControlService(options) {
     writeFileSync(paths.stdoutPath, '', 'utf8');
     writeFileSync(paths.stderrPath, '', 'utf8');
     rmSync(paths.resultPath, { force: true });
-    const admission = descriptorAdmission(request.project);
-    if (admission.status !== 'ready' || !admission.descriptor) {
-      failBeforeSpawn(execution, new Error(admission.reason ?? 'Build carrier is no longer admitted.'), paths);
-      return;
-    }
-    if (admission.descriptor.descriptorRef !== request.descriptorRef) {
-      failBeforeSpawn(execution, new Error('Build carrier descriptor changed before process start.'), paths);
-      return;
-    }
-    const provisioner = provisioners.get(admission.descriptor.worksiteProvisionerRef);
-    const adapter = adapters.get(admission.descriptor.executionAdapterRef);
+    const descriptor = request.descriptorBinding;
+    const provisioner = provisioners.get(descriptor.worksiteProvisionerRef);
+    const adapter = adapterForRequest(request);
     if (!provisioner || !adapter) {
-      failBeforeSpawn(execution, new Error('Build provisioner or adapter is no longer installed.'), paths);
+      failBeforeSpawn(
+        execution,
+        new Error('The immutable Build Request provisioner or execution-adapter binding is no longer installed.'),
+        paths,
+      );
       return;
     }
 
@@ -396,7 +560,7 @@ export function createBuildControlService(options) {
         observedAt: now(),
       });
       plan = validateInternalProcessPlan(adapter.createProcessPlan({
-        descriptor: admission.descriptor,
+        descriptor,
         request,
         execution,
         worksite,
@@ -408,29 +572,36 @@ export function createBuildControlService(options) {
     }
 
     const startedAt = now();
+    const launchToken = randomUUID();
     let child;
     try {
-      child = spawnProcess(plan.executable, plan.args, {
+      child = spawnProcess('/bin/sh', [
+        '-c',
+        PROCESS_LAUNCH_GATE_SCRIPT,
+        'odd-manager-launch-gate',
+        launchToken,
+        plan.executable,
+        ...plan.args,
+      ], {
         cwd: plan.cwd,
         env: plan.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
       failBeforeSpawn(execution, error, paths);
       return;
     }
-    const running = replaceExecution({
-      ...execution,
-      state: 'running',
-      queuePosition: null,
-      processRef: child.pid ? `process://local/${child.pid}` : null,
-      startedAt,
-      updatedAt: startedAt,
-      heartbeatAt: startedAt,
-      sourceRefs: [...new Set([...execution.sourceRefs, ...(plan.adapterSourceRefs ?? [])])],
-    });
-    const record = { child, paths, plan, lastHeartbeatWrite: 0, finalized: false };
-    children.set(running.executionId, record);
+    let gateReleased = false;
+    let running = null;
+    let record = null;
+    const closeLaunchGate = () => {
+      child.stdin?.destroy();
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Closing the gate is already sufficient to keep Product work pre-execution.
+      }
+    };
 
     function recordOutput(path, chunk) {
       appendFileSync(path, chunk);
@@ -443,10 +614,81 @@ export function createBuildControlService(options) {
       replaceExecution({ ...latest, heartbeatAt: observedAt, updatedAt: observedAt });
     }
 
-    child.stdout?.on('data', (chunk) => recordOutput(paths.stdoutPath, chunk));
-    child.stderr?.on('data', (chunk) => recordOutput(paths.stderrPath, chunk));
-    child.on('error', (error) => finalizeProcess(running.executionId, null, null, error));
-    child.on('close', (exitCode, signal) => finalizeProcess(running.executionId, exitCode, signal, null));
+    try {
+      if (
+        options.spawnProcess === undefined
+        && (
+          !Number.isInteger(child.pid)
+          || child.pid < 1
+          || !child.stdin
+          || typeof child.stdin.end !== 'function'
+        )
+      ) {
+        throw new Error('The process launch gate did not expose a durable PID and writable release channel.');
+      }
+      const continueLaunch = afterSpawnBeforeRunningPersist(Object.freeze({
+        executionId: execution.executionId,
+        requestId: execution.requestId,
+        processRef: child.pid ? `process://local/${child.pid}` : null,
+      }));
+      if (continueLaunch === false) {
+        return;
+      }
+      running = replaceExecution({
+        ...execution,
+        state: 'running',
+        queuePosition: null,
+        processRef: child.pid ? `process://local/${child.pid}` : null,
+        startedAt,
+        updatedAt: startedAt,
+        heartbeatAt: startedAt,
+        sourceRefs: [...new Set([
+          ...execution.sourceRefs,
+          ...(plan.adapterSourceRefs ?? []),
+          PROCESS_LAUNCH_GATE_REF,
+        ])],
+      });
+      record = {
+        child,
+        paths,
+        plan,
+        lastHeartbeatWrite: 0,
+        finalized: false,
+        cancelSignalInFlight: false,
+        deferredFinalization: null,
+      };
+      children.set(running.executionId, record);
+      child.stdout?.on('data', (chunk) => recordOutput(paths.stdoutPath, chunk));
+      child.stderr?.on('data', (chunk) => recordOutput(paths.stderrPath, chunk));
+      child.on('error', (error) => observeProcessFinalization(running.executionId, null, null, error));
+      child.on('close', (exitCode, signal) => (
+        observeProcessFinalization(running.executionId, exitCode, signal, null)
+      ));
+      if (child.stdin && typeof child.stdin.end === 'function') {
+        child.stdin.on('error', closeLaunchGate);
+        child.stdin.end(`${launchToken}\n`);
+      }
+      gateReleased = true;
+    } catch (error) {
+      if (running === null) {
+        try {
+          failBeforeSpawn(execution, error, paths);
+        } catch {
+          // The launch remains closed even when the durable failure record is unavailable.
+        }
+      }
+    } finally {
+      if (!gateReleased) closeLaunchGate();
+    }
+  }
+
+  function observeProcessFinalization(executionId, exitCode, signal, spawnError) {
+    const record = children.get(executionId);
+    if (record?.cancelSignalInFlight) {
+      record.deferredFinalization ??= { exitCode, signal, spawnError };
+      return;
+    }
+    finalizeProcess(executionId, exitCode, signal, spawnError);
   }
 
   function finalizeProcess(executionId, exitCode, signal, spawnError) {
@@ -468,7 +710,12 @@ export function createBuildControlService(options) {
         appendFileSync(record.paths.stderrPath, `Invalid terminal result: ${errorDetail(error)}\n`, 'utf8');
       }
     }
-    const cancelled = execution.cancelRequestedAt !== null;
+    const observedSignal = signal ? String(signal) : null;
+    const cancelled = (
+      execution.cancelRequestedAt !== null
+      && execution.cancelledBy !== null
+      && observedSignal !== null
+    );
     const state = cancelled
       ? 'cancelled'
       : terminalResult
@@ -484,15 +731,15 @@ export function createBuildControlService(options) {
     replaceExecution({
       ...execution,
       state,
-      runRefs: terminalResult?.runRefs ?? execution.runRefs,
+      runRefs: cancelled ? execution.runRefs : (terminalResult?.runRefs ?? execution.runRefs),
       updatedAt: observedAt,
       completedAt: observedAt,
       heartbeatAt: observedAt,
       processOutcome: {
         kind: outcomeKind,
         exitCode: Number.isInteger(exitCode) ? exitCode : null,
-        signal: signal ? String(signal) : null,
-        terminalResult,
+        signal: observedSignal,
+        terminalResult: cancelled ? null : terminalResult,
         ...outputRefs(executionId),
         observedAt,
       },
@@ -524,13 +771,46 @@ export function createBuildControlService(options) {
     store.executions = store.executions.map((execution) => {
       if (!SLOT_STATES.has(execution.state)) return execution;
       changed = true;
+      if (execution.state === 'starting' && execution.processRef === null) {
+        const paths = executionPaths(execution.executionId);
+        mkdirSync(paths.root, { recursive: true });
+        appendFileSync(
+          paths.stderrPath,
+          'Supervisor restart aborted a process launch before the durable launch gate was released.\n',
+          'utf8',
+        );
+        return buildExecutionSchema.parse({
+          ...execution,
+          state: 'failed',
+          queuePosition: null,
+          updatedAt: observedAt,
+          completedAt: observedAt,
+          heartbeatAt: observedAt,
+          processOutcome: {
+            kind: 'spawn_error',
+            exitCode: null,
+            signal: null,
+            terminalResult: null,
+            ...outputRefs(execution.executionId),
+            observedAt,
+          },
+          sourceRefs: [...new Set([
+            ...execution.sourceRefs,
+            RECOVERED_GATED_LAUNCH_REF,
+          ])],
+        });
+      }
+      const recoveredSourceRefs = [
+        ...execution.sourceRefs,
+        RECOVERED_STALE_REF,
+      ];
       return buildExecutionSchema.parse({
         ...execution,
         state: 'stale',
         queuePosition: null,
         updatedAt: observedAt,
         heartbeatAt: execution.heartbeatAt ?? observedAt,
-        sourceRefs: [...new Set([...execution.sourceRefs, RECOVERED_STALE_REF])],
+        sourceRefs: [...new Set(recoveredSourceRefs)],
       });
     });
     if (changed) writeStore();
@@ -573,17 +853,15 @@ export function createBuildControlService(options) {
     ));
     for (const execution of resumable) {
       const request = requestForExecution(execution);
-      const admission = descriptorAdmission(request.project);
-      const adapter = admission.descriptor
-        ? adapters.get(admission.descriptor.executionAdapterRef)
-        : null;
+      const descriptor = request.descriptorBinding;
+      const adapter = adapterForRequest(request);
       const observedAt = now();
       try {
-        if (admission.status !== 'ready' || !admission.descriptor || typeof adapter?.observeExecution !== 'function') {
-          throw new Error(admission.reason ?? 'Resumed execution adapter is unavailable.');
+        if (!adapter || typeof adapter.observeExecution !== 'function') {
+          throw new Error('The immutable Build Request execution-adapter binding is unavailable.');
         }
         const observation = buildExecutionObservationSchema.parse(adapter.observeExecution({
-          descriptor: admission.descriptor,
+          descriptor,
           request,
           execution,
           paths: executionPaths(execution.executionId),
@@ -675,6 +953,8 @@ export function createBuildControlService(options) {
         correlationId,
         project,
         revision: input.revision,
+        descriptorBinding: descriptor,
+        adapterBinding: adapterBindingFor(adapter),
         descriptorRef: descriptor.descriptorRef,
         carrierRef: descriptor.carrierRef,
         startupConfigRef: descriptor.startupConfigRef,
@@ -717,11 +997,23 @@ export function createBuildControlService(options) {
           descriptor.descriptorRef,
         ],
       });
-      store.requests.push(request);
-      store.executions.push(execution);
-      writeStore();
+      const committed = writeStore({
+        ...store,
+        requests: [...store.requests, request],
+        executions: [...store.executions, execution],
+      });
+      const committedRequest = committed.requests.find(
+        (entry) => entry.requestId === request.requestId,
+      );
+      const committedExecution = committed.executions.find(
+        (entry) => entry.executionId === execution.executionId,
+      );
       schedulePump();
-      return { request, execution, snapshot: projectSnapshot(project) };
+      return {
+        request: committedRequest,
+        execution: committedExecution,
+        snapshot: projectSnapshot(project),
+      };
     },
 
     attach(inputValue, project) {
@@ -765,21 +1057,21 @@ export function createBuildControlService(options) {
         throw new BuildControlError(`Cannot resume a ${execution.state} Build Execution.`, { statusCode: 409, execution });
       }
       const request = requestForExecution(execution);
-      const admission = descriptorAdmission(request.project);
-      if (admission.status !== 'ready' || !admission.descriptor) {
-        throw new BuildControlError(admission.reason ?? 'Build carrier is not admitted.', { statusCode: 409, execution });
-      }
-      if (!admission.descriptor.supportedCommands.includes('resume')) {
+      const descriptor = request.descriptorBinding;
+      if (!descriptor.supportedCommands.includes('resume')) {
         throw new BuildControlError('Build carrier does not publish resume support.', { statusCode: 409, execution });
       }
-      const adapter = adapters.get(admission.descriptor.executionAdapterRef);
+      const adapter = adapterForRequest(request);
       if (!adapter || typeof adapter.observeExecution !== 'function') {
-        throw new BuildControlError('Installed execution adapter cannot resume supervision.', { statusCode: 409, execution });
+        throw new BuildControlError(
+          'The immutable Build Request execution-adapter binding cannot resume supervision.',
+          { statusCode: 409, execution },
+        );
       }
       let observation;
       try {
         observation = buildExecutionObservationSchema.parse(adapter.observeExecution({
-          descriptor: admission.descriptor,
+          descriptor,
           request,
           execution,
           paths: executionPaths(execution.executionId),
@@ -866,11 +1158,8 @@ export function createBuildControlService(options) {
         throw new BuildControlError(`Build Execution not found: ${input.executionId}.`, { statusCode: 404 });
       }
       const request = requestForExecution(execution);
-      const admission = descriptorAdmission(request.project);
-      if (admission.status !== 'ready' || !admission.descriptor) {
-        throw new BuildControlError(admission.reason ?? 'Build carrier is not admitted.', { statusCode: 409, execution });
-      }
-      if (!admission.descriptor.supportedCommands.includes('cancel')) {
+      const descriptor = request.descriptorBinding;
+      if (!descriptor.supportedCommands.includes('cancel')) {
         throw new BuildControlError('Build carrier does not publish cancel support.', { statusCode: 409, execution });
       }
       if (TERMINAL_STATES.has(execution.state)) {
@@ -880,7 +1169,6 @@ export function createBuildControlService(options) {
       if (
         execution.state === 'queued'
         || execution.state === 'waiting_human'
-        || (['stale', 'disconnected'].includes(execution.state) && !execution.processRef)
       ) {
         const paths = executionPaths(execution.executionId);
         mkdirSync(paths.root, { recursive: true });
@@ -906,30 +1194,79 @@ export function createBuildControlService(options) {
         return cancelled;
       }
       const record = children.get(execution.executionId);
-      const adapter = adapters.get(admission.descriptor.executionAdapterRef);
+      const adapter = adapterForRequest(request);
       if (
         ['stale', 'disconnected'].includes(execution.state)
-        && execution.processRef
         && typeof adapter?.cancelExecution !== 'function'
       ) {
-        throw new BuildControlError('Disconnected process cancellation requires an installed adapter command.', {
-          statusCode: 409,
-          execution,
-        });
+        throw new BuildControlError(
+          'Recovered process cancellation requires the immutable execution-adapter binding.',
+          { statusCode: 409, execution },
+        );
       }
-      const cancelling = replaceExecution({
-        ...execution,
-        updatedAt: observedAt,
-        cancelRequestedAt: observedAt,
-        cancelledBy: input.actorRef,
-      });
-      if (record?.child?.kill('SIGTERM')) return cancelling;
+      if (record?.child) {
+        let cancelling = null;
+        let signalAccepted = false;
+        let signalError = null;
+        record.cancelSignalInFlight = true;
+        try {
+          cancelling = persistCancelIntent(execution, input.actorRef, observedAt);
+          signalAccepted = record.child.kill('SIGTERM') === true;
+        } catch (error) {
+          if (cancelling === null) {
+            record.cancelSignalInFlight = false;
+            const deferred = record.deferredFinalization;
+            record.deferredFinalization = null;
+            if (deferred) {
+              finalizeProcess(
+                execution.executionId,
+                deferred.exitCode,
+                deferred.signal,
+                deferred.spawnError,
+              );
+            }
+            throw error;
+          }
+          signalError = error;
+        } finally {
+          record.cancelSignalInFlight = false;
+        }
 
-      if (execution.processRef && typeof adapter?.cancelExecution === 'function') {
+        const deferred = record.deferredFinalization;
+        record.deferredFinalization = null;
+        if (deferred) {
+          finalizeProcess(
+            execution.executionId,
+            deferred.exitCode,
+            deferred.signal,
+            deferred.spawnError,
+          );
+        }
+        if (signalAccepted) return cancelling;
+
+        const current = store.executions.find(
+          (entry) => entry.executionId === execution.executionId,
+        ) ?? execution;
+        throw new BuildControlError(
+          signalError
+            ? `Build process cancellation signal failed: ${errorDetail(signalError)}`
+            : 'Build process could not be signalled for cancellation.',
+          {
+            statusCode: 409,
+            execution: current,
+          },
+        );
+      }
+
+      if (
+        ['running', 'stale', 'disconnected'].includes(execution.state)
+        && typeof adapter?.cancelExecution === 'function'
+      ) {
+        const cancelling = persistCancelIntent(execution, input.actorRef, observedAt);
         let result;
         try {
           result = buildExternalCancelResultSchema.parse(adapter.cancelExecution({
-            descriptor: admission.descriptor,
+            descriptor,
             request,
             execution: cancelling,
             paths: executionPaths(execution.executionId),
@@ -971,15 +1308,9 @@ export function createBuildControlService(options) {
         schedulePump();
         return cancelled;
       }
-      if (!record?.child) {
-        throw new BuildControlError('Build process could not be signalled for cancellation.', {
-          statusCode: 409,
-          execution: cancelling,
-        });
-      }
       throw new BuildControlError('Build process could not be signalled for cancellation.', {
         statusCode: 409,
-        execution: cancelling,
+        execution,
       });
     },
 

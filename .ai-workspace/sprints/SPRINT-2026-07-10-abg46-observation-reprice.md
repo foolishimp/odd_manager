@@ -3,10 +3,59 @@
 - id: SPRINT-2026-07-10-abg46-observation-reprice
 - title: Complete current GTL/ABG observation and establish the multi-Project developer build-control product direction
 - status: active
-- review_status: in_progress
+- review_status: local_conformance_accepted_external_residual_open
 - goal: establish-current-abg-observation-and-developer-build-control
 - opened_at: 2026-07-10T11:35:29+10:00
-- updated_at: 2026-07-12T00:03:57+10:00
+- updated_at: 2026-07-27
+- selected_method_release: STDO v2.2.1
+- selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
+- selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+- growth_authority: review_only_external_residual_no_local_growth
+
+## STDO 2.2.1 Review Freeze
+
+This sprint remains active only for operator review and direct disposition of
+the existing T-031 and T-032 claims. All completed workstreams, plans,
+matrices, tests, and external-dependency records below are retained evidence;
+they do not select or authorize further realization. The unresolved odd_glc
+carriers and ABIogenesis promotion are external closure dependencies, not
+admitted odd_manager prerequisites or experiments. Earlier “next purpose,”
+“active owner,” and “live residual” wording is historical execution context
+subordinate to this freeze and `specification/GOALS.md`.
+
+A defect found in review may enter repair only through an explicitly admitted
+basis in the existing owning ticket. Any other material continuation requires
+a newly selected unresolved Product outcome or a named bounded prerequisite or
+experiment with a terminal condition.
+
+The sole repair admission was T-032's 2026-07-26 constitutional-trace and
+STDO-UX conformance prerequisite. It could restore the existing G-006
+authority, design, realization, and proof path but could not add Product
+behavior, fill the external `odd_glc` carrier gap, reopen T-031 realization,
+or use retained evidence to select follow-on work. The disposition below
+records that prerequisite as accepted and exhausted.
+
+The 2026-07-27 Product-owner instruction updates that prerequisite to exact
+STDO `v2.2.1`, directs its validated closure, and admits one evidence-only
+qualification over `odd_glc` `0.1.0` on ABIogenesis `4.6.0-rc.3`. The
+qualification proves immutable read-only observation and explicit Build
+unavailability; it does not fill the external carrier gap. ABIogenesis 5 work
+is unselected until a release exists and a new Product-owner admission names
+its basis.
+
+## Local STDO 2.2.1 And Exact 4.6 Disposition 2026-07-27
+
+The named T-032 local prerequisite is accepted and exhausted. Exact STDO
+installation, Product-to-proof traceability, STDO-UX and design-method
+conformance, 451 source runtime tests, 48 browser paths, a 665-member
+source-blind installed-development candidate with 17 significant paths, and
+the immutable `odd_glc` `0.1.0` / ABIogenesis `4.6.0-rc.3` read-only
+qualification all pass.
+
+The sprint remains active only for operator review of T-031 and T-032's
+external live Build/Assure residual. No local continuation, general 4.6 range,
+or ABIogenesis 5 work is selected. The retained plan, tests, source, fixtures,
+and explicit scenario gaps are regression and review evidence only.
 
 ## Intake Triage
 
@@ -56,9 +105,9 @@ developer control loop without moving GTL or ABG policy into the manager.
   - specification/requirements/10-entry-lenses-and-delivery-workspaces.md
   - .ai-workspace/tickets/active/T-032-reprice-odd-manager-around-developer-build-operations.md
   - .ai-workspace/comments/operator/20260711T025804Z_STRATEGY_modular-integrated-developer-control-capabilities.md
-  - specification_methodology/specification/standards/SPEC_METHOD.md
-  - specification_methodology/specification/standards/ODD_METHOD.md
-  - specification_methodology/specification/standards/UX_METHOD.md
+  - .genesis/docs/standards/SPEC_METHOD.md
+  - .genesis/docs/standards/ODD_METHOD.md
+  - .genesis/docs/standards/UX_METHOD.md
 - scope: ratify the developer persona and interaction goal; define portfolio,
   Project, specification-proposal, build-command, concurrent-supervision,
   assurance, and attention semantics; publish downstream requirements,
@@ -820,7 +869,9 @@ Review record:
 - [ ] Live odd_glc data-mapper carrier, Assurance Catalog, adapter evidence, and
   ABIogenesis promotion remain required for named steel-thread closure.
 - [ ] Operator close review classifies all deferred compliance and transitions
-  the sprint only after both T-031 and T-032 closure law are satisfied.
+  the full sprint only after both T-031 and T-032 closure law are satisfied.
+  This full-sprint gate does not prevent the named local STDO 2.2.1
+  conformance prerequisite from reaching its independent terminal condition.
 
 ## Prime-Set First-Use Iteration 2026-07-11
 

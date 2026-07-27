@@ -4,6 +4,12 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-LENSES-001`, `PO-OM-DEVELOPER-001`
+**Downstream Disposition**: Mixed — the manager-local realization of `REQ-OM-LNS-003`, `REQ-OM-LNS-005`, `REQ-OM-LNS-006`, `REQ-OM-LNS-008`, and `REQ-OM-LNS-010` is accepted under `B-OM-DEVCTRL-LOCAL-001` subject to T-032's exact validation; `REQ-OM-LNS-001`, `REQ-OM-LNS-002`, `REQ-OM-LNS-004`, `REQ-OM-LNS-007`, and `REQ-OM-LNS-009` are explicitly deferred
+**Deferment Basis**: G-003 retains the requirement-first domain lens, but no current outcome selects its realization and no admitted cross-domain requirement carrier is installed
+**Deferment Owner**: Product owner through G-003
+**Deferment End Condition**: Product-owner selection of a requirement-first realization outcome with an admitted carrier and downstream ticket
+**Testcase Authority**: `specification/scenarios/01-requirements-and-process-entry-lenses.md`, `specification/scenarios/02-developer-review-tune-build-assure.md`, `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs`, `build_tenants/react_vite/runtime/tests/test_project_deep_link.mjs`, `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`
 
 ### REQ-OM-LNS-001 - Distinct entry lenses share one world model
 

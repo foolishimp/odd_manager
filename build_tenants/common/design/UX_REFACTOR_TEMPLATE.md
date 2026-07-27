@@ -1,10 +1,16 @@
 # Design Module — UX Widget Refactor Template (T-014)
 
-**Status**: Active
+**Status**: Superseded
 **Date**: 2026-04-27
 **Closes ticket**: T-014
+**Superseded By**: `build_tenants/common/design/DEVELOPER_CONTROL_CAPABILITY_ARCHITECTURE.md`, tenant capability designs, and `build_tenants/react_vite/design/widgets/sidecar-session-workspace.md`
 **Governance**: STDO-UX (`SPEC_METHOD`, `TICKET_METHOD`, `DESIGN_MODULE_METHOD`, `ODD_METHOD`, `UX_METHOD`)
 **References**: `build_tenants/common/design/ASSET_SURFACE_AND_TOPOLOGY.md`; `build_tenants/react_vite/design/adr/0001-ux-realization-stack.md`; `build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx` (canonical exemplar)
+**Implements**: `PO-OM-DEVELOPER-001`; `PO-OM-MODULES-001`; `REQ-OM-CAP-*`
+**Code Entrypoints**: `build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx`; `build_tenants/react_vite/src/features/sidecar/sidecar-state.ts`
+**Executable Proof**: `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `project selection replays to new Context and emits load Cmd`; `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs` :: `session spawn and correlated kill replay expose commands on the admitted Context`
+**STDO-UX Bindings**: State=SidecarState exemplar and per-widget typed State; Msg=SidecarMsg exemplar and per-widget typed Msg; Update=reduceSidecarState exemplar and per-widget pure Update; Cmd=SidecarCmd exemplar and per-widget declared Cmd; Sub=declared per-widget subscriptions; Ingress=shared src/contracts types plus runtime validation; View=SidecarPanel exemplar and each widget pure projection; Membrane=Sidecar effect adapters or the capability command runtime; Replay=build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs :: project selection replays to new Context and emits load Cmd; Accessibility=build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts :: sidecar workbench resize controls support keyboard and pointer operation
+**Historical Disposition**: Retained as the T-014 migration record only. It has no live design, implementation, proof, exemption, or continuation authority; current UX boundaries derive from the superseding accepted Ontology and designs named above.
 
 ## 1. Purpose
 

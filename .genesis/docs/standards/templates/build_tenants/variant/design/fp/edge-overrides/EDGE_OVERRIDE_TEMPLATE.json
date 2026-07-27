@@ -5,7 +5,7 @@
     "REQ-PROJ-001"
   ],
   "design_refs": [
-    "build_tenants/<techlabel>/design/README.md"
+    "build_tenants/<tenant-path>/design/README.md"
   ],
   "guidance_append": "Describe how this tenant wants the edge handled.",
   "suggested_output": "output/feature_decomp.md",

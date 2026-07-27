@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Product Outcomes**: `PO-OM-OBSERVE-001`, `PO-OM-LENSES-001`, `PO-OM-DEVELOPER-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the implemented orientation/navigation subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Shell and Sidecar Context/deep-link/navigation continuation is replayable, and public keyboard/focus/responsive proof is installed; the remaining named scenario gaps are not claimed delivered
+**Testcase Authority**: `specification/scenarios/01-requirements-and-process-entry-lenses.md`, `specification/scenarios/04-project-workbench-collaboration-and-observation.md`, `build_tenants/react_vite/runtime/tests/test_project_deep_link.mjs`, `build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts`
 
 ### REQ-OM-NAV-001 - The home surface answers immediate supervisory questions
 

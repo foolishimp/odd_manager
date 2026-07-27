@@ -2,7 +2,8 @@
 
 **Status**: Active
 **Date**: 2026-07-11
-**Derived From**: `specification/INTENT.md`, `specification/PRODUCT.md`
+**Updated**: 2026-07-27
+**Derived From**: Product-owner intake and admitted project gap analysis
 
 ## Position
 
@@ -13,7 +14,62 @@ They are narrower than intent and shorter-lived than product definition.
 They keep the current observation recovery and developer-control repricing work
 oriented without turning temporary implementation choices into accidental law.
 
-## Current Goals
+## Current Governance Basis
+
+- The selected method is immutable STDO `v2.2.1` at
+  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`, with the 41-member standards
+  member-set digest
+  `df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`.
+- `.genesis/docs/standards/` is the operative installed distribution and must
+  match that exact release.
+- The initial 2026-07-26 method adoption changed governance only and selected
+  no Product-outcome-bearing realization.
+- G-006 remains the selected Product outcome family. T-032 remains its
+  review-state owner.
+- The subsequent Product-owner instruction admits only the named bounded
+  constitutional-trace and STDO-UX conformance prerequisite recorded in
+  T-032. It does not select another Product outcome or authorize new
+  capability behavior.
+- The Product-owner instruction on 2026-07-27 updates that prerequisite to the
+  exact STDO `v2.2.1` basis, directs its closure after deterministic
+  validation, and admits one bounded compatibility qualification over the
+  immutable `odd_glc` `0.1.0` / ABIogenesis `4.6.0-rc.3` proof. That
+  qualification is read-only evidence. It does not admit an external Build or
+  Assure carrier and does not enlarge Product.
+- The exact local candidate passed its declared source, browser,
+  installed-development, standards-member, traceability, design, and exact
+  4.6-observation gates on 2026-07-27. Direct Product-owner acceptance closes
+  the named prerequisite and exhausts its growth authority.
+- ABIogenesis 5 work is unselected. It may enter this Project only after an
+  immutable ABIogenesis 5 release exists and the Product owner separately
+  selects a named compatibility or Product outcome.
+- T-031 remains review-only. Its retained design, code, tests, and evidence do
+  not authorize further capability growth.
+
+## Goal Selection
+
+Only `G-006` remains the selected unresolved Product outcome family. No
+Product-outcome-bearing continuation is currently admitted.
+
+| Goal | Selection posture | Growth authority |
+| --- | --- | --- |
+| `G-001` through `G-005` | Retained, unselected context | None; prior realization and evidence are preservation inputs only |
+| `G-006` | Selected unresolved outcome family under external review | None locally; the T-032 prerequisite is accepted and exhausted, and the external residual is not a realization admission |
+| `G-007` | Retained structural subgoal of G-006, not a second selected outcome | None; the STDO-UX conformance prerequisite is accepted and exhausted |
+
+The retained catalog does not form a remaining-row sweep. Selecting a different
+goal, enlarging G-006, or continuing after the T-032 prerequisite reaches a
+terminal condition requires a fresh owning-authority admission.
+
+The STDO `v2.2.1` local-conformance prerequisite reached its terminal
+`accepted` condition on 2026-07-27 after the exact candidate passed the
+traceability, runtime, type, build, browser, installed-development,
+standards-member, design-parse, and exact 4.6-observation proof declared by
+T-032. That prerequisite and its evidence have no growth authority. T-032
+remains the review owner for the separate external Build/Assure steel thread;
+its retained rows do not authorize manager-local continuation.
+
+## Retained Goal Catalog
 
 ### G-001 - Establish the admitted ABG/GTL system observation contract
 

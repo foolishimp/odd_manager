@@ -4,6 +4,9 @@
 **Status**: Active
 **Category**: Capability
 **Derives From**: `specification/INTENT.md`, `specification/PRODUCT.md`, `specification/GOALS.md` G-006
+**Product Outcomes**: `PO-OM-DEVELOPER-001`
+**Downstream Disposition**: Repair admitted and accepted under T-032 for the manager-local portfolio/workbench subset in `B-OM-DEVCTRL-LOCAL-001`, subject to exact validation. Context, availability, command, subscription, replay, accessibility, and module ownership paths are explicit; unproved end-to-end Product cases remain scenario gaps
+**Testcase Authority**: `specification/scenarios/02-developer-review-tune-build-assure.md`, `specification/scenarios/03-concurrent-build-attention-and-reentry.md`, `build_tenants/react_vite/runtime/tests/test_developer_control_bootstrap.mjs`, `build_tenants/react_vite/runtime/tests/test_developer_control_capability_host.mjs`, `build_tenants/react_vite/tests/e2e/odd-manager-developer-control.spec.ts`
 
 ### REQ-OM-DEV-001 - The developer interaction goal organizes the primary experience
 
@@ -29,6 +32,9 @@ Acceptance Criteria
 - each Project row preserves published identity and current admitted revision
 - each Project exposes specification readiness, active or recent build posture,
   gate/asset posture, freshness, participants, and attention where available
+- every Build and Assurance observation is admitted only when its Project,
+  Project Revision, and selected Build Execution identities match the exact
+  portfolio row basis
 - missing domain or runtime features remain explicit and do not remove the
   Project from generic portfolio use
 
@@ -42,6 +48,14 @@ Acceptance Criteria
   conditions can be distinguished
 - each attention summary identifies its source Project and relevant build,
   proposal, gate, asset, or run context
+- each attention summary retains its admitted correlation identity; Assurance
+  attention bound to a selected Build Execution carries that execution's exact
+  correlation, while Assurance attention without an execution carries the
+  exact derived Project-assurance correlation
+- Assurance attention identity injectively frames the exact Project,
+  present-or-absent execution, source kind, and source identity; delimiter
+  content, literal sentinel text, identities published by different Projects,
+  and equal gate/asset strings remain distinct portfolio conditions
 - selecting attention opens the capability and evidence that justify it
 - portfolio ordering or filtering does not invent severity or closure truth
 
@@ -110,5 +124,8 @@ Acceptance Criteria
   retains Project identity
 - switching Project focus cannot admit a late result from the prior Project
 - one Project's successful build or proof cannot satisfy another Project's gate
+- a foreign or mismatched Build or Assurance observation fails explicitly
+  before any state, Run reference, assurance posture, or Attention Item is
+  projected into the row
 - cross-Project summaries remain projections with drilldown to Project-owned
   sources

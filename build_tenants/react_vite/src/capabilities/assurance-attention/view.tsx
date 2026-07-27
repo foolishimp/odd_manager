@@ -223,7 +223,7 @@ export function AssuranceAttentionView({
           type="button"
           className="secondary"
           onClick={() => dispatch({ type: "assurance/run-inspector-requested" })}
-          disabled={!snapshot?.execution}
+          disabled={!snapshot?.execution || !snapshot.evidenceBundleRef}
         >
           Open Run Inspector
         </button>
