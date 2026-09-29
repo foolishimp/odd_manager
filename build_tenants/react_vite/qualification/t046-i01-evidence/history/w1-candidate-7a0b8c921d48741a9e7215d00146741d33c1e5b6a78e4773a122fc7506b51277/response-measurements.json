@@ -1,0 +1,54 @@
+[
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project",
+    "bytes": 5163
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 113227
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61&generation=sha256%3A78d359a5b3db93364347b1cceff4677b8eee6bcadf141ca425ad06245a55e038",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3A78d359a5b3db93364347b1cceff4677b8eee6bcadf141ca425ad06245a55e038&ordinal=13&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 3419
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3A78d359a5b3db93364347b1cceff4677b8eee6bcadf141ca425ad06245a55e038&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 41615
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 113167
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2&generation=sha256%3Ab912b66d52cb5909e22fa7129ccf7b6f83a059ae9701de7fd94040d8954b66cf",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3Ab912b66d52cb5909e22fa7129ccf7b6f83a059ae9701de7fd94040d8954b66cf&ordinal=13&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 3422
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3Ab912b66d52cb5909e22fa7129ccf7b6f83a059ae9701de7fd94040d8954b66cf&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 41584
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 111612
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3&generation=sha256%3A52bf87fb1d9c6b6dc2b9535b5430c32909709adc02865885d097dc1cbb419628",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3A52bf87fb1d9c6b6dc2b9535b5430c32909709adc02865885d097dc1cbb419628&ordinal=2328&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 3429
+  },
+  {
+    "url": "http://127.0.0.1:53274/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-M8P3FR%2Fobservation-project&generation=sha256%3A52bf87fb1d9c6b6dc2b9535b5430c32909709adc02865885d097dc1cbb419628&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 41744
+  }
+]

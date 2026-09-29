@@ -2,14 +2,14 @@
 kind: authority_compression_asset
 asset_ref: authority-compression://stdo/design-module-method/v1
 source_ref: ../DESIGN_MODULE_METHOD.md
-source_digest: 13e7e49233bb61d8a73b1b83cc379afc80f0c2d9c74d52926a4d90feb1337233
+source_digest: 82e40cf5074b1af0ba05c459c664c29a625cba8fa07c9b791b31973cf0c725da
 compression_profile: prompt_authority_compact_v1
 target_prompt_families:
   - transform
   - evaluate_design_depth
   - evaluate_review_grade
 generated_by: codex
-generated_at: 2026-07-26
+generated_at: 2026-08-03
 stale_if_source_digest_changes: true
 ---
 
@@ -107,6 +107,48 @@ surfaces.
   lifecycle and authority unless promoted.
 - Declare proposer, evaluator, verifier, admitter, executor, projector, and
   retirement authority. Actor and available capability are not authority.
+- Naming an admitter is not sufficient. For each consequential entity-transition
+  domain state the complete admission relation: entity identity, predecessor
+  basis, authority scope, candidate family, decision cardinality, admission
+  predicate, durable result, and supersession law. Singularity attaches to the
+  relation, not to one actor, callable, or component; multiple actors, stages,
+  quorum, multi-signature, human step-up, delegated proxy, and jurisdictional
+  partitioning are lawful as constituents or disjoint instances when declared.
+- Competing-path disposition does not mean deletion. An equivalent path may be a
+  lawful constituent, replica, replacement, or deliberately independent
+  realization when its relationship to the admission law is explicit.
+- A projection may produce a candidate transformation; projection status confers
+  no admission authority, and reconstructed projection state is not
+  self-authenticating admission evidence. Consequential results re-enter the
+  governing admission relation against an explicit predecessor basis.
+- Declare the governing frames a material boundary derives from, its bounded
+  affected relation set, inherited invariants, and the authority and composition
+  seams crossing that set. Governing frames form a constraint network; deriving
+  from more than one is lawful, and a single parent is not required. Every seam
+  crossing the affected set must either include its causally relevant far-side
+  relation in that set, or state why that relation cannot affect and cannot be
+  affected by the bounded action — that is what makes the declared set testable
+  against its own seams.
+- Evaluate the result against every affected governing frame. A bounded local
+  action conserves governing truth and updates only affected subordinate
+  projections; a result that changes a governing relation re-enters at that
+  relation before acceptance.
+- Treat design evidence as the durable reasoning state a bounded actor needs,
+  not as documentation. For a material frame and a proposed bounded action, the
+  selected STDO basis together with the accepted design must recover every
+  governing relation in the causally closed affected set and decide whether the
+  action preserves, changes, duplicates, or violates each one — without
+  conversation history, commentary, prior-worker memory, or folklore. Design
+  must not restate federal decision law to satisfy this.
+- The four decisions: `preserves` leaves the relation intact and operates inside
+  it; `changes` alters the relation and therefore re-enters at it before
+  acceptance; `duplicates` establishes an equivalent path explicitly disposed as
+  constituent, replica, replacement, or deliberately independent realization;
+  `violates` contradicts the relation or leaves an equivalent path undisposed.
+  The changes/violates boundary is the locus of acceptance, not the size of the
+  delta — a lawful change accepted inside the acting frame instead of at the
+  relation it changes is a violation. The duplicates/violates boundary is
+  disposition, not equivalence.
 - Derive parameterized atomic function families and the governing higher-order
   composition/effect algebra before promoting peer operations.
 - Treat Prime atoms as irreducible semantic-design relations, not as files,
@@ -132,6 +174,31 @@ surfaces.
 - Treat IACS, class/sequence/state views, and public contracts as
   fidelity-checked Ontology projections. Target design remains the structural
   `HOW`; code and tests derive through requirements plus accepted design.
+- Declare a role set for every material realization component. Technology
+  capability is not authority. Variation inside a declared abstract role is
+  ordinary; a new operational responsibility or a new semantic or authoritative
+  role is a design change. Use outside the declared role set must not silently
+  establish identity, admission, lifecycle, ordering, closure, or projection
+  truth.
+- The three views show domain identities and therefore hide repeated machinery.
+  At a material boundary also project the domain design into abstract data
+  types, identity and key structures, algorithms, algebraic laws, mutation and
+  effect boundaries, and domain-to-computational mappings; extend the cross-view
+  evaluation to prove one system.
+- That projection is subordinate. Computational similarity yields a
+  commonization candidate, never an adjudication of semantic identity,
+  ownership, or authority. Materially non-equivalent identity, ownership,
+  ordering, mutation, consistency, retention, failure, access, lifecycle, or
+  authority law requires separation; other differences justify separation only
+  where parameterization or adaptation would weaken those constraints. A
+  difference alone does not discharge Prime contraction or recurrence review.
+- Dispose each material algorithmic obligation twice: semantically as an
+  existing accepted relation, an extension, or a new candidate relation; and in
+  realization as consume, implement locally, optimize, adapt, or deliberately
+  duplicate under stated non-semantic constraints. The rule is not that
+  equivalent code is never rebuilt — it is that a local realization must not
+  present an accepted semantic or authoritative relation as newly owned local
+  truth.
 - One truth surface for each decision; no rival local centers.
 - Prefer total functions, closed enums, explicit state, and deterministic folds.
 - Separate pure decision logic from effect edges.
@@ -154,6 +221,11 @@ surfaces.
   before promotion or closure. Otherwise the affected relation is accepted
   before retained implementation establishes it. Existing accepted evidence is
   reused when the boundary is unchanged.
+- For probabilistic or agentic realization, hand the accepted governing-frame,
+  transformation-admission, invariant-reconstruction, computational-
+  realization, and module evidence to `SPEC_METHOD.md`'s Agentic Construction
+  Execution relation. DMM supplies design inputs; it does not create a second
+  worker, assessment, disposition, checkpoint, or continuation protocol.
 - The post-ticket design check may be part of normal verification. It blocks
   when the exact claim or an applicable hard stop fails, including causally
   applicable active authority that ticket or review wording cannot narrow away

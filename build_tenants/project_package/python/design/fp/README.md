@@ -2,4 +2,6 @@
 
 This folder holds tenant-local F_P tuning for bounded constructive turns.
 
-Use `.genesis/docs/standards/templates/build_tenants/variant/design/fp/edge-overrides/EDGE_OVERRIDE_TEMPLATE.json` as the authoritative template shape for edge override files.
+This scaffold is not an active realization in `stdo_odd_manager.json`. If it is
+reactivated, resolve the F_P and edge-override templates through the exact
+Product Definition basis; no project-local standards mirror is authoritative.

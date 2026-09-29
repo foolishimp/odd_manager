@@ -163,14 +163,14 @@ If frame-local recursion bleeds into global publication or hidden fallback trave
 
 Selected methodology release:
 
-- Product and tag: STDO `v2.2.1`
+- Product and tag: STDO `v2.3.0`
 - immutable release commit:
-  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`
+  `b2c64047e01d9d582243a25af587ac772233a4ea`
 - standards member-set digest:
-  `df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`
+  `014ead42a96412f51a172a8158e42fdfe1447a0af5e4f70a79cf8a020129630c`
 - operative installed distribution: `workspace://.genesis/docs/standards/`
 - immutable public source:
-  `https://github.com/foolishimp/specification_methodology/tree/v2.2.1/specification/standards`
+  `https://github.com/foolishimp/specification_methodology/tree/v2.3.0/specification/standards`
 
 Mutable methodology source and candidate cuts do not govern this workspace.
 

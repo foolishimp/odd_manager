@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const OBSERVED_WORKSPACE =
   "/Users/jim/src/apps/odd_glc";
-const MANAGER_WORKSPACE = "/Users/jim/src/apps/odd_manager";
+const MANAGER_WORKSPACE = process.env.ODD_MANAGER_E2E_PROJECT_ROOT ?? "/Users/jim/src/apps/odd_manager";
 const ABIOGENESIS_WORKSPACE = "/Users/jim/src/apps/abiogenesis";
 
 async function captureReviewShot(

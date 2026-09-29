@@ -2,8 +2,9 @@
 Status: accepted
 Date: 2026-07-11
 Governance:
-  - .genesis/docs/standards/DESIGN_MODULE_METHOD.md
-  - .genesis/docs/standards/UX_METHOD.md
+  - stdo_odd_manager.json
+  - DESIGN_MODULE_METHOD.md via the selected basis
+  - UX_METHOD.md via the selected basis
 Derives from:
   - build_tenants/common/design/adrs/ADR-001-canonical-ux-functions-and-projection-instances.md
   - build_tenants/common/design/AI_WORKSPACE_OBSERVABILITY_MIGRATION.md

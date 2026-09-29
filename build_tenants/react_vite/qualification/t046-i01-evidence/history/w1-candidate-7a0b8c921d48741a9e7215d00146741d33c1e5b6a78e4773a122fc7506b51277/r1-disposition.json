@@ -1,0 +1,20 @@
+{
+  "kind": "t046_i01_review_lineage",
+  "candidateDigest": "7a0b8c921d48741a9e7215d00146741d33c1e5b6a78e4773a122fc7506b51277",
+  "review": "T046-I01-R1",
+  "reviewResult": "falsified",
+  "executive": "T046-E01",
+  "executiveDisposition": "not accepted; bounded W2 repair activated",
+  "findings": [
+    {
+      "severity": "high",
+      "boundary": "Run cause to workspace candidate admitted",
+      "owner": "frozen event_store.js:1346-1349"
+    },
+    {
+      "severity": "medium",
+      "boundary": "published run_replay status and nonblank ref contract mismatch",
+      "owner": "frozen project read result schema SHA aef039061e465894ed89da7cef4794daab5fdc2421cf047aed2bc1961487a60c"
+    }
+  ]
+}

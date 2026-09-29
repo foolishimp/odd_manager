@@ -668,6 +668,13 @@ The audit must inventory at least these surfaces:
 | Runtime event emission, append, replay, and projection | ABG | Map domain evidence into admitted event payloads | Direct event append, side ledger mutation, or projection reconstruction that bypasses ABG runtime truth |
 | Closure fold and assurance gate | ABG, with product policy and gain inputs | Provide domain interpretation, evaluators, gap reasons, and policy weights | Worker self-report or product postflight directly closing the runtime unit |
 
+Where these surfaces admit a consequential entity transformation, ABG's
+admission authority is the graph-native specialization of `STDO-UP-016`. ABG's
+broader execution, supervision, retry, and projection authority continues to
+derive from existing ODD law, and is not thereby reclassified as admission
+authority. `F_P` and `F_H` are the ODD projections of the candidate-producer
+and human-adjudication roles that `STDO-UP-016` declares generically.
+
 The audit is not satisfied by reviewing produced artifacts alone. It must
 include a code, call-graph, or static-surface review appropriate to the
 language and tenant, and it must name the evidence used to rule out hidden

@@ -14,6 +14,8 @@ import ts from 'typescript';
 const here = dirname(fileURLToPath(import.meta.url));
 const stateModulePath = resolve(here, '../../src/features/sidecar/sidecar-state.ts');
 const ingressValidationModulePath = resolve(here, '../../src/features/sidecar/sidecar-ingress-validation.ts');
+const abgRunObservationContractPath = resolve(here, '../../src/contracts/abg-run-observation.ts');
+const abgRunObservationValidationPath = resolve(here, '../../src/features/sidecar/abg-run-observation-validation.ts');
 const sidecarPanelPath = resolve(here, '../../src/features/sidecar/SidecarPanel.tsx');
 const workspaceRoutePath = resolve(here, '../../src/routes/WorkspaceRoute.tsx');
 const developerControlHostPath = resolve(here, '../../src/capabilities/host/DeveloperControlHost.tsx');
@@ -27,9 +29,36 @@ const oddTermServerPath = resolve(here, '../../src/server/oddterm-pool-service.m
 const collaborationPath = resolve(here, '../../src/lib/collaboration.ts');
 const stylesPath = resolve(here, '../../src/app/styles.css');
 const documentViewerPath = resolve(here, '../../src/components/DocumentViewer.tsx');
+const visualGraphViewPath = resolve(here, '../../src/features/sidecar/visual-graph/VisualGraphView.tsx');
+const visualGraphLayoutPath = resolve(here, '../../src/features/sidecar/visual-graph/layout.ts');
+const visualGraphStatePath = resolve(here, '../../src/features/sidecar/visual-graph/state.ts');
 
 async function loadStateModule() {
+  const visualStateSource = readFileSync(visualGraphStatePath, 'utf-8');
+  const visualStateCompiled = ts.transpileModule(visualStateSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2020,
+      target: ts.ScriptTarget.ES2020,
+      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+    },
+  }).outputText;
+  const visualStateUrl = `data:text/javascript;base64,${Buffer.from(visualStateCompiled, 'utf-8').toString('base64')}`;
   const source = readFileSync(stateModulePath, 'utf-8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2020,
+      target: ts.ScriptTarget.ES2020,
+      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+    },
+  }).outputText
+    .replaceAll("'./visual-graph/state'", `'${visualStateUrl}'`)
+    .replaceAll('"./visual-graph/state"', `"${visualStateUrl}"`);
+  const encoded = Buffer.from(compiled, 'utf-8').toString('base64');
+  return import(`data:text/javascript;base64,${encoded}`);
+}
+
+async function loadIngressValidationModule() {
+  const source = readFileSync(ingressValidationModulePath, 'utf-8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2020,
@@ -41,8 +70,21 @@ async function loadStateModule() {
   return import(`data:text/javascript;base64,${encoded}`);
 }
 
-async function loadIngressValidationModule() {
-  const source = readFileSync(ingressValidationModulePath, 'utf-8');
+async function loadAbgRunObservationValidationModule() {
+  const source = readFileSync(abgRunObservationValidationPath, 'utf-8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2020,
+      target: ts.ScriptTarget.ES2020,
+      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
+    },
+  }).outputText;
+  const encoded = Buffer.from(compiled, 'utf-8').toString('base64');
+  return import(`data:text/javascript;base64,${encoded}`);
+}
+
+async function loadVisualGraphLayoutModule() {
+  const source = readFileSync(visualGraphLayoutPath, 'utf-8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2020,
@@ -1467,8 +1509,8 @@ test('Sidecar subscriptions are state-derived and run refresh failures replay th
     runId: 'run-1',
   }]);
   assert.deepEqual(refreshed.commands, [
-    { type: 'run.loadObservation', workspaceRoot: projectRoot, runId: 'run-1', refresh: true },
-    { type: 'traversal.loadSummary', workspaceRoot: projectRoot, runId: 'run-1', refresh: true },
+    { type: 'run.loadObservation', workspaceRoot: projectRoot, runId: 'run-1', refresh: true, requestEpoch: 1 },
+    { type: 'traversal.loadSummary', workspaceRoot: projectRoot, runId: 'run-1', refresh: true, requestEpoch: 1 },
   ]);
   assert.equal(refreshed.state.traversal.runStatus, 'loading');
   assert.deepEqual(refreshed.state.subscriptionFailures, []);
@@ -2775,11 +2817,12 @@ test('Build Portfolio owns Project discovery and registry mutation while Sidecar
 // Traversal View (sprint W7) — Msg-replay proofs for the traversal family.
 // Deterministic payloads are injected; no network, DOM, or timers.
 
-function traversalSummaryFor(workspaceRoot) {
+function traversalSummaryFor(workspaceRoot, runId = null) {
   return {
     kind: 'traversal_projection',
     version: 1,
     state: 'ready',
+    runId,
     runRoot: `${workspaceRoot}-run`,
     workspaceRoot,
     scenario: {
@@ -2872,6 +2915,7 @@ function traversalDetailFor(index, attempt = 1, variant = 'primary') {
 function runObservationFor(projectRoot, selectedRunId = 'run-a') {
   const runs = ['run-a', 'run-b'].map((runId, index) => ({
     runId,
+    runKey: `run-observation:sha256:${runId}`,
     runRoot: `${projectRoot}/test_runs/${runId}`,
     workspaceRoot: `${projectRoot}/test_runs/${runId}/instance`,
     scenarioId: `SCN-${runId.toUpperCase()}`,
@@ -2882,18 +2926,46 @@ function runObservationFor(projectRoot, selectedRunId = 'run-a') {
     modifiedAt: `2026-07-10T00:0${index}:00.000Z`,
     lastEventAt: `2026-07-10T00:0${index}:30.000Z`,
     eventCount: 10 + index,
+    eventPosture: 'terminal_converged',
+    eventProfile: 'abiogenesis_5_root',
   }));
+  const generation = `sha256:${selectedRunId === 'run-a' ? 'a'.repeat(64) : 'b'.repeat(64)}`;
+  const eventPage = {
+    kind: 'abg_event_page', version: 1, generation, start: 0, limit: 40, total: 1,
+    rows: [{
+      index: 1, ordinal: 1, eventId: `event://${selectedRunId}/1`, kind: 'run_segment_opened',
+      eventTime: '2026-07-10T00:00:00.000Z', vectorIndex: null, edge: null,
+      graphCallId: null, frameId: null, cCallRef: null, actorInvocationRef: null,
+      graphFunctionRef: 'graph-function://fixture/full', causationEventRefs: [], detail: null,
+    }],
+    nextStart: null, previousStart: null,
+  };
   return {
     kind: 'abg_run_observation',
-    version: 2,
+    version: 3,
     generatedAt: '2026-07-10T00:02:00.000Z',
     state: 'ready',
     projectRoot,
     identity: { id: 'fixture', label: 'Fixture', kind: 'source_project', version: null, sourceRef: 'specification/PRODUCT.md', confidence: 'high', governancePackages: [] },
     runs,
     selectedRunId,
+    selectedRunKey: `run-observation:sha256:${selectedRunId}`,
     selectedRunRoot: runs.find((run) => run.runId === selectedRunId)?.runRoot ?? null,
     selectedWorkspaceRoot: runs.find((run) => run.runId === selectedRunId)?.workspaceRoot ?? null,
+    carrierSnapshot: {
+      state: 'ready', sourceRef: `${projectRoot}/events.jsonl`, generation,
+      envelopeProfile: 'abiogenesis_5_root', workflowVersion: '5.0.0',
+      eventContractDigest: 'sha256:contract', contractPosture: 'pinned_root_envelope_verified',
+      observedSizeBytes: 100, completePrefixBytes: 100, pendingBytes: 0, eventCount: 1,
+      firstOrdinal: 1, lastOrdinal: 1, firstEventAt: '2026-07-10T00:00:00.000Z',
+      lastEventAt: '2026-07-10T00:00:00.000Z', maxLineBytes: 99,
+      completePrefixDigest: 'sha256:events', stable: true, eventPosture: 'terminal_converged',
+      terminalEvent: null, limits: { maxCarrierBytes: 1000, maxLineBytes: 1000, maxEvents: 100, maxIndexBytes: 1000 },
+    },
+    eventPosture: 'terminal_converged',
+    processPosture: 'unavailable',
+    proofReconciliation: { state: 'reconciled', sourceRef: `${projectRoot}/proof.json`, conflicts: [], eventCount: 1, eventDigest: 'sha256:events' },
+    compatibility: { posture: 'abiogenesis_5_root_envelope_supported', subject: null, reason: 'fixture' },
     systemReferences: [],
     substrate: null,
     activity: null,
@@ -2917,10 +2989,102 @@ function runObservationFor(projectRoot, selectedRunId = 'run-a') {
     assurance: null,
     eventKinds: [],
     events: [],
+    eventPage,
+    eventFamilies: Object.fromEntries(['run', 'retryContinuation', 'actor', 'cCall', 'payloadIntegrity', 'assurance'].map((name) => [name, { eventCount: 0, kindCounts: [], rows: [], truncated: false }])),
     stages: [],
     transcripts: [],
     artifacts: [],
     diagnostics: [],
+  };
+}
+
+function visualGraphProjectionFor(runId, generation, options = {}) {
+  const nodeId = `occurrence://${runId}/graph-call/1`;
+  const lastNodeId = `occurrence://${runId}/actor/1`;
+  const declarationGraphId = `declaration://${runId}/graph/1`;
+  const declarationFunctionId = `declaration://${runId}/graph-function/1`;
+  const declarationOverlayId = `declaration://${runId}/overlay/1`;
+  const event = (ordinal, kind) => ({ eventId: `event://${runId}/${ordinal}`, ordinal, kind });
+  return {
+    kind: 'visual_graph_projection',
+    version: 1,
+    generatedAt: '2026-09-02T00:00:00.000Z',
+    state: 'partial',
+    run: {
+      runId,
+      runDigest: null,
+      scenarioKey: 'rust-cli',
+      scenarioId: 'SCN-GLC-HELLO-WORLD-RUST-CLI',
+      eventGeneration: generation,
+      eventCount: 5,
+      firstOrdinal: 1,
+      lastOrdinal: 5,
+      eventPosture: 'non_terminal',
+      closed: false,
+      eventContract: {
+        publishedDigest: null,
+        builtInRegistryDigest: null,
+        posture: 'mismatch',
+        bindingPosture: null,
+      },
+      evidence: { authority: 'diagnostic_only', disposition: 'awaiting_review', validationDisposition: 'satisfied' },
+    },
+    declarationTopology: options.declarationReady ? {
+      state: 'ready',
+      reason: 'published_bodies_admitted',
+      references: [
+        { kind: 'graph_function', ref: 'graph-function://fixture/full', sourceEvent: event(1, 'public_operation_admitted') },
+        { kind: 'overlay', ref: 'overlay://fixture/product', sourceEvent: event(1, 'public_operation_admitted') },
+      ],
+      nodes: [
+        { id: declarationGraphId, kind: 'graph', label: 'Fixture graph', declarationRef: 'graph://fixture/full' },
+        { id: declarationFunctionId, kind: 'graph_function', label: 'Fixture graph function', declarationRef: 'graph-function://fixture/full' },
+        { id: declarationOverlayId, kind: 'overlay', label: 'Fixture product overlay', declarationRef: 'overlay://fixture/product' },
+      ],
+      edges: [
+        { id: `declaration-edge://${runId}/1`, kind: 'declared_vector', sourceNodeId: declarationGraphId, targetNodeId: declarationFunctionId, declarationRef: 'graph-function://fixture/full' },
+        { id: `declaration-edge://${runId}/2`, kind: 'overlay_application', sourceNodeId: declarationOverlayId, targetNodeId: declarationGraphId, declarationRef: 'overlay://fixture/product' },
+      ],
+    } : {
+      state: 'partial',
+      reason: 'references_without_bodies',
+      references: [{ kind: 'graph_function', ref: 'graph-function://fixture/full', sourceEvent: event(1, 'public_operation_admitted') }],
+      nodes: [],
+      edges: [],
+    },
+    occurrenceGraph: {
+      state: 'partial',
+      nodes: [
+        { id: nodeId, aggregateType: 'graph_call', aggregateId: `graph-call://${runId}/1`, label: 'Graph call', state: 'open', firstObserved: event(2, 'graph_call_opened'), lastObserved: event(4, 'graph_call_observed') },
+        { id: lastNodeId, aggregateType: 'actor_invocation', aggregateId: `actor://${runId}/1`, label: 'Actor invocation', state: 'open', firstObserved: event(3, 'actor_invocation_opened'), lastObserved: event(5, 'actor_process_observed') },
+      ],
+      edges: [{ id: `relation://${runId}/1`, kind: 'aggregate_parent', sourceNodeId: nodeId, targetNodeId: lastNodeId, sourceEvent: event(2, 'graph_call_opened'), targetEvent: event(3, 'actor_invocation_opened') }],
+      activeNodeIds: options.activeAndLast ? [lastNodeId] : [nodeId],
+      lastObservedNodeId: lastNodeId,
+    },
+    workspaceObservations: {
+      state: 'partial',
+      currentness: 'unobserved',
+      observations: [],
+    },
+    actorSessions: {
+      state: 'missing',
+      interactionDisposition: 'unavailable',
+      sessions: [],
+    },
+    diagnostics: [],
+    limits: {
+      maxNodes: 240,
+      maxEdges: 480,
+      maxWorkspaceObservations: 80,
+      maxActorSessions: 80,
+      maxDiagnostics: 80,
+      nodesTruncated: false,
+      edgesTruncated: false,
+      workspaceObservationsTruncated: false,
+      actorSessionsTruncated: false,
+      diagnosticsTruncated: false,
+    },
   };
 }
 
@@ -2929,11 +3093,11 @@ test('traversal load replay emits summary Cmd and absorbs the ready projection',
   const summary = traversalSummaryFor('/workspace/odd_manager');
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestEpoch: 1, summary },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
   ]);
   assert.equal(result.state.traversal.status, 'ready');
   assert.equal(result.state.traversal.workspaceRoot, '/workspace/odd_manager');
@@ -2945,7 +3109,7 @@ test('traversal load failure replay lands in an honest error state and can retry
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-failed', workspaceRoot: '/workspace/odd_manager', error: 'proof unreadable' },
+    { type: 'traversal/load-failed', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, error: 'proof unreadable' },
   ]);
   assert.equal(result.state.traversal.status, 'error');
   assert.equal(result.state.traversal.error, 'proof unreadable');
@@ -2956,8 +3120,8 @@ test('traversal load failure replay lands in an honest error state and can retry
   ]);
   assert.equal(retried.state.traversal.status, 'loading');
   assert.deepEqual(retried.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 2 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 2 },
   ]);
 });
 
@@ -2965,18 +3129,81 @@ test('stale traversal summary for another root cannot overwrite the requested ro
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load', workspaceRoot: '/workspace/data_mapper' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
   ]);
   assert.equal(result.state.traversal.status, 'loading');
   assert.equal(result.state.traversal.summary, null);
+});
+
+test('current-epoch run and traversal success payloads bind exact Project and Run identity', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const loadingRun = module.replaySidecarMessages(baseState(module), [{
+    type: 'traversal/load', workspaceRoot: projectRoot, runId: 'run-a',
+  }]).state;
+
+  for (const observation of [
+    runObservationFor('/workspace/data_mapper', 'run-a'),
+    runObservationFor(projectRoot, 'run-b'),
+  ]) {
+    const rejected = module.replaySidecarMessages(loadingRun, [{
+      type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+      requestEpoch: 1, observation,
+    }]);
+    assert.equal(rejected.state, loadingRun);
+    assert.deepEqual(rejected.commands, []);
+  }
+
+  for (const summary of [
+    traversalSummaryFor('/workspace/data_mapper', 'run-a'),
+    traversalSummaryFor(projectRoot, 'run-b'),
+  ]) {
+    const rejected = module.replaySidecarMessages(loadingRun, [{
+      type: 'traversal/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+      requestEpoch: 1, summary,
+    }]);
+    assert.equal(rejected.state, loadingRun);
+    assert.deepEqual(rejected.commands, []);
+  }
+
+  const exactObservation = runObservationFor(projectRoot, 'run-a');
+  const selectedCandidate = exactObservation.runs.find((run) => run.runId === 'run-a');
+  assert.ok(selectedCandidate);
+  const internallyMismatched = [
+    { ...exactObservation, selectedRunKey: 'run-observation:sha256:foreign' },
+    { ...exactObservation, selectedRunRoot: `${projectRoot}/test_runs/foreign` },
+    { ...exactObservation, selectedWorkspaceRoot: `${projectRoot}/test_runs/foreign/instance` },
+    { ...exactObservation, runs: [...exactObservation.runs, { ...selectedCandidate }] },
+  ];
+  for (const observation of internallyMismatched) {
+    const translated = module.runObservationResultMessage(projectRoot, 'run-a', 1, observation);
+    assert.equal(translated.type, 'run/load-failed');
+    assert.match(translated.error, /selected identity did not match one exact admitted Run candidate/);
+    const rejected = module.replaySidecarMessages(loadingRun, [{
+      type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+      requestEpoch: 1, observation,
+    }]);
+    assert.equal(rejected.state, loadingRun);
+    assert.deepEqual(rejected.commands, []);
+  }
+
+  const discovery = module.replaySidecarMessages(baseState(module), [{
+    type: 'traversal/load', workspaceRoot: projectRoot, runId: null,
+  }]).state;
+  const inferredSelection = module.replaySidecarMessages(discovery, [{
+    type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: null,
+    requestEpoch: 1, observation: runObservationFor(projectRoot, 'run-a'),
+  }]);
+  assert.equal(inferredSelection.state, discovery);
+  assert.deepEqual(inferredSelection.commands, []);
 });
 
 test('run observation replay admits the selected Project run and section changes stay pure', async () => {
   const module = await loadStateModule();
   const observation = runObservationFor('/workspace/odd_manager');
   const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'traversal/load' },
-    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation },
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation },
     { type: 'run/select-section', section: 'catalog' },
   ]);
   assert.equal(result.state.traversal.runStatus, 'ready');
@@ -2984,9 +3211,577 @@ test('run observation replay admits the selected Project run and section changes
   assert.equal(result.state.traversal.section, 'catalog');
   assert.equal(result.state.traversal.runObservation, observation);
   assert.deepEqual(result.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', refresh: false, requestEpoch: 1 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', refresh: false, requestEpoch: 1 },
+    {
+      type: 'visualGraph.load',
+      projectRoot: '/workspace/odd_manager',
+      runId: 'run-a',
+      generation: observation.carrierSnapshot.generation,
+      requestId: 1,
+    },
   ]);
+});
+
+test('candidate discovery requires an explicit run selection and never infers the first or latest row', async () => {
+  const module = await loadStateModule();
+  const candidateObservation = {
+    ...runObservationFor('/workspace/odd_manager'),
+    state: 'unsupported',
+    selectedRunId: null,
+    selectedRunKey: null,
+    selectedRunRoot: null,
+    selectedWorkspaceRoot: null,
+    carrierSnapshot: null,
+    activity: null,
+    eventPage: null,
+  };
+  const discovered = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, observation: candidateObservation },
+  ]);
+  assert.equal(discovered.state.traversal.selectedRunId, null);
+  assert.equal(discovered.state.traversal.visualGraph.status, 'idle');
+  assert.equal(discovered.commands.some((command) => command.type === 'visualGraph.load'), false);
+
+  const selected = module.replaySidecarMessages(discovered.state, [
+    { type: 'run/select', runId: 'run-a' },
+  ]);
+  assert.deepEqual(selected.commands, [
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', refresh: false, requestEpoch: 2 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', refresh: false, requestEpoch: 2 },
+  ]);
+  assert.equal(selected.state.traversal.requestedRunId, 'run-a');
+  assert.equal(selected.state.traversal.selectedRunId, 'run-a');
+});
+
+test('visual graph loads only from an exact admitted Run basis and accepts the canonical matching response', async () => {
+  const module = await loadStateModule();
+  const observation = runObservationFor('/workspace/odd_manager');
+  const loaded = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation },
+  ]);
+  const generation = observation.carrierSnapshot.generation;
+  assert.deepEqual(loaded.commands.at(-1), {
+    type: 'visualGraph.load',
+    projectRoot: '/workspace/odd_manager',
+    runId: 'run-a',
+    generation,
+    requestId: 1,
+  });
+  assert.deepEqual(loaded.state.traversal.visualGraph.basis, {
+    projectRoot: '/workspace/odd_manager',
+    runId: 'run-a',
+    generation,
+    requestId: 1,
+  });
+  assert.equal(loaded.state.traversal.visualGraph.status, 'loading');
+  assert.equal(loaded.state.traversal.visualGraph.nextRequestId, 2);
+
+  const projection = visualGraphProjectionFor('run-a', generation);
+  const accepted = module.replaySidecarMessages(loaded.state, [{
+    type: 'visual-graph/load-succeeded',
+    projectRoot: '/workspace/odd_manager',
+    runId: 'run-a',
+    generation,
+    requestId: 1,
+    projection,
+  }]);
+  assert.equal(accepted.state.traversal.visualGraph.status, 'ready');
+  assert.equal(accepted.state.traversal.visualGraph.projection, projection);
+});
+
+test('visual graph refresh retains a same-Run projection across a generation advance and failure without relabeling its basis', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observation = runObservationFor(projectRoot);
+  const retainedGeneration = observation.carrierSnapshot.generation;
+  const retainedProjection = visualGraphProjectionFor('run-a', retainedGeneration);
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 1, observation },
+    {
+      type: 'visual-graph/load-succeeded', projectRoot, runId: 'run-a',
+      generation: retainedGeneration, requestId: 1, projection: retainedProjection,
+    },
+  ]).state;
+  const requestedGeneration = `sha256:${'c'.repeat(64)}`;
+  const advancedObservation = {
+    ...observation,
+    carrierSnapshot: { ...observation.carrierSnapshot, generation: requestedGeneration },
+    eventPage: { ...observation.eventPage, generation: requestedGeneration },
+  };
+  const refreshing = module.replaySidecarMessages(ready, [
+    { type: 'traversal/load', workspaceRoot: projectRoot, runId: 'run-a', refresh: true },
+    {
+      type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+      requestEpoch: 2, observation: advancedObservation,
+    },
+  ]);
+  assert.equal(refreshing.state.traversal.visualGraph.status, 'loading');
+  assert.equal(refreshing.state.traversal.visualGraph.projection, retainedProjection);
+  assert.equal(refreshing.state.traversal.visualGraph.projection.run.eventGeneration, retainedGeneration);
+  assert.equal(refreshing.state.traversal.visualGraph.basis.generation, requestedGeneration);
+  assert.deepEqual(refreshing.commands, [
+    {
+      type: 'run.loadObservation', workspaceRoot: projectRoot, runId: 'run-a',
+      refresh: true, requestEpoch: 2,
+    },
+    {
+      type: 'traversal.loadSummary', workspaceRoot: projectRoot, runId: 'run-a',
+      refresh: true, requestEpoch: 2,
+    },
+    {
+      type: 'visualGraph.load', projectRoot, runId: 'run-a',
+      generation: requestedGeneration, requestId: 2,
+    },
+  ]);
+
+  const failed = module.replaySidecarMessages(refreshing.state, [{
+    type: 'visual-graph/load-failed', projectRoot, runId: 'run-a',
+    generation: requestedGeneration, requestId: 2, error: 'advanced prefix not readable',
+  }]);
+  assert.equal(failed.state.traversal.visualGraph.status, 'error');
+  assert.equal(failed.state.traversal.visualGraph.projection, retainedProjection);
+  assert.equal(failed.state.traversal.visualGraph.projection.run.eventGeneration, retainedGeneration);
+  assert.equal(failed.state.traversal.visualGraph.error, 'advanced prefix not readable');
+
+  const retried = module.replaySidecarMessages(failed.state, [{ type: 'visual-graph/retry' }]);
+  assert.equal(retried.state.traversal.visualGraph.status, 'loading');
+  assert.equal(retried.state.traversal.visualGraph.projection, retainedProjection);
+  assert.deepEqual(retried.commands, [{
+    type: 'visualGraph.load', projectRoot, runId: 'run-a',
+    generation: requestedGeneration, requestId: 3,
+  }]);
+});
+
+test('upstream run-observation failure marks a retained graph stale without inventing a generation and keeps it interactive', async () => {
+  const module = await loadStateModule();
+  const validation = await loadAbgRunObservationValidationModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observation = runObservationFor(projectRoot, 'run-a');
+  const generation = observation.carrierSnapshot.generation;
+  const projection = visualGraphProjectionFor('run-a', generation);
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', workspaceRoot: projectRoot, runId: 'run-a' },
+    {
+      type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+      requestEpoch: 1, observation,
+    },
+    {
+      type: 'visual-graph/load-succeeded', projectRoot, runId: 'run-a',
+      generation, requestId: 1, projection,
+    },
+  ]).state;
+  const retainedBasis = ready.traversal.visualGraph.basis;
+
+  const refreshing = module.replaySidecarMessages(ready, [{
+    type: 'traversal/load', workspaceRoot: projectRoot, runId: 'run-a', refresh: true,
+  }]);
+  assert.equal(refreshing.state.traversal.visualGraph.status, 'loading');
+  assert.equal(refreshing.state.traversal.visualGraph.refreshSource, 'run_observation');
+  assert.equal(refreshing.state.traversal.visualGraph.projection, projection);
+  assert.equal(refreshing.state.traversal.visualGraph.basis, retainedBasis);
+  assert.deepEqual(refreshing.commands, [
+    {
+      type: 'run.loadObservation', workspaceRoot: projectRoot, runId: 'run-a',
+      refresh: true, requestEpoch: 2,
+    },
+    {
+      type: 'traversal.loadSummary', workspaceRoot: projectRoot, runId: 'run-a',
+      refresh: true, requestEpoch: 2,
+    },
+  ]);
+
+  const unavailableResponses = [
+    {
+      state: 'unsupported',
+      diagnostic: {
+        severity: 'warning',
+        code: 'selected_run_missing',
+        message: 'Fixture selected run disappeared from Project topology.',
+      },
+    },
+    {
+      state: 'error',
+      diagnostic: {
+        severity: 'error',
+        code: 'run_event_carrier_unreadable',
+        message: 'Fixture selected run event carrier is unreadable.',
+      },
+    },
+  ].map(({ state, diagnostic }) => validation.asAbgRunObservation({
+    ...observation,
+    state,
+    selectedRunId: null,
+    selectedRunKey: null,
+    selectedRunRoot: null,
+    selectedWorkspaceRoot: null,
+    carrierSnapshot: null,
+    eventPosture: 'invalid',
+    processPosture: 'unavailable',
+    substrate: null,
+    activity: null,
+    eventPage: null,
+    diagnostics: [diagnostic],
+  }));
+
+  const failedResults = unavailableResponses.map((unavailableObservation) => {
+    const resultMessage = module.runObservationResultMessage(
+      projectRoot,
+      'run-a',
+      2,
+      unavailableObservation,
+    );
+    assert.equal(resultMessage.type, 'run/load-failed');
+    assert.equal(resultMessage.workspaceRoot, projectRoot);
+    assert.equal(resultMessage.requestedRunId, 'run-a');
+    assert.equal(resultMessage.requestEpoch, 2);
+    assert.equal(resultMessage.error, unavailableObservation.diagnostics[0].message);
+    const result = module.replaySidecarMessages(refreshing.state, [resultMessage]);
+    assert.deepEqual(result.commands, []);
+    assert.equal(result.state.traversal.runStatus, 'error');
+    assert.equal(result.state.traversal.runObservation, observation);
+    assert.equal(result.state.traversal.visualGraph.status, 'error');
+    assert.equal(result.state.traversal.visualGraph.refreshSource, 'run_observation');
+    assert.equal(result.state.traversal.visualGraph.error, unavailableObservation.diagnostics[0].message);
+    assert.equal(result.state.traversal.visualGraph.projection, projection);
+    assert.equal(result.state.traversal.visualGraph.basis, retainedBasis);
+    assert.equal(result.state.traversal.visualGraph.basis.generation, generation);
+    assert.equal(result.state.traversal.visualGraph.nextRequestId, 2);
+    return result;
+  });
+  const failed = failedResults[1];
+
+  const node = projection.occurrenceGraph.nodes[0];
+  const selection = { plane: 'occurrence', id: node.id, aggregateType: node.aggregateType };
+  const opened = module.replaySidecarMessages(failed.state, [{ type: 'visual-graph/open-detail', selection }]);
+  assert.deepEqual(opened.commands, []);
+  assert.deepEqual(opened.state.traversal.visualGraph.selectedNode, selection);
+  assert.equal(opened.state.traversal.visualGraph.detail.open, true);
+  assert.equal(opened.state.traversal.visualGraph.status, 'error');
+
+  const wrongRetry = module.replaySidecarMessages(failed.state, [{ type: 'visual-graph/retry' }]);
+  assert.equal(wrongRetry.state, failed.state);
+  assert.deepEqual(wrongRetry.commands, []);
+
+  const retried = module.replaySidecarMessages(failed.state, [{
+    type: 'traversal/load', workspaceRoot: projectRoot, runId: 'run-a', refresh: true,
+  }]);
+  assert.equal(retried.state.traversal.visualGraph.status, 'loading');
+  assert.equal(retried.state.traversal.visualGraph.refreshSource, 'run_observation');
+  assert.equal(retried.state.traversal.visualGraph.projection, projection);
+  assert.equal(retried.commands.some((command) => command.type === 'visualGraph.load'), false);
+  assert.deepEqual(retried.commands.map((command) => command.requestEpoch), [3, 3]);
+});
+
+test('visual graph reducer rejects A-B-A stale responses by Project, Run, generation, request, and response basis', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observationA = runObservationFor(projectRoot, 'run-a');
+  const observationB = runObservationFor(projectRoot, 'run-b');
+  const generationA = observationA.carrierSnapshot.generation;
+  const generationB = observationB.carrierSnapshot.generation;
+
+  const firstA = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 1, observation: observationA },
+  ]).state;
+  const selectedB = module.replaySidecarMessages(firstA, [
+    { type: 'run/select', runId: 'run-b' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-b', requestEpoch: 2, observation: observationB },
+  ]).state;
+  const currentA = module.replaySidecarMessages(selectedB, [
+    { type: 'run/select', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 3, observation: observationA },
+  ]).state;
+
+  assert.equal(currentA.traversal.visualGraph.basis.requestId, 3);
+  const stale = module.replaySidecarMessages(currentA, [{
+    type: 'visual-graph/load-succeeded',
+    projectRoot,
+    runId: 'run-a',
+    generation: generationA,
+    requestId: 1,
+    projection: visualGraphProjectionFor('run-a', generationA),
+  }]);
+  assert.equal(stale.state.traversal.visualGraph.status, 'loading');
+  assert.equal(stale.state.traversal.visualGraph.projection, null);
+
+  const staleFailure = module.replaySidecarMessages(currentA, [{
+    type: 'visual-graph/load-failed',
+    projectRoot,
+    runId: 'run-a',
+    generation: generationA,
+    requestId: 1,
+    error: 'obsolete request failure',
+  }]);
+  assert.equal(staleFailure.state, currentA);
+
+  const wrongResponseBasis = module.replaySidecarMessages(currentA, [{
+    type: 'visual-graph/load-succeeded',
+    projectRoot,
+    runId: 'run-a',
+    generation: generationA,
+    requestId: 3,
+    projection: visualGraphProjectionFor('run-b', generationB),
+  }]);
+  assert.equal(wrongResponseBasis.state.traversal.visualGraph.status, 'loading');
+  assert.equal(wrongResponseBasis.state.traversal.visualGraph.projection, null);
+
+  const accepted = module.replaySidecarMessages(currentA, [{
+    type: 'visual-graph/load-succeeded',
+    projectRoot,
+    runId: 'run-a',
+    generation: generationA,
+    requestId: 3,
+    projection: visualGraphProjectionFor('run-a', generationA),
+  }]);
+  assert.equal(accepted.state.traversal.visualGraph.status, 'ready');
+  assert.equal(accepted.state.traversal.visualGraph.projection.run.runId, 'run-a');
+});
+
+test('run observation and traversal epochs reject late A1 after A-B-A without changing state or launching a visual load', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observationA = runObservationFor(projectRoot, 'run-a');
+  const candidateObservation = {
+    ...observationA,
+    state: 'unsupported',
+    selectedRunId: null,
+    selectedRunKey: null,
+    selectedRunRoot: null,
+    selectedWorkspaceRoot: null,
+    carrierSnapshot: null,
+    activity: null,
+    eventPage: null,
+  };
+  const admitted = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load' },
+    {
+      type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: null,
+      requestEpoch: 1, observation: candidateObservation,
+    },
+  ]).state;
+  const firstA = module.replaySidecarMessages(admitted, [{ type: 'run/select', runId: 'run-a' }]).state;
+  const selectedB = module.replaySidecarMessages(firstA, [{ type: 'run/select', runId: 'run-b' }]).state;
+  const currentARequest = module.replaySidecarMessages(selectedB, [{ type: 'run/select', runId: 'run-a' }]).state;
+  const acceptedA = module.replaySidecarMessages(currentARequest, [{
+    type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+    requestEpoch: 4, observation: observationA,
+  }]);
+
+  assert.equal(acceptedA.state.traversal.runObservation, observationA);
+  assert.equal(acceptedA.state.traversal.runObservationRequestEpoch, null);
+  assert.equal(acceptedA.state.traversal.nextRunObservationRequestEpoch, 5);
+  assert.deepEqual(acceptedA.commands, [{
+    type: 'visualGraph.load', projectRoot, runId: 'run-a',
+    generation: observationA.carrierSnapshot.generation, requestId: 1,
+  }]);
+
+  const lateA1 = module.replaySidecarMessages(acceptedA.state, [{
+    type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+    requestEpoch: 2, observation: observationA,
+  }]);
+  assert.equal(lateA1.state, acceptedA.state);
+  assert.deepEqual(lateA1.commands, []);
+
+  const lateSummaryA1 = module.replaySidecarMessages(acceptedA.state, [{
+    type: 'traversal/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a',
+    requestEpoch: 2, summary: traversalSummaryFor(projectRoot, 'run-a'),
+  }]);
+  assert.equal(lateSummaryA1.state, acceptedA.state);
+  assert.deepEqual(lateSummaryA1.commands, []);
+});
+
+test('visual graph interaction replay owns typed selection, representation, zoom, and plane visibility without commands', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observation = runObservationFor(projectRoot);
+  const generation = observation.carrierSnapshot.generation;
+  const projection = visualGraphProjectionFor('run-a', generation);
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 1, observation },
+    { type: 'visual-graph/load-succeeded', projectRoot, runId: 'run-a', generation, requestId: 1, projection },
+  ]).state;
+  const node = projection.occurrenceGraph.nodes[1];
+  const interacted = module.replaySidecarMessages(ready, [
+    { type: 'visual-graph/select-node', selection: { plane: 'occurrence', id: node.id, aggregateType: node.aggregateType } },
+    { type: 'visual-graph/set-plane', plane: 'occurrence' },
+    { type: 'visual-graph/set-mode', mode: 'table' },
+    { type: 'visual-graph/set-zoom', zoom: 8 },
+    { type: 'visual-graph/set-overlay', overlay: 'product-overlays', visible: false },
+    { type: 'visual-graph/set-overlay', overlay: 'workspace', visible: false },
+  ]);
+  assert.deepEqual(interacted.commands, []);
+  assert.deepEqual(interacted.state.traversal.visualGraph.selectedNode, { plane: 'occurrence', id: node.id, aggregateType: 'actor_invocation' });
+  assert.equal(interacted.state.traversal.visualGraph.plane, 'occurrence');
+  assert.equal(interacted.state.traversal.visualGraph.mode, 'table');
+  assert.equal(interacted.state.traversal.visualGraph.zoom, 1.6);
+  assert.equal(interacted.state.traversal.visualGraph.overlayVisibility.workspace, false);
+  assert.equal(interacted.state.traversal.visualGraph.overlayVisibility['product-overlays'], false);
+  assert.equal(interacted.state.traversal.visualGraph.detail.open, false);
+  assert.equal(interacted.commands.some((command) => command.type === 'session.spawn'), false);
+});
+
+test('visual graph detail open, close, and focus restoration acknowledgment are reducer-owned and stale-safe', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observation = runObservationFor(projectRoot);
+  const generation = observation.carrierSnapshot.generation;
+  const projection = visualGraphProjectionFor('run-a', generation);
+  const node = projection.occurrenceGraph.nodes[1];
+  const selection = { plane: 'occurrence', id: node.id, aggregateType: node.aggregateType };
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 1, observation },
+    { type: 'visual-graph/load-succeeded', projectRoot, runId: 'run-a', generation, requestId: 1, projection },
+  ]).state;
+
+  const opened = module.replaySidecarMessages(ready, [{ type: 'visual-graph/open-detail', selection }]);
+  assert.deepEqual(opened.commands, []);
+  assert.deepEqual(opened.state.traversal.visualGraph.selectedNode, selection);
+  assert.deepEqual(Object.keys(opened.state.traversal.visualGraph.selectedNode).sort(), ['aggregateType', 'id', 'plane']);
+  assert.notEqual(opened.state.traversal.visualGraph.selectedNode, node);
+  assert.equal('firstObserved' in opened.state.traversal.visualGraph.selectedNode, false);
+  assert.equal(opened.state.traversal.eventDetail, ready.traversal.eventDetail);
+  assert.equal(opened.state.traversal.eventDetailStatus, ready.traversal.eventDetailStatus);
+  assert.equal(opened.state.traversal.visualGraph.detail.open, true);
+  assert.deepEqual(opened.state.traversal.visualGraph.detail.returnFocus, selection);
+  assert.equal(opened.state.traversal.visualGraph.detail.focusRestorePending, false);
+
+  const closed = module.replaySidecarMessages(opened.state, [{ type: 'visual-graph/close-detail' }]);
+  assert.equal(closed.state.traversal.visualGraph.detail.open, false);
+  assert.equal(closed.state.traversal.visualGraph.detail.focusRestorePending, true);
+  assert.equal(closed.state.traversal.visualGraph.detail.focusRestoreRequestId, 1);
+  assert.deepEqual(closed.state.traversal.visualGraph.detail.returnFocus, selection);
+
+  const staleAck = module.replaySidecarMessages(closed.state, [{
+    type: 'visual-graph/detail-focus-restored', requestId: 0,
+  }]);
+  assert.equal(staleAck.state, closed.state);
+  const acknowledged = module.replaySidecarMessages(closed.state, [{
+    type: 'visual-graph/detail-focus-restored', requestId: 1,
+  }]);
+  assert.equal(acknowledged.state.traversal.visualGraph.detail.focusRestorePending, false);
+  assert.deepEqual(acknowledged.state.traversal.visualGraph.selectedNode, selection);
+
+  const invalid = module.replaySidecarMessages(acknowledged.state, [{
+    type: 'visual-graph/open-detail',
+    selection: { ...selection, id: 'occurrence://not-retained' },
+  }]);
+  assert.equal(invalid.state, acknowledged.state);
+});
+
+test('visual graph selection admits exact declaration nodes when published bodies are ready', async () => {
+  const module = await loadStateModule();
+  const projectRoot = '/workspace/odd_manager';
+  const observation = runObservationFor(projectRoot);
+  const generation = observation.carrierSnapshot.generation;
+  const projection = visualGraphProjectionFor('run-a', generation, { declarationReady: true });
+  const ready = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: projectRoot, requestedRunId: 'run-a', requestEpoch: 1, observation },
+    { type: 'visual-graph/load-succeeded', projectRoot, runId: 'run-a', generation, requestId: 1, projection },
+  ]).state;
+  const node = projection.declarationTopology.nodes[1];
+  const selected = module.replaySidecarMessages(ready, [{
+    type: 'visual-graph/select-node',
+    selection: { plane: 'declaration', id: node.id, kind: node.kind },
+  }]);
+  assert.deepEqual(selected.commands, []);
+  assert.deepEqual(selected.state.traversal.visualGraph.selectedNode, {
+    plane: 'declaration', id: node.id, kind: 'graph_function',
+  });
+  assert.equal(selected.state.traversal.visualGraph.plane, 'declaration');
+
+  const overlay = projection.declarationTopology.nodes.find((entry) => entry.kind === 'overlay');
+  const overlayHidden = module.replaySidecarMessages(ready, [
+    { type: 'visual-graph/select-node', selection: { plane: 'declaration', id: overlay.id, kind: overlay.kind } },
+    { type: 'visual-graph/set-overlay', overlay: 'product-overlays', visible: false },
+  ]);
+  assert.equal(overlayHidden.state.traversal.visualGraph.selectedNode, null);
+  assert.equal(overlayHidden.state.traversal.visualGraph.overlayVisibility['product-overlays'], false);
+
+  const rejected = module.replaySidecarMessages(ready, [{
+    type: 'visual-graph/select-node',
+    selection: { plane: 'declaration', id: node.id, kind: 'overlay' },
+  }]);
+  assert.equal(rejected.state.traversal.visualGraph.selectedNode, null);
+});
+
+test('event pagination and exact detail replay through typed commands with generation stale guards', async () => {
+  const module = await loadStateModule();
+  const observation = runObservationFor('/workspace/odd_manager');
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation },
+  ]).state;
+  const generation = observation.carrierSnapshot.generation;
+
+  const pageRequest = module.replaySidecarMessages(primed, [{ type: 'run/event-page-request', start: 40 }]);
+  assert.deepEqual(pageRequest.commands, [{
+    type: 'run.loadEventPage', workspaceRoot: '/workspace/odd_manager', runId: 'run-a',
+    generation, start: 40, limit: 40,
+  }]);
+  assert.equal(pageRequest.state.traversal.eventPageStatus, 'loading');
+
+  const page = { ...observation.eventPage, start: 40, rows: [], previousStart: 0 };
+  const pageReady = module.replaySidecarMessages(pageRequest.state, [{
+    type: 'run/event-page-succeeded', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', generation, page,
+  }]);
+  assert.equal(pageReady.state.traversal.eventPage, page);
+
+  const detailRequest = module.replaySidecarMessages(pageReady.state, [{ type: 'run/event-detail-request', ordinal: 1 }]);
+  assert.deepEqual(detailRequest.commands, [{
+    type: 'run.loadEventDetail', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', generation, ordinal: 1,
+  }]);
+  const detail = {
+    kind: 'abg_event_detail', version: 1, generation, ordinal: 1,
+    eventId: 'event://run-a/1', eventKind: 'run_segment_opened', sourceRef: '/workspace/odd_manager/events.jsonl',
+    sourceByteOffset: 0, sourceByteLength: 100, value: { kind: 'run_segment_opened' }, truncated: false, refusal: null,
+  };
+  const detailReady = module.replaySidecarMessages(detailRequest.state, [{
+    type: 'run/event-detail-succeeded', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', generation, detail,
+  }]);
+  assert.equal(detailReady.state.traversal.eventDetail, detail);
+
+  const stale = module.replaySidecarMessages(detailReady.state, [{
+    type: 'run/event-page-succeeded', workspaceRoot: '/workspace/odd_manager', runId: 'run-a',
+    generation: 'sha256:retired-generation', page: { ...page, generation: 'sha256:retired-generation' },
+  }]);
+  assert.equal(stale.state.traversal.eventPage, page);
+});
+
+test('a failed carrier refresh retains the last admitted run snapshot', async () => {
+  const module = await loadStateModule();
+  const observation = runObservationFor('/workspace/odd_manager');
+  const primed = module.replaySidecarMessages(baseState(module), [
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation },
+  ]).state;
+  const failedRefresh = {
+    ...observation,
+    state: 'error',
+    carrierSnapshot: null,
+    eventPage: null,
+    diagnostics: [{
+      severity: 'error',
+      code: 'event_carrier_changed_during_read',
+      message: 'ABG event carrier changed while its snapshot was being indexed.',
+    }],
+  };
+
+  const result = module.replaySidecarMessages(primed, [
+    { type: 'traversal/load', workspaceRoot: '/workspace/odd_manager', runId: 'run-a', refresh: true },
+    module.runObservationResultMessage('/workspace/odd_manager', 'run-a', 2, failedRefresh),
+  ]);
+  assert.equal(result.state.traversal.runStatus, 'error');
+  assert.equal(result.state.traversal.runObservation, observation);
+  assert.equal(result.state.traversal.eventPage, observation.eventPage);
+  assert.match(result.state.traversal.runError, /changed while its snapshot/);
 });
 
 test('Run Inspector focus preserves originating execution, run, revision, and evidence source', async () => {
@@ -3004,34 +3799,34 @@ test('Run Inspector focus preserves originating execution, run, revision, and ev
   ]);
   assert.deepEqual(result.state.runFocus, focus);
   assert.deepEqual(result.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
   ]);
 });
 
 test('run selection emits both projections and rejects stale same-Project run responses', async () => {
   const module = await loadStateModule();
   const primed = module.replaySidecarMessages(baseState(module), [
-    { type: 'traversal/load' },
-    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation: runObservationFor('/workspace/odd_manager') },
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation: runObservationFor('/workspace/odd_manager') },
   ]);
   const selected = module.replaySidecarMessages(primed.state, [
     { type: 'run/select', runId: 'run-b' },
-    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', observation: runObservationFor('/workspace/odd_manager', 'run-a') },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation: runObservationFor('/workspace/odd_manager', 'run-a') },
   ]);
   assert.equal(selected.state.traversal.selectedRunId, 'run-b');
   assert.equal(selected.state.traversal.runStatus, 'loading');
   assert.deepEqual(selected.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false, requestEpoch: 2 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: 'run-b', refresh: false, requestEpoch: 2 },
   ]);
 });
 
 test('Project switch clears all run-scoped state without requiring a traversal reload', async () => {
   const module = await loadStateModule();
   const primed = module.replaySidecarMessages(baseState(module), [
-    { type: 'traversal/load' },
-    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, observation: runObservationFor('/workspace/odd_manager') },
+    { type: 'traversal/load', runId: 'run-a' },
+    { type: 'run/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: 'run-a', requestEpoch: 1, observation: runObservationFor('/workspace/odd_manager') },
   ]).state;
   const switched = module.replaySidecarMessages(primed, [
     { type: 'load/request', projectRoot: '/workspace/data_mapper', reason: 'project_selected' },
@@ -3050,19 +3845,107 @@ test('Project switch clears all run-scoped state without requiring a traversal r
   assert.equal(switched.state.traversal.selectedRunId, null);
 });
 
-test('run shell targeting emits a Project-owned session command with admitted cwd', async () => {
-  const module = await loadStateModule();
-  const result = module.replaySidecarMessages(baseState(module), [
-    { type: 'session/spawn/request', cwd: '/workspace/odd_manager/test_runs/run-a/instance', label: 'SCN-RUN-A shell' },
-  ]);
-  assert.deepEqual(result.commands, [{
-    type: 'session.spawn',
-    projectRoot: '/workspace/odd_manager',
-    groupId: 'main',
-    cwd: '/workspace/odd_manager/test_runs/run-a/instance',
-    label: 'SCN-RUN-A shell',
-    existingSessionIds: ['sess-1'],
-  }]);
+test('Run Inspector has no cwd-correlated manager shell or session-spawn action', () => {
+  const source = readFileSync(sidecarPanelPath, 'utf-8');
+  const contractSource = readFileSync(abgRunObservationContractPath, 'utf-8');
+  const validationSource = readFileSync(abgRunObservationValidationPath, 'utf-8');
+  assert.doesNotMatch(source, /openRuntimeTarget/u);
+  assert.doesNotMatch(source, /matchingSession/u);
+  assert.doesNotMatch(source, /New run shell|Open run shell/u);
+  assert.match(source, /Actor session:/u);
+  assert.match(source, /Select an admitted run/u);
+  assert.match(source, /No default or latest projection is inferred/u);
+  assert.doesNotMatch(source, /observation\.runs\[0\]/u);
+  assert.match(source, /visualGraphProjectionSchema\.safeParse/u);
+  assert.match(source, /dispatch\(runObservationResultMessage\(cmd\.workspaceRoot, cmd\.runId, cmd\.requestEpoch, observation\)\)/u);
+  assert.match(source, /\/api\/ai-workspace\/run\/visual-graph/u);
+  assert.match(contractSource, /\| 'terminal_observed'/u);
+  assert.equal(validationSource.match(/'terminal_observed'/gu)?.length, 3);
+  assert.match(source, /observation\.eventPosture === 'non_terminal'[\s\S]*?'lane-active'[\s\S]*?: 'default'/u);
+});
+
+test('visual graph component preserves declaration primacy, occurrence fallback, traceability, non-color cues, and narrow containment', () => {
+  const source = readFileSync(visualGraphViewPath, 'utf-8');
+  const sidecarPanelSource = readFileSync(sidecarPanelPath, 'utf-8');
+  const layout = readFileSync(visualGraphLayoutPath, 'utf-8');
+  const visualState = readFileSync(visualGraphStatePath, 'utf-8');
+  const visualModuleSources = [source, layout, visualState].join('\n');
+  const styles = readFileSync(stylesPath, 'utf-8');
+  assert.match(source, /"Occurrence history"/u);
+  assert.match(source, /"Declared topology"/u);
+  assert.doesNotMatch(source, />Execution graph</u);
+  assert.match(source, /projection\.declarationTopology\.nodes/u);
+  assert.match(source, /projection\.declarationTopology\.edges/u);
+  assert.match(source, /projection\.occurrenceGraph\.nodes/u);
+  assert.match(source, /projection\.occurrenceGraph\.edges/u);
+  assert.doesNotMatch(source, /observation\.stages/u);
+  assert.doesNotMatch(visualModuleSources, /AbgEventDetail/u);
+  assert.doesNotMatch(visualModuleSources, /\/api\/ai-workspace\/run\/event/u);
+  assert.match(source, /▶ ACTIVE · ◆ LAST OBSERVED/u);
+  assert.match(source, /tabIndex=\{isSelected \|\| \(!selected && index === 0\) \? 0 : -1\}/u);
+  assert.match(source, /aria-label="Scrollable occurrence graph table"/u);
+  assert.match(source, /aria-label="Scrollable declaration topology table"/u);
+  assert.match(source, /aria-label="Scrollable workspace observation table"/u);
+  assert.match(source, /aria-label="Scrollable actor session table"/u);
+  assert.match(source, /Predecessor phase \(O0\)/u);
+  assert.match(source, /Successor phase \(O1\)/u);
+  assert.match(source, /Mutable currentness/u);
+  assert.match(source, /Lifecycle and terminal disposition/u);
+  assert.match(source, /edge\.sourceNodeId === node\.id \|\| edge\.targetNodeId === node\.id/u);
+  assert.match(source, /data-visual-node-list/u);
+  assert.match(source, /event\.key === "Enter"/u);
+  assert.match(source, /event\.key === "Escape"/u);
+  assert.match(source, /onDetailFocusRestored/u);
+  assert.match(source, /retained projection remains visible and is stale/u);
+  assert.match(source, /not current for the requested basis/u);
+  assert.match(source, /Run observation refresh failed\. The retained projection remains interactive as stale evidence; no requested event generation was admitted\./u);
+  assert.match(source, /requested generation not admitted/u);
+  assert.match(source, /Retry run observation/u);
+  assert.match(sidecarPanelSource, /Retained run data remains interactive but is stale; no newer event generation was admitted\./u);
+  assert.match(sidecarPanelSource, /traversal\.visualGraph\.refreshSource === 'run_observation'/u);
+  assert.match(visualState, /VisualGraphRefreshSource = "run_observation" \| "projection" \| null/u);
+  assert.match(source, /Observation \{observation\.ordinal\}/u);
+  assert.doesNotMatch(source, /O\{observation\.ordinal\}/u);
+  assert.match(source, /disabled aria-describedby="visual-graph-terminal-explanation"/u);
+  assert.match(source, /No topology is inferred/u);
+  assert.match(source, /Accessible occurrence graph table/u);
+  assert.match(source, /Accessible declaration topology table/u);
+  assert.match(source, /Graph truth plane/u);
+  assert.match(source, /no declaration-to-occurrence join is admitted/u);
+  assert.match(source, /Product overlay layer/u);
+  assert.match(source, /edge\.kind !== "overlay_application"/u);
+  assert.match(source, /Published event-contract digest/u);
+  assert.match(source, /Built-in registry digest/u);
+  assert.match(source, /Contract posture/u);
+  assert.match(source, /Binding posture/u);
+  assert.match(source, /Evidence authority/u);
+  assert.match(source, /Evidence disposition/u);
+  assert.match(source, /Validation disposition/u);
+  assert.match(layout, /layoutDeclarationGraph/u);
+  assert.match(layout, /edge\.kind === "aggregate_parent"/u);
+  assert.match(layout, /Every supplied edge remains in positionedEdges/u);
+  assert.match(layout, /It does\s+\* not synthesize a relation/u);
+  assert.match(styles, /@media \(max-width: 430px\)/u);
+  assert.match(styles, /@media \(prefers-reduced-motion: no-preference\)/u);
+  assert.match(styles, /\.visual-graph\s*\{[\s\S]*?max-width: 100%;[\s\S]*?overflow: hidden;/u);
+  assert.match(styles, /\.visual-graph__refresh-status\s*\{/u);
+  assert.match(sidecarPanelSource, /observation\.eventPosture === 'non_terminal'[\s\S]*?'lane-active'[\s\S]*?: 'default'/u);
+});
+
+test('declaration layout spatializes an exact recursive component without dropping its published edges', async () => {
+  const module = await loadVisualGraphLayoutModule();
+  const nodes = [
+    { id: 'declaration-node://cycle/a', kind: 'graph_function', label: 'Cycle A', declarationRef: 'graph://cycle' },
+    { id: 'declaration-node://cycle/b', kind: 'graph_function', label: 'Cycle B', declarationRef: 'graph://cycle' },
+  ];
+  const edges = [
+    { id: 'declaration-edge://cycle/a-b', kind: 'declared_vector', sourceNodeId: nodes[0].id, targetNodeId: nodes[1].id, declarationRef: 'graph://cycle' },
+    { id: 'declaration-edge://cycle/b-a', kind: 'declared_vector', sourceNodeId: nodes[1].id, targetNodeId: nodes[0].id, declarationRef: 'graph://cycle' },
+  ];
+  const layout = module.layoutDeclarationGraph(nodes, edges, 1);
+  assert.equal(layout.nodes.length, 2);
+  assert.equal(layout.edges.length, 2, 'SCC ranking must not remove either exact recursive edge');
+  assert.notEqual(layout.nodes[0].x, layout.nodes[1].x, 'a recursive declaration component must not collapse into one overflow column');
 });
 
 test('traversal vector selection replays a lazy detail Cmd and success fills the pane', async () => {
@@ -3071,13 +3954,13 @@ test('traversal vector selection replays a lazy detail Cmd and success fills the
   const detail = traversalDetailFor(1);
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary },
     { type: 'traversal/select-vector', index: 1 },
     { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail },
   ]);
   assert.deepEqual(result.commands, [
-    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
-    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false },
+    { type: 'run.loadObservation', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
+    { type: 'traversal.loadSummary', workspaceRoot: '/workspace/odd_manager', runId: null, refresh: false, requestEpoch: 1 },
     { type: 'traversal.loadVectorDetail', workspaceRoot: '/workspace/odd_manager', runId: null, index: 1, variant: 'primary', attempt: null },
   ]);
   assert.deepEqual(result.state.traversal.selectedVector, { index: 1, variant: 'primary', attempt: null });
@@ -3097,7 +3980,7 @@ test('traversal vector detail failure replays to an honest detail error', async 
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
     { type: 'traversal/select-vector', index: 0 },
     { type: 'traversal/vector-failed', workspaceRoot: '/workspace/odd_manager', index: 0, variant: 'primary', attempt: null, error: 'artifact unreadable' },
   ]);
@@ -3110,7 +3993,7 @@ test('traversal detail cache keeps at most 8 entries and evicts the oldest first
   const module = await loadStateModule();
   const messages = [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
   ];
   for (let index = 0; index < 9; index += 1) {
     messages.push({ type: 'traversal/select-vector', index });
@@ -3142,7 +4025,7 @@ test('late traversal responses cannot evict the selected vector detail', async (
   const module = await loadStateModule();
   const messages = [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
   ];
   for (let index = 0; index < 8; index += 1) {
     messages.push({ type: 'traversal/select-vector', index });
@@ -3176,7 +4059,7 @@ test('summary refresh invalidates latest detail cache entries but preserves expl
   const summary = traversalSummaryFor('/workspace/odd_manager');
   const primed = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary },
     { type: 'traversal/select-vector', index: 1 },
     { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail: traversalDetailFor(1) },
     { type: 'traversal/select-vector', index: 2, attempt: 1 },
@@ -3186,7 +4069,7 @@ test('summary refresh invalidates latest detail cache entries but preserves expl
 
   const refreshed = module.replaySidecarMessages(primed, [
     { type: 'traversal/load', refresh: true },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 2, summary },
   ]);
 
   assert.equal(refreshed.state.traversal.selectedVector, null);
@@ -3199,7 +4082,7 @@ test('traversal variant switch replays a distinct lazy Cmd per variant/attempt',
   const module = await loadStateModule();
   const primed = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
     { type: 'traversal/select-vector', index: 1 },
     { type: 'traversal/vector-succeeded', workspaceRoot: '/workspace/odd_manager', index: 1, variant: 'primary', attempt: null, detail: traversalDetailFor(1) },
   ]);
@@ -3217,7 +4100,7 @@ test('traversal clear replays back to the initial slice', async () => {
   const module = await loadStateModule();
   const result = module.replaySidecarMessages(baseState(module), [
     { type: 'traversal/load' },
-    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', summary: traversalSummaryFor('/workspace/odd_manager') },
+    { type: 'traversal/load-succeeded', workspaceRoot: '/workspace/odd_manager', requestedRunId: null, requestEpoch: 1, summary: traversalSummaryFor('/workspace/odd_manager') },
     { type: 'traversal/select-vector', index: 0 },
     { type: 'traversal/clear' },
   ]);

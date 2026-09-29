@@ -1,0 +1,54 @@
+[
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project",
+    "bytes": 5163
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 113280
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61&generation=sha256%3A558d90ac5647b4a8ac5e46a70a948db489a1406e570f04557af8df1751fbc4e4",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A558d90ac5647b4a8ac5e46a70a948db489a1406e570f04557af8df1751fbc4e4&ordinal=13&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 3419
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A558d90ac5647b4a8ac5e46a70a948db489a1406e570f04557af8df1751fbc4e4&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Ff02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61",
+    "bytes": 41615
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 113220
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2&generation=sha256%3A0c2baabc079fbc2d14674cc63dff49093ab211124480fa4f031bffd5175eab84",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A0c2baabc079fbc2d14674cc63dff49093ab211124480fa4f031bffd5175eab84&ordinal=13&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 3422
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A0c2baabc079fbc2d14674cc63dff49093ab211124480fa4f031bffd5175eab84&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Ff61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2",
+    "bytes": 41584
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 111665
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/visual-graph?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3&generation=sha256%3A7a719f9a17db3b93b56557200094a22af00f090ed87758445baa65da3c659f76",
+    "bytes": 1263
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/event?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A7a719f9a17db3b93b56557200094a22af00f090ed87758445baa65da3c659f76&ordinal=2328&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 3429
+  },
+  {
+    "url": "http://127.0.0.1:57747/api/ai-workspace/run/events?workspaceRoot=%2Fprivate%2Ftmp%2Fodd-manager-t046-installed-OKTk7x%2Fobservation-project&generation=sha256%3A7a719f9a17db3b93b56557200094a22af00f090ed87758445baa65da3c659f76&start=40&limit=40&runId=run%3A%2F%2Fabiogenesis%2Fca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3",
+    "bytes": 41744
+  }
+]

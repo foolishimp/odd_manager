@@ -1,0 +1,130 @@
+{
+  "kind": "odd_manager_t046_i01_frozen_subjects",
+  "version": 1,
+  "eventContractDigest": "sha256:ddc961a2484be150193fa255d7dc7b933e52fb81b7b2c681f2bb97e1f9d5754c",
+  "descriptorSha256": "866eebd2a7cfe2d3aafac965aecb9ba69dfb8611ce86a5288cf354f6ba49f957",
+  "sourceRootEnvironment": "OMAN_T046_EVIDENCE_ROOT",
+  "subjects": [
+    {
+      "key": "s6-live05",
+      "sourceRoot": "s6-raw-contract-01/installed-live-05",
+      "run": {
+        "digest": "sha256:3f7c6d8acbcc81a18c60d50dd72db18258de002539a780e991991420ce46d617",
+        "ref": "run://abiogenesis/f02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61"
+      },
+      "status": "closed",
+      "physicalRecordCount": 26582,
+      "storageReferenceCount": 30,
+      "coreSha256": "1722953b7391e593079e3436b729b13c55457c734fb441d5e08b604edf9c462d",
+      "files": [
+        {
+          "source": "s6-raw-contract-01/installed-live-05/events.jsonl",
+          "name": "events.jsonl",
+          "sha256": "3e4500b71d8124701cd1bfd76f375a431af3e7e80c8595ffe59cf57323e69280",
+          "bytes": 99536719
+        },
+        {
+          "source": "s6-raw-contract-01/installed-live-05/execution.json",
+          "name": "execution.json",
+          "sha256": "b9c2409846f7b30458540180cacc6345741bdcf25d1aab8ab4573ef85992715f",
+          "bytes": 6499072
+        },
+        {
+          "source": "s6-raw-contract-01/installed-live-05/read-run_replay.json",
+          "name": "read-run_replay.json",
+          "sha256": "380f3cbd3b39beb2f8c587de9d34901c1a5e94d304a085ecf8fb1747bda51b53",
+          "bytes": 230216
+        },
+        {
+          "source": "s6-raw-contract-01/installed-live-05/start-request.jsonl",
+          "name": "start-request.jsonl",
+          "sha256": "0ff7fc12f783f45849d12c012bf258b40e0f82e60f01f6cee34490af6ccb3e7c",
+          "bytes": 17687127
+        }
+      ]
+    },
+    {
+      "key": "s7-source",
+      "sourceRoot": "s7-pending-consumer-01/source-use-installed-01/first",
+      "run": {
+        "digest": "sha256:3426633ea33683d9ce5c11e2676e7cc46110f2b451638c18e46d68b216e5f693",
+        "ref": "run://abiogenesis/f61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2"
+      },
+      "status": "blocked",
+      "physicalRecordCount": 2318,
+      "storageReferenceCount": 7,
+      "coreSha256": "c4bff846362ac59cd928fffcacb6a33a669c178d0380d03aea6c1e3b1fbd9ee1",
+      "files": [
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/first/events.jsonl",
+          "name": "events.jsonl",
+          "sha256": "437f0f8176c0da4ee5f6e0b28e2f4459883cbbef56ebe0515bca7535462655b8",
+          "bytes": 12261430
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/first/execution.json",
+          "name": "execution.json",
+          "sha256": "83d8b0cbb85bdfa6358b6cdc1e0c496747f16516bcfe5c4a754c76e56fcb3d78",
+          "bytes": 552073
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/first/read-run_replay.json",
+          "name": "read-run_replay.json",
+          "sha256": "c4899485f197400df0ccd9eb48fa39de2c421b410b4fe51c956bcc80b79eb662",
+          "bytes": 4817
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/first/start-request.jsonl",
+          "name": "start-request.jsonl",
+          "sha256": "f48f808f0c79da8889b7db954f42f57981c2935bf875ea20479a5898bb0e9f8e",
+          "bytes": 17518305
+        }
+      ]
+    },
+    {
+      "key": "s7-fresh",
+      "sourceRoot": "s7-pending-consumer-01/source-use-installed-01/fresh",
+      "run": {
+        "digest": "sha256:d17d822ce328ac9f2b2a3059befcd48f2d6bb2f59e712e8990d0ca7eb0b4c2e3",
+        "ref": "run://abiogenesis/ca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3"
+      },
+      "status": "closed",
+      "physicalRecordCount": 4485,
+      "storageReferenceCount": 13,
+      "coreSha256": "c4bff846362ac59cd928fffcacb6a33a669c178d0380d03aea6c1e3b1fbd9ee1",
+      "files": [
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/fresh/events.jsonl",
+          "name": "events.jsonl",
+          "sha256": "7f0945d2351e4631be9534516da6d44fd60514b16de67fc8ba59e390e967c894",
+          "bytes": 21761656
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/fresh/execution.json",
+          "name": "execution.json",
+          "sha256": "a84689ca17ca6a0ad2cfb6399d85aac29ec55a0e17604f2a5000f4b19c5ae044",
+          "bytes": 563554
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/fresh/read-run_replay.json",
+          "name": "read-run_replay.json",
+          "sha256": "ab4c2966fb0f1691b20f32138b07411868e95fa686d54eaca2ea3be512120fa2",
+          "bytes": 52118
+        },
+        {
+          "source": "s7-pending-consumer-01/source-use-installed-01/fresh/start-request.jsonl",
+          "name": "start-request.jsonl",
+          "sha256": "262566930ee8951c4166c5e96e4cc6cee262e758d7de35964e0e18a342db178f",
+          "bytes": 17576667
+        }
+      ]
+    }
+  ],
+  "acquisition": {
+    "repository": "https://github.com/foolishimp/abiogenesis.git",
+    "commit": "8a21b20fb624adc29f2ac9ca688c7032217afe48",
+    "evidenceRoot": ".ai-workspace/comments/codex/20260928_FRAMED_GOVERNANCE",
+    "verifiedMembersAtCommit": 12,
+    "instructions": "Resolve this exact commit in an ABIogenesis checkout, then set OMAN_T046_EVIDENCE_ROOT to <checkout>/.ai-workspace/comments/codex/20260928_FRAMED_GOVERNANCE. The resolver verifies every file length and SHA-256 before copying; it does not execute ABIogenesis code."
+  }
+}

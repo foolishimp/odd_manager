@@ -118,10 +118,10 @@ test("forensic Run Inspector and terminal controls retain named navigation and f
 
   const runSelect = page.getByRole("combobox", { name: "Select observed run" });
   await expect(runSelect).toBeVisible({ timeout: 30_000 });
-  const dataMapper = runSelect.locator("option").filter({ hasText: "SCN-GLC-DATA-MAPPER-FULL-SCALA-SBT" }).first();
-  await expect(dataMapper).toHaveCount(1);
-  const runValue = await dataMapper.getAttribute("value");
-  if (!runValue) throw new Error("Data-mapper run option has no value");
+  const currentRust = runSelect.locator("option").filter({ hasText: "SCN-GLC-HELLO-WORLD-RUST-CLI" }).first();
+  await expect(currentRust).toHaveCount(1);
+  const runValue = await currentRust.getAttribute("value");
+  if (!runValue) throw new Error("current Rust Hello World run option has no value");
   await runSelect.selectOption(runValue);
 
   const forensic = page.getByRole("region", { name: "Build forensic context" });

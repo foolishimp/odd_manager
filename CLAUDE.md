@@ -23,7 +23,10 @@ install.
 - keep ABG runtime truth separate from domain-specific overlays
 
 ## 3. Read First
+- `workspace://stdo_odd_manager.json`
 - `workspace://README.md`
+- `workspace://specification/GOVERNANCE.md`
+- `workspace://specification/REFERENCE_FRAME_BASIS.md`
 - `workspace://specification/INTENT.md`
 - `workspace://specification/PRODUCT.md`
 - `workspace://specification/GOALS.md`
@@ -205,18 +208,16 @@ If frame-local recursion bleeds into global publication or hidden fallback trave
 
 ## 8. Read Next
 
-Selected methodology release:
+Selected methodology:
 
-- Product and tag: STDO `v2.2.1`
-- immutable release commit:
-  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`
-- standards member-set digest:
-  `df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`
-- operative installed distribution: `workspace://.genesis/docs/standards/`
-- immutable public source:
-  `https://github.com/foolishimp/specification_methodology/tree/v2.2.1/specification/standards`
+- Product Definition: `workspace://stdo_odd_manager.json`
+- operative basis: `constitution.stdo.basis` in that definition
+- verification: `stdo status --definition stdo_odd_manager.json --verify`
+- standards: resolve the definition's declared entrypoints through that exact
+  verified basis
 
-Mutable methodology source and candidate cuts do not govern this workspace.
+Mutable methodology source, moving selectors, cache entries, and the historical
+project-local standards mirror do not govern this workspace.
 
 Installed runtime details, always present after install:
 
@@ -224,12 +225,12 @@ Installed runtime details, always present after install:
 - `workspace://.genesis/docs/GTL_Technical_Guide.md`
 - `workspace://.genesis/docs/USER_GUIDE.md`
 - `workspace://.genesis/docs/GTL_BOOTLOADER.md`
-- `workspace://.genesis/docs/standards/SPEC_METHOD.md`
-- `workspace://.genesis/docs/standards/ODD_METHOD.md`
-- `workspace://.genesis/docs/standards/DESIGN_MODULE_METHOD.md`
-- `workspace://.genesis/docs/standards/UX_METHOD.md`
-- `workspace://.genesis/docs/standards/POSTING_GUIDE.md`
-- `workspace://.genesis/docs/standards/WRITING_GUIDE.md`
+- `SPEC_METHOD.md`, `REFERENCE_FRAME_METHOD.md`, and
+  `STDO_REFERENCE_FRAME_BASELINE.md` through the selected Product Definition
+- `ODD_METHOD.md`, `DESIGN_MODULE_METHOD.md`, and `UX_METHOD.md` through the
+  selected Product Definition
+- `POSTING_GUIDE.md` and `WRITING_GUIDE.md` through the selected Product
+  Definition
 - `workspace://.genesis/gtl/__init__.py`
 - `workspace://.genesis/gtl/graph.py`
 - `workspace://.genesis/gtl/function_model.py`
@@ -242,9 +243,11 @@ Installed runtime details, always present after install:
 - `workspace://.genesis/genesis/selfhosting.py`
 
 Project-owned surfaces, when present after scaffold:
+- `workspace://stdo_odd_manager.json`
 - `workspace://README.md`
 - `workspace://.ai-workspace/comments/README.md`
-- `workspace://.genesis/docs/standards/SPEC_METHOD.md`
+- `workspace://specification/GOVERNANCE.md`
+- `workspace://specification/REFERENCE_FRAME_BASIS.md`
 - `workspace://specification/INTENT.md`
 - `workspace://specification/PRODUCT.md`
 - `workspace://specification/GOALS.md`
@@ -262,7 +265,7 @@ When acting under this bootstrap:
 5. treat missing traceability as a defect
 6. if a live requirement is not realized, state the gap explicitly
 7. do not invent hidden selection strategy, hidden traversal targets, or rival ontology
-8. if writing under `workspace://.ai-workspace/comments/`, follow `workspace://.genesis/docs/standards/POSTING_GUIDE.md` and treat the result as commentary, not law
+8. if writing under `workspace://.ai-workspace/comments/`, follow the selected basis's `POSTING_GUIDE.md` and treat the result as commentary, not law
 
 <!-- GTL_BOOTLOADER_END -->
 
@@ -275,9 +278,7 @@ methodology — referred to in tickets as **STDO-UX**.
 ## Authoritative Sources
 
 - selected UX method:
-  `workspace://.genesis/docs/standards/UX_METHOD.md` from STDO `v2.2.1`
-- immutable release commit:
-  `8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`
+  `UX_METHOD.md` through `stdo_odd_manager.json`'s selected basis
 - realization stack ADR: project ADR 0001 — typed reducer + Cmd interpreter + shared contracts (React + `useReducer` + declared `Cmd` algebra)
 
 ## Sidecar UI Entry Points
@@ -356,7 +357,28 @@ The sidecar adopts the Elm Architecture as its constitutional process model
 - review questions: `UX_METHOD.md` §15
 - commentary on sidecar UX work goes under
   `workspace://.ai-workspace/comments/<agent>/` per
-  `workspace://.genesis/docs/standards/POSTING_GUIDE.md` and is commentary,
+  the selected basis's `POSTING_GUIDE.md` and is commentary,
   not law
 - prior method-conformance reviews of the sidecar surface live alongside the
   other claude/codex posts in `workspace://.ai-workspace/comments/`
+
+<!-- STDO_BOOTSTRAP_START -->
+## STDO Bootstrap
+
+This scope is routed by an STDO Product Definition Overlay.
+
+Before constitutional work:
+
+1. Resolve the applicable `stdo_<label>.json` for the requested Product scope.
+2. Use `constitution.stdo.basis`, not its mutable selector, as the operative basis.
+3. Resolve and verify that exact installed release through the STDO toolchain manager.
+4. Load the Product Definition's declared bootstrap entrypoint, then exact owning standards as needed.
+5. Resolve the applicable accepted Project Reference-Frame Basis or its declared composition.
+6. Bind the exact outcome, basis and existing work grant. Use direct Writer entry when the accepted frame configuration permits it and one capable context suffices; use Executive or the declared project equivalent for material coordination. Activate only applicable dependency-ready evaluations, preserving unknown applicability and required independence. Executive does not mutate files or Git; a separate Writer activation binds those effects.
+7. Fail closed when the Product Definition, frame basis, subject, authority, or activation is missing, ambiguous, stale, or outside the governed scope.
+
+Mutable methodology source, another installed version, a cache entry, and this
+bootstrap cannot replace the exact basis selected by the Product Definition.
+A prompt, summary, symbolic map, or prior result may route attention but cannot
+replace current source authority or a closed frame result.
+<!-- STDO_BOOTSTRAP_END -->

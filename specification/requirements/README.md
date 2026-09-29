@@ -2,7 +2,9 @@
 
 Project-specific requirement families live in this folder.
 
-Use `.genesis/docs/standards/` as the governing method reference when writing or revising these files.
+Resolve the exact method basis through `../../stdo_odd_manager.json`, then use
+`../GOVERNANCE.md` and `../REFERENCE_FRAME_BASIS.md` as the project application
+and shared evaluation-frame routes when writing or revising these files.
 
 ## Rules
 
@@ -29,3 +31,4 @@ Use `.genesis/docs/standards/` as the governing method reference when writing or
 - `13-build-admission-and-supervision.md`
 - `14-gate-asset-assurance-and-attention.md`
 - `15-modular-capability-composition.md`
+- `16-abg-event-stream-compatibility.md`

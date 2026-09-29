@@ -2,14 +2,14 @@
 kind: authority_compression_asset
 asset_ref: authority-compression://stdo/ticket-method/v1
 source_ref: ../TICKET_METHOD.md
-source_digest: ce266bbc80d2cd465611241258bc5a64dd58c7806c78a3ef53fb33cfe2afbd26
+source_digest: 2a23614cdd344179cf43263dd6074b1c2f7d4747c33083fdcebff3992df41675
 compression_profile: prompt_authority_compact_v1
 target_prompt_families:
   - transform
   - evaluate_design_depth
   - evaluate_review_grade
 generated_by: codex
-generated_at: 2026-07-26
+generated_at: 2026-08-03
 stale_if_source_digest_changes: true
 ---
 
@@ -53,6 +53,16 @@ proof, and current status.
   not admit or renew that basis. Admission or renewal belongs to the Goals
   work-wave owner or explicitly bounded proxy and remains durably legible in
   existing Goals or ticket authority.
+- Where Agentic Construction Execution applies, the active work item identifies
+  the selected execution basis, bounded affected relations, delegated
+  construction and assessment authority, and re-entry conditions. It may cite
+  accepted design and existing evidence rather than restating them. Ticket
+  state, prose, and execution-contract admission cannot widen that basis or
+  substitute for required live-surface assessment.
+- Existing ticket, commentary, commit, qualification, or release evidence may
+  carry the transition. Do not create a ticket state machine, mandatory artifact,
+  review round, or approval ceremony. Ticket Method carries selection and
+  traceability; Spec Method owns execution semantics.
 - A Product-slice milestone may close under singular authority across the full
   causal closure of its acceptance path while its enclosing migration remains
   visibly active. Its claim cannot exclude causally applicable Product,

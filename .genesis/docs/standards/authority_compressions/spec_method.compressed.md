@@ -2,14 +2,14 @@
 kind: authority_compression_asset
 asset_ref: authority-compression://stdo/spec-method/v1
 source_ref: ../SPEC_METHOD.md
-source_digest: 220144b53f801b8cd4ec905a5745598bedeb2b6562d2759b74bea16bb44f9432
+source_digest: 25e673f16a1d28fc43c95848a486625b34da8ea703ad36febb653456e86f1b37
 compression_profile: prompt_authority_compact_v1
 target_prompt_families:
   - transform
   - evaluate_design_depth
   - evaluate_review_grade
 generated_by: codex
-generated_at: 2026-07-26
+generated_at: 2026-08-03
 stale_if_source_digest_changes: true
 ---
 
@@ -100,6 +100,41 @@ capabilities through neutral identities rather than consumer precedent.
   test.
 - Prioritize fast Product feedback under that same relation; this is not a
   global scheduler or fixed execution sequence.
+- For probabilistic or agentic construction, execute one bounded causal cone
+  from a reconstruction-sufficient governing basis supplied by `STDO-UP-016`
+  through `STDO-UP-019`. Identify the affected relations, selected computational
+  dispositions, delegated construction and assessment authority, and upstream
+  re-entry conditions. Do not rely on dialogue, commentary, worker memory, or
+  folklore as that basis.
+- The constructor owns bounded implementation and self-review. Where
+  independent assessment supports promotion, the assessor verifies the exact
+  live code, authority paths, proof, and installed subject. A constructor
+  summary is not independent evidence. This separates roles without prescribing
+  actor count, model, prompt, tool, process topology, or orchestration runtime.
+- A bounded proxy may accept preservation, require local repair, reject a
+  violation, and advance to the next already-authorized action. Product,
+  requirement, governing-authority, or accepted-design changes re-enter at
+  their owner. Routine advancement needs no renewed human ceremony when the
+  delegation and re-entry boundary are already accepted.
+- Assess a bounded candidate as `accept`, `local_repair`, `re_enter`, or
+  `reject`. Global correctness conserves every governing relation affected by
+  the local action; unrelated incompleteness outside its causal cone is
+  repricing input, not a blocker. Repeated rejection against one unchanged
+  boundary triggers reassessment, not a candidate-count threshold or review
+  state machine.
+- Transition evidence binds the exact candidate, affected relations, changed
+  paths, authority-path disposition, focused and required integration proof,
+  remaining seams, non-changes, and assessor disposition. Use the cheapest proof
+  that can falsify the active relation and reserve whole-candidate qualification
+  for declared candidate boundaries unless risk requires it sooner.
+- A materially durable or reconstructable authority claim is not proven by a
+  same-process test when incidental process state is a plausible authority.
+  Destroy or exclude that state and compare reconstructed semantic outcomes.
+- Acceptance binds an exact checkpoint and permits the next already-authorized
+  action without widening scope. Accepted material Product movement is
+  progress; rejected or superseded construction is churn; preservation and
+  repeated proof are evidence; hidden-distance discovery revises forecast.
+  These are semantic categories, not a prescribed numeric algorithm.
 - When both strategies are lawful and feasible, bounded evolution is the
   rebuttable selection presumption when a working predecessor can reach the
   admitted outcome without competing or ambiguous authority. It never requires

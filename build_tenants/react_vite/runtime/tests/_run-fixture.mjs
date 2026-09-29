@@ -16,6 +16,7 @@ function event(index, kind, extra = {}) {
     edge: null,
     vectorIndex: null,
     graphFunctionRef: null,
+    eventId: `fixture-event:${index}`,
     eventTime: new Date(eventTimeUnixMs).toISOString(),
     eventTimeUnixMs,
     eventAdmissionOrdinal: index,
@@ -76,10 +77,7 @@ export function createRunFixture() {
   mkdirSync(join(projectRoot, 'specification'), { recursive: true });
   writeFileSync(join(projectRoot, 'specification', 'PRODUCT.md'), '# fixture_product Product\n\n## Product Identity\n\nFixture product.\n', 'utf8');
   mkdirSync(join(projectRoot, '.ai-workspace', 'events'), { recursive: true });
-  const eventLogContent = '{"kind":"fixture_event"}\n';
   const projectEventLogPath = join(projectRoot, '.ai-workspace', 'events', 'events.jsonl');
-  writeFileSync(projectEventLogPath, eventLogContent, 'utf8');
-  const eventLogSha256 = `sha256:${createHash('sha256').update(eventLogContent).digest('hex')}`;
 
   const runRoot = join(projectRoot, 'build_tenants', 'fixture', 'typescript', 'test_runs', 'software-build', 'subject', '20260710T000000000Z_pid1');
   const workspaceRoot = join(runRoot, 'instance');
@@ -87,7 +85,6 @@ export function createRunFixture() {
   mkdirSync(artifactDir, { recursive: true });
   const eventLogPath = join(workspaceRoot, '.ai-workspace', 'events', 'events.jsonl');
   mkdirSync(dirname(eventLogPath), { recursive: true });
-  writeFileSync(eventLogPath, eventLogContent, 'utf8');
 
   writeJson(join(runRoot, 'sandbox-identity.json'), {
     kind: 'fixture_live_sandbox',
@@ -157,6 +154,10 @@ export function createRunFixture() {
     }),
   ];
   const eventCounts = Object.fromEntries([...new Set(eventSequence.map((entry) => entry.kind))].map((kind) => [kind, eventSequence.filter((entry) => entry.kind === kind).length]));
+  const eventLogContent = `${eventSequence.map((entry) => JSON.stringify(entry)).join('\n')}\n`;
+  writeFileSync(projectEventLogPath, eventLogContent, 'utf8');
+  writeFileSync(eventLogPath, eventLogContent, 'utf8');
+  const eventLogSha256 = `sha256:${createHash('sha256').update(eventLogContent).digest('hex')}`;
   writeJson(join(runRoot, 'fixture-live-proof.json'), {
     kind: 'fixture_overlay_live_proof',
     scenarioId: 'SCN-FIXTURE-RUN',

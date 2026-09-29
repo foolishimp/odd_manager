@@ -24,17 +24,15 @@ affected_boundary: >-
 priority: critical
 triaged_at: 2026-07-11
 created_at: 2026-07-11
-updated_at: 2026-07-27
+updated_at: 2026-08-28
 dependencies: []
 sprint: SPRINT-2026-07-10-abg46-observation-reprice
 related_work:
   - T-031
 design_commentary:
   - .ai-workspace/comments/operator/20260711T025804Z_STRATEGY_modular-integrated-developer-control-capabilities.md
-governance_scope: STDO Method, ODD Method, STDO-UX Method, GTL/ABG command and runtime boundaries
-selected_method_release: STDO v2.2.1
-selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
-selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+governance_scope: current Product Definition Overlay, selected STDO/ODD/UX entrypoints, and GTL/ABG command and runtime boundaries
+selected_method_basis: stdo_odd_manager.json#/constitution/stdo/basis
 growth_authority: none_review_only_local_prerequisite_exhausted
 prerequisite_status: accepted_and_exhausted
 admitted_prerequisite: >-
@@ -112,7 +110,17 @@ non_closure_conditions:
 
 # T-032: Multi-Project Developer Build Control
 
-## STDO 2.2 Trace And STDO-UX Repair Admission
+## Current Product Definition Governance Re-entry — 2026-08-28
+
+Current work resolves the complete immutable method basis, constitutional
+routes, and collective reference frame through `stdo_odd_manager.json`. This
+governance-only re-entry conserves the accepted historical prerequisite and
+its exact evidence; it neither reopens that work nor grants capability growth.
+The external Build/Assure steel thread and exact ABIogenesis 4.6 RC3
+observation evidence remain unchanged. ABIogenesis 5.0 development requires
+the separately admitted G-009 compatibility reprice.
+
+## Historical STDO 2.2 Trace And STDO-UX Repair Admission
 
 The Product-owner instruction on 2026-07-26 admits one bounded prerequisite to
 the existing G-006 outcome:
@@ -218,7 +226,7 @@ evidence only. This review disposition authorizes no capability growth. Work
 remains bounded to the already admitted trace, STDO-UX, and design-method
 repair.
 
-## STDO 2.2.1 Closure And Exact 4.6 Qualification Admission 2026-07-27
+## Historical STDO 2.2.1 Closure And Exact 4.6 Qualification Admission 2026-07-27
 
 The Product-owner instruction on 2026-07-27 updates the selected method to the
 released STDO `v2.2.1` basis already named in this ticket and directs closure
@@ -272,7 +280,7 @@ steel thread and the still-explicit functional scenario gaps. The earlier
 eight-gap list remains the discovery record for this repair; this section owns
 its final disposition.
 
-## Local STDO 2.2.1 Acceptance And Authority Exhaustion 2026-07-27
+## Historical Local STDO 2.2.1 Acceptance And Authority Exhaustion 2026-07-27
 
 The Product-owner instruction to update, close, validate, and commit this
 bounded 4.6-aligned version supplies direct acceptance of the exact local

@@ -17,6 +17,11 @@ import {
   loadObservationRunProof,
   selectObservationRun,
 } from './project-observation-topology-service.mjs';
+import {
+  abgEventSequence,
+  indexAbgEventCarrier, scopeAbgEventCarrier,
+  reconcileAbgProof,
+} from './abg-event-carrier-service.mjs';
 
 const TRAVERSAL_PROJECTION_VERSION = 1;
 const DEFAULT_MAX_PROOF_BYTES = 16 * 1024 * 1024;
@@ -106,7 +111,7 @@ function cachedResolution(workspaceRootInput, runId) {
   const key = resolutionCacheKey(workspaceRootInput, runId);
   const cached = resolutionCache.get(key);
   if (!cached) return null;
-  const currentMtimeMs = statOf(cached.proofPath)?.mtimeMs ?? null;
+  const currentMtimeMs = statOf(cached.eventPath)?.mtimeMs ?? null;
   if (currentMtimeMs === null || currentMtimeMs !== cached.proofMtimeMs) {
     resolutionCache.delete(key);
     return null;
@@ -186,35 +191,89 @@ export function resolveTraversalRunRoot(workspaceRootInput, options = {}) {
     };
   }
   const topology = discoverProjectObservationTopology(workspaceRoot, { refresh: options.refresh === true });
-  const topologyRun = selectObservationRun(topology, options.runId ?? null);
+  const requestedRunId = typeof options.runId === 'string' && options.runId.trim()
+    ? options.runId.trim()
+    : null;
+  const implicitSelectionDisabled = requestedRunId === null && options.allowImplicitSelection === false;
+  if (implicitSelectionDisabled && topology.runs.length > 0) {
+    return {
+      state: 'unsupported',
+      workspaceRoot,
+      diagnostics: [
+        ...topology.diagnostics,
+        diagnostic(
+          'info',
+          'run_selection_required',
+          'Run discovery published candidates without inferring a default or latest traversal selection.',
+          workspaceRoot,
+        ),
+      ],
+    };
+  }
+  const topologyRun = selectObservationRun(topology, requestedRunId);
   if (topologyRun) {
-    const proof = loadObservationRunProof(topologyRun);
-    if (proof) {
+    const ledger = indexAbgEventCarrier(topologyRun.eventPath, { refresh: options.refresh === true, ...(topologyRun.eventContractDigest ? { publishedEventContractDigest: topologyRun.eventContractDigest, contractBindingPosture: topologyRun.eventContractBindingPosture } : {}) });
+    const eventIndex = topologyRun.carrierKind === 'retained_published_run_observation' ? scopeAbgEventCarrier(ledger, topologyRun.runId) : ledger;
+    if (eventIndex.state === 'ready' && (topologyRun.eventPrefixLength === undefined || (eventIndex.completePrefixBytes === topologyRun.eventPrefixLength && eventIndex.completePrefixDigest === topologyRun.eventPrefixDigest))) {
+      const proofCandidate = loadObservationRunProof(topologyRun);
+      const proofReconciliation = topologyRun.proofState === 'unreadable'
+        ? { state: 'unreadable', conflicts: [topologyRun.proofError?.message ?? 'proof carrier is unreadable'] }
+        : reconcileAbgProof(eventIndex, proofCandidate, topologyRun.identity, topologyRun.proofPath);
+      if (topologyRun.proofState === 'unreadable') {
+        diagnostics.push(diagnostic(
+          'warning',
+          'proof_candidate_unreadable',
+          topologyRun.proofError?.message ?? 'proof candidate could not be read',
+          topologyRun.proofPath,
+        ));
+      }
+      if (proofReconciliation.state === 'conflict') {
+        diagnostics.push(diagnostic(
+          'warning',
+          'proof_candidate_conflict',
+          proofReconciliation.conflicts.join('; '),
+          topologyRun.proofPath,
+        ));
+      }
+      const admittedProof = proofReconciliation.state === 'reconciled' && isRecord(proofCandidate)
+        ? proofCandidate
+        : {};
+      const projection = {
+        ...admittedProof,
+        scenarioId: topologyRun.scenarioId,
+        scenarioKind: topologyRun.scenarioKind,
+        proofClass: topologyRun.proofClass,
+        graphRef: topologyRun.graphRef,
+        graphFunctionRef: topologyRun.graphFunctionRef,
+        overlayRef: topologyRun.overlayRef,
+        startupConfigRef: topologyRun.startupConfigRef,
+        substrate: topologyRun.substrate,
+        eventLogSha256: eventIndex.completePrefixDigest,
+        eventCounts: eventIndex.counts,
+        eventSequence: abgEventSequence(eventIndex),
+      };
       return {
         state: 'ready',
         workspaceRoot,
         runId: topologyRun.runId,
         runRoot: topologyRun.runRoot,
-        proofPath: topologyRun.proofPath,
-        proof,
-        proofMtimeMs: topologyRun.proofMtimeMs,
-        diagnostics: [...topology.diagnostics],
+        proofPath: topologyRun.proofPath ?? topologyRun.eventPath,
+        eventPath: topologyRun.eventPath,
+        eventGeneration: eventIndex.generation,
+        proofReconciliation,
+        proof: projection,
+        proofMtimeMs: statOf(topologyRun.eventPath)?.mtimeMs ?? 0,
+        diagnostics: [...topology.diagnostics, ...diagnostics, ...eventIndex.diagnostics],
       };
     }
   }
-  if (options.runId) {
-    diagnostics.push(diagnostic('warning', 'selected_run_missing', `run ${options.runId} is not present in the Project observation topology`, workspaceRoot));
-  }
-  for (const candidateRoot of [workspaceRoot, dirname(workspaceRoot)]) {
-    const resolved = probeRunRootDirectory(candidateRoot, diagnostics);
-    if (resolved) {
-      return { state: 'ready', workspaceRoot, runId: null, ...resolved, diagnostics };
-    }
+  if (requestedRunId) {
+    diagnostics.push(diagnostic('warning', 'selected_run_missing', `run ${requestedRunId} is not present in the Project observation topology`, workspaceRoot));
   }
   diagnostics.push(diagnostic(
     'info',
     'run_topology_missing',
-    'neither workspaceRoot nor its parent contains a traversal proof JSON alongside sandbox-identity.json',
+    'no identity-first run basis with an admitted in-workspace ABG event carrier is available',
     workspaceRoot,
   ));
   return { state: 'unsupported', workspaceRoot, diagnostics };

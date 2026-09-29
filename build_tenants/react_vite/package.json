@@ -18,6 +18,8 @@
     "test:runtime:node": "node --test runtime/tests/test_*.mjs",
     "test:traceability": "node --test runtime/tests/test_stdo_traceability.mjs",
     "test:qualification:abg46": "node --test runtime/tests/test_odd_glc_010_abg_460_rc3_read_only_observation.mjs",
+    "test:qualification:abg5": "node --test runtime/tests/test_abg_5_0_event_compatibility.mjs runtime/tests/test_abg_event_compatibility_portfolio.mjs",
+    "test:qualification:abg5:installed": "playwright test tests/e2e/odd-manager-abg5-compatibility.spec.ts",
     "test:installed-development": "node --test qualification/installed-development-proof.mjs",
     "test:sidecar-wave": "npm run test:runtime:node",
     "test:e2e": "playwright test",

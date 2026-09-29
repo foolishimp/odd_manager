@@ -1,0 +1,96 @@
+{
+  "kind": "odd_manager_abg_event_stream_compatibility_portfolio",
+  "schemaVersion": "1",
+  "observedAt": "2026-08-28T00:00:00+10:00",
+  "claimBoundary": {
+    "abiogenesis46FlatEnvelopeSupport": "qualified_against_exact_external_carriers",
+    "abiogenesis50RootEnvelopeReadiness": "qualified_against_exact_5_0_0_dev_286_contract_artifact",
+    "oddGlcOnAbiogenesis50RuntimeCompatibility": "blocked_no_self_identified_5_0_odd_glc_runtime_carrier",
+    "processLivenessClaimedFromEvents": false
+  },
+  "abiogenesis5Artifact": {
+    "checkout": "/Users/jim/src/apps/abiogenesis-5-root-build",
+    "packageName": "@abiogenesis/typescript-tenant",
+    "packageVersion": "5.0.0-dev.286",
+    "workflowVersion": "5.0.0",
+    "compatibilityRef": "compatibility://abiogenesis/major/5",
+    "rootEventContractDigest": "sha256:b47319edc2fe4c50d65579cbbe8d19952199a69b993b91d5f8888e511c96bd6d",
+    "packageJsonSha256": "sha256:f9c0235f0f842175c57a5115c9807be8c09d0b6f66db2463c69c84b6db4a1dc3",
+    "productToolchainManifestSha256": "sha256:b5105f8ce87c1d72fd4dc5c7e4cb570eb08a058f37d820ed45e948d37b96e05f",
+    "eventStoreSourceSha256": "sha256:b260a045545e6ca4346e725adcfcea4ee89e4fa192d8e31f15c5ef05c0e55e35",
+    "eventStoreBuildSha256": "sha256:af6bd12df8d38cba8414aeeab6f8529d4ae528c4897a3fae644849af283e7561"
+  },
+  "oddGlcV22": {
+    "checkout": "/Users/jim/src/apps/odd_glc-v22-v2-direct-on-disk-f028c71",
+    "commit": "2a1f68a1e7b295f6de5215128bcdc6c44512a706",
+    "publishedSubstrateVersion": "4.6.0-rc.3",
+    "completedRuns": [
+      {
+        "lane": "basic-cli",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/basic-cli/20260827T213931731Z_pid12453",
+        "eventCount": 690,
+        "byteLength": 6906017,
+        "maxLineBytes": 353029,
+        "eventDigest": "sha256:0b7cbd886bc712d6a1b98e59144ca15732a87acad2473176169feab63c95a08e"
+      },
+      {
+        "lane": "js-tenant-test",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/js-tenant-test/20260827T214723759Z_pid34740",
+        "eventCount": 690,
+        "byteLength": 7108624,
+        "maxLineBytes": 363234,
+        "eventDigest": "sha256:ff989da7db6a24b147fd0a6c2db121a5a4b9356bb12a0bb6a7223b188907bd40"
+      },
+      {
+        "lane": "js-sdlc-bootstrap",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/js-sdlc-bootstrap/20260827T215457286Z_pid57749",
+        "eventCount": 730,
+        "byteLength": 7749980,
+        "maxLineBytes": 384665,
+        "eventDigest": "sha256:33170618b57f1dd47d3fa4ac816fc8263ca162f635b61ff42bafd45c4ecbd09b"
+      },
+      {
+        "lane": "rust-cli",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/rust-cli/20260827T220108448Z_pid77689",
+        "eventCount": 666,
+        "byteLength": 6556859,
+        "maxLineBytes": 331052,
+        "eventDigest": "sha256:a8debc333894e9676bbc259f71aeb96da0f8f35338309ee807aefafc7aa10057"
+      },
+      {
+        "lane": "rust-service",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/rust-service/20260827T220845364Z_pid1124",
+        "eventCount": 666,
+        "byteLength": 6808302,
+        "maxLineBytes": 338467,
+        "eventDigest": "sha256:f9c47a798d594242a6e09f58e682e02d4d33cf92abc8047c07ef4e255511dc20"
+      },
+      {
+        "lane": "parallel-js",
+        "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/parallel-js/20260827T221643026Z_pid25197",
+        "eventCount": 690,
+        "byteLength": 6947314,
+        "maxLineBytes": 357111,
+        "eventDigest": "sha256:a89b79e25ac14f71702f8c8b6484a6684324148108ffde5b3e5143a77ab9aaaf"
+      }
+    ],
+    "nonTerminalRun": {
+      "lane": "data-mapper-full",
+      "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/data-mapper-full/20260827T222432708Z_pid45404",
+      "eventCount": 2061,
+      "byteLength": 69046898,
+      "maxLineBytes": 3139398,
+      "eventDigest": "sha256:11a6a84e2d7e82fc5ab38f9bd7715fab614748f78951c986e83c0cf4b191b57b"
+    }
+  },
+  "significantLargeCarrier": {
+    "checkout": "/Users/jim/src/apps/odd_glc-response-contract-contentlines-cdf448",
+    "commit": "dd21f247f2a0ebcabf8fcb8d1de02d38c91d906b",
+    "runRoot": "build_tenants/odd_glc/typescript/test_runs/glc_software_build_overlay_live/data-mapper-full/20260827T134052134Z_pid21689",
+    "publishedSubstrateVersion": "4.6.0-rc.3",
+    "eventCount": 3020,
+    "byteLength": 126104826,
+    "maxLineBytes": 4117268,
+    "eventDigest": "sha256:ff22a7c9da83085b9676b6e2ed97eb8331e57ccf940286e6bef73b3074d6996c"
+  }
+}

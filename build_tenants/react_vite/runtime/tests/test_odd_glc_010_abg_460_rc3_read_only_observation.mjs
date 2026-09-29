@@ -48,7 +48,7 @@ const exact = Object.freeze({
   abiReleaseManifestSha256: '941d9a00198914120db7d7a1f466f4b3e2efe0fbd9659a71540267ca0f899bf4',
   abiToolchainDigest: '92b3f94dd32bca9368a9511d823cc8b6e2eae75cd7168c9e901d3cbe8eadf07d',
   eventCount: 602,
-  projectedEventRowCount: 152,
+  projectedEventRowCount: 40,
   closedVectorCount: 8,
   catalogEntryCount: 47,
 });
@@ -74,6 +74,7 @@ async function loadClientAdmissionModule() {
 }
 
 function assertObservation(observation, expected) {
+  assert.equal(observation.version, 3);
   assert.equal(observation.state, expected.state);
   assert.equal(observation.identity.id, expected.identityId);
   assert.equal(observation.substrate.packageName, exact.abiPackageName);
@@ -82,6 +83,10 @@ function assertObservation(observation, expected) {
   assert.equal(observation.substrate.sourceCommit, exact.abiSourceCommit);
   assert.equal(observation.activity.eventCount, expected.eventCount);
   assert.equal(observation.events.length, expected.projectedEventRowCount);
+  assert.equal(observation.eventPage.rows.length, expected.projectedEventRowCount);
+  assert.equal(observation.carrierSnapshot.envelopeProfile, 'abiogenesis_4_6_flat');
+  assert.equal(observation.proofReconciliation.state, 'absent');
+  assert.equal(observation.compatibility.posture, 'abiogenesis_4_6_legacy_supported');
   assert.equal(observation.activity.vectorClosedCount, expected.closedVectorCount);
   assert.equal(observation.catalog.entryCount, expected.catalogEntryCount);
   assert.equal(observation.catalog.entries.length, expected.catalogEntryCount);
@@ -214,8 +219,33 @@ test('exact odd_glc 0.1.0 / ABIogenesis 4.6.0-rc.3 read-only observation qualifi
       'test_runs',
       'odd-glc-0.1.0-abg-4.6.0-rc.3',
     );
-    mkdirSync(runRoot, { recursive: true });
-    writeFileSync(join(runRoot, 'odd-glc-basic-cli-live-proof.json'), proofBytes);
+    const workspaceRoot = join(runRoot, 'instance');
+    const identity = {
+      kind: 'odd_glc_software_build_live_sandbox',
+      schemaVersion: '1',
+      scenarioId: proof.scenarioId,
+      scenarioKind: proof.scenarioKind,
+      scenarioProofClass: proof.proofClass,
+      substrate: proof.substrate,
+      graphRef: proof.graphRef,
+      graphFunctionRef: proof.graphFunctionRef,
+      overlayRef: proof.overlayRef,
+      startupConfigRef: proof.startupConfigRef,
+      runRoot,
+      workspaceRoot,
+    };
+    mkdirSync(join(workspaceRoot, '.ai-workspace', 'events'), { recursive: true });
+    writeFileSync(join(runRoot, 'sandbox-identity.json'), `${JSON.stringify(identity, null, 2)}\n`, 'utf8');
+    writeFileSync(join(workspaceRoot, '.ai-workspace', 'sandbox-identity.json'), `${JSON.stringify(identity, null, 2)}\n`, 'utf8');
+    const fixtureEvents = proof.eventSequence.map((event, index) => ({
+      ...event,
+      eventId: event.eventId ?? `qualification-event:${index}`,
+    }));
+    writeFileSync(
+      join(workspaceRoot, '.ai-workspace', 'events', 'events.jsonl'),
+      `${fixtureEvents.map((event) => JSON.stringify(event)).join('\n')}\n`,
+      'utf8',
+    );
 
     const serverObservation = loadAbgRunObservation(projectRoot, { refresh: true });
     assertObservation(serverObservation, qualification.expectedObservation);

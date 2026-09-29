@@ -1,0 +1,38 @@
+{
+  "kind": "t046_i01_repair_delta",
+  "activation": "T046-I01-W2",
+  "supersedesRejectedCandidate": "7a0b8c921d48741a9e7215d00146741d33c1e5b6a78e4773a122fc7506b51277",
+  "changes": [
+    {
+      "path": "build_tenants/react_vite/src/server/abg-event-carrier-service.mjs",
+      "beforeSha256": "405197443c9882885cc013677122504fc9842fa35f353fd101b6cbadde331053",
+      "afterSha256": "d4edafc2d8535485fc1b5b7df1674d7ff10bb50f0d4a30f65f75439fcefca965",
+      "bytes": 51681
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/retained-run-observation-service.mjs",
+      "beforeSha256": "6c8db787c667050b7d023f5d2b67dd5b666abd32810175eff32178f48eee16b6",
+      "afterSha256": "9d94be91903f2111ad95709a09d7ff6ff5c2256fe4704dd48552a27173522c95",
+      "bytes": 15299
+    },
+    {
+      "path": "build_tenants/react_vite/src/contracts/abg-run-observation.ts",
+      "beforeSha256": "fc2f1667c2e012fabd25f134b4924ede1aab68f8d77c45131f5d55c642419211",
+      "afterSha256": "6758af53932dba786a1f0ccaf1928c9b62da617594177b1219e68e8f6e6f0b0f",
+      "bytes": 11701
+    },
+    {
+      "path": "build_tenants/react_vite/src/features/sidecar/abg-run-observation-validation.ts",
+      "beforeSha256": "da0f516b7a704d327dbeda08be7dc70b8d81b755539a5189daee511b89bd0a7e",
+      "afterSha256": "fa4050ba3d2baeece4a77ad10ff75c360ee32c9dc561271f46bcc6fbb37939ea",
+      "bytes": 27888
+    },
+    {
+      "path": "build_tenants/react_vite/runtime/tests/test_t046_current_run_observation.mjs",
+      "beforeSha256": "572e222eea738a18ab48839e3ea58a49d2cf74b15c72732abe0119c8666c21de",
+      "afterSha256": "243875e15b2443ae464197619012543164b2e7b6bf9c655dad4408200b70808e",
+      "bytes": 21292
+    }
+  ],
+  "candidateDigest": "58c256eeb18852eae332739e16c7c1c4a724e8221e8798c54265b091d944812b"
+}

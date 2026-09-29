@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Date**: 2026-07-11
-**Updated**: 2026-07-26
+**Updated**: 2026-08-28
 **Derived From**: `specification/GOALS.md`, project formation, and admitted
 Product-owner intake
 
@@ -68,6 +68,8 @@ The project must deliver:
   framing
 - industrial-grade observability, governance, and audit posture over live
   runtime truth
+- identity-first observation of bounded durable ABG event prefixes before
+  optional terminal proof, with later exact proof reconciliation
 - a tenant-local implementation path for the UI without turning the UI into a
   second runtime
 - a modular but integrated capability architecture in which portfolio,
@@ -78,15 +80,27 @@ The project must deliver:
 
 The project is constrained by these rules:
 
-- `.genesis/docs/standards/SPEC_METHOD.md` is the governing process
-  constitution
-- `.genesis/docs/standards/ODD_METHOD.md` is the graph-native ODD
+- `stdo_odd_manager.json` is the singular Product Definition Overlay and its
+  exact `constitution.stdo.basis` selects the governing method Product
+- `SPEC_METHOD.md`, resolved through the Product Definition's selected basis,
+  is the governing process constitution
+- `ODD_METHOD.md`, resolved through that same basis, is the graph-native ODD
   product-authoring and traversal-governance method
+- the project reference-frame configuration is bound by
+  `specification/REFERENCE_FRAME_BASIS.md`; a frame or actor label alone grants
+  no semantic, operation, review, or acceptance authority
+- `.genesis/docs/standards/` is historical bootstrap provenance, not operative
+  method authority
 - the current source project is authored as the `odd_manager` control-plane
   product under `SPEC_METHOD.md`; workspace-local `odd_sdlc` runtime installs
   are legacy provenance and must not define manager identity
 - `abiogenesis` remains canonical truth for GTL and ABG objects, boundaries,
   runtime law, and projection law
+- event terminality, event freshness, and external process liveness remain
+  distinct; the manager cannot manufacture one from another
+- compatibility labels remain bound to exact carrier-published substrate
+  identity and installed causal-path proof, not operator wave naming or broad
+  semantic-version inference
 - `odd_method` remains methodology, not the one and only domain package the
   manager may supervise
 - concrete domain semantics must come from published domain-package contracts,

@@ -504,6 +504,49 @@ Decision completeness does not require another document. The constraint
 network may be expressed through the existing Ontology, algebra, module mapping,
 and views when those surfaces jointly carry the complete relation.
 
+### Bounded Frame Conservation (`STDO-UP-017`)
+
+`M(B)` closes one governed boundary. A bounded local action is taken inside a
+frame that derives from other accepted frames, and its lawfulness depends on
+relations the acting frame does not itself own.
+
+`Global` and `local` are relative to the selected frame. Each material design
+frame must identify:
+
+- the governing frames and accepted relations from which it derives;
+- the bounded affected relation set of the proposed action;
+- the applicable inherited invariants;
+- the authority and composition seams crossing that set; and
+- the subordinate frames opened by unresolved material distinctions.
+
+A frame may derive from more than one governing frame. A persistence component
+belongs to an entity lifecycle boundary and an operational consistency
+boundary; an admission function belongs to a domain transition and a
+runtime-authority boundary; a shared callable may be consumed by several
+sibling domains without becoming subordinate to one. A single governing frame
+is lawful where the structure is genuinely hierarchical, and is not required.
+Governing frames form a constraint network for the same reason `M(B)` does.
+
+Every seam crossing the affected set must either include its causally relevant
+far-side relation in that set, or state why that relation cannot affect, and
+cannot be affected by, the bounded action. This makes the declared set testable
+against its own declared seams without requiring a closure algorithm or
+recursive expansion through irrelevant relations.
+
+The result is evaluated against every affected governing frame, preserves each
+applicable accepted relation, and updates only affected subordinate
+projections. A bounded local action conserves governing truth; it does not
+rewrite it. A result that changes a governing relation re-enters at that
+relation before acceptance.
+
+A subordinate frame opens only when a material distinction cannot be resolved
+at the governing altitude. This rule does not require recursively documenting
+irrelevant descendants.
+
+This law is false if a change is locally valid inside the selected frame but
+violates, duplicates, or silently reinterprets an invariant in any affected
+governing frame.
+
 Discovered functionality is evidence about required behavior. It is not yet an
 architectural operation. A discovered verb, screen action, endpoint, command,
 ticket phrase, or use case shall not be promoted directly into a public
@@ -609,6 +652,51 @@ retirement authority requires a named typed transition and an owning admission
 boundary. Projections cannot create authority, and downstream code cannot
 reconstruct an authority witness from actor labels, capability strings, or
 payload shape.
+
+### Transformation Admission Completeness (`STDO-UP-016`)
+
+The authority matrix names who admits. It does not by itself establish the
+relation that decides which candidate transformation becomes durable entity
+truth. Two designs can complete the matrix plausibly and still leave two
+materially different ways to admit the same transformation.
+
+For every consequential entity-transition domain, design evidence must contain
+the complete transformation-admission relation over entity identity,
+predecessor basis, authority scope, candidate family, decision cardinality,
+admission predicate, resulting durable fact, and supersession law — through the
+authority matrix above or an equivalent closed representation:
+
+| Entity transition domain | Predecessor basis | Candidate family | Admission relation | Durable result | Competing-path disposition |
+|---|---|---|---|---|---|
+
+Singularity attaches to the complete decision relation, not to one actor,
+callable, or component. Multiple actors, stages, or implementations are lawful
+as constituents or disjoint instances of that relation. A relation may lawfully
+require one actor, multiple signatures, quorum, human step-up, delegated proxy
+authority, or jurisdictional partitioning, provided its cardinality and
+adjudication law are declared.
+
+Competing-path disposition does not imply deletion. An equivalent path may be a
+lawful constituent, replica, replacement, or deliberately independent
+realization, provided its relationship to the singular admission law is
+explicit.
+
+A projection may produce a candidate transformation, but projection status does
+not confer admission authority. Any consequential result must re-enter the
+governing admission relation against its explicit predecessor basis. A
+reconstructed projection state is not self-authenticating admission evidence.
+
+This law is false if any of the following holds:
+
+- two materially non-equivalent admission relations remain reachable for the
+  same governed transition domain on the same entity identity, authority scope,
+  and predecessor basis — disjoint scopes or identities are not a
+  counterexample;
+- a materially equivalent competing implementation remains reachable without
+  being identified as a constituent, replica, replacement, or deliberately
+  independent realization; or
+- a projection-triggered reaction uses its own reconstructive state as
+  self-authenticating admission evidence.
 
 ### Atomic Functions And Higher-Order Composition
 
@@ -1054,6 +1142,61 @@ Ontology. The slice must cite its parent and preserve parent identity,
 relationship, lifecycle, authority, and function law. Copying selected rows into
 a new local model without that derivation creates another truth surface.
 
+### Invariant Reconstruction Sufficiency (`STDO-UP-018`)
+
+The evidence above is not a documentation deliverable. It is the durable
+reasoning state a bounded actor needs, because the actor selecting a local
+action generally does not hold the reasoning that produced the governing
+frames. Dialogue, commentary, prior-agent memory, and implementation folklore
+are not that state.
+
+Given an accepted material-frame basis, as determined by the existing material
+semantic boundary definition, and a proposed bounded action, the selected STDO
+basis together with the accepted design must be sufficient to recover every
+governing relation in the action's causally closed affected set, and to decide
+whether the action preserves, changes, duplicates, or violates each of those
+relations.
+
+The two inputs are distinct and neither substitutes for the other. The selected
+method describes which relations are required and how to reason about them; the
+accepted design supplies the concrete invariant values. A design that restates
+federal decision law to satisfy this rule reproduces the local-method
+duplication this law exists to remove.
+
+The four decisions are distinguished as follows:
+
+| Decision | The action, against a governing relation |
+|---|---|
+| preserves | leaves the relation intact and operates inside it |
+| changes | alters the relation itself, and therefore re-enters at that relation before acceptance |
+| duplicates | establishes an equivalent path that is explicitly disposed as a constituent, replica, replacement, or deliberately independent realization |
+| violates | contradicts the relation, or establishes an equivalent path that is left undisposed |
+
+The boundary between `changes` and `violates` is the locus of acceptance, not
+the size of the delta: an otherwise lawful change accepted inside the acting
+frame rather than at the relation it changes is a violation. The boundary
+between `duplicates` and `violates` is disposition, not equivalence: an
+equivalent path is lawful when disposed and a defect when not.
+
+Sufficiency is bound to a declared action and its affected set. It is not a
+claim over an unbounded space of possible future changes, and the performance
+of any particular reviewer is not evidence either way.
+
+This obligation adds no artifact. It is satisfied through the Ontology
+evidence, authority matrix, transformation-admission relation, frame
+declaration, views, and module mapping already required, and is a property of
+that material rather than a separate package.
+
+This law is false if, for a declared bounded action, the accepted design does
+not expose a governing relation in that action's causally closed affected set,
+or the preserve, change, duplicate, or violate decision cannot be reached from
+the selected STDO basis and accepted design, without conversation history,
+commentary, prior-worker memory, or implementation folklore.
+
+Where the sufficiency of a boundary is tested, the test uses named cases with
+known governing relations and expected decisions, evaluated with conversation
+history, commentary, prior-worker memory, and implementation folklore withheld.
+
 ### Domain model
 
 The `classDiagram` is the structural domain projection of the Ontology. It must
@@ -1202,6 +1345,78 @@ may continue as provisional co-evolution only when
 `co_evolution_admissible(B)` holds, but the affected boundary may not be
 promoted, published, or closed.
 
+### Computational Realization Projection (`STDO-UP-019`)
+
+The three views project domain structure, execution, and lifecycle. They
+deliberately show domain identities, so they do not reveal that two
+domain-distinct components rest on the same data structures and algorithms.
+Repeated machinery is therefore invisible to a domain-only reading, and each
+occurrence looks correctly owned and correctly named within its own entity.
+
+**Component role sets.** Every material realization component has an explicit
+set of semantic and operational roles. Technology capability does not confer
+authority. A component's declared role set is design authority; where a role
+carries authority, composition and use preserve the applicable authority
+relation under `STDO-UP-004`, which is supporting law here rather than the
+owner of the role model.
+
+A component may lawfully hold several roles. Three cases must be distinguished:
+behavior already inside an abstract declared role is ordinary variation; a new
+operational responsibility and a new semantic or authoritative role are each
+design changes. Only the latter two require re-entry. Use of a component
+outside its declared role set must not silently establish identity, admission,
+lifecycle, ordering, closure, or projection truth.
+
+**The projection.** At a material semantic boundary, the design must project
+the domain design into its computational realization: abstract data types,
+identity and key structures, algorithms, algebraic laws, mutation and effect
+boundaries, selected implementations, and domain-to-computational mappings. The
+cross-view evaluation extends to prove the domain views and this projection
+describe one system.
+
+**The projection is subordinate.** It reveals repeated implementation
+structure; it cannot decide semantic identity, ownership, or authority.
+Computational similarity produces a candidate, never an adjudication:
+
+```text
+computational similarity
+  -> commonization candidate
+  -> semantic and operational equivalence evaluation
+  -> reuse, parameterized common relation, or justified separation
+```
+
+Two components may share a map or an append-only sequence while differing in
+identity and key law, ownership, ordering, admissible mutation, consistency and
+concurrency, retention, failure semantics, access policy, lifecycle, or
+authority over truth.
+
+A materially non-equivalent law among those dimensions requires separation.
+Other differences justify separation only when evaluation shows that
+parameterization or adaptation would weaken ownership, authority, lifecycle,
+failure, or operational constraints. The existence of a difference does not by
+itself discharge Prime contraction or recurrence review.
+
+**Disposition is two-part.** Each material algorithmic obligation in `M(B)`
+carries a *semantic disposition* — existing accepted relation, extension, or
+new candidate relation — and a *realization disposition* — consume, implement
+locally, optimize, adapt, or deliberately duplicate under stated non-semantic
+constraints. Isolation, substrate, performance, security, and dependency
+ownership are each lawful grounds for an independent implementation.
+
+The invariant is not that equivalent code is never rebuilt. It is that a local
+realization must not present an existing accepted semantic or authoritative
+relation as newly owned local truth.
+
+This law is false if any of the following holds:
+
+- two domain-named components implement materially equivalent abstract data
+  types or algorithms without a semantic disposition;
+- a generic building block becomes a new semantic authority;
+- superficially similar operations are commonized despite different identity,
+  ordering, failure, ownership, or lifecycle law; or
+- a local realization presents an existing accepted relation as newly owned
+  local truth.
+
 ## 5F. Theoretical Framing For Boundary Law
 
 This method is operational and stands on its own. It does not require a user to
@@ -1305,6 +1520,14 @@ the smallest causally closed affected decision set and retained implementation
 follows its acceptance. An unchanged `realization_refactor` cites the accepted
 relation and proves no material semantic-boundary delta; it does not recreate
 the evidence.
+
+Where construction is probabilistic or agentic, `SPEC_METHOD.md`'s Agentic
+Construction Execution relation governs the handoff from this accepted design
+basis into bounded construction, assessment, disposition, checkpoint, and
+continuation. This method supplies the governing-frame, transformation-
+admission, invariant-reconstruction, computational-realization, and module
+evidence consumed by that protocol; it does not define a second execution
+protocol.
 
 Completeness requires:
 

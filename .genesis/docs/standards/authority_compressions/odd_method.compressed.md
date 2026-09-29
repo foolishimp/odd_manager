@@ -2,14 +2,14 @@
 kind: authority_compression_asset
 asset_ref: authority-compression://stdo/odd-method/v1
 source_ref: ../ODD_METHOD.md
-source_digest: c0e21a41291d3a7b05614822e327258aa358aab1b43a669c2ec1e58e49c1df58
+source_digest: 42be18b4d16e7d1bd8ca764d951fd533a19fa0ce4c67d17462c3a0f6879d46bb
 compression_profile: prompt_authority_compact_v1
 target_prompt_families:
   - transform
   - evaluate_design_depth
   - evaluate_review_grade
 generated_by: claude
-generated_at: 2026-07-22
+generated_at: 2026-08-02
 stale_if_source_digest_changes: true
 ---
 
@@ -32,6 +32,13 @@ identity in its own authority surfaces.
   jobs, hooks, and declarative contracts.
 - ABG owns runtime traversal, binding, frames, lineage, events, payload
   admission, projection, continuation, assurance, and closure mechanics.
+- Where an ABG surface admits a consequential entity transformation, that
+  admission authority is the graph-native specialization of the general
+  transformation-admission relation in `DESIGN_MODULE_METHOD.md`. ABG's broader
+  execution, supervision, retry, and projection authority derives from ODD law
+  and is not thereby reclassified as admission authority. `F_P` and `F_H` are
+  the ODD projections of the generic candidate-producer and human-adjudication
+  roles.
 - The product owns domain meaning, policy overlays, domain acceptance, and
   product-specific interpretation.
 

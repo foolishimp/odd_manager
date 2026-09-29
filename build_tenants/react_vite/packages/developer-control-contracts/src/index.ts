@@ -1399,6 +1399,860 @@ export const assuranceLoadRequestSchema = z.object({
   executionId: nonEmptyString.nullable(),
 }).strict();
 
+const visualGraphPublishedRefSchema = z.string()
+  .min(1)
+  .max(4096)
+  .regex(
+    /^(?:[a-z][a-z0-9+.-]*:(?:\/\/)?[^\s]+|[a-z][a-z0-9._-]+@[0-9]+)$/iu,
+    'expected a logical published reference',
+  )
+  .refine(
+    (value) => !value.startsWith('/') && !/^file:/iu.test(value),
+    'filesystem paths and file URIs are not visual graph references',
+  )
+  .refine(
+    (value) => !/[\u0000-\u001f\u007f]/u.test(value),
+    'control characters are not visual graph references',
+  );
+const visualGraphDigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
+const visualGraphIdentifierTokenSchema = z.string()
+  .min(1)
+  .max(240)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u);
+const visualGraphStatusTokenSchema = z.string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z][a-z0-9_]*$/u);
+const visualGraphEventKindTokenSchema = z.string()
+  .min(1)
+  .max(160)
+  .regex(/^[a-z][a-z0-9_]*$/u);
+const visualGraphEventCoordinateSchema = z.object({
+  eventId: visualGraphPublishedRefSchema,
+  ordinal: z.number().int().nonnegative(),
+  kind: visualGraphEventKindTokenSchema,
+}).strict();
+const visualGraphDiagnosticSchema = z.object({
+  severity: z.enum(['info', 'warning', 'error']),
+  code: visualGraphStatusTokenSchema.max(160),
+  message: z.string().min(1).max(600),
+  sourceEvent: visualGraphEventCoordinateSchema.nullable(),
+}).strict();
+const visualGraphDeclarationReferenceSchema = z.object({
+  kind: z.enum(['graph', 'graph_function', 'overlay', 'materialization']),
+  ref: visualGraphPublishedRefSchema,
+  sourceEvent: visualGraphEventCoordinateSchema.nullable(),
+}).strict();
+const visualGraphDeclarationNodeSchema = z.object({
+  id: visualGraphPublishedRefSchema,
+  kind: z.enum(['graph', 'node', 'graph_vector', 'graph_function', 'overlay']),
+  label: z.string().min(1).max(160),
+  declarationRef: visualGraphPublishedRefSchema,
+}).strict();
+const visualGraphDeclarationEdgeSchema = z.object({
+  id: visualGraphPublishedRefSchema,
+  kind: z.enum(['declared_vector', 'overlay_application']),
+  sourceNodeId: visualGraphPublishedRefSchema,
+  targetNodeId: visualGraphPublishedRefSchema,
+  declarationRef: visualGraphPublishedRefSchema,
+}).strict();
+const visualGraphOccurrenceNodeSchema = z.object({
+  id: visualGraphPublishedRefSchema,
+  aggregateType: z.enum([
+    'run', 'graph_call', 'frame', 'c_call', 'actor_invocation', 'process',
+  ]),
+  aggregateId: visualGraphPublishedRefSchema,
+  label: z.string().min(1).max(160),
+  state: z.enum(['open', 'closed', 'failed', 'unknown']),
+  firstObserved: visualGraphEventCoordinateSchema,
+  lastObserved: visualGraphEventCoordinateSchema,
+}).strict();
+const visualGraphOccurrenceEdgeSchema = z.object({
+  id: visualGraphPublishedRefSchema,
+  kind: z.enum(['aggregate_parent', 'event_causation']),
+  sourceNodeId: visualGraphPublishedRefSchema,
+  targetNodeId: visualGraphPublishedRefSchema,
+  sourceEvent: visualGraphEventCoordinateSchema,
+  targetEvent: visualGraphEventCoordinateSchema,
+}).strict();
+const visualGraphWorkspaceSnapshotSchema = z.object({
+  observationRef: visualGraphPublishedRefSchema.nullable(),
+  observationDigest: visualGraphDigestSchema.nullable(),
+  subjectRef: visualGraphPublishedRefSchema.nullable(),
+  subjectDigest: visualGraphDigestSchema.nullable(),
+  bindingRef: visualGraphPublishedRefSchema.nullable(),
+  state: visualGraphStatusTokenSchema.nullable(),
+  byteLength: z.number().int().nonnegative().nullable(),
+  fileDigest: visualGraphDigestSchema.nullable(),
+}).strict();
+const visualGraphWorkspaceReceiptSchema = z.object({
+  receiptRef: visualGraphPublishedRefSchema.nullable(),
+  receiptDigest: visualGraphDigestSchema.nullable(),
+  authorizationRef: visualGraphPublishedRefSchema.nullable(),
+  authorizationDigest: visualGraphDigestSchema.nullable(),
+  beforeObservationRef: visualGraphPublishedRefSchema.nullable(),
+  beforeObservationDigest: visualGraphDigestSchema.nullable(),
+  afterObservationRef: visualGraphPublishedRefSchema.nullable(),
+  afterObservationDigest: visualGraphDigestSchema.nullable(),
+  writtenDigest: visualGraphDigestSchema.nullable(),
+  committed: z.boolean().nullable(),
+}).strict();
+const visualGraphWorkspaceCurrentnessSchema = z.object({
+  state: z.enum(['present', 'missing', 'unreadable', 'unobserved']),
+  byteLength: z.number().int().nonnegative().nullable(),
+  digest: visualGraphDigestSchema.nullable(),
+  posture: z.enum(['matches_retained', 'changed', 'unavailable']),
+}).strict();
+const visualGraphWorkspaceObservationSchema = z.object({
+  ordinal: z.number().int().nonnegative(),
+  sourceEvent: visualGraphEventCoordinateSchema.nullable(),
+  predecessor: visualGraphWorkspaceSnapshotSchema,
+  successor: visualGraphWorkspaceSnapshotSchema,
+  receipt: visualGraphWorkspaceReceiptSchema,
+  current: visualGraphWorkspaceCurrentnessSchema,
+}).strict();
+const visualGraphTerminalDispositionSchema = z.enum([
+  'live_interactive', 'live_output_only', 'archive_available',
+  'archive_candidate', 'completed', 'revoked', 'unavailable', 'unknown',
+]);
+const visualGraphEventContractPostureSchema = z.enum([
+  'built_in_registry_envelope_validated_unpublished',
+  'published_contract_distinct_from_builtin_registry',
+  'published_contract_registry_kind_conflict',
+  'published_contract_matches_builtin_registry',
+  'legacy_envelope_verified',
+  'invalid',
+  'unknown',
+]);
+const visualGraphActorSessionSchema = z.object({
+  id: visualGraphPublishedRefSchema,
+  actorInvocationId: visualGraphPublishedRefSchema,
+  processAggregateId: visualGraphPublishedRefSchema.nullable(),
+  actorRef: visualGraphPublishedRefSchema.nullable(),
+  lifecycleState: z.enum(['running', 'completed', 'failed', 'unknown']),
+  terminalDisposition: visualGraphTerminalDispositionSchema,
+  capabilityRefs: z.array(visualGraphPublishedRefSchema).max(12),
+  operationRefs: z.array(visualGraphPublishedRefSchema).max(12),
+  archiveRefs: z.array(visualGraphPublishedRefSchema).max(12),
+  canAttach: z.boolean(),
+  firstObserved: visualGraphEventCoordinateSchema,
+  lastObserved: visualGraphEventCoordinateSchema,
+}).strict().superRefine((value, context) => {
+  const live = value.terminalDisposition === 'live_interactive'
+    || value.terminalDisposition === 'live_output_only';
+  if (live && (value.capabilityRefs.length === 0 || value.operationRefs.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['terminalDisposition'],
+      message: 'live actor-session disposition requires published capability and operation references',
+    });
+  }
+  if (value.canAttach !== (value.terminalDisposition === 'live_interactive')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['canAttach'],
+      message: 'attach is admitted only for a live_interactive actor session',
+    });
+  }
+  if ((value.terminalDisposition === 'live_interactive'
+    || value.terminalDisposition === 'live_output_only')
+    && value.lifecycleState !== 'running') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['lifecycleState'],
+      message: 'live actor-session disposition requires an explicitly running lifecycle',
+    });
+  }
+  if ((value.terminalDisposition === 'archive_available'
+    || value.terminalDisposition === 'archive_candidate')
+    && (value.lifecycleState !== 'completed' || value.archiveRefs.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['archiveRefs'],
+      message: 'archive disposition requires a completed lifecycle and published archive references',
+    });
+  }
+  if (value.terminalDisposition === 'archive_available'
+    && (value.capabilityRefs.length === 0 || value.operationRefs.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['terminalDisposition'],
+      message: 'available archive disposition requires an admitted resolver capability and operation',
+    });
+  }
+  if (value.terminalDisposition === 'completed' && value.lifecycleState !== 'completed') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['lifecycleState'],
+      message: 'completed terminal disposition requires an explicitly completed lifecycle',
+    });
+  }
+});
+
+export const visualGraphProjectionSchema = z.object({
+  kind: z.literal('visual_graph_projection'),
+  version: z.literal(1),
+  generatedAt: isoTimestamp,
+  state: z.enum(['ready', 'partial', 'missing', 'unsupported', 'invalid']),
+  run: z.object({
+    runId: visualGraphPublishedRefSchema,
+    runDigest: visualGraphDigestSchema.nullable(),
+    scenarioKey: visualGraphIdentifierTokenSchema.max(160).nullable(),
+    scenarioId: visualGraphIdentifierTokenSchema.nullable(),
+    eventGeneration: visualGraphDigestSchema,
+    eventCount: z.number().int().nonnegative(),
+    firstOrdinal: z.number().int().nonnegative().nullable(),
+    lastOrdinal: z.number().int().nonnegative().nullable(),
+    eventPosture: visualGraphStatusTokenSchema,
+    closed: z.boolean(),
+    eventContract: z.object({
+      publishedDigest: visualGraphDigestSchema.nullable(),
+      builtInRegistryDigest: z.literal(
+        'sha256:b47319edc2fe4c50d65579cbbe8d19952199a69b993b91d5f8888e511c96bd6d',
+      ).nullable(),
+      posture: visualGraphEventContractPostureSchema,
+      bindingPosture: visualGraphStatusTokenSchema.nullable(),
+    }).strict(),
+    evidence: z.object({
+      authority: visualGraphStatusTokenSchema.nullable(),
+      disposition: visualGraphStatusTokenSchema.nullable(),
+      validationDisposition: visualGraphStatusTokenSchema.nullable(),
+    }).strict(),
+  }).strict().nullable(),
+  declarationTopology: z.object({
+    state: z.enum(['ready', 'partial', 'missing']),
+    reason: z.enum([
+      'published_bodies_admitted', 'references_without_bodies', 'no_declaration_carrier',
+    ]),
+    references: z.array(visualGraphDeclarationReferenceSchema).max(240),
+    nodes: z.array(visualGraphDeclarationNodeSchema).max(240),
+    edges: z.array(visualGraphDeclarationEdgeSchema).max(480),
+  }).strict(),
+  occurrenceGraph: z.object({
+    state: z.enum(['ready', 'partial', 'missing']),
+    nodes: z.array(visualGraphOccurrenceNodeSchema).max(240),
+    edges: z.array(visualGraphOccurrenceEdgeSchema).max(480),
+    activeNodeIds: z.array(visualGraphPublishedRefSchema).max(240),
+    lastObservedNodeId: visualGraphPublishedRefSchema.nullable(),
+  }).strict(),
+  workspaceObservations: z.object({
+    state: z.enum(['ready', 'partial', 'missing']),
+    currentness: z.enum([
+      'matches_retained_observations', 'workspace_changed', 'unobserved',
+    ]),
+    observations: z.array(visualGraphWorkspaceObservationSchema).max(80),
+  }).strict(),
+  actorSessions: z.object({
+    state: z.enum(['ready', 'partial', 'missing']),
+    interactionDisposition: visualGraphTerminalDispositionSchema,
+    sessions: z.array(visualGraphActorSessionSchema).max(80),
+  }).strict(),
+  diagnostics: z.array(visualGraphDiagnosticSchema).max(80),
+  limits: z.object({
+    maxNodes: z.literal(240),
+    maxEdges: z.literal(480),
+    maxWorkspaceObservations: z.literal(80),
+    maxActorSessions: z.literal(80),
+    maxDiagnostics: z.literal(80),
+    nodesTruncated: z.boolean(),
+    edgesTruncated: z.boolean(),
+    workspaceObservationsTruncated: z.boolean(),
+    actorSessionsTruncated: z.boolean(),
+    diagnosticsTruncated: z.boolean(),
+  }).strict(),
+}).strict().superRefine((value, context) => {
+  if (value.run !== null) {
+    const { eventCount, firstOrdinal, lastOrdinal } = value.run;
+    const hasFirstOrdinal = firstOrdinal !== null;
+    const hasLastOrdinal = lastOrdinal !== null;
+    if (hasFirstOrdinal !== hasLastOrdinal
+      || (eventCount === 0 && hasFirstOrdinal)
+      || (eventCount > 0 && !hasFirstOrdinal)
+      || (firstOrdinal !== null && lastOrdinal !== null && firstOrdinal > lastOrdinal)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['run', 'firstOrdinal'],
+        message: 'run ordinal bounds must be a complete non-reversed range exactly when events are retained',
+      });
+    }
+  }
+  const occurrenceNodeIds = new Set(value.occurrenceGraph.nodes.map((node) => node.id));
+  if (occurrenceNodeIds.size !== value.occurrenceGraph.nodes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceGraph', 'nodes'], message: 'occurrence node ids must be unique' });
+  }
+  for (const [index, node] of value.occurrenceGraph.nodes.entries()) {
+    if (node.firstObserved.ordinal > node.lastObserved.ordinal) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['occurrenceGraph', 'nodes', index, 'firstObserved', 'ordinal'],
+        message: 'an occurrence node first-observed ordinal cannot follow its last-observed ordinal',
+      });
+    }
+  }
+  for (const [index, edge] of value.occurrenceGraph.edges.entries()) {
+    if (!occurrenceNodeIds.has(edge.sourceNodeId) || !occurrenceNodeIds.has(edge.targetNodeId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceGraph', 'edges', index], message: 'occurrence edges must bind retained occurrence nodes' });
+    }
+  }
+  const occurrenceEdgeIds = new Set(value.occurrenceGraph.edges.map((edge) => edge.id));
+  if (occurrenceEdgeIds.size !== value.occurrenceGraph.edges.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceGraph', 'edges'], message: 'occurrence edge ids must be unique' });
+  }
+  const activeOccurrenceNodeIds = new Set(value.occurrenceGraph.activeNodeIds);
+  if (activeOccurrenceNodeIds.size !== value.occurrenceGraph.activeNodeIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['occurrenceGraph', 'activeNodeIds'],
+      message: 'active occurrence identities must be unique',
+    });
+  }
+  for (const [index, nodeId] of value.occurrenceGraph.activeNodeIds.entries()) {
+    if (!occurrenceNodeIds.has(nodeId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceGraph', 'activeNodeIds', index], message: 'active occurrence identity must bind a retained node' });
+    }
+  }
+  for (const [index, node] of value.occurrenceGraph.nodes.entries()) {
+    const active = activeOccurrenceNodeIds.has(node.id);
+    if ((node.state === 'open') !== active) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['occurrenceGraph', 'nodes', index, 'state'],
+        message: 'active occurrence identities must exactly equal retained nodes whose lifecycle state is open',
+      });
+    }
+  }
+  if (value.occurrenceGraph.lastObservedNodeId !== null
+    && !occurrenceNodeIds.has(value.occurrenceGraph.lastObservedNodeId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceGraph', 'lastObservedNodeId'], message: 'last-observed occurrence identity must bind a retained node' });
+  }
+  if (value.run?.closed === true
+    && value.occurrenceGraph.activeNodeIds.length > 0
+    && value.occurrenceGraph.state !== 'partial') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['occurrenceGraph', 'state'],
+      message: 'a closed run with explicitly open retained children requires a partial occurrence posture',
+    });
+  }
+  if (value.occurrenceGraph.state === 'missing'
+    && (
+      value.occurrenceGraph.nodes.length > 0
+      || value.occurrenceGraph.edges.length > 0
+      || value.occurrenceGraph.activeNodeIds.length > 0
+      || value.occurrenceGraph.lastObservedNodeId !== null
+    )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['occurrenceGraph'],
+      message: 'a missing occurrence plane cannot retain nodes, edges, active identities, or a last-observed identity',
+    });
+  }
+  if (value.occurrenceGraph.state !== 'missing' && value.occurrenceGraph.nodes.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['occurrenceGraph', 'nodes'],
+      message: 'a retained occurrence plane requires at least one exact occurrence node',
+    });
+  }
+  if (value.workspaceObservations.state === 'missing'
+    && (
+      value.workspaceObservations.observations.length > 0
+      || value.workspaceObservations.currentness !== 'unobserved'
+    )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations'],
+      message: 'a missing workspace-observation plane cannot retain rows or a currentness claim',
+    });
+  }
+  if (value.workspaceObservations.state !== 'missing'
+    && value.workspaceObservations.observations.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'observations'],
+      message: 'a retained workspace-observation plane requires at least one exact observation row',
+    });
+  }
+  const workspaceOrdinals = new Set(
+    value.workspaceObservations.observations.map((observation) => observation.ordinal),
+  );
+  if (workspaceOrdinals.size !== value.workspaceObservations.observations.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'observations'],
+      message: 'workspace-observation ordinals must be unique within the retained construction coordinate',
+    });
+  }
+  for (const [index, observation] of value.workspaceObservations.observations.entries()) {
+    const { predecessor, successor, receipt, current } = observation;
+    const workspacePath = ['workspaceObservations', 'observations', index];
+    for (const [snapshotName, snapshot] of [
+      ['predecessor', predecessor],
+      ['successor', successor],
+    ] as const) {
+      const hasExactIdentity = snapshot.observationRef !== null
+        && snapshot.observationDigest !== null
+        && snapshot.subjectRef !== null
+        && snapshot.subjectDigest !== null
+        && snapshot.bindingRef !== null;
+      const hasExactFileState = snapshot.state === 'file'
+        && snapshot.byteLength !== null
+        && snapshot.fileDigest !== null;
+      const hasExactAbsentState = snapshot.state === 'absent'
+        && snapshot.byteLength === null
+        && snapshot.fileDigest === null;
+      if (!hasExactIdentity || (!hasExactFileState && !hasExactAbsentState)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...workspacePath, snapshotName],
+          message: 'a retained workspace snapshot requires exact identity and coherent file or absence facts',
+        });
+      }
+    }
+    if (
+      receipt.receiptRef === null
+      || receipt.receiptDigest === null
+      || receipt.authorizationRef === null
+      || receipt.authorizationDigest === null
+      || receipt.beforeObservationRef === null
+      || receipt.beforeObservationDigest === null
+      || receipt.afterObservationRef === null
+      || receipt.afterObservationDigest === null
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'receipt'],
+        message: 'a retained workspace effect receipt requires exact identity, authorization, and observation facts',
+      });
+    }
+    if (predecessor.subjectRef !== successor.subjectRef
+      || predecessor.subjectDigest !== successor.subjectDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'successor', 'subjectRef'],
+        message: 'workspace O0 and O1 must bind the same subject reference and digest',
+      });
+    }
+    if (predecessor.bindingRef !== successor.bindingRef) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'successor', 'bindingRef'],
+        message: 'workspace O0 and O1 must bind the same workspace identity',
+      });
+    }
+    if (receipt.committed !== true) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'receipt', 'committed'],
+        message: 'a retained workspace effect receipt must be explicitly committed',
+      });
+    }
+    if (receipt.beforeObservationRef !== predecessor.observationRef
+      || receipt.beforeObservationDigest !== predecessor.observationDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'receipt', 'beforeObservationRef'],
+        message: 'a workspace effect receipt must bind the exact O0 reference and digest',
+      });
+    }
+    if (receipt.afterObservationRef !== successor.observationRef
+      || receipt.afterObservationDigest !== successor.observationDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'receipt', 'afterObservationRef'],
+        message: 'a workspace effect receipt must bind the exact O1 reference and digest',
+      });
+    }
+    if (receipt.writtenDigest !== successor.fileDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'receipt', 'writtenDigest'],
+        message: 'a workspace effect receipt written digest must equal the retained O1 file digest',
+      });
+    }
+    if (current.posture === 'matches_retained') {
+      const matchesRetainedFile = successor.state === 'file'
+        && successor.fileDigest !== null
+        && successor.byteLength !== null
+        && current.state === 'present'
+        && current.digest === successor.fileDigest
+        && current.byteLength === successor.byteLength;
+      const matchesRetainedAbsence = successor.state === 'absent'
+        && successor.fileDigest === null
+        && successor.byteLength === null
+        && current.state === 'missing'
+        && current.digest === null
+        && current.byteLength === null;
+      if (!matchesRetainedFile && !matchesRetainedAbsence) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...workspacePath, 'current', 'posture'],
+          message: 'matches-retained currentness requires an exact retained file match or coherent retained absence',
+        });
+      }
+    }
+    const currentHasExactPresentFacts = current.state === 'present'
+      && current.byteLength !== null
+      && current.digest !== null;
+    const currentHasExactNonPresentFacts = current.state !== 'present'
+      && current.byteLength === null
+      && current.digest === null;
+    if (!currentHasExactPresentFacts && !currentHasExactNonPresentFacts) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'current'],
+        message: 'workspace current byte facts must be complete exactly when the subject is present',
+      });
+    }
+    if (current.posture === 'changed') {
+      const changedFromFile = successor.state === 'file'
+        && (
+          current.state === 'missing'
+          || currentHasExactPresentFacts
+            && (current.digest !== successor.fileDigest || current.byteLength !== successor.byteLength)
+        );
+      const changedFromAbsence = successor.state === 'absent' && currentHasExactPresentFacts;
+      if (!changedFromFile && !changedFromAbsence) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...workspacePath, 'current', 'posture'],
+          message: 'changed workspace currentness requires an exact present difference, creation, or deletion',
+        });
+      }
+    }
+    if (current.posture === 'unavailable'
+      && (!['unreadable', 'unobserved'].includes(current.state)
+        || current.byteLength !== null
+        || current.digest !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'current'],
+        message: 'unavailable workspace currentness requires an unreadable or unobserved state without byte facts',
+      });
+    }
+    if (current.state === 'unobserved'
+      && (current.posture !== 'unavailable'
+        || current.byteLength !== null
+        || current.digest !== null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...workspacePath, 'current'],
+        message: 'an unobserved workspace subject cannot carry current byte facts or an observed posture',
+      });
+    }
+  }
+  const currentPostures = value.workspaceObservations.observations.map((row) => row.current.posture);
+  if (value.workspaceObservations.currentness === 'matches_retained_observations'
+    && currentPostures.some((posture) => posture !== 'matches_retained')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'currentness'],
+      message: 'matches-retained workspace currentness requires every retained row to match',
+    });
+  }
+  if (value.workspaceObservations.currentness === 'workspace_changed'
+    && !currentPostures.includes('changed')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'currentness'],
+      message: 'workspace-changed currentness requires at least one changed retained row',
+    });
+  }
+  if (value.workspaceObservations.currentness === 'unobserved'
+    && currentPostures.some((posture) => posture === 'matches_retained' || posture === 'changed')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'currentness'],
+      message: 'unobserved workspace currentness cannot contain observed match or change claims',
+    });
+  }
+  if (value.state === 'ready'
+    && (
+      value.run === null
+      || value.declarationTopology.state !== 'ready'
+      || value.occurrenceGraph.state !== 'ready'
+      || value.workspaceObservations.state !== 'ready'
+    )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['state'],
+      message: 'ready composition requires an exact run and ready declaration, occurrence, and workspace-observation planes',
+    });
+  }
+  const graphRowsTruncated = value.limits.nodesTruncated || value.limits.edgesTruncated;
+  if (value.workspaceObservations.state === 'ready'
+    && value.limits.workspaceObservationsTruncated) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['workspaceObservations', 'state'],
+      message: 'a ready workspace-observation plane cannot carry a workspace truncation receipt',
+    });
+  }
+  if (value.actorSessions.state === 'ready' && value.limits.actorSessionsTruncated) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actorSessions', 'state'],
+      message: 'a ready actor-session plane cannot carry an actor-session truncation receipt',
+    });
+  }
+  const anyProjectionRowsTruncated = graphRowsTruncated
+    || value.limits.workspaceObservationsTruncated
+    || value.limits.actorSessionsTruncated
+    || value.limits.diagnosticsTruncated;
+  if (value.state === 'ready' && anyProjectionRowsTruncated) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['state'],
+      message: 'a ready visual graph composition cannot carry any truncation receipt',
+    });
+  }
+  const hasRetainedPlaneRows = value.declarationTopology.references.length > 0
+    || value.declarationTopology.nodes.length > 0
+    || value.declarationTopology.edges.length > 0
+    || value.occurrenceGraph.nodes.length > 0
+    || value.occurrenceGraph.edges.length > 0
+    || value.occurrenceGraph.activeNodeIds.length > 0
+    || value.occurrenceGraph.lastObservedNodeId !== null
+    || value.workspaceObservations.observations.length > 0
+    || value.actorSessions.sessions.length > 0;
+  if (value.run === null && hasRetainedPlaneRows) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['run'],
+      message: 'retained visual graph rows require one exact run basis',
+    });
+  }
+  if (['missing', 'unsupported', 'invalid'].includes(value.state) && hasRetainedPlaneRows) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['state'],
+      message: 'missing, unsupported, or invalid composition cannot retain visual graph rows',
+    });
+  }
+  const actorSessionIds = new Set(value.actorSessions.sessions.map((session) => session.id));
+  if (actorSessionIds.size !== value.actorSessions.sessions.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['actorSessions', 'sessions'], message: 'actor-session ids must be unique' });
+  }
+  const actorInvocationNodeIdsByAggregateId = new Map<string, string[]>();
+  const processNodeIdsByAggregateId = new Map<string, string[]>();
+  for (const node of value.occurrenceGraph.nodes) {
+    const index = node.aggregateType === 'actor_invocation'
+      ? actorInvocationNodeIdsByAggregateId
+      : node.aggregateType === 'process'
+        ? processNodeIdsByAggregateId
+        : null;
+    if (index === null) continue;
+    const nodeIds = index.get(node.aggregateId) ?? [];
+    nodeIds.push(node.id);
+    index.set(node.aggregateId, nodeIds);
+  }
+  const actorInvocationAggregateIds = new Set(actorInvocationNodeIdsByAggregateId.keys());
+  const processAggregateIds = new Set(processNodeIdsByAggregateId.keys());
+  for (const [index, session] of value.actorSessions.sessions.entries()) {
+    const actorInvocationBound = actorInvocationAggregateIds.has(session.actorInvocationId);
+    if (!actorInvocationBound) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['actorSessions', 'sessions', index, 'actorInvocationId'],
+        message: 'actor-session invocation identity must bind a retained actor-invocation occurrence',
+      });
+    }
+    if (session.processAggregateId !== null) {
+      const processBound = processAggregateIds.has(session.processAggregateId);
+      if (!processBound) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['actorSessions', 'sessions', index, 'processAggregateId'],
+          message: 'actor-session process identity must bind a retained process occurrence',
+        });
+      }
+      if (actorInvocationBound && processBound) {
+        const actorNodeIds = actorInvocationNodeIdsByAggregateId.get(session.actorInvocationId) ?? [];
+        const processNodeIds = processNodeIdsByAggregateId.get(session.processAggregateId) ?? [];
+        const exactParentBinding = actorNodeIds.length === 1
+          && processNodeIds.length === 1
+          && value.occurrenceGraph.edges.some((edge) => (
+            edge.kind === 'aggregate_parent'
+            && edge.sourceNodeId === actorNodeIds[0]
+            && edge.targetNodeId === processNodeIds[0]
+          ));
+        if (!exactParentBinding) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['actorSessions', 'sessions', index, 'processAggregateId'],
+            message: 'actor-session process identity requires its exact actor-invocation to process aggregate-parent edge',
+          });
+        }
+      }
+    }
+  }
+  if (value.actorSessions.state === 'missing'
+    && (value.actorSessions.sessions.length > 0 || value.actorSessions.interactionDisposition !== 'unavailable')) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actorSessions'],
+      message: 'a missing actor-session plane cannot retain sessions or an interaction disposition',
+    });
+  }
+  if (value.actorSessions.state !== 'missing' && value.actorSessions.sessions.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actorSessions', 'sessions'],
+      message: 'a retained actor-session plane requires at least one exact session',
+    });
+  }
+  if (value.actorSessions.interactionDisposition !== 'unavailable'
+    && !value.actorSessions.sessions.some((session) => (
+      session.terminalDisposition === value.actorSessions.interactionDisposition
+    ))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actorSessions', 'interactionDisposition'],
+      message: 'an actor-plane interaction disposition must be carried by an exact retained session',
+    });
+  }
+  if (value.run !== null) {
+    const contract = value.run.eventContract;
+    const issue = (message: string) => context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['run', 'eventContract'],
+      message,
+    });
+    if (contract.publishedDigest === null && contract.bindingPosture !== null) {
+      issue('an unpublished event contract cannot carry a binding posture');
+    }
+    if (contract.publishedDigest !== null && contract.bindingPosture === null) {
+      issue('a published event contract requires an exact binding posture');
+    }
+    if (contract.posture === 'built_in_registry_envelope_validated_unpublished'
+      && (contract.publishedDigest !== null || contract.builtInRegistryDigest === null)) {
+      issue('built-in unpublished posture requires only a built-in registry digest');
+    }
+    if (contract.posture === 'published_contract_distinct_from_builtin_registry'
+      && (
+        contract.publishedDigest === null
+        || contract.builtInRegistryDigest === null
+        || contract.publishedDigest === contract.builtInRegistryDigest
+        || contract.bindingPosture === null
+      )) {
+      issue('distinct published posture requires unequal published and built-in digests plus an exact binding posture');
+    }
+    if ((contract.posture === 'published_contract_registry_kind_conflict'
+      || contract.posture === 'published_contract_matches_builtin_registry')
+      && (
+        contract.publishedDigest === null
+        || contract.builtInRegistryDigest === null
+        || contract.publishedDigest !== contract.builtInRegistryDigest
+      )) {
+      issue('registry match or conflict posture requires equal published and built-in digests');
+    }
+    if (contract.posture === 'legacy_envelope_verified'
+      && (contract.publishedDigest !== null || contract.builtInRegistryDigest !== null)) {
+      issue('legacy envelope posture cannot claim ABIogenesis 5 event-contract digests');
+    }
+    const lifecycleSemanticsUninterpreted = value.run.eventPosture === 'external_contract_uninterpreted'
+      || contract.posture === 'published_contract_distinct_from_builtin_registry'
+      || contract.posture === 'published_contract_registry_kind_conflict';
+    if (contract.posture === 'published_contract_distinct_from_builtin_registry'
+      && value.run.eventPosture !== 'external_contract_uninterpreted') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['run', 'eventPosture'],
+        message: 'a distinct external event contract must remain lifecycle-uninterpreted',
+      });
+    }
+    if (lifecycleSemanticsUninterpreted) {
+      if (value.run.closed) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['run', 'closed'],
+          message: 'an uninterpreted external event contract cannot close the run',
+        });
+      }
+      if (value.occurrenceGraph.activeNodeIds.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['occurrenceGraph', 'activeNodeIds'],
+          message: 'an uninterpreted external event contract cannot identify active occurrences',
+        });
+      }
+      for (const [index, node] of value.occurrenceGraph.nodes.entries()) {
+        if (node.state !== 'unknown') {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['occurrenceGraph', 'nodes', index, 'state'],
+            message: 'occurrence lifecycle state must remain unknown for an uninterpreted external event contract',
+          });
+        }
+      }
+      for (const [index, session] of value.actorSessions.sessions.entries()) {
+        if (session.lifecycleState !== 'unknown') {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['actorSessions', 'sessions', index, 'lifecycleState'],
+            message: 'actor lifecycle state must remain unknown for an uninterpreted external event contract',
+          });
+        }
+        if (session.terminalDisposition !== 'unknown') {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['actorSessions', 'sessions', index, 'terminalDisposition'],
+            message: 'actor terminal disposition must remain unknown for an uninterpreted external event contract',
+          });
+        }
+      }
+    }
+  }
+  const declarationNodeIds = new Set(value.declarationTopology.nodes.map((node) => node.id));
+  if (declarationNodeIds.size !== value.declarationTopology.nodes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['declarationTopology', 'nodes'], message: 'declaration node ids must be unique' });
+  }
+  for (const [index, edge] of value.declarationTopology.edges.entries()) {
+    if (!declarationNodeIds.has(edge.sourceNodeId) || !declarationNodeIds.has(edge.targetNodeId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['declarationTopology', 'edges', index], message: 'declaration edges must bind retained declaration nodes' });
+    }
+  }
+  const declarationEdgeIds = new Set(value.declarationTopology.edges.map((edge) => edge.id));
+  if (declarationEdgeIds.size !== value.declarationTopology.edges.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['declarationTopology', 'edges'], message: 'declaration edge ids must be unique' });
+  }
+  const declaration = value.declarationTopology;
+  if (declaration.state === 'ready'
+    && (declaration.reason !== 'published_bodies_admitted' || declaration.nodes.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['declarationTopology'],
+      message: 'ready declaration topology requires admitted published bodies and at least one retained node',
+    });
+  }
+  if (declaration.state === 'partial'
+    && (
+      declaration.reason !== 'references_without_bodies'
+      || declaration.references.length === 0
+      || declaration.nodes.length > 0
+      || declaration.edges.length > 0
+    )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['declarationTopology'],
+      message: 'partial declaration topology is references without bodies and cannot retain declaration nodes or edges',
+    });
+  }
+  if (declaration.state === 'missing'
+    && (
+      declaration.reason !== 'no_declaration_carrier'
+      || declaration.references.length > 0
+      || declaration.nodes.length > 0
+      || declaration.edges.length > 0
+    )) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['declarationTopology'],
+      message: 'missing declaration topology cannot retain declaration references, nodes, or edges',
+    });
+  }
+});
+
 export type ProjectRef = z.infer<typeof projectRefSchema>;
 export type ProjectRevision = z.infer<typeof projectRevisionSchema>;
 export type ManagerContext = z.infer<typeof managerContextSchema>;
@@ -1453,3 +2307,4 @@ export type AssuranceCatalogAdmission = z.infer<typeof assuranceCatalogAdmission
 export type AssuranceSummary = z.infer<typeof assuranceSummarySchema>;
 export type AssuranceSnapshot = z.infer<typeof assuranceSnapshotSchema>;
 export type AssuranceLoadRequest = z.infer<typeof assuranceLoadRequestSchema>;
+export type VisualGraphProjection = z.infer<typeof visualGraphProjectionSchema>;

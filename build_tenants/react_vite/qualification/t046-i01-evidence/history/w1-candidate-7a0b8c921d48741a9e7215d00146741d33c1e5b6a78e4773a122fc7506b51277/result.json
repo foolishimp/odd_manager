@@ -1,0 +1,45 @@
+{
+  "kind": "t046_i01_installed_proof",
+  "status": "passed",
+  "candidateDigest": "7a0b8c921d48741a9e7215d00146741d33c1e5b6a78e4773a122fc7506b51277",
+  "candidateMembers": 715,
+  "methodBasis": "stdo://releases/v2.5.1-rc.1/",
+  "manifestSha256": "5d306da13994e69aa9f215d4c1cd2d0be96283c1e33a652b58e6e9262d036b64",
+  "subjects": [
+    {
+      "key": "s6-live05",
+      "run": {
+        "digest": "sha256:3f7c6d8acbcc81a18c60d50dd72db18258de002539a780e991991420ce46d617",
+        "ref": "run://abiogenesis/f02822f75c7662a3f4c9311a1731e2b86e369009e437b984e6fc635ac5d30c61"
+      },
+      "status": "closed",
+      "physicalRecordCount": 26582
+    },
+    {
+      "key": "s7-source",
+      "run": {
+        "digest": "sha256:3426633ea33683d9ce5c11e2676e7cc46110f2b451638c18e46d68b216e5f693",
+        "ref": "run://abiogenesis/f61e015d1da8c85836bf1cbeeb842f53b04c83203795cf14ef198fcca32365a2"
+      },
+      "status": "blocked",
+      "physicalRecordCount": 2318
+    },
+    {
+      "key": "s7-fresh",
+      "run": {
+        "digest": "sha256:d17d822ce328ac9f2b2a3059befcd48f2d6bb2f59e712e8990d0ca7eb0b4c2e3",
+        "ref": "run://abiogenesis/ca86ec01f8b6eb5aaca91e7bf93adb03c01382b56a04ffc6a882dd1812b3b7e3"
+      },
+      "status": "closed",
+      "physicalRecordCount": 4485
+    }
+  ],
+  "browser": {
+    "startTime": "2026-09-29T05:43:20.397Z",
+    "duration": 8240.889,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

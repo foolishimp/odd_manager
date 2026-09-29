@@ -4,13 +4,30 @@ import type { SessionRecord, SessionSurfaceDiagnostic } from '../../contracts/se
 import type { ProjectRecord } from '../../contracts/project';
 import type { RunInspectorFocus } from '../../lib/projectDeepLink';
 import type { AiWorkspaceObservation } from '../../contracts/ai-workspace-observation';
-import type { AbgRunObservation, AbgRunSection } from '../../contracts/abg-run-observation';
+import type {
+  AbgEventDetail,
+  AbgEventPage,
+  AbgRunObservation,
+  AbgRunSection,
+} from '../../contracts/abg-run-observation';
 import type {
   TraversalProjection,
   TraversalVectorDetail,
   TraversalVectorVariant,
 } from '../../contracts/traversal';
 import type { SurfaceData } from '../../lib/types';
+import type { VisualGraphProjection } from '@odd-manager/developer-control-contracts';
+/* Feature-owned runtime helpers keep reducer and visual semantics aligned. */
+import {
+  clampVisualGraphZoom,
+  createInitialVisualGraphState,
+  selectedVisualGraphNodeStillExists,
+  type SidecarVisualGraphState,
+  type VisualGraphMode,
+  type VisualGraphOverlay,
+  type VisualGraphPlane,
+  type VisualGraphSelectedNode,
+} from './visual-graph/state';
 
 export interface ContextRecord {
   project: { id: string; root: string; odd_type: string };
@@ -384,35 +401,59 @@ export const SIDECAR_TRAVERSAL_DETAIL_CACHE_LIMIT = 8;
 export interface SidecarTraversalState {
   status: SidecarTraversalStatus;
   runStatus: SidecarTraversalStatus;
+  runObservationRequestEpoch: number | null;
+  nextRunObservationRequestEpoch: number;
+  traversalSummaryRequestEpoch: number | null;
+  nextTraversalSummaryRequestEpoch: number;
   workspaceRoot: string | null;
   requestedRunId: string | null;
   selectedRunId: string | null;
   section: AbgRunSection;
   runObservation: AbgRunObservation | null;
   runError: string | null;
+  eventPageStatus: SidecarTraversalStatus;
+  eventPage: AbgEventPage | null;
+  eventPageError: string | null;
+  selectedEventOrdinal: number | null;
+  eventDetailStatus: SidecarTraversalStatus;
+  eventDetail: AbgEventDetail | null;
+  eventDetailError: string | null;
   summary: TraversalProjection | null;
   error: string | null;
   selectedVector: SidecarTraversalSelectedVector | null;
   detailStatus: SidecarTraversalStatus;
   detailError: string | null;
   details: SidecarTraversalDetailEntry[];
+  visualGraph: SidecarVisualGraphState;
 }
 
 export const INITIAL_SIDECAR_TRAVERSAL_STATE: SidecarTraversalState = Object.freeze({
   status: 'idle' as const,
   runStatus: 'idle' as const,
+  runObservationRequestEpoch: null,
+  nextRunObservationRequestEpoch: 1,
+  traversalSummaryRequestEpoch: null,
+  nextTraversalSummaryRequestEpoch: 1,
   workspaceRoot: null,
   requestedRunId: null,
   selectedRunId: null,
   section: 'overview' as const,
   runObservation: null,
   runError: null,
+  eventPageStatus: 'idle' as const,
+  eventPage: null,
+  eventPageError: null,
+  selectedEventOrdinal: null,
+  eventDetailStatus: 'idle' as const,
+  eventDetail: null,
+  eventDetailError: null,
   summary: null,
   error: null,
   selectedVector: null,
   detailStatus: 'idle' as const,
   detailError: null,
   details: Object.freeze([]) as unknown as SidecarTraversalDetailEntry[],
+  visualGraph: createInitialVisualGraphState(),
 });
 
 export function traversalDetailKey(index: number, variant: TraversalVectorVariant, attempt: number | null, runId: string | null = null) {
@@ -596,12 +637,43 @@ export type SidecarMsg =
   | { type: 'session/kill/request'; id: string }
   | { type: 'traversal/load'; workspaceRoot?: string | null; runId?: string | null; refresh?: boolean }
   | { type: 'run/focus-admitted'; focus: RunInspectorFocus | null }
-  | { type: 'traversal/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; summary: TraversalProjection }
-  | { type: 'traversal/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; error: string }
-  | { type: 'run/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; observation: AbgRunObservation }
-  | { type: 'run/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; error: string }
+  | { type: 'traversal/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; requestEpoch: number; summary: TraversalProjection }
+  | { type: 'traversal/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; requestEpoch: number; error: string }
+  | { type: 'run/load-succeeded'; workspaceRoot: string | null; requestedRunId: string | null; requestEpoch: number; observation: AbgRunObservation }
+  | { type: 'run/load-failed'; workspaceRoot: string | null; requestedRunId: string | null; requestEpoch: number; error: string }
   | { type: 'run/select'; runId: string }
   | { type: 'run/select-section'; section: AbgRunSection }
+  | { type: 'run/event-page-request'; start: number }
+  | { type: 'run/event-page-succeeded'; workspaceRoot: string | null; runId: string | null; generation: string; page: AbgEventPage }
+  | { type: 'run/event-page-failed'; workspaceRoot: string | null; runId: string | null; generation: string; error: string }
+  | { type: 'run/event-detail-request'; ordinal: number }
+  | { type: 'run/event-detail-succeeded'; workspaceRoot: string | null; runId: string | null; generation: string; detail: AbgEventDetail }
+  | { type: 'run/event-detail-failed'; workspaceRoot: string | null; runId: string | null; generation: string; ordinal: number; error: string }
+  | { type: 'visual-graph/retry' }
+  | {
+      type: 'visual-graph/load-succeeded';
+      projectRoot: string;
+      runId: string;
+      generation: string;
+      requestId: number;
+      projection: VisualGraphProjection;
+    }
+  | {
+      type: 'visual-graph/load-failed';
+      projectRoot: string;
+      runId: string;
+      generation: string;
+      requestId: number;
+      error: string;
+    }
+  | { type: 'visual-graph/select-node'; selection: VisualGraphSelectedNode | null }
+  | { type: 'visual-graph/open-detail'; selection: VisualGraphSelectedNode }
+  | { type: 'visual-graph/close-detail' }
+  | { type: 'visual-graph/detail-focus-restored'; requestId: number }
+  | { type: 'visual-graph/set-plane'; plane: VisualGraphPlane }
+  | { type: 'visual-graph/set-mode'; mode: VisualGraphMode }
+  | { type: 'visual-graph/set-zoom'; zoom: number }
+  | { type: 'visual-graph/set-overlay'; overlay: VisualGraphOverlay; visible: boolean }
   | { type: 'traversal/select-vector'; index: number; variant?: TraversalVectorVariant; attempt?: number | null }
   | {
       type: 'traversal/vector-succeeded';
@@ -633,6 +705,69 @@ export type SidecarMsg =
     }
   | { type: 'action/feedback'; ok: boolean; message?: string; error?: string };
 
+type RunObservationResultMsg = Extract<
+  SidecarMsg,
+  { type: 'run/load-succeeded' | 'run/load-failed' }
+>;
+
+function runObservationSelectionIsInternallyBound(observation: AbgRunObservation) {
+  const selectedRunId = observation.selectedRunId ?? null;
+  if (selectedRunId === null) {
+    return observation.selectedRunKey === null
+      && observation.selectedRunRoot === null
+      && observation.selectedWorkspaceRoot === null;
+  }
+  const matches = observation.runs.filter((run) => run.runId === selectedRunId);
+  if (matches.length !== 1) return false;
+  const selected = matches[0];
+  return observation.selectedRunKey === selected.runKey
+    && observation.selectedRunRoot === selected.runRoot
+    && observation.selectedWorkspaceRoot === selected.workspaceRoot;
+}
+
+export function runObservationResultMessage(
+  workspaceRoot: string | null,
+  requestedRunId: string | null,
+  requestEpoch: number,
+  observation: AbgRunObservation,
+): RunObservationResultMsg {
+  const failed = (error: string): RunObservationResultMsg => ({
+    type: 'run/load-failed',
+    workspaceRoot,
+    requestedRunId,
+    requestEpoch,
+    error,
+  });
+  if (observation.projectRoot !== workspaceRoot) {
+    return failed('Run observation response Project identity did not match the requested Project.');
+  }
+  const selectedRunId = observation.selectedRunId ?? null;
+  const sourceDiagnostic = observation.diagnostics.find((entry) => entry.severity === 'error')
+    ?? observation.diagnostics[0];
+  if (!runObservationSelectionIsInternallyBound(observation)) {
+    return failed('Run observation response selected identity did not match one exact admitted Run candidate.');
+  }
+  if (selectedRunId !== requestedRunId) {
+    if (requestedRunId !== null && selectedRunId === null && sourceDiagnostic) {
+      return failed(sourceDiagnostic.message);
+    }
+    return failed(requestedRunId === null
+      ? 'Run discovery response inferred a selected Run that was not requested.'
+      : `Run observation response did not retain the requested Run ${requestedRunId}.`);
+  }
+  if (observation.state === 'error' || (requestedRunId !== null && observation.state !== 'ready')) {
+    return failed(sourceDiagnostic?.message
+      ?? `Requested Run ${requestedRunId} is ${observation.state}.`);
+  }
+  return {
+    type: 'run/load-succeeded',
+    workspaceRoot,
+    requestedRunId,
+    requestEpoch,
+    observation,
+  };
+}
+
 export type SidecarCmd =
   | { type: 'load'; projectRoot: string | null; reason: SidecarLoadReason }
   | { type: 'context.publish'; context: ContextRecord }
@@ -654,8 +789,11 @@ export type SidecarCmd =
       existingSessionIds: string[];
     }
   | { type: 'session.kill'; id: string; context: ContextRecord }
-  | { type: 'traversal.loadSummary'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
-  | { type: 'run.loadObservation'; workspaceRoot: string | null; runId: string | null; refresh: boolean }
+  | { type: 'traversal.loadSummary'; workspaceRoot: string | null; runId: string | null; refresh: boolean; requestEpoch: number }
+  | { type: 'run.loadObservation'; workspaceRoot: string | null; runId: string | null; refresh: boolean; requestEpoch: number }
+  | { type: 'visualGraph.load'; projectRoot: string; runId: string; generation: string; requestId: number }
+  | { type: 'run.loadEventPage'; workspaceRoot: string | null; runId: string | null; generation: string; start: number; limit: number }
+  | { type: 'run.loadEventDetail'; workspaceRoot: string | null; runId: string | null; generation: string; ordinal: number }
   | {
       type: 'traversal.loadVectorDetail';
       workspaceRoot: string | null;
@@ -690,7 +828,11 @@ export const INITIAL_SIDECAR_STATE: SidecarState = {
   comments: [],
   sessions: { records: [], diagnostic: null },
   aiWorkspaceObservation: null,
-  traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] },
+  traversal: {
+    ...INITIAL_SIDECAR_TRAVERSAL_STATE,
+    details: [],
+    visualGraph: createInitialVisualGraphState(),
+  },
   runFocus: null,
   ticketBoard: { ...INITIAL_SIDECAR_TICKET_BOARD_STATE },
   selection: { kind: null, id: null },
@@ -978,6 +1120,128 @@ function traversalCacheHasKey(traversal: SidecarTraversalState, key: string) {
   return traversal.details.some((entry) => entry.key === key);
 }
 
+function resetVisualGraphState(current: SidecarVisualGraphState) {
+  return {
+    ...createInitialVisualGraphState({
+      plane: current.plane,
+      mode: current.mode,
+      zoom: current.zoom,
+      overlayVisibility: current.overlayVisibility,
+    }),
+    nextRequestId: current.nextRequestId,
+  };
+}
+
+function retainedTraversalRequestEpochs(current: SidecarTraversalState) {
+  return {
+    runObservationRequestEpoch: null,
+    nextRunObservationRequestEpoch: current.nextRunObservationRequestEpoch,
+    traversalSummaryRequestEpoch: null,
+    nextTraversalSummaryRequestEpoch: current.nextTraversalSummaryRequestEpoch,
+  };
+}
+
+function beginVisualGraphLoad(
+  current: SidecarVisualGraphState,
+  basis: Omit<NonNullable<SidecarVisualGraphState['basis']>, 'requestId'>,
+) {
+  const requestId = current.nextRequestId;
+  const sameRun = current.basis?.projectRoot === basis.projectRoot
+    && current.basis.runId === basis.runId;
+  return {
+    ...current,
+    status: 'loading' as const,
+    refreshSource: 'projection' as const,
+    basis: { ...basis, requestId },
+    nextRequestId: requestId + 1,
+    projection: sameRun ? current.projection : null,
+    error: null,
+    selectedNode: sameRun ? current.selectedNode : null,
+    detail: sameRun
+      ? current.detail
+      : createInitialVisualGraphState().detail,
+  };
+}
+
+function beginRunObservationRefresh(current: SidecarVisualGraphState) {
+  if (!current.projection) return current;
+  return {
+    ...current,
+    status: 'loading' as const,
+    refreshSource: 'run_observation' as const,
+    error: null,
+  };
+}
+
+function failRunObservationRefresh(current: SidecarVisualGraphState, error: string) {
+  if (!current.projection) return current;
+  return {
+    ...current,
+    status: 'error' as const,
+    refreshSource: 'run_observation' as const,
+    error,
+  };
+}
+
+function visualGraphBasisFromRunObservation(
+  state: SidecarState,
+  msg: Extract<SidecarMsg, { type: 'run/load-succeeded' }>,
+) {
+  if (
+    msg.requestEpoch !== state.traversal.runObservationRequestEpoch
+    || msg.workspaceRoot === null
+    || msg.workspaceRoot !== state.traversal.workspaceRoot
+    || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId
+    || msg.observation.state !== 'ready'
+    || msg.observation.projectRoot !== msg.workspaceRoot
+    || !runObservationSelectionIsInternallyBound(msg.observation)
+    || (msg.observation.selectedRunId ?? null) !== (msg.requestedRunId ?? null)
+  ) return null;
+  const runId = msg.observation.selectedRunId;
+  const generation = msg.observation.carrierSnapshot?.generation ?? null;
+  if (
+    runId === null
+    || generation === null
+    || !msg.observation.runs.some((run) => run.runId === runId)
+  ) return null;
+  return { projectRoot: msg.workspaceRoot, runId, generation };
+}
+
+function currentVisualGraphRetryBasis(state: SidecarState) {
+  if (state.traversal.visualGraph.refreshSource === 'run_observation') return null;
+  const observation = state.traversal.runObservation;
+  const projectRoot = state.traversal.workspaceRoot;
+  const runId = state.traversal.selectedRunId;
+  const generation = observation?.carrierSnapshot?.generation ?? null;
+  if (
+    projectRoot === null
+    || runId === null
+    || generation === null
+    || observation?.state !== 'ready'
+    || observation.projectRoot !== projectRoot
+    || observation.selectedRunId !== runId
+  ) return null;
+  return { projectRoot, runId, generation };
+}
+
+function visualGraphResponseMatchesCurrentBasis(
+  state: SidecarState,
+  message: Extract<SidecarMsg, { type: 'visual-graph/load-succeeded' | 'visual-graph/load-failed' }>,
+) {
+  const basis = state.traversal.visualGraph.basis;
+  const observation = state.traversal.runObservation;
+  return basis !== null
+    && basis.projectRoot === message.projectRoot
+    && basis.runId === message.runId
+    && basis.generation === message.generation
+    && basis.requestId === message.requestId
+    && state.traversal.workspaceRoot === message.projectRoot
+    && state.traversal.selectedRunId === message.runId
+    && observation?.projectRoot === message.projectRoot
+    && observation.selectedRunId === message.runId
+    && observation.carrierSnapshot?.generation === message.generation;
+}
+
 // Bounded FIFO detail cache: dedupe by key, append newest, evict oldest
 // beyond SIDECAR_TRAVERSAL_DETAIL_CACHE_LIMIT.
 function appendTraversalDetail(
@@ -1013,7 +1277,12 @@ function reconciledTicketBoardState(
 
 function reconciledTraversalState(traversal: SidecarTraversalState, workspaceRoot: string | null): SidecarTraversalState {
   if (traversal.workspaceRoot === null || traversal.workspaceRoot === workspaceRoot) return traversal;
-  return { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] };
+  return {
+    ...INITIAL_SIDECAR_TRAVERSAL_STATE,
+    details: [],
+    ...retainedTraversalRequestEpochs(traversal),
+    visualGraph: resetVisualGraphState(traversal.visualGraph),
+  };
 }
 
 function firstLiveSessionId(sessions: SessionRecord[]) {
@@ -2093,7 +2362,12 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             pathHistory: [],
             aiWorkspaceObservation: null,
             unreadIds: [],
-            traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] },
+            traversal: {
+              ...INITIAL_SIDECAR_TRAVERSAL_STATE,
+              details: [],
+              ...retainedTraversalRequestEpochs(state.traversal),
+              visualGraph: resetVisualGraphState(state.traversal.visualGraph),
+            },
             runFocus: null,
             ticketBoard: { ...INITIAL_SIDECAR_TICKET_BOARD_STATE },
             selection: { kind: null, id: null },
@@ -2945,6 +3219,8 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
     case 'traversal/load': {
       const workspaceRoot = traversalRequestedRoot(state, msg);
       const requestedRunId = traversalRequestedRunId(state, msg);
+      const runObservationRequestEpoch = state.traversal.nextRunObservationRequestEpoch;
+      const traversalSummaryRequestEpoch = state.traversal.nextTraversalSummaryRequestEpoch;
       if (workspaceRoot !== state.traversal.workspaceRoot || requestedRunId !== state.traversal.requestedRunId) {
         return {
           ...state,
@@ -2953,20 +3229,42 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
             details: [],
             status: 'loading',
             runStatus: 'loading',
+            runObservationRequestEpoch,
+            nextRunObservationRequestEpoch: runObservationRequestEpoch + 1,
+            traversalSummaryRequestEpoch,
+            nextTraversalSummaryRequestEpoch: traversalSummaryRequestEpoch + 1,
             workspaceRoot,
             requestedRunId,
             selectedRunId: requestedRunId,
             section: workspaceRoot === state.traversal.workspaceRoot ? state.traversal.section : 'overview',
+            visualGraph: resetVisualGraphState(state.traversal.visualGraph),
           },
         };
       }
       return {
         ...state,
-        traversal: { ...state.traversal, status: 'loading', runStatus: 'loading', error: null, runError: null },
+        traversal: {
+          ...state.traversal,
+          status: 'loading',
+          runStatus: 'loading',
+          runObservationRequestEpoch,
+          nextRunObservationRequestEpoch: runObservationRequestEpoch + 1,
+          traversalSummaryRequestEpoch,
+          nextTraversalSummaryRequestEpoch: traversalSummaryRequestEpoch + 1,
+          error: null,
+          runError: null,
+          visualGraph: beginRunObservationRefresh(state.traversal.visualGraph),
+        },
       };
     }
     case 'traversal/load-succeeded':
-      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
+      if (
+        msg.requestEpoch !== state.traversal.traversalSummaryRequestEpoch
+        || msg.workspaceRoot !== state.traversal.workspaceRoot
+        || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId
+        || msg.summary.workspaceRoot !== msg.workspaceRoot
+        || (msg.summary.runId ?? null) !== (msg.requestedRunId ?? null)
+      ) return state;
       {
         const details = state.traversal.details.filter((entry) => !entry.key.endsWith(':latest'));
         const selectedVector = state.traversal.selectedVector?.attempt === null ? null : state.traversal.selectedVector;
@@ -2975,6 +3273,7 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
           traversal: {
             ...state.traversal,
             status: 'ready',
+            traversalSummaryRequestEpoch: null,
             summary: msg.summary,
             selectedRunId: msg.summary.runId ?? state.traversal.selectedRunId,
             selectedVector,
@@ -2986,50 +3285,396 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
         };
       }
     case 'traversal/load-failed':
-      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
-      return {
-        ...state,
-        traversal: { ...state.traversal, status: 'error', error: msg.error },
-      };
-    case 'run/load-succeeded':
-      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
+      if (
+        msg.requestEpoch !== state.traversal.traversalSummaryRequestEpoch
+        || msg.workspaceRoot !== state.traversal.workspaceRoot
+        || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId
+      ) return state;
       return {
         ...state,
         traversal: {
           ...state.traversal,
-          runStatus: 'ready',
-          runObservation: msg.observation,
-          selectedRunId: msg.observation.selectedRunId ?? state.traversal.selectedRunId,
-          runError: null,
+          status: 'error',
+          traversalSummaryRequestEpoch: null,
+          error: msg.error,
         },
       };
+    case 'run/load-succeeded':
+      if (
+        msg.requestEpoch !== state.traversal.runObservationRequestEpoch
+        || msg.workspaceRoot !== state.traversal.workspaceRoot
+        || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId
+        || msg.observation.projectRoot !== msg.workspaceRoot
+        || !runObservationSelectionIsInternallyBound(msg.observation)
+        || (msg.observation.selectedRunId ?? null) !== (msg.requestedRunId ?? null)
+      ) return state;
+      {
+        if (msg.observation.state === 'error' && state.traversal.runObservation?.state === 'ready') {
+          const sourceFailure = msg.observation.diagnostics.find((entry) => entry.severity === 'error');
+          const error = sourceFailure?.message ?? 'Run observation refresh failed; the last admitted snapshot is retained.';
+          return {
+            ...state,
+            traversal: {
+              ...state.traversal,
+              runStatus: 'error',
+              runObservationRequestEpoch: null,
+              runError: error,
+              visualGraph: failRunObservationRefresh(state.traversal.visualGraph, error),
+            },
+          };
+        }
+        const generation = msg.observation.carrierSnapshot?.generation ?? null;
+        const retainDetail = generation !== null && state.traversal.eventDetail?.generation === generation;
+        const visualBasis = visualGraphBasisFromRunObservation(state, msg);
+        return {
+          ...state,
+          traversal: {
+            ...state.traversal,
+            runStatus: 'ready',
+            runObservationRequestEpoch: null,
+            runObservation: msg.observation,
+            selectedRunId: msg.observation.selectedRunId ?? state.traversal.selectedRunId,
+            runError: null,
+            eventPageStatus: msg.observation.eventPage ? 'ready' : 'idle',
+            eventPage: msg.observation.eventPage,
+            eventPageError: null,
+            selectedEventOrdinal: retainDetail ? state.traversal.selectedEventOrdinal : null,
+            eventDetailStatus: retainDetail ? state.traversal.eventDetailStatus : 'idle',
+            eventDetail: retainDetail ? state.traversal.eventDetail : null,
+            eventDetailError: retainDetail ? state.traversal.eventDetailError : null,
+            visualGraph: visualBasis
+              ? beginVisualGraphLoad(state.traversal.visualGraph, visualBasis)
+              : resetVisualGraphState(state.traversal.visualGraph),
+          },
+        };
+      }
     case 'run/load-failed':
-      if (msg.workspaceRoot !== state.traversal.workspaceRoot || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId) return state;
+      if (
+        msg.requestEpoch !== state.traversal.runObservationRequestEpoch
+        || msg.workspaceRoot !== state.traversal.workspaceRoot
+        || (msg.requestedRunId ?? null) !== state.traversal.requestedRunId
+      ) return state;
       return {
         ...state,
-        traversal: { ...state.traversal, runStatus: 'error', runError: msg.error },
+        traversal: {
+          ...state.traversal,
+          runStatus: 'error',
+          runObservationRequestEpoch: null,
+          runError: msg.error,
+          visualGraph: failRunObservationRefresh(state.traversal.visualGraph, msg.error),
+        },
       };
     case 'run/select':
       if (!state.traversal.runObservation?.runs.some((run) => run.runId === msg.runId)) return state;
+      {
+        const runObservationRequestEpoch = state.traversal.nextRunObservationRequestEpoch;
+        const traversalSummaryRequestEpoch = state.traversal.nextTraversalSummaryRequestEpoch;
       return {
         ...state,
         traversal: {
           ...state.traversal,
           status: 'loading',
           runStatus: 'loading',
+          runObservationRequestEpoch,
+          nextRunObservationRequestEpoch: runObservationRequestEpoch + 1,
+          traversalSummaryRequestEpoch,
+          nextTraversalSummaryRequestEpoch: traversalSummaryRequestEpoch + 1,
           requestedRunId: msg.runId,
           selectedRunId: msg.runId,
           summary: null,
           error: null,
           runError: null,
+          eventPageStatus: 'idle',
+          eventPage: null,
+          eventPageError: null,
+          selectedEventOrdinal: null,
+          eventDetailStatus: 'idle',
+          eventDetail: null,
+          eventDetailError: null,
           selectedVector: null,
           detailStatus: 'idle',
           detailError: null,
           details: [],
+          visualGraph: resetVisualGraphState(state.traversal.visualGraph),
         },
       };
+      }
     case 'run/select-section':
       return { ...state, traversal: { ...state.traversal, section: msg.section } };
+    case 'run/event-page-request':
+      if (!state.traversal.runObservation?.carrierSnapshot || !Number.isInteger(msg.start) || msg.start < 0) return state;
+      return {
+        ...state,
+        traversal: { ...state.traversal, eventPageStatus: 'loading', eventPageError: null },
+      };
+    case 'run/event-page-succeeded':
+      if (
+        msg.workspaceRoot !== state.traversal.workspaceRoot
+        || msg.runId !== state.traversal.selectedRunId
+        || msg.generation !== state.traversal.runObservation?.carrierSnapshot?.generation
+        || msg.page.generation !== msg.generation
+      ) return state;
+      return {
+        ...state,
+        traversal: { ...state.traversal, eventPageStatus: 'ready', eventPage: msg.page, eventPageError: null },
+      };
+    case 'run/event-page-failed':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || msg.runId !== state.traversal.selectedRunId || msg.generation !== state.traversal.runObservation?.carrierSnapshot?.generation) return state;
+      return { ...state, traversal: { ...state.traversal, eventPageStatus: 'error', eventPageError: msg.error } };
+    case 'run/event-detail-request':
+      if (!state.traversal.runObservation?.carrierSnapshot || !Number.isInteger(msg.ordinal) || msg.ordinal < 0) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          selectedEventOrdinal: msg.ordinal,
+          eventDetailStatus: 'loading',
+          eventDetail: null,
+          eventDetailError: null,
+        },
+      };
+    case 'run/event-detail-succeeded':
+      if (
+        msg.workspaceRoot !== state.traversal.workspaceRoot
+        || msg.runId !== state.traversal.selectedRunId
+        || msg.generation !== state.traversal.runObservation?.carrierSnapshot?.generation
+        || msg.detail.generation !== msg.generation
+        || msg.detail.ordinal !== state.traversal.selectedEventOrdinal
+      ) return state;
+      return { ...state, traversal: { ...state.traversal, eventDetailStatus: 'ready', eventDetail: msg.detail, eventDetailError: null } };
+    case 'run/event-detail-failed':
+      if (msg.workspaceRoot !== state.traversal.workspaceRoot || msg.runId !== state.traversal.selectedRunId || msg.generation !== state.traversal.runObservation?.carrierSnapshot?.generation || msg.ordinal !== state.traversal.selectedEventOrdinal) return state;
+      return { ...state, traversal: { ...state.traversal, eventDetailStatus: 'error', eventDetailError: msg.error } };
+    case 'visual-graph/retry': {
+      const basis = currentVisualGraphRetryBasis(state);
+      if (!basis) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: beginVisualGraphLoad(state.traversal.visualGraph, basis),
+        },
+      };
+    }
+    case 'visual-graph/load-succeeded':
+      if (
+        !visualGraphResponseMatchesCurrentBasis(state, msg)
+        || msg.projection.run?.runId !== msg.runId
+        || msg.projection.run.eventGeneration !== msg.generation
+      ) return state;
+      {
+        const selectedNode = selectedVisualGraphNodeStillExists(
+          state.traversal.visualGraph.selectedNode,
+          msg.projection,
+        );
+        const detail = selectedNode && state.traversal.visualGraph.detail.open
+          ? {
+              ...state.traversal.visualGraph.detail,
+              returnFocus: selectedNode,
+              focusRestorePending: false,
+            }
+          : {
+              ...state.traversal.visualGraph.detail,
+              open: false,
+              returnFocus: selectedNode,
+              focusRestorePending: false,
+            };
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            status: 'ready',
+            refreshSource: null,
+            projection: msg.projection,
+            error: null,
+            selectedNode,
+            detail,
+          },
+        },
+      };
+      }
+    case 'visual-graph/load-failed':
+      if (!visualGraphResponseMatchesCurrentBasis(state, msg)) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            status: 'error',
+            refreshSource: 'projection',
+            error: msg.error,
+          },
+        },
+      };
+    case 'visual-graph/select-node': {
+      const projection = state.traversal.visualGraph.projection;
+      const selection = projection
+        ? selectedVisualGraphNodeStillExists(msg.selection, projection)
+        : null;
+      if (
+        selection === state.traversal.visualGraph.selectedNode
+        && !state.traversal.visualGraph.detail.open
+        && !state.traversal.visualGraph.detail.focusRestorePending
+      ) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            selectedNode: selection,
+            detail: {
+              ...state.traversal.visualGraph.detail,
+              open: false,
+              returnFocus: selection,
+              focusRestorePending: false,
+            },
+          },
+        },
+      };
+    }
+    case 'visual-graph/open-detail': {
+      const projection = state.traversal.visualGraph.projection;
+      const selection = projection
+        ? selectedVisualGraphNodeStillExists(msg.selection, projection)
+        : null;
+      if (!selection) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            plane: selection.plane,
+            selectedNode: selection,
+            detail: {
+              ...state.traversal.visualGraph.detail,
+              open: true,
+              returnFocus: selection,
+              focusRestorePending: false,
+            },
+          },
+        },
+      };
+    }
+    case 'visual-graph/close-detail': {
+      const detail = state.traversal.visualGraph.detail;
+      if (!detail.open) return state;
+      const returnFocus = state.traversal.visualGraph.projection
+        ? selectedVisualGraphNodeStillExists(detail.returnFocus, state.traversal.visualGraph.projection)
+        : null;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            detail: {
+              ...detail,
+              open: false,
+              returnFocus,
+              focusRestorePending: returnFocus !== null,
+              focusRestoreRequestId: detail.focusRestoreRequestId + 1,
+            },
+          },
+        },
+      };
+    }
+    case 'visual-graph/detail-focus-restored': {
+      const detail = state.traversal.visualGraph.detail;
+      if (!detail.focusRestorePending || detail.focusRestoreRequestId !== msg.requestId) return state;
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            detail: { ...detail, focusRestorePending: false },
+          },
+        },
+      };
+    }
+    case 'visual-graph/set-plane':
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            plane: msg.plane,
+            selectedNode: state.traversal.visualGraph.selectedNode?.plane === msg.plane
+              ? state.traversal.visualGraph.selectedNode
+              : null,
+            detail: {
+              ...state.traversal.visualGraph.detail,
+              open: false,
+              returnFocus: null,
+              focusRestorePending: false,
+            },
+          },
+        },
+      };
+    case 'visual-graph/set-mode':
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            mode: msg.mode,
+            detail: {
+              ...state.traversal.visualGraph.detail,
+              open: false,
+              focusRestorePending: false,
+            },
+          },
+        },
+      };
+    case 'visual-graph/set-zoom':
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            zoom: clampVisualGraphZoom(msg.zoom),
+          },
+        },
+      };
+    case 'visual-graph/set-overlay':
+      return {
+        ...state,
+        traversal: {
+          ...state.traversal,
+          visualGraph: {
+            ...state.traversal.visualGraph,
+            selectedNode: msg.overlay === 'product-overlays'
+              && !msg.visible
+              && state.traversal.visualGraph.selectedNode?.plane === 'declaration'
+              && state.traversal.visualGraph.selectedNode.kind === 'overlay'
+              ? null
+              : state.traversal.visualGraph.selectedNode,
+            detail: msg.overlay === 'product-overlays'
+              && !msg.visible
+              && state.traversal.visualGraph.selectedNode?.plane === 'declaration'
+              && state.traversal.visualGraph.selectedNode.kind === 'overlay'
+              ? {
+                  ...state.traversal.visualGraph.detail,
+                  open: false,
+                  returnFocus: null,
+                  focusRestorePending: false,
+                }
+              : state.traversal.visualGraph.detail,
+            overlayVisibility: {
+              ...state.traversal.visualGraph.overlayVisibility,
+              [msg.overlay]: msg.visible,
+            },
+          },
+        },
+      };
     case 'traversal/select-vector': {
       const selectedVector = normalizedTraversalSelection(msg);
       const key = traversalDetailKey(selectedVector.index, selectedVector.variant, selectedVector.attempt, state.traversal.selectedRunId);
@@ -3076,7 +3721,15 @@ export function updateSidecarState(state: SidecarState, msg: SidecarMsg): Sideca
       };
     }
     case 'traversal/clear':
-      return { ...state, traversal: { ...INITIAL_SIDECAR_TRAVERSAL_STATE, details: [] } };
+      return {
+        ...state,
+        traversal: {
+          ...INITIAL_SIDECAR_TRAVERSAL_STATE,
+          details: [],
+          ...retainedTraversalRequestEpochs(state.traversal),
+          visualGraph: resetVisualGraphState(state.traversal.visualGraph),
+        },
+      };
     case 'ticket-board/select': {
       // Selection is product state (UX_METHOD §5): reducer-owned, validated
       // against the loaded ticket records. Unknown ids resolve to null.
@@ -3238,8 +3891,14 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
         return [];
       }
       return [
-        { type: 'run.loadObservation', workspaceRoot: msg.workspaceRoot, runId: msg.runId, refresh: true },
-        { type: 'traversal.loadSummary', workspaceRoot: msg.workspaceRoot, runId: msg.runId, refresh: true },
+        {
+          type: 'run.loadObservation', workspaceRoot: msg.workspaceRoot, runId: msg.runId,
+          refresh: true, requestEpoch: state.traversal.nextRunObservationRequestEpoch,
+        },
+        {
+          type: 'traversal.loadSummary', workspaceRoot: msg.workspaceRoot, runId: msg.runId,
+          refresh: true, requestEpoch: state.traversal.nextTraversalSummaryRequestEpoch,
+        },
       ];
     }
     case 'traversal/load': {
@@ -3247,8 +3906,14 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
       const runId = traversalRequestedRunId(state, msg);
       const refresh = msg.refresh === true;
       return [
-        { type: 'run.loadObservation', workspaceRoot, runId, refresh },
-        { type: 'traversal.loadSummary', workspaceRoot, runId, refresh },
+        {
+          type: 'run.loadObservation', workspaceRoot, runId, refresh,
+          requestEpoch: state.traversal.nextRunObservationRequestEpoch,
+        },
+        {
+          type: 'traversal.loadSummary', workspaceRoot, runId, refresh,
+          requestEpoch: state.traversal.nextTraversalSummaryRequestEpoch,
+        },
       ];
     }
     case 'initial-surface/request':
@@ -3256,8 +3921,14 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
       if (state.initialSurfaceAppliedKey === `${msg.projectRoot}:${msg.surface}:${msg.hasRunFocus ? 'focus' : 'plain'}` || currentProjectRoot(state) !== msg.projectRoot) return [];
       return msg.surface === 'run-inspector'
         ? [
-          { type: 'run.loadObservation', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId, refresh: false },
-          { type: 'traversal.loadSummary', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId, refresh: false },
+          {
+            type: 'run.loadObservation', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId,
+            refresh: false, requestEpoch: state.traversal.nextRunObservationRequestEpoch,
+          },
+          {
+            type: 'traversal.loadSummary', workspaceRoot: msg.projectRoot, runId: state.traversal.selectedRunId,
+            refresh: false, requestEpoch: state.traversal.nextTraversalSummaryRequestEpoch,
+          },
         ]
         : [];
     case 'surface/load-request': {
@@ -3297,10 +3968,56 @@ export function describeSidecarCommands(state: SidecarState, msg: SidecarMsg): S
         : [];
     }
     case 'run/select':
+      if (!state.traversal.runObservation?.runs.some((run) => run.runId === msg.runId)) return [];
       return [
-        { type: 'run.loadObservation', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId, refresh: false },
-        { type: 'traversal.loadSummary', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId, refresh: false },
+        {
+          type: 'run.loadObservation', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId,
+          refresh: false, requestEpoch: state.traversal.nextRunObservationRequestEpoch,
+        },
+        {
+          type: 'traversal.loadSummary', workspaceRoot: state.traversal.workspaceRoot, runId: msg.runId,
+          refresh: false, requestEpoch: state.traversal.nextTraversalSummaryRequestEpoch,
+        },
       ];
+    case 'run/load-succeeded': {
+      const basis = visualGraphBasisFromRunObservation(state, msg);
+      return basis ? [{
+        type: 'visualGraph.load',
+        ...basis,
+        requestId: state.traversal.visualGraph.nextRequestId,
+      }] : [];
+    }
+    case 'visual-graph/retry': {
+      const basis = currentVisualGraphRetryBasis(state);
+      return basis ? [{
+        type: 'visualGraph.load',
+        ...basis,
+        requestId: state.traversal.visualGraph.nextRequestId,
+      }] : [];
+    }
+    case 'run/event-page-request': {
+      const generation = state.traversal.runObservation?.carrierSnapshot?.generation;
+      if (!generation || !Number.isInteger(msg.start) || msg.start < 0) return [];
+      return [{
+        type: 'run.loadEventPage',
+        workspaceRoot: state.traversal.workspaceRoot,
+        runId: state.traversal.selectedRunId,
+        generation,
+        start: msg.start,
+        limit: state.traversal.eventPage?.limit ?? 40,
+      }];
+    }
+    case 'run/event-detail-request': {
+      const generation = state.traversal.runObservation?.carrierSnapshot?.generation;
+      if (!generation || !Number.isInteger(msg.ordinal) || msg.ordinal < 0) return [];
+      return [{
+        type: 'run.loadEventDetail',
+        workspaceRoot: state.traversal.workspaceRoot,
+        runId: state.traversal.selectedRunId,
+        generation,
+        ordinal: msg.ordinal,
+      }];
+    }
     case 'traversal/select-vector': {
       const selection = normalizedTraversalSelection(msg);
       const key = traversalDetailKey(selection.index, selection.variant, selection.attempt, state.traversal.selectedRunId);

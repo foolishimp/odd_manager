@@ -690,6 +690,144 @@ priority relation, not a fixed global execution sequence or scheduling runtime.
 
 ---
 
+## Agentic Construction Execution (`STDO-UP-020`)
+
+When construction is delegated to a probabilistic or agentic worker, the
+method governs the execution relation without prescribing the worker's model,
+prompt, tools, internal search, process topology, repository layout, or
+orchestration runtime.
+
+The normative relation is:
+
+```text
+accepted governing basis
+  -> bounded affected relation set
+  -> selected computational relations
+  -> delegated execution and decision authority
+  -> construction and self-review
+  -> independent live-surface assessment where required
+  -> accept | local repair | re-enter | reject
+  -> exact accepted checkpoint
+  -> next already-authorized bounded action
+```
+
+### Sufficient Execution Intake
+
+A bounded action begins from an authority basis sufficient to reconstruct its
+governing relations without conversation history, commentary, prior-worker
+memory, or implementation folklore. The intake identifies:
+
+- the selected Product outcome, prerequisite, or admitted experiment;
+- the bounded affected relation set and applicable governing invariants;
+- accepted transformation-admission relations;
+- selected computational or common-library dispositions;
+- construction and assessment authority; and
+- the conditions that require upstream re-entry.
+
+Where `DESIGN_MODULE_METHOD.md` applies, `STDO-UP-017` bounded-frame
+conservation, `STDO-UP-016` transformation-admission completeness,
+`STDO-UP-018` invariant-reconstruction sufficiency, and `STDO-UP-019`
+computational-realization projection supply these design inputs. This section
+consumes those laws; it does not create a second design package.
+
+### Bounded Causal Construction
+
+The execution unit is the smallest coherent causal dependency cone capable of
+delivering working behavior while preserving every affected governing
+relation. It need not coincide with one function, file, module, ticket field,
+or design document.
+
+A seam whose far side can causally affect, or be affected by, the action is
+inside the cone unless the basis establishes that it cannot participate.
+Unrelated incompleteness outside the cone is recorded as repricing input and
+does not block the bounded claim.
+
+### Construction, Assessment, And Delegation
+
+The constructor owns bounded implementation and self-review. Where independent
+assessment supports promotion, the assessor evaluates the exact live code,
+authority paths, proof, and installed subject rather than treating the
+constructor's summary as sufficient evidence. This preserves the independent-
+review relation; it does not prescribe an actor count. One actor may occupy
+different roles across different claims when independence for the assessed
+claim is preserved.
+
+The governing authority relation declares whether a bounded proxy may accept
+and advance routine actions. A proxy may accept preservation, require local
+repair, reject a violating candidate, and advance to the next already-
+authorized action. It cannot change Product meaning, requirements, governing
+authority, or accepted design. Such a change re-enters at its owning relation.
+
+Human ceremony is not required at every transition when the governing basis,
+affected cone, decision envelope, and re-entry conditions are already
+accepted. This delegation does not weaken direct-human acceptance where
+Product or release law requires it.
+
+### Proportional Disposition
+
+Assessment returns one of these semantic dispositions:
+
+| Disposition | Condition |
+|---|---|
+| `accept` | the candidate closes its declared cone and preserves every affected governing relation |
+| `local_repair` | implementation or proof is locally defective while the governing relation remains coherent |
+| `re_enter` | Product, requirement, identity, lifecycle, authority, public contract, or accepted design must change |
+| `reject` | the candidate violates a governing relation or leaves an undisposed competing truth path |
+
+Global correctness means conserving every global relation affected by the
+bounded action. It does not require proving the whole Product inside every
+local action.
+
+Repeated rejection against one unchanged boundary requires reassessment of the
+frame altitude, causal cone, common components, design-versus-code placement,
+and authority sufficiency. The method sets no rejection-count threshold,
+mandatory review-round count, or review state machine; it prohibits repeating
+an unchanged failed construction relation as if iteration alone could close it.
+
+### Transition Evidence And Proof Cadence
+
+A reviewable transition identifies the exact candidate, affected relations,
+changed realization paths, authority paths added or removed, retained and open
+seams, focused proof, any required integration proof, explicit non-changes, and
+the assessor disposition. Consumers choose the representation. Transition
+evidence is a read model and does not become specification, design, or
+admission authority.
+
+Construction uses the cheapest focused proof capable of falsifying the active
+relation. Expensive whole-candidate qualification occurs at a declared
+candidate boundary rather than after every local edit, unless the affected
+risk makes whole-candidate proof necessary.
+
+A durable or reconstructable authority claim is not established solely by a
+same-process proof when loss of incidental process state is a material
+counterexample. Proof must destroy or exclude the incidental authority and
+compare reconstructed semantic outcomes.
+
+### Checkpoint, Continuation, Progress, And Churn
+
+Acceptance binds one exact checkpoint. The next already-authorized bounded
+action may begin without renewed human approval; acceptance does not widen the
+Product outcome or affected relation set.
+
+Accepted material Product movement is progress. Prerequisite work names the
+Product obligation it enables. Preservation and repeated proof are evidence,
+not new progress. Rejected or superseded construction is churn. Discovery of
+previously hidden distance revises the forecast but is not itself negative
+implementation progress. Paperwork, code volume, test count, commit count, and
+review count are not Product progress by themselves.
+
+These are semantic categories, not a numeric progress algorithm. Consumers may
+derive their own progress and churn projections from them.
+
+This protocol is false if execution proceeds from unreconstructable context,
+if a constructor's report substitutes for required independent live evidence,
+if a bounded proxy changes a governing relation outside its delegation, if
+unrelated incompleteness blocks a closed causal cone, if a same-process test is
+used to prove materially cross-process authority, or if rejected activity is
+reported as accepted Product progress.
+
+---
+
 ## Core Interface Migration Rule
 
 Core interface changes are not ordinary local patches.

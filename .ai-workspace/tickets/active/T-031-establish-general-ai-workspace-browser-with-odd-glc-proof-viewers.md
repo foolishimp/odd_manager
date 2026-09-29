@@ -23,11 +23,9 @@ affected_boundary: >-
   Sidecar reducer/UI, runtime targeting, and runtime/browser proof lanes
 priority: high
 created_at: 2026-07-01
-updated_at: 2026-07-26
-governance_scope: STDO Method, ODD Method, STDO-UX Method, current GTL/ABG observation
-selected_method_release: STDO v2.2.1
-selected_method_commit: 8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf
-selected_method_member_set_digest: df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed
+updated_at: 2026-08-28
+governance_scope: current Product Definition Overlay, selected STDO/ODD/UX entrypoints, and current GTL/ABG observation
+selected_method_basis: stdo_odd_manager.json#/constitution/stdo/basis
 growth_authority: review_and_disposition_only
 intake_source: >-
   Operator test: use odd_manager to observe the odd_glc Hello World tests and
@@ -57,15 +55,16 @@ observation_principle: >-
   observation features are present rather than requiring every Project to expose
   a full domain pack, full ABG runtime ledger, or full proof archive.
 current_state: >-
-  The manager discovers Project-owned run topology, publishes a bounded generic
-  AI Workspace inventory, and exposes Run Inspector sections over admitted
-  odd_glc data-mapper runs. Large event carriers are indexed without whole-file
-  browser parsing and their SHA-256 digest is verified against proof truth. The
-  ABG Catalog projects registry admission/rejection and construction-action
-  catalog events without importing observed runtime code. The odd_sdlc Process
-  Navigator carrier is retired. The common loader admits exact registered
-  Project roots from `?project=` and synchronizes active Project context back
-  to the URL.
+  The manager discovers proof-admitted Project run topology, publishes a
+  bounded generic AI Workspace inventory, and exposes Run Inspector sections
+  over admitted odd_glc proof subjects. Event carriers are digested on the
+  server and proof event rows are bounded before browser admission, but a run
+  without terminal proof is not yet discoverable; G-009 and T-042 own that
+  explicit successor gap. The ABG Catalog projects registry
+  admission/rejection and construction-action catalog events without importing
+  observed runtime code. The odd_sdlc Process Navigator carrier is retired.
+  The common loader admits exact registered Project roots from `?project=` and
+  synchronizes active Project context back to the URL.
 closure_law: >-
   Close only when the manager has a general .ai-workspace browser with
   capability viewers selected from discovered artifacts, and odd_glc data-mapper
@@ -122,7 +121,14 @@ non_closure_conditions:
 
 # T-031: General .ai-workspace Browser With odd_glc Proof Viewers
 
-## STDO 2.2 Review Freeze
+## Current Governance Re-entry — 2026-08-28
+
+Any review, repair, or disposition now resolves its methods and collective
+reference frame through `stdo_odd_manager.json`. The older method identities
+retained below describe the exact historical construction and review subjects;
+they do not select current authority or authorize continuation.
+
+## Historical STDO 2.2 Review Freeze
 
 As of 2026-07-26, T-031 remains open only for operator review and direct
 disposition of its existing claim. Its design, realization, tests, and evidence

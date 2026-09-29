@@ -1,0 +1,227 @@
+{
+  "kind": "t040_visual_runtime_observation_qualification",
+  "schemaVersion": "1",
+  "generatedAt": "2026-09-02T07:47:25+10:00",
+  "disposition": "partial_bounded_implementation",
+  "ticket": {
+    "id": "T-040",
+    "status": "active",
+    "sourceSha256": "sha256:28237c07804c4d3cb58164c5116ad8282ed8c9cd4d777b71d5e4efc4db155ea6",
+    "currentSha256": "sha256:99abd323cdece5377a493871b645b413188f8d6540c74814524ac1cfec41772c",
+    "executionContractId": "urn:odd-manager:execution-contract:T-040:implementation:2026-09-02",
+    "executionContractDigest": "sha256:e6b563c6dad00c709dcea7d4032cbdb843ace09e718fea1cf8f561bcffe83362",
+    "implementationScopeMilestones": ["M-001", "M-002", "M-003", "M-004", "M-005", "M-006", "M-007"],
+    "qualificationPendingMilestones": [],
+    "closureClaim": false
+  },
+  "governance": {
+    "method": "STDO",
+    "release": "v2.5.0-rc.4",
+    "releaseRef": "refs/tags/specification_methodology/v2.5.0-rc.4",
+    "tagObject": "032dac0c833111547f7dd4b290c5316ed9b70f97",
+    "commit": "7a25668a8fecfd26f895759af3bec4708727964a",
+    "repositoryTree": "737af9a7a2779dbf59e7c81232e7efd4dd98692a",
+    "projectSubtree": "a9565f923213759984f936d087cd7cebd0f44a74",
+    "standardsTree": "d6642edac9fb509a68b2ffc81d3404f2360b34e4",
+    "memberCount": 52,
+    "memberSetSha256": "sha256:504db879867f60e46ed4dea60509d12056d10cdd8c3460dc94abf7bc56542656",
+    "manifestSha256": "sha256:4fa2556d0127bebce8f7184cc4a3cb708a175b2e40552c55cb211f2426d5049e",
+    "definition": "stdo_odd_manager.json",
+    "definitionSha256": "sha256:8f1809c76b5a8b0fe9aa1a4fa431e93f96d1efdba0aa93e95de8db2b558aa56b"
+  },
+  "workspaceBases": {
+    "oddManager": {
+      "commit": "ab185d13d5c2d831c9e7daf471890e02dba067b3",
+      "branch": "main",
+      "workingTree": "dirty_preexisting_and_t040_changes_preserved"
+    },
+    "oddGlc": {
+      "commit": "dae8589b2784be4c101af70d891f85367fc13ebd",
+      "branch": "main",
+      "workingTree": "dirty_active_development",
+      "access": "read_only_no_t040_mutation"
+    }
+  },
+  "implementationArtifacts": [
+    {"path": "build_tenants/common/design/VISUAL_GRAPH_RUNTIME_OBSERVATION.md", "sha256": "sha256:e801279e6b8e1d606bf279082b6adf5815a69fce6433303ffe57ba0bcc81b3e4"},
+    {"path": "build_tenants/react_vite/package.json", "sha256": "sha256:7c1750bf1dd3bda3c89ecd9c597ccd6853cf63cb4388fc67f17768096c63676b"},
+    {"path": "build_tenants/react_vite/packages/developer-control-contracts/src/index.ts", "sha256": "sha256:d7994d7564c30b6c942998ff7c2fe0630a8b2b1712ea609399258402a6d8a09d"},
+    {"path": "build_tenants/react_vite/src/server/abi5-root-event-contract.mjs", "sha256": "sha256:9658a0efd991ea10bba03fbc6797eb0be3efe87de4c1d487e3fff380ba29366e"},
+    {"path": "build_tenants/react_vite/src/server/abg-event-carrier-service.mjs", "sha256": "sha256:160b88bd16146dfd8314efa571b5f6894897a5fa39b7cf4a92a8e1abd219d524"},
+    {"path": "build_tenants/react_vite/src/server/project-observation-topology-service.mjs", "sha256": "sha256:21c5cfe893c41fddfb0602e8a2abafb5fb147b54732f4b9fbf2c0a8899ab302c"},
+    {"path": "build_tenants/react_vite/src/server/abg-run-observation-service.mjs", "sha256": "sha256:62533639567949987828a9bfe73708c7935c1a78579be12122288b8551cee132"},
+    {"path": "build_tenants/react_vite/src/server/traversal-projection-service.mjs", "sha256": "sha256:487d2e95d5e8f9f1af193ce9ddd2675cb39fe3098e665f431a0fc66798825bff"},
+    {"path": "build_tenants/react_vite/src/server/visual-graph-projection-service.mjs", "sha256": "sha256:e92eba6561a99f451b1093ac86b9e818db01203de92941179ecb8514136f0c89"},
+    {"path": "build_tenants/react_vite/src/server/index.mjs", "sha256": "sha256:f8e723f2a1432315a1ab36c6c9455a4482042921c2e26a3574f3dab5e83cd796"},
+    {"path": "build_tenants/react_vite/src/contracts/abg-run-observation.ts", "sha256": "sha256:3275d227862232e09f9c8c3c9df96781e0d4ed64a32aa911cc8b7112948ba072"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/abg-run-observation-validation.ts", "sha256": "sha256:092afd5dcba028dd398c2887163a16e0398d2c531b2ef66b546666d6e2821fe6"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx", "sha256": "sha256:e7de2dffd9acc5ebdd8f0e6905f7baf1742892bb43f0201b6f282654681aa2b3"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/sidecar-state.ts", "sha256": "sha256:b2e50e9db50e4f51121fd84b11205dd4c6b637f3c73ad5d596d6ff476185aaf7"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/visual-graph/VisualGraphView.tsx", "sha256": "sha256:a505a3031b84ac298cf0a08fb31e94743c9c7e7834ba998b0ac3a48780eeb9f6"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/visual-graph/index.ts", "sha256": "sha256:c435b9d68c50f37899f8afa3b9ff596d029f71ecbab12f1c55371c13d445a64e"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/visual-graph/layout.ts", "sha256": "sha256:5d4b71086c55072aee43899df0261aa1b48013ce566c478735980045854874f3"},
+    {"path": "build_tenants/react_vite/src/features/sidecar/visual-graph/state.ts", "sha256": "sha256:8a45e79254cdbd1741aca1d7729ae7fff9c9bf1e28ac90328521cfaa10bf057e"},
+    {"path": "build_tenants/react_vite/src/app/styles.css", "sha256": "sha256:15810d1d52ee6272c3f4486614be8087b62afddd3a35a7a4c0fdb6156f38e63f"},
+    {"path": "build_tenants/react_vite/qualification/installed-development-proof.mjs", "sha256": "sha256:89b1218cbd807a6c1065f1c79fa22bc4c5decad8df4397ad1f812602a8165fc4"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_t040_visual_runtime_observation_proof.mjs", "sha256": "sha256:90ff81729f60d43b0808786cd365d4d7c4cffc050c99393b986e3478d86015ec"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_abg_5_0_event_compatibility.mjs", "sha256": "sha256:e602e31affc42a8556d0fa8bad22dcae52785847008b97318c4b630f6e4a6267"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_visual_graph_contract_invariants.mjs", "sha256": "sha256:ac664b258546c169621921e8e2419e6828aefeb8e7173228be22cb81411e8bcb"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_visual_graph_projection.mjs", "sha256": "sha256:db09c3f4ad718affe4788b418cdb63b5e2e90d9915f291c05d7153553a4d3585"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_visual_graph_actor_process_pairing.mjs", "sha256": "sha256:f7eb12f072479a51d3f707843f4f84292e31552add325ea47f8d7096c9604559"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_sidecar_msg_replay.mjs", "sha256": "sha256:5132f9a4408c272a5b103be325f71d1feb7b302bb6eb3701b707940107f0d5fe"},
+    {"path": "build_tenants/react_vite/runtime/tests/test_abg_run_observation.mjs", "sha256": "sha256:3eb47dcade47f763255f9806ba5806e2d5316644cf008c1d32a10ab340a8334c"},
+    {"path": "build_tenants/react_vite/tests/e2e/odd-manager-run-inspector.spec.ts", "sha256": "sha256:61fa1280920083c02a5191c89c43b2ab2ff617b9f8813421bffc18177aa878b0"},
+    {"path": "build_tenants/react_vite/tests/e2e/odd-manager-smoke.spec.ts", "sha256": "sha256:627f2a15b5f3926b4931d8c7536880c8a688dec5e35083d8f4ee608902927e76"},
+    {"path": "build_tenants/react_vite/tests/e2e/odd-manager-accessibility.spec.ts", "sha256": "sha256:89edf22ed9ed31f35a0f9a588f4c9b3e4a14faf3b65941d9d9230adb5a7bdd70"},
+    {"path": "build_tenants/react_vite/tests/e2e/odd-manager-abg5-compatibility.spec.ts", "sha256": "sha256:03f60d00587f45f9d115de3bf7d75b2092179739b32d9c663b36dbea3c714837"}
+  ],
+  "installedSubject": {
+    "scenarioKey": "rust-cli",
+    "scenarioId": "SCN-GLC-HELLO-WORLD-RUST-CLI",
+    "candidateRelativePath": "build_tenants/odd_glc/typescript/test_runs/generic-live-workflow/rust-cli/20260901T134226091Z_pid61794/generic-live-workflow-evidence-candidate.json",
+    "candidateSha256": "sha256:3f5a4209ad4b37958aa3265a344c5567385075d69a5ed75f46023d681f8effec",
+    "authority": "diagnostic_only",
+    "candidateDisposition": "awaiting_review",
+    "validationDisposition": "satisfied",
+    "abiArtifact": {
+      "productId": "product://abiogenesis/typescript-tenant@5.0.0-dev.286",
+      "packageVersion": "5.0.0-dev.286",
+      "sha256": "sha256:d53144e6a0babddf1bc47880f618ca216b7edaaa3c35ba7c7dd7647909a7151f",
+      "productContentDigest": "sha256:01ad18e0f6689f37987494773716a1a7231956f10c7c1fa2ec964d6c30b6b658",
+      "productManifestDigest": "sha256:d2ccd50b937910c1999c84477baa9181ba87cbd8d3c32f8edba475c2c58c960a"
+    },
+    "runId": "run://abiogenesis/09822c42375f497e86c5306c9367d37c20b5e03d64d4c37402342755776bbf59",
+    "runDigest": "sha256:72860dbae144d2d20698ed6c55cc6b19aea91f893791879c78bb7871b1374a9d",
+    "eventGeneration": "sha256:84b1c4612d64e6668bc887285d8c878388f900193bd520b9b925a03e975616a1",
+    "eventCount": 157,
+    "runScopedEventCount": 151,
+    "firstOrdinal": 1,
+    "lastOrdinal": 157,
+    "eventPosture": "external_contract_uninterpreted",
+    "closed": false,
+    "terminalPrefix": {
+      "byteLength": 2830100,
+      "sha256": "sha256:df3eff950b09c5e4aef36da971cf8affc5266a25ed434fc3bec56ee423df233b",
+      "coordinateDigest": "sha256:9e5cd00533ffc17ef8035c8c256db17029a00a679ec1dffdf521ccf18dfb04c4"
+    },
+    "eventContract": {
+      "publishedDigest": "sha256:abbd5c43dfa219af37f971b318f3a2fdce861b79f5dfc023295c76e1879becc1",
+      "builtInRegistryDigest": "sha256:b47319edc2fe4c50d65579cbbe8d19952199a69b993b91d5f8888e511c96bd6d",
+      "posture": "published_contract_distinct_from_builtin_registry",
+      "bindingPosture": "durable_prefix_coordinate_verified"
+    }
+  },
+  "scenarioPortfolio": [
+    {"scenarioKey": "basic-cli", "retainedCandidate": true, "authority": "diagnostic_only", "candidateDisposition": "validation_failed", "validationDisposition": "unsatisfied"},
+    {"scenarioKey": "js-tenant-test", "retainedCandidate": true, "authority": "diagnostic_only", "candidateDisposition": "awaiting_review", "validationDisposition": "satisfied"},
+    {"scenarioKey": "js-sdlc-bootstrap", "retainedCandidate": true, "authority": "diagnostic_only", "candidateDisposition": "awaiting_review", "validationDisposition": "satisfied"},
+    {"scenarioKey": "rust-cli", "retainedCandidate": true, "authority": "diagnostic_only", "candidateDisposition": "awaiting_review", "validationDisposition": "satisfied"},
+    {"scenarioKey": "rust-service", "retainedCandidate": false, "disposition": "unavailable"},
+    {"scenarioKey": "parallel-js", "retainedCandidate": false, "disposition": "unavailable"},
+    {"scenarioKey": "data-mapper-full", "retainedCandidate": false, "disposition": "unavailable"}
+  ],
+  "projection": {
+    "state": "partial",
+    "selection": "exact_run_id_no_latest_or_run_key_fallback",
+    "declarationTopology": {"state": "missing", "reason": "no_declaration_carrier", "references": 0, "nodes": 0, "edges": 0},
+    "occurrenceGraph": {"state": "partial", "nodes": 30, "edges": 220, "aggregateParentEdges": 29, "eventCausationEdges": 191, "activeNodes": 0, "lastObservedNodes": 1},
+    "workspaceObservations": {
+      "state": "partial",
+      "currentness": "unobserved",
+      "observations": 4,
+      "currentStates": ["unobserved:unavailable"],
+      "model": "immutable_O0_effect_O1_observations_over_separately_mutable_workspace"
+    },
+    "actorSessions": {
+      "state": "partial",
+      "sessions": 1,
+      "lifecycleState": "unknown",
+      "terminalDisposition": "unknown",
+      "interactionDisposition": "unavailable",
+      "canAttach": false,
+      "capabilityRefs": 0,
+      "operationRefs": 0,
+      "archiveRefs": 0
+    },
+    "diagnostics": [
+      "external_event_contract_lifecycle_uninterpreted",
+      "aggregate_parent_outside_bounded_profile",
+      "event_causation_outside_bounded_profile",
+      "occurrence_profile_partial",
+      "workspace_current_subject_binding_unavailable",
+      "actor_session_effect_not_admitted",
+      "declaration_topology_not_published",
+      "live_actor_session_unavailable"
+    ],
+    "truncated": false
+  },
+  "qualification": {
+    "contractsBuild": {"command": "npm run contracts:build", "result": "passed"},
+    "focusedServerAndSecurity": {
+      "command": "node --test runtime/tests/test_abg_5_0_event_compatibility.mjs runtime/tests/test_visual_graph_contract_invariants.mjs runtime/tests/test_visual_graph_projection.mjs runtime/tests/test_visual_graph_actor_process_pairing.mjs",
+      "passed": 34,
+      "failed": 0
+    },
+    "runtime": {"command": "npm run test:runtime:node", "passed": 514, "failed": 0},
+    "sidecarReducerReplay": {"command": "node --test runtime/tests/test_sidecar_msg_replay.mjs", "passed": 116, "failed": 0},
+    "productionBuild": {"command": "npm run build", "result": "passed"},
+    "focusedSourceBrowser": {
+      "command": "npx playwright test tests/e2e/odd-manager-run-inspector.spec.ts --reporter=line",
+      "passed": 8,
+      "failed": 0,
+      "assertions": [
+        "exact current ABG 5 candidate selection",
+        "retained Rust occurrence graph and projection-local drill-down",
+        "declaration-ready plane switch and exact overlay filtering",
+        "upstream and downstream refresh failures retain visibly stale evidence",
+        "no invented generation or terminal attach/watch action",
+        "keyboard and complete table representation",
+        "390px viewport containment"
+      ]
+    },
+    "installedDevelopment": {
+      "command": "npm run test:installed-development",
+      "result": "passed",
+      "expectedOperatorTitles": 22,
+      "passedOperatorTitles": 22,
+      "requiredSkippedOperatorTitles": 0,
+      "skippedOperatorTitles": 0,
+      "requiredFlakyOperatorTitles": 0,
+      "flakyOperatorTitles": 0,
+      "requiredRetriedOperatorTitles": 0,
+      "retriedOperatorTitles": 0,
+      "requiredFailedOperatorTitles": 0,
+      "failedOperatorTitles": 0,
+      "candidateManifestExcludingProofSha256": "sha256:e2addbde5b933a3c9b9f111bb013c2c57032c9d04648cead54f502292b653e5d",
+      "candidateMemberCountExcludingProof": 702,
+      "sourceBlindManagerRootRequired": true,
+      "sourceBlindManagerRootObserved": true
+    },
+    "privacy": {
+      "result": "passed",
+      "projectionExcludes": ["absolute paths", "file URIs", "relativePath", "cwd", "commands and args", "prompts", "stdout and raw terminal bytes", "unsafe free-text posture values"]
+    }
+  },
+  "reviews": [
+    {"scope": "design_canonical_semantics_and_server_projection", "effort": "max", "disposition": "accepted_after_findings_repaired"},
+    {"scope": "client_interaction_accessibility_exact_basis_and_source_blind_selection", "effort": "max", "disposition": "accepted_bounded_source_and_installed_candidate"}
+  ],
+  "residuals": [
+    "No admitted declaration bodies or overlay applications exist for the retained current Rust carrier, so declaration and overlay closure remain partial.",
+    "odd_glc publishes retained generic candidates but no admitted T-043 scenario-to-candidate selection relation, so T-040 makes no latest-candidate claim.",
+    "No exact live attach, read, input, or archive-resolution capability and operation references are published for the retained actor process.",
+    "rust-service, parallel-js, and data-mapper-full have no retained current generic candidates.",
+    "The bounded v1 occurrence plane does not retain attempt identities as nodes.",
+    "This proof does not qualify broad ABIogenesis 5 or odd_glc-on-ABIogenesis-5 compatibility."
+  ],
+  "nonClaims": [
+    "ticket completion",
+    "declaration or overlay realization from occurrence history",
+    "immutable workspace cuts",
+    "current or live execution for the externally uninterpreted Rust run",
+    "live PTY or archived transcript availability",
+    "implicit latest-run selection",
+    "ABIogenesis or odd_glc source mutation",
+    "broad ABIogenesis 5 compatibility"
+  ]
+}

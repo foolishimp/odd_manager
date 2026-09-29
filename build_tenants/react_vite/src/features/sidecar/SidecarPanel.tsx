@@ -45,7 +45,9 @@ import {
 } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
+import { visualGraphProjectionSchema } from '@odd-manager/developer-control-contracts';
 import 'xterm/css/xterm.css';
+import { VisualGraphView } from './visual-graph/VisualGraphView';
 import {
   DocumentViewer,
   MarkdownDocumentContent,
@@ -81,6 +83,7 @@ import {
   SIDECAR_WORKBENCH_LAYOUT_LIMITS,
   oddTermReadyMatchesSubscription,
   reduceSidecarState,
+  runObservationResultMessage,
   sidecarLayoutProfileFromState,
   sidecarSubscriptions,
   traversalDetailKey,
@@ -98,7 +101,11 @@ import {
 } from './ai-workspace-artifact-inspection';
 import type { AiWorkspaceArtifactInspection } from './ai-workspace-artifact-inspection';
 import { asAiWorkspaceObservation } from './ai-workspace-observation-validation';
-import { asAbgRunObservation } from './abg-run-observation-validation';
+import {
+  asAbgEventDetail,
+  asAbgEventPage,
+  asAbgRunObservation,
+} from './abg-run-observation-validation';
 import { asTraversalProjection, asTraversalVectorDetail } from './traversal-validation';
 import {
   asSidecarCommentCollection,
@@ -510,12 +517,13 @@ async function interpretSidecarCommand(entry: PendingSidecarCmd, options: {
     if (cmd.refresh) extra.refresh = '1';
     try {
       const summary = asTraversalProjection(await fetchJson(apiUrl(backend, '/api/ai-workspace/traversal', cmd.workspaceRoot, extra)));
-      dispatch({ type: 'traversal/load-succeeded', workspaceRoot: cmd.workspaceRoot, requestedRunId: cmd.runId, summary });
+      dispatch({ type: 'traversal/load-succeeded', workspaceRoot: cmd.workspaceRoot, requestedRunId: cmd.runId, requestEpoch: cmd.requestEpoch, summary });
     } catch (err) {
       dispatch({
         type: 'traversal/load-failed',
         workspaceRoot: cmd.workspaceRoot,
         requestedRunId: cmd.runId,
+        requestEpoch: cmd.requestEpoch,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -528,12 +536,106 @@ async function interpretSidecarCommand(entry: PendingSidecarCmd, options: {
     if (cmd.refresh) extra.refresh = '1';
     try {
       const observation = asAbgRunObservation(await fetchJson(apiUrl(backend, '/api/ai-workspace/run', cmd.workspaceRoot, extra)));
-      dispatch({ type: 'run/load-succeeded', workspaceRoot: cmd.workspaceRoot, requestedRunId: cmd.runId, observation });
+      dispatch(runObservationResultMessage(cmd.workspaceRoot, cmd.runId, cmd.requestEpoch, observation));
     } catch (err) {
       dispatch({
         type: 'run/load-failed',
         workspaceRoot: cmd.workspaceRoot,
         requestedRunId: cmd.runId,
+        requestEpoch: cmd.requestEpoch,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'visualGraph.load') {
+    try {
+      const payload = await fetchJson(apiUrl(
+        backend,
+        '/api/ai-workspace/run/visual-graph',
+        cmd.projectRoot,
+        { runId: cmd.runId, generation: cmd.generation },
+      ));
+      const parsed = visualGraphProjectionSchema.safeParse(payload);
+      if (!parsed.success) throw new Error('Visual graph projection failed canonical contract validation.');
+      if (
+        parsed.data.run?.runId !== cmd.runId
+        || parsed.data.run.eventGeneration !== cmd.generation
+      ) {
+        throw new Error('Visual graph projection does not match the requested Run and event generation.');
+      }
+      dispatch({
+        type: 'visual-graph/load-succeeded',
+        projectRoot: cmd.projectRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        requestId: cmd.requestId,
+        projection: parsed.data,
+      });
+    } catch (err) {
+      dispatch({
+        type: 'visual-graph/load-failed',
+        projectRoot: cmd.projectRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        requestId: cmd.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'run.loadEventPage') {
+    const extra: Record<string, string> = {
+      generation: cmd.generation,
+      start: String(cmd.start),
+      limit: String(cmd.limit),
+    };
+    if (cmd.runId) extra.runId = cmd.runId;
+    try {
+      const page = asAbgEventPage(await fetchJson(apiUrl(backend, '/api/ai-workspace/run/events', cmd.workspaceRoot, extra)));
+      dispatch({
+        type: 'run/event-page-succeeded',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        page,
+      });
+    } catch (err) {
+      dispatch({
+        type: 'run/event-page-failed',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (cmd.type === 'run.loadEventDetail') {
+    const extra: Record<string, string> = {
+      generation: cmd.generation,
+      ordinal: String(cmd.ordinal),
+    };
+    if (cmd.runId) extra.runId = cmd.runId;
+    try {
+      const detail = asAbgEventDetail(await fetchJson(apiUrl(backend, '/api/ai-workspace/run/event', cmd.workspaceRoot, extra)));
+      dispatch({
+        type: 'run/event-detail-succeeded',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        detail,
+      });
+    } catch (err) {
+      dispatch({
+        type: 'run/event-detail-failed',
+        workspaceRoot: cmd.workspaceRoot,
+        runId: cmd.runId,
+        generation: cmd.generation,
+        ordinal: cmd.ordinal,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -3641,7 +3743,7 @@ function runSectionFromKeyboard(
 
 function shortRunLabel(run: AbgRunObservation['runs'][number]) {
   const timestamp = run.modifiedAt ? new Date(run.modifiedAt).toLocaleString() : 'undated';
-  return `${run.scenarioId ?? run.scenarioKind ?? run.runId} · ${timestamp}`;
+  return `${run.observationLabel ?? run.scenarioId ?? run.scenarioKind ?? run.runId} · ${run.status} · ${timestamp}`;
 }
 
 function projectRelativeArtifactPath(projectRoot: string, path: string) {
@@ -3739,7 +3841,7 @@ function RunInspector({ state, dispatch }: {
       </div>
     );
   }
-  if (!observation || observation.state !== 'ready') {
+  if (!observation || (observation.state !== 'ready' && observation.runs.length === 0)) {
     return (
       <div className="sidecar-run sidecar-run--unsupported">
         <BuildForensicFocus focus={runFocus} />
@@ -3754,25 +3856,49 @@ function RunInspector({ state, dispatch }: {
     );
   }
 
-  const selectedRun = observation.runs.find((run) => run.runId === observation.selectedRunId) ?? observation.runs[0] ?? null;
-  const selectedWorkspaceRoot = observation.selectedWorkspaceRoot;
-  const matchingSession = selectedWorkspaceRoot
-    ? state.sessions.records.find((session) => session.cwd === selectedWorkspaceRoot && ['running', 'live'].includes(session.status)) ?? null
-    : null;
-  const openRuntimeTarget = () => {
-    dispatch({ type: 'ui/toggle-workspace', workspace: 'shell', collapsed: false });
-    if (matchingSession) {
-      dispatch({ type: 'terminal/open', sessionId: matchingSession.id });
-      return;
-    }
-    if (selectedWorkspaceRoot) {
-      dispatch({
-        type: 'session/spawn/request',
-        cwd: selectedWorkspaceRoot,
-        label: `${selectedRun?.scenarioId ?? 'run'} shell`,
-      });
-    }
-  };
+  const selectedRun = observation.runs.find((run) => (
+    run.runId === traversal.selectedRunId && run.runId === observation.selectedRunId
+  )) ?? null;
+  if (!selectedRun) {
+    return (
+      <div className="sidecar-run sidecar-run--selection-required">
+        <BuildForensicFocus focus={runFocus} />
+        <header className="sidecar-run__header">
+          <div className="sidecar-run__identity">
+            <div className="sidecar-inspector__id">{observation.identity.id} · exact run selection required</div>
+            <h2 className="sidecar-inspector__title">Select an admitted run</h2>
+            <p className="sidecar-run__selection-explanation">No default or latest projection is inferred. Choose one published run identity to load its exact event generation.</p>
+          </div>
+          <div className="sidecar-run__controls">
+            <label className="sidecar-run__run-select">
+              <span>Run</span>
+              <select
+                aria-label="Select observed run"
+                value=""
+                onChange={(event) => {
+                  if (event.target.value) dispatch({ type: 'run/select', runId: event.target.value });
+                }}
+              >
+                <option value="" disabled>Choose an exact run…</option>
+                {observation.runs.map((run) => <option key={run.runId} value={run.runId}>{shortRunLabel(run)}</option>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="secondary sidecar-action-button"
+              disabled={traversal.runStatus === 'loading'}
+              onClick={() => dispatch({ type: 'traversal/load', workspaceRoot: projectRoot, runId: null, refresh: true })}
+            >
+              {traversal.runStatus === 'loading' ? 'Refreshing...' : 'Refresh candidates'}
+            </button>
+          </div>
+        </header>
+        <div className="sidecar-run__selection-count">{observation.runs.length} exact candidate{observation.runs.length === 1 ? '' : 's'} available</div>
+      </div>
+    );
+  }
+
+  const actorSessionDisposition = traversal.visualGraph.projection?.actorSessions.interactionDisposition ?? 'unavailable';
 
   return (
     <div className="sidecar-run">
@@ -3780,12 +3906,20 @@ function RunInspector({ state, dispatch }: {
       <header className="sidecar-run__header">
         <div className="sidecar-run__identity">
           <div className="sidecar-inspector__id">{observation.identity.id} · admitted run</div>
-          <h2 className="sidecar-inspector__title">{selectedRun?.scenarioId ?? selectedRun?.scenarioKind ?? 'Run Inspector'}</h2>
+          <h2 className="sidecar-inspector__title">{selectedRun?.observationLabel ?? selectedRun?.scenarioId ?? selectedRun?.scenarioKind ?? 'Run Inspector'}</h2>
           <div className="sidecar-run__pills">
-            <Pill kind={observation.activity?.status === 'converged' ? 'lane-completed' : 'lane-active'}>{observation.activity?.status ?? 'unknown'}</Pill>
+            {observation.runtimeState?.state === 'published' && <Pill kind="default">Run {observation.runtimeState.status}</Pill>}
+            {observation.retainedObservation && <Pill kind="default">Retained observation</Pill>}
+            <Pill kind={observation.eventPosture === 'terminal_converged'
+              ? 'lane-completed'
+              : observation.eventPosture === 'terminal_failed' || observation.eventPosture === 'invalid'
+                ? 'cat-defect'
+                : observation.eventPosture === 'non_terminal'
+                  ? 'lane-active'
+                  : 'default'}>{observation.eventPosture.replace(/_/g, ' ')}</Pill>
             <Pill kind="default">{observation.substrate?.packageVersion ?? 'unversioned substrate'}</Pill>
             <Pill kind="default">{observation.activity?.eventCount ?? 0} events</Pill>
-            <Pill kind="default">{observation.activity?.vectorClosedCount ?? 0}/{observation.activity?.vectorPlannedCount ?? 0} closed</Pill>
+            <Pill kind="default">{observation.activity?.semanticVectorCount === null ? 'Traversal counters unavailable' : `${observation.activity?.semanticVectorCount ?? 0} vectors · ${observation.activity?.vectorAttemptCount ?? 0} attempts`}</Pill>
           </div>
         </div>
         <div className="sidecar-run__controls">
@@ -3807,11 +3941,25 @@ function RunInspector({ state, dispatch }: {
           >
             {traversal.runStatus === 'loading' ? 'Refreshing...' : 'Refresh'}
           </button>
-          <button type="button" className="secondary sidecar-action-button" disabled={!selectedWorkspaceRoot} onClick={openRuntimeTarget}>
-            {matchingSession ? 'Open run shell' : 'New run shell'}
-          </button>
+          <span className="sidecar-run__actor-disposition" aria-label={`Actor session disposition: ${actorSessionDisposition.replace(/_/g, ' ')}`}>
+            Actor session: {actorSessionDisposition.replace(/_/g, ' ')}
+          </span>
         </div>
       </header>
+
+      {traversal.runStatus === 'error' && traversal.runError && (
+        <div className="sidecar-run__refresh-status" role="status" aria-live="polite" aria-atomic="true">
+          <span><strong>Run observation refresh failed.</strong> Retained run data remains interactive but is stale; no newer event generation was admitted.</span>
+          <code>{traversal.runError}</code>
+          <button
+            type="button"
+            className="secondary sidecar-action-button"
+            onClick={() => dispatch({ type: 'traversal/load', workspaceRoot: projectRoot, runId: traversal.selectedRunId, refresh: true })}
+          >
+            Retry run observation
+          </button>
+        </div>
+      )}
 
       <nav className="sidecar-run__sections" aria-label="Run observation sections">
         {RUN_SECTION_ORDER.map((section) => (
@@ -3839,14 +3987,29 @@ function RunInspector({ state, dispatch }: {
 
       <div className="sidecar-run__section">
         {traversal.section === 'overview' && <RunOverview observation={observation} />}
-        {traversal.section === 'graph' && <RunGraph observation={observation} />}
+        {traversal.section === 'graph' && (
+          <VisualGraphView
+            state={traversal.visualGraph}
+            onSelectNode={(selection) => dispatch({ type: 'visual-graph/select-node', selection })}
+            onPlaneChange={(plane) => dispatch({ type: 'visual-graph/set-plane', plane })}
+            onModeChange={(mode) => dispatch({ type: 'visual-graph/set-mode', mode })}
+            onZoomChange={(zoom) => dispatch({ type: 'visual-graph/set-zoom', zoom })}
+            onOverlayVisibilityChange={(overlay, visible) => dispatch({ type: 'visual-graph/set-overlay', overlay, visible })}
+            onOpenDetail={(selection) => dispatch({ type: 'visual-graph/open-detail', selection })}
+            onCloseDetail={() => dispatch({ type: 'visual-graph/close-detail' })}
+            onDetailFocusRestored={(requestId) => dispatch({ type: 'visual-graph/detail-focus-restored', requestId })}
+            onRetry={() => dispatch(traversal.visualGraph.refreshSource === 'run_observation'
+              ? { type: 'traversal/load', workspaceRoot: projectRoot, runId: traversal.selectedRunId, refresh: true }
+              : { type: 'visual-graph/retry' })}
+          />
+        )}
         {traversal.section === 'traversal' && <TraversalSection traversal={traversal} dispatch={dispatch} />}
         {traversal.section === 'functions' && <RunFunctions observation={observation} />}
         {traversal.section === 'catalog' && <RunCatalog observation={observation} />}
         {traversal.section === 'assets' && <RunAssets observation={observation} />}
         {traversal.section === 'diagnostics' && <RunDiagnostics observation={observation} />}
         {traversal.section === 'assurance' && <RunAssurance observation={observation} />}
-        {traversal.section === 'events' && <RunEvents observation={observation} />}
+        {traversal.section === 'events' && <RunEvents observation={observation} traversal={traversal} dispatch={dispatch} />}
         {traversal.section === 'stages' && <RunStages observation={observation} />}
         {traversal.section === 'transcripts' && <RunTranscripts observation={observation} />}
         {traversal.section === 'artifacts' && <RunArtifacts observation={observation} dispatch={dispatch} />}
@@ -3860,9 +4023,9 @@ function RunOverview({ observation }: { observation: AbgRunObservation }) {
   return (
     <div className="sidecar-run__overview">
       <div className="sidecar-run__metrics" aria-label="Run activity summary">
-        <div><strong>{activity?.currentVectorIndex ?? '—'}</strong><span>current vector</span></div>
-        <div><strong>{activity?.retryCount ?? 0}</strong><span>retries</span></div>
-        <div><strong>{activity?.continuationCount ?? 0}</strong><span>continuations</span></div>
+        <div><strong>{activity?.semanticVectorCount === null ? 'Unavailable' : activity?.currentVectorIndex ?? '—'}</strong><span>current vector</span></div>
+        <div><strong>{activity?.retryCount ?? 'Unavailable'}</strong><span>retries</span></div>
+        <div><strong>{activity?.continuationCount ?? 'Unavailable'}</strong><span>continuations</span></div>
         <div><strong>{activity?.eventKindCount ?? 0}</strong><span>event kinds</span></div>
         <div><strong>{formatTraversalDuration(activity?.durationMs ?? null)}</strong><span>duration</span></div>
       </div>
@@ -3873,8 +4036,21 @@ function RunOverview({ observation }: { observation: AbgRunObservation }) {
           ['Workspace root', observation.selectedWorkspaceRoot ?? '—'],
           ['Started', activity?.startedAt ?? '—'],
           ['Last event', activity?.lastEventAt ?? '—'],
+          ['Canonical Run state', observation.runtimeState?.status ?? 'unavailable'],
+          ['Status coverage', observation.runtimeState?.coverage.replace(/_/g, ' ') ?? 'unavailable'],
+          ['Status as of ordinal', observation.runtimeState?.asOfOrdinal?.toString() ?? '—'],
+          ['Event posture', observation.eventPosture.replace(/_/g, ' ')],
+          ['Physical ledger records', (observation.carrierSnapshot?.physicalRecordCount ?? observation.carrierSnapshot?.eventCount)?.toString() ?? '—'],
+          ['Selected Run events', observation.carrierSnapshot?.eventCount.toString() ?? '—'],
+          ['Body reference records', observation.carrierSnapshot?.storageReferenceCount?.toString() ?? '0'],
+          ['Prefix digest', observation.carrierSnapshot?.completePrefixDigest ?? '—'],
+          ['Process posture', observation.processPosture.replace(/_/g, ' ')],
+          ['Envelope', observation.carrierSnapshot?.envelopeProfile ?? '—'],
+          ['Proof', observation.proofReconciliation.state],
+          ['Compatibility', observation.compatibility.posture.replace(/_/g, ' ')],
           ['Substrate', observation.substrate?.packageName ?? '—'],
           ['Source commit', observation.substrate?.sourceCommit ?? '—'],
+          ...(observation.retainedObservation ? [['Observation mode', 'Retained archive; original store coordinates preserved'], ['Original log URI', observation.retainedObservation.originalCoordinate.eventLogRef], ['Original coordinate digest', observation.retainedObservation.originalCoordinate.coordinateDigest], ['Published status source', observation.runtimeState?.sourceRef ?? 'unavailable']] as Array<[string, string]> : []),
         ]} />
       </Section>
       <Section title="System references">
@@ -3887,28 +4063,6 @@ function RunOverview({ observation }: { observation: AbgRunObservation }) {
           ))}
         </div>
       </Section>
-    </div>
-  );
-}
-
-function RunGraph({ observation }: { observation: AbgRunObservation }) {
-  const graphRef = observation.systemReferences.find((reference) => reference.kind === 'graph')?.ref ?? 'unpublished graph';
-  const overlayRef = observation.systemReferences.find((reference) => reference.kind === 'overlay')?.ref ?? null;
-  return (
-    <div className="sidecar-run__graph">
-      <div className="sidecar-run__graph-head">
-        <code>{graphRef}</code>
-        {overlayRef && <Pill kind="stdo-ux">{overlayRef}</Pill>}
-      </div>
-      <ol className="sidecar-run__graph-chain" aria-label="Observed graph vectors">
-        {observation.stages.map((stage) => (
-          <li key={stage.vectorIndex} className={`sidecar-run__graph-node sidecar-run__graph-node--${stage.status}`}>
-            <span className="sidecar-run__graph-index">v{stage.vectorIndex}</span>
-            <div><strong>{stage.edge ?? stage.stage ?? 'unlabelled edge'}</strong><code>{stage.sourceTypeRef ?? '—'} → {stage.targetTypeRef ?? '—'}</code></div>
-            <span>{stage.status}</span>
-          </li>
-        ))}
-      </ol>
     </div>
   );
 }
@@ -4118,17 +4272,50 @@ function RunAssurance({ observation }: { observation: AbgRunObservation }) {
   );
 }
 
-function RunEvents({ observation }: { observation: AbgRunObservation }) {
+function RunEvents({ observation, traversal, dispatch }: {
+  observation: AbgRunObservation;
+  traversal: SidecarTraversalState;
+  dispatch: Dispatch<SidecarMsg>;
+}) {
+  const page = traversal.eventPage ?? observation.eventPage;
+  const detail = traversal.eventDetail;
+  const previousStart = page?.previousStart ?? null;
+  const nextStart = page?.nextStart ?? null;
+  const detailElement = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { detailElement.current?.scrollIntoView({ block: 'start' }); }, [detail?.eventId, detail?.generation]);
   return (
     <div className="sidecar-run__events-layout">
       <aside className="sidecar-run__event-kinds" aria-label="Event kind counts">
+        <div><code>envelope</code><strong>{observation.carrierSnapshot?.envelopeProfile.replace('abiogenesis_', 'ABG ') ?? '—'}</strong></div>
+        <div><code>proof</code><strong>{observation.proofReconciliation.state}</strong></div>
         {observation.eventKinds.map((entry) => <div key={entry.kind}><code>{entry.kind}</code><strong>{entry.count}</strong></div>)}
       </aside>
-      <RunTable headers={['#', 'Time', 'Kind', 'Vector', 'Edge', 'Detail']}>
-        {observation.events.map((event) => (
-          <tr key={event.index}><td>{event.index}</td><td>{event.eventTime ?? '—'}</td><td><code>{event.kind}</code></td><td>{event.vectorIndex === null ? '—' : `v${event.vectorIndex}`}</td><td><code>{event.edge ?? '—'}</code></td><td>{event.detail ?? '—'}</td></tr>
-        ))}
-      </RunTable>
+      <div>
+        <div className="sidecar-run__controls" aria-label="Event page controls">
+          <button type="button" className="secondary sidecar-action-button" disabled={previousStart === null || traversal.eventPageStatus === 'loading'} onClick={() => previousStart !== null && dispatch({ type: 'run/event-page-request', start: previousStart })}>Previous</button>
+          <span>{page ? `${page.start + 1}–${page.start + page.rows.length} of ${page.total}` : 'No admitted events'}</span>
+          <button type="button" className="secondary sidecar-action-button" disabled={nextStart === null || traversal.eventPageStatus === 'loading'} onClick={() => nextStart !== null && dispatch({ type: 'run/event-page-request', start: nextStart })}>Next</button>
+        </div>
+        {traversal.eventPageError && <div className="sidecar-traversal__error" role="alert">{traversal.eventPageError}</div>}
+        <RunTable headers={['#', 'Time', 'Kind', 'Vector', 'Edge', 'Detail']}>
+          {(page?.rows ?? []).map((event) => (
+            <tr key={event.eventId}>
+              <td><button type="button" className="secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => dispatch({ type: 'run/event-detail-request', ordinal: event.ordinal })}>{event.ordinal}</button></td>
+              <td>{event.eventTime ?? '—'}</td><td><code>{event.kind}</code></td><td>{event.vectorIndex === null ? '—' : `v${event.vectorIndex}`}</td><td><code>{event.edge ?? '—'}</code></td><td>{event.detail ?? '—'}</td>
+            </tr>
+          ))}
+        </RunTable>
+        {traversal.eventDetailStatus === 'loading' && <div className="sidecar-inspector__empty" aria-busy="true">Loading exact event detail…</div>}
+        {traversal.eventDetailError && <div className="sidecar-traversal__error" role="alert">{traversal.eventDetailError}</div>}
+        {detail && (
+          <details ref={detailElement} open className="sidecar-run__event-detail">
+            <summary><strong>Event #{detail.ordinal}</strong><code>{detail.eventKind}</code></summary>
+            <code className="sidecar-run__source-ref">Physical record: {detail.sourceRef} @ {detail.sourceByteOffset} + {detail.sourceByteLength} bytes</code>
+            {detail.logicalByteLength !== undefined && <p>Logical event: {detail.logicalByteLength} bytes{detail.storageReference ? ` · body restored from ${detail.storageReference.sourceEventRef}` : ' · inline'}</p>}
+            {detail.value ? <pre>{JSON.stringify(detail.value, null, 2)}</pre> : <p>{detail.refusal ?? 'Exact detail is unavailable.'}</p>}
+          </details>
+        )}
+      </div>
     </div>
   );
 }

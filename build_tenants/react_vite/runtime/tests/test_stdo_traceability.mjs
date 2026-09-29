@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import {
-  cpSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -15,8 +14,6 @@ import {
   auditStdoTraceability,
   DEFAULT_REPOSITORY_ROOT,
   formatTraceabilityReport,
-  inspectInstalledStdoRelease,
-  INSTALLED_STDO_RELEASE,
 } from "../stdo-traceability.mjs";
 
 function writeFixtureFile(root, path, contents) {
@@ -142,7 +139,7 @@ function errorCodes(report) {
 }
 
 function auditFixture(root) {
-  return auditStdoTraceability(root, { verifyInstalledStandards: false });
+  return auditStdoTraceability(root);
 }
 
 test("live repository has deterministic Goals-to-proof STDO traceability", () => {
@@ -154,40 +151,15 @@ test("live repository has deterministic Goals-to-proof STDO traceability", () =>
   assert.deepEqual(first.summary, {
     constitutionalDocuments: 3,
     productOutcomes: 7,
-    requirementFamilies: 15,
-    requirements: 138,
+    requirementFamilies: 16,
+    requirements: 148,
     activeDesigns: 16,
     scenarios: 18,
     sourceCarriers: 39,
-    proofCarriers: 76,
-    standardsMembers: 41,
-    standardsAggregate: INSTALLED_STDO_RELEASE.aggregate,
-    scenarioProofGaps: 54,
-    edges: 856,
+    proofCarriers: 77,
+    scenarioProofGaps: 55,
+    edges: 859,
   });
-});
-
-test("installed STDO projection reproduces the immutable v2.2.1 aggregate", (t) => {
-  const installed = inspectInstalledStdoRelease(DEFAULT_REPOSITORY_ROOT);
-  assert.equal(installed.ok, true);
-  assert.equal(installed.memberCount, 41);
-  assert.equal(installed.aggregate, INSTALLED_STDO_RELEASE.aggregate);
-  assert.equal(installed.members[0].path.startsWith("specification/standards/"), true);
-
-  const root = mkdtempSync(join(tmpdir(), "odd-manager-stdo-release-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const copiedRoot = join(root, ".genesis/docs/standards");
-  mkdirSync(dirname(copiedRoot), { recursive: true });
-  cpSync(join(DEFAULT_REPOSITORY_ROOT, ".genesis/docs/standards"), copiedRoot, {
-    recursive: true,
-  });
-  const readme = join(copiedRoot, "README.md");
-  writeFileSync(readme, `${readFileSync(readme, "utf8")}\nmutation\n`);
-
-  const drifted = inspectInstalledStdoRelease(root);
-  assert.equal(drifted.ok, false);
-  assert.equal(drifted.memberCount, 41);
-  assert.notEqual(drifted.aggregate, INSTALLED_STDO_RELEASE.aggregate);
 });
 
 test("accepts a complete constitutional traceability graph derived only from co-located metadata", (t) => {

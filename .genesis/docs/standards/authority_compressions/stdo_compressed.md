@@ -16,10 +16,10 @@ source_refs:
   - ../RELEASE_METHOD.md
   - ../POSTING_GUIDE.md
 source_digests:
-  SPEC_METHOD.md: 220144b53f801b8cd4ec905a5745598bedeb2b6562d2759b74bea16bb44f9432
-  DESIGN_MODULE_METHOD.md: 13e7e49233bb61d8a73b1b83cc379afc80f0c2d9c74d52926a4d90feb1337233
-  ODD_METHOD.md: c0e21a41291d3a7b05614822e327258aa358aab1b43a669c2ec1e58e49c1df58
-  TICKET_METHOD.md: ce266bbc80d2cd465611241258bc5a64dd58c7806c78a3ef53fb33cfe2afbd26
+  SPEC_METHOD.md: 25e673f16a1d28fc43c95848a486625b34da8ea703ad36febb653456e86f1b37
+  DESIGN_MODULE_METHOD.md: 82e40cf5074b1af0ba05c459c664c29a625cba8fa07c9b791b31973cf0c725da
+  ODD_METHOD.md: 42be18b4d16e7d1bd8ca764d951fd533a19fa0ce4c67d17462c3a0f6879d46bb
+  TICKET_METHOD.md: 2a23614cdd344179cf43263dd6074b1c2f7d4747c33083fdcebff3992df41675
   UX_METHOD.md: a7cca45d6064d7fc864edd86e3913c9462cfe2a52ae3d1519c6a031713dccae7
   IDENTITY_METHOD.md: 9348451648b4afc9f61c4f4b544aeafc7a92c3b1b5bc112872945cd44c8e0a53
   RELEASE_METHOD.md: f66805ccaab8bbb51a2dcd8309dc121780a994230194067f42eaa0a280cc184e
@@ -74,6 +74,51 @@ layer that owns the missing truth.
   architecture or module design. Domain, sequence, state, authority, IACS, and
   public-contract surfaces preserve it; code and tests derive through
   requirements plus accepted design.
+- Naming an admitter is not sufficient. State the complete admission relation
+  for each consequential entity-transition domain — entity identity,
+  predecessor basis, authority scope, candidate family, decision cardinality,
+  admission predicate, durable result, supersession law. Singularity attaches to
+  the relation, not one actor; quorum, multi-signature, step-up, and proxy are
+  lawful when declared. A projection may produce a candidate but confers no
+  admission authority, and reconstructed state is not self-authenticating.
+- Disposition every equivalent competing path explicitly as a constituent, a
+  replica, a replacement, or a deliberately independent realization of the
+  admission law. Disposition does not mean deletion; an undisposed equivalent
+  path is the defect, not the equivalence itself.
+- Declare the governing frames a material boundary derives from, its bounded
+  affected relation set, and the seams crossing it. Frames form a constraint
+  network; more than one governing frame is lawful. Every seam crossing the
+  affected set must either include its causally relevant far-side relation or
+  state why that relation cannot affect and cannot be affected by the action.
+  A bounded local action conserves governing truth; changing a governing
+  relation re-enters there.
+- Design evidence is durable reasoning state for a bounded actor. The selected
+  STDO basis plus accepted design must recover every governing relation in a
+  proposed action's causally closed affected set and decide preserve, change,
+  duplicate, or violate — without dialogue, commentary, prior-worker memory, or
+  folklore. Design must not restate federal decision law to achieve this.
+- The four decisions: `preserve` leaves the relation intact and operates inside
+  it; `change` alters the relation and re-enters at it before acceptance;
+  `duplicate` establishes an equivalent path explicitly disposed as constituent,
+  replica, replacement, or deliberately independent realization; `violate`
+  contradicts the relation or leaves an equivalent path undisposed. The
+  change/violate boundary is the locus of acceptance, not the size of the delta.
+  The duplicate/violate boundary is disposition, not equivalence.
+- Declare a role set for every material realization component; capability is not
+  authority. At a material boundary also project the domain design into data
+  structures, algorithms, algebraic laws, and effect boundaries. That projection
+  is subordinate: similarity yields a commonization candidate, never an
+  adjudication. Materially non-equivalent identity, ownership, ordering,
+  mutation, consistency, retention, failure, access, lifecycle, or authority law
+  requires separation; a difference alone does not discharge Prime contraction.
+- Dispose every material algorithmic obligation twice. Semantically it is an
+  existing accepted relation, an extension of one, or a new candidate relation.
+  In realization it is consume, implement locally, optimize, adapt, or
+  deliberately duplicate under stated non-semantic constraints — isolation,
+  substrate, performance, security, or dependency ownership. The rule is not
+  that equivalent code is never rebuilt; it is that a local realization must not
+  present an accepted semantic or authoritative relation as newly owned local
+  truth.
 - Apply the gate proportionally. An unchanged `realization_refactor` cites the
   accepted Ontology/design basis and proves no semantic delta. Re-evaluate only
   affected relations and projections, with no extra ticket or approval ceremony.
@@ -140,6 +185,32 @@ layer that owns the missing truth.
   independent numerator. Do not prescribe internal agent procedure when its
   variation has no governed effect, and do not create per-clause rationale
   carriers.
+- For probabilistic or agentic construction, begin from a reconstruction-
+  sufficient governing basis and execute the smallest coherent causal cone.
+  Bind selected computational relations, construction and assessment authority,
+  and re-entry conditions. Constructor self-review is not independent live-
+  surface assessment.
+- A bounded proxy may accept preservation, require local repair, reject a
+  violation, and advance to the next already-authorized action. Product,
+  requirement, governing-authority, or accepted-design changes re-enter at
+  their owner. Routine advancement requires no renewed human ceremony when the
+  delegation is already accepted.
+- Disposition bounded candidates as `accept`, `local_repair`, `re_enter`, or
+  `reject`. Conserve every governing relation affected by the local action;
+  unrelated incompleteness is repricing input. Repeated failure against an
+  unchanged boundary triggers reassessment without a numeric candidate or
+  review-round threshold.
+- Transition evidence binds the exact candidate, affected relations, changed
+  and competing paths, proof, remaining seams, non-changes, and disposition.
+  Use focused falsification during construction and whole-candidate proof at a
+  declared boundary unless risk requires it earlier. A durable reconstruction
+  claim needs loss or exclusion of incidental process state when same-process
+  state is a material counterexample.
+- Acceptance binds an exact checkpoint and permits the next already-authorized
+  action without widening scope. Accepted material Product movement is
+  progress; rejected or superseded work is churn; repeated proof is evidence;
+  discovery of hidden distance revises forecast. No numeric progress algorithm
+  is prescribed.
 - When both strategies are lawful and feasible, bounded evolution is the
   rebuttable selection presumption when a working predecessor can reach the
   admitted outcome without competing or ambiguous authority. It never requires

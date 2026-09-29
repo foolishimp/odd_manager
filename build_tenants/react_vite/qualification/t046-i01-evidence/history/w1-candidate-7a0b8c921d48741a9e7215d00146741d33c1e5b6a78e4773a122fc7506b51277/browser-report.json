@@ -1,0 +1,112 @@
+{
+  "config": {
+    "configFile": "/private/tmp/odd-manager-t046-installed-M8P3FR/repository/build_tenants/react_vite/qualification/t046-playwright.config.ts",
+    "rootDir": "/private/tmp/odd-manager-t046-installed-M8P3FR/repository/build_tenants/react_vite/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/odd-manager-t046-installed-M8P3FR/browser",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/private/tmp/odd-manager-t046-installed-M8P3FR/repository/build_tenants/react_vite/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "odd-manager-t046-i01.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "odd-manager-t046-i01.spec.ts",
+      "file": "odd-manager-t046-i01.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "T046 installed inspector selects exact retained Runs, preserves status, pages and restores lazy call detail",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7392,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-29T05:43:21.127Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "bounded-observation-responses",
+                      "contentType": "application/json",
+                      "body": "WwogIHsKICAgICJ1cmwiOiAiaHR0cDovLzEyNy4wLjAuMTo1MzI3NC9hcGkvYWktd29ya3NwYWNlL3J1bj93b3Jrc3BhY2VSb290PSUyRnByaXZhdGUlMkZ0bXAlMkZvZGQtbWFuYWdlci10MDQ2LWluc3RhbGxlZC1NOFAzRlIlMkZvYnNlcnZhdGlvbi1wcm9qZWN0IiwKICAgICJieXRlcyI6IDUxNjMKICB9LAogIHsKICAgICJ1cmwiOiAiaHR0cDovLzEyNy4wLjAuMTo1MzI3NC9hcGkvYWktd29ya3NwYWNlL3J1bj93b3Jrc3BhY2VSb290PSUyRnByaXZhdGUlMkZ0bXAlMkZvZGQtbWFuYWdlci10MDQ2LWluc3RhbGxlZC1NOFAzRlIlMkZvYnNlcnZhdGlvbi1wcm9qZWN0JnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGZjAyODIyZjc1Yzc2NjJhM2Y0YzkzMTFhMTczMWUyYjg2ZTM2OTAwOWU0MzdiOTg0ZTZmYzYzNWFjNWQzMGM2MSIsCiAgICAiYnl0ZXMiOiAxMTMyMjcKICB9LAogIHsKICAgICJ1cmwiOiAiaHR0cDovLzEyNy4wLjAuMTo1MzI3NC9hcGkvYWktd29ya3NwYWNlL3J1bi92aXN1YWwtZ3JhcGg/d29ya3NwYWNlUm9vdD0lMkZwcml2YXRlJTJGdG1wJTJGb2RkLW1hbmFnZXItdDA0Ni1pbnN0YWxsZWQtTThQM0ZSJTJGb2JzZXJ2YXRpb24tcHJvamVjdCZydW5JZD1ydW4lM0ElMkYlMkZhYmlvZ2VuZXNpcyUyRmYwMjgyMmY3NWM3NjYyYTNmNGM5MzExYTE3MzFlMmI4NmUzNjkwMDllNDM3Yjk4NGU2ZmM2MzVhYzVkMzBjNjEmZ2VuZXJhdGlvbj1zaGEyNTYlM0E3OGQzNTlhNWIzZGI5MzM2NDM0N2IxY2NlZmY0Njc3YjhlZWU2YmNhZGYxNDFjYTQyNWFkMDYyNDVhNTVlMDM4IiwKICAgICJieXRlcyI6IDEyNjMKICB9LAogIHsKICAgICJ1cmwiOiAiaHR0cDovLzEyNy4wLjAuMTo1MzI3NC9hcGkvYWktd29ya3NwYWNlL3J1bi9ldmVudD93b3Jrc3BhY2VSb290PSUyRnByaXZhdGUlMkZ0bXAlMkZvZGQtbWFuYWdlci10MDQ2LWluc3RhbGxlZC1NOFAzRlIlMkZvYnNlcnZhdGlvbi1wcm9qZWN0JmdlbmVyYXRpb249c2hhMjU2JTNBNzhkMzU5YTViM2RiOTMzNjQzNDdiMWNjZWZmNDY3N2I4ZWVlNmJjYWRmMTQxY2E0MjVhZDA2MjQ1YTU1ZTAzOCZvcmRpbmFsPTEzJnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGZjAyODIyZjc1Yzc2NjJhM2Y0YzkzMTFhMTczMWUyYjg2ZTM2OTAwOWU0MzdiOTg0ZTZmYzYzNWFjNWQzMGM2MSIsCiAgICAiYnl0ZXMiOiAzNDE5CiAgfSwKICB7CiAgICAidXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTMyNzQvYXBpL2FpLXdvcmtzcGFjZS9ydW4vZXZlbnRzP3dvcmtzcGFjZVJvb3Q9JTJGcHJpdmF0ZSUyRnRtcCUyRm9kZC1tYW5hZ2VyLXQwNDYtaW5zdGFsbGVkLU04UDNGUiUyRm9ic2VydmF0aW9uLXByb2plY3QmZ2VuZXJhdGlvbj1zaGEyNTYlM0E3OGQzNTlhNWIzZGI5MzM2NDM0N2IxY2NlZmY0Njc3YjhlZWU2YmNhZGYxNDFjYTQyNWFkMDYyNDVhNTVlMDM4JnN0YXJ0PTQwJmxpbWl0PTQwJnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGZjAyODIyZjc1Yzc2NjJhM2Y0YzkzMTFhMTczMWUyYjg2ZTM2OTAwOWU0MzdiOTg0ZTZmYzYzNWFjNWQzMGM2MSIsCiAgICAiYnl0ZXMiOiA0MTYxNQogIH0sCiAgewogICAgInVybCI6ICJodHRwOi8vMTI3LjAuMC4xOjUzMjc0L2FwaS9haS13b3Jrc3BhY2UvcnVuP3dvcmtzcGFjZVJvb3Q9JTJGcHJpdmF0ZSUyRnRtcCUyRm9kZC1tYW5hZ2VyLXQwNDYtaW5zdGFsbGVkLU04UDNGUiUyRm9ic2VydmF0aW9uLXByb2plY3QmcnVuSWQ9cnVuJTNBJTJGJTJGYWJpb2dlbmVzaXMlMkZmNjFlMDE1ZDFkYThjODU4MzZiZjFjYmVlYjg0MmY1M2IwNGM4MzIwMzc5NWNmMTRlZjE5OGZjY2EzMjM2NWEyIiwKICAgICJieXRlcyI6IDExMzE2NwogIH0sCiAgewogICAgInVybCI6ICJodHRwOi8vMTI3LjAuMC4xOjUzMjc0L2FwaS9haS13b3Jrc3BhY2UvcnVuL3Zpc3VhbC1ncmFwaD93b3Jrc3BhY2VSb290PSUyRnByaXZhdGUlMkZ0bXAlMkZvZGQtbWFuYWdlci10MDQ2LWluc3RhbGxlZC1NOFAzRlIlMkZvYnNlcnZhdGlvbi1wcm9qZWN0JnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGZjYxZTAxNWQxZGE4Yzg1ODM2YmYxY2JlZWI4NDJmNTNiMDRjODMyMDM3OTVjZjE0ZWYxOThmY2NhMzIzNjVhMiZnZW5lcmF0aW9uPXNoYTI1NiUzQWI5MTJiNjZkNTJjYjU5MDllMjJmYTcxMjljY2Y3YjZmODNhMDU5YWU5NzAxZGU3ZmQ5NDA0MGQ4OTU0YjY2Y2YiLAogICAgImJ5dGVzIjogMTI2MwogIH0sCiAgewogICAgInVybCI6ICJodHRwOi8vMTI3LjAuMC4xOjUzMjc0L2FwaS9haS13b3Jrc3BhY2UvcnVuL2V2ZW50P3dvcmtzcGFjZVJvb3Q9JTJGcHJpdmF0ZSUyRnRtcCUyRm9kZC1tYW5hZ2VyLXQwNDYtaW5zdGFsbGVkLU04UDNGUiUyRm9ic2VydmF0aW9uLXByb2plY3QmZ2VuZXJhdGlvbj1zaGEyNTYlM0FiOTEyYjY2ZDUyY2I1OTA5ZTIyZmE3MTI5Y2NmN2I2ZjgzYTA1OWFlOTcwMWRlN2ZkOTQwNDBkODk1NGI2NmNmJm9yZGluYWw9MTMmcnVuSWQ9cnVuJTNBJTJGJTJGYWJpb2dlbmVzaXMlMkZmNjFlMDE1ZDFkYThjODU4MzZiZjFjYmVlYjg0MmY1M2IwNGM4MzIwMzc5NWNmMTRlZjE5OGZjY2EzMjM2NWEyIiwKICAgICJieXRlcyI6IDM0MjIKICB9LAogIHsKICAgICJ1cmwiOiAiaHR0cDovLzEyNy4wLjAuMTo1MzI3NC9hcGkvYWktd29ya3NwYWNlL3J1bi9ldmVudHM/d29ya3NwYWNlUm9vdD0lMkZwcml2YXRlJTJGdG1wJTJGb2RkLW1hbmFnZXItdDA0Ni1pbnN0YWxsZWQtTThQM0ZSJTJGb2JzZXJ2YXRpb24tcHJvamVjdCZnZW5lcmF0aW9uPXNoYTI1NiUzQWI5MTJiNjZkNTJjYjU5MDllMjJmYTcxMjljY2Y3YjZmODNhMDU5YWU5NzAxZGU3ZmQ5NDA0MGQ4OTU0YjY2Y2Ymc3RhcnQ9NDAmbGltaXQ9NDAmcnVuSWQ9cnVuJTNBJTJGJTJGYWJpb2dlbmVzaXMlMkZmNjFlMDE1ZDFkYThjODU4MzZiZjFjYmVlYjg0MmY1M2IwNGM4MzIwMzc5NWNmMTRlZjE5OGZjY2EzMjM2NWEyIiwKICAgICJieXRlcyI6IDQxNTg0CiAgfSwKICB7CiAgICAidXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTMyNzQvYXBpL2FpLXdvcmtzcGFjZS9ydW4/d29ya3NwYWNlUm9vdD0lMkZwcml2YXRlJTJGdG1wJTJGb2RkLW1hbmFnZXItdDA0Ni1pbnN0YWxsZWQtTThQM0ZSJTJGb2JzZXJ2YXRpb24tcHJvamVjdCZydW5JZD1ydW4lM0ElMkYlMkZhYmlvZ2VuZXNpcyUyRmNhODZlYzAxZjhiNmViNWFhY2E5MWU3YmY5M2FkYjAzYzAxMzgyYjU2YTA0ZmZjNmE4ODJkZDE4MTJiM2I3ZTMiLAogICAgImJ5dGVzIjogMTExNjEyCiAgfSwKICB7CiAgICAidXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTMyNzQvYXBpL2FpLXdvcmtzcGFjZS9ydW4vdmlzdWFsLWdyYXBoP3dvcmtzcGFjZVJvb3Q9JTJGcHJpdmF0ZSUyRnRtcCUyRm9kZC1tYW5hZ2VyLXQwNDYtaW5zdGFsbGVkLU04UDNGUiUyRm9ic2VydmF0aW9uLXByb2plY3QmcnVuSWQ9cnVuJTNBJTJGJTJGYWJpb2dlbmVzaXMlMkZjYTg2ZWMwMWY4YjZlYjVhYWNhOTFlN2JmOTNhZGIwM2MwMTM4MmI1NmEwNGZmYzZhODgyZGQxODEyYjNiN2UzJmdlbmVyYXRpb249c2hhMjU2JTNBNTJiZjg3ZmIxZDljNmI2ZGMyYjk1MzViNTQzMGMzMjkwOTcwOWFkYzAyODY1ODg1ZDA5N2RjMWNiYjQxOTYyOCIsCiAgICAiYnl0ZXMiOiAxMjYzCiAgfSwKICB7CiAgICAidXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTMyNzQvYXBpL2FpLXdvcmtzcGFjZS9ydW4vZXZlbnQ/d29ya3NwYWNlUm9vdD0lMkZwcml2YXRlJTJGdG1wJTJGb2RkLW1hbmFnZXItdDA0Ni1pbnN0YWxsZWQtTThQM0ZSJTJGb2JzZXJ2YXRpb24tcHJvamVjdCZnZW5lcmF0aW9uPXNoYTI1NiUzQTUyYmY4N2ZiMWQ5YzZiNmRjMmI5NTM1YjU0MzBjMzI5MDk3MDlhZGMwMjg2NTg4NWQwOTdkYzFjYmI0MTk2Mjgmb3JkaW5hbD0yMzI4JnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGY2E4NmVjMDFmOGI2ZWI1YWFjYTkxZTdiZjkzYWRiMDNjMDEzODJiNTZhMDRmZmM2YTg4MmRkMTgxMmIzYjdlMyIsCiAgICAiYnl0ZXMiOiAzNDI5CiAgfSwKICB7CiAgICAidXJsIjogImh0dHA6Ly8xMjcuMC4wLjE6NTMyNzQvYXBpL2FpLXdvcmtzcGFjZS9ydW4vZXZlbnRzP3dvcmtzcGFjZVJvb3Q9JTJGcHJpdmF0ZSUyRnRtcCUyRm9kZC1tYW5hZ2VyLXQwNDYtaW5zdGFsbGVkLU04UDNGUiUyRm9ic2VydmF0aW9uLXByb2plY3QmZ2VuZXJhdGlvbj1zaGEyNTYlM0E1MmJmODdmYjFkOWM2YjZkYzJiOTUzNWI1NDMwYzMyOTA5NzA5YWRjMDI4NjU4ODVkMDk3ZGMxY2JiNDE5NjI4JnN0YXJ0PTQwJmxpbWl0PTQwJnJ1bklkPXJ1biUzQSUyRiUyRmFiaW9nZW5lc2lzJTJGY2E4NmVjMDFmOGI2ZWI1YWFjYTkxZTdiZjkzYWRiMDNjMDEzODJiNTZhMDRmZmM2YTg4MmRkMTgxMmIzYjdlMyIsCiAgICAiYnl0ZXMiOiA0MTc0NAogIH0KXQ=="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9371b72c18b2fa956480-2391bdfe9ef98a6ed03b",
+          "file": "odd-manager-t046-i01.spec.ts",
+          "line": 6,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-29T05:43:20.397Z",
+    "duration": 8240.889,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

@@ -1,7 +1,7 @@
 # Domain Model - odd_manager
 
-**Version**: 0.5.0
-**Date**: 2026-07-11
+**Version**: 0.6.0
+**Date**: 2026-08-28
 **Status**: Active
 **Derives From**:
 - `specification/INTENT.md`
@@ -10,6 +10,7 @@
 - `specification/requirements/03-read-model-and-projection.md`
 - `specification/requirements/06-operator-workbench.md`
 - `specification/requirements/10-entry-lenses-and-delivery-workspaces.md`
+- `specification/requirements/16-abg-event-stream-compatibility.md`
 
 ## Purpose
 
@@ -45,10 +46,12 @@ A Build Request invokes only a published semantic carrier. GTL owns that
 carrier's declared program and ABG owns traversal, continuation, runtime event
 truth, evidence admission, and closure.
 
-The current exact reference evidence is the immutable `odd_glc` `0.1.0`
-Basic-CLI proof produced on ABIogenesis `4.6.0-rc.3`. It qualifies only the
-generic read-only observation projection; it does not create an
-`odd_glc`-specific manager lane or supply Build/Assure authority.
+The retained exact reference qualification is the immutable `odd_glc` `0.1.0`
+Basic-CLI proof produced on ABIogenesis `4.6.0-rc.3`. The current development
+target expands the evidence portfolio to six terminal Hello World streams and
+non-terminal Data Mapper streams. Their carriers still self-identify as
+ABIogenesis `4.6.0-rc.3`; they shape the 5.0 development wave but do not prove
+5.0 compatibility or supply Build/Assure authority.
 
 Historical Process Navigator and `odd_sdlc.query-domain` carriers are retired
 pre-release material. They do not define a live compatibility contract.
@@ -74,7 +77,7 @@ Across Projects, the manager may observe:
 - published product identity and separately published governance packages
 - Project-owned `.ai-workspace` features and artifacts
 - run carrier roots, timestamped run roots, and generated run workspaces
-- proof and identity carriers that admit a run
+- identity and event carriers that admit a run before optional terminal proof
 - graph, graph-function, overlay, and startup references
 - runs, graph calls, frames, traversal vectors, retries, and continuations
 - payload, evidence, witness, assurance, and terminal facts
@@ -163,6 +166,8 @@ ProjectObservationTopology
   = PublishedIdentity
   + ProjectAiWorkspaceRoot
   + RunCarrierRoot[]
+  + RunIdentityCarrier[]
+  + EventCarrier[]
   + AdmittedRun[]
   + Diagnostic[]
 ```
@@ -170,11 +175,19 @@ ProjectObservationTopology
 A run workspace below a timestamped run root remains part of the owning
 Project. It is not a second Project merely because it can host a shell.
 
+### RunIdentityCarrier
+
+A bounded published artifact that identifies one Run, its run/workspace roots,
+scenario, substrate, graph, graph-function, overlay, startup, source, and
+domain-product basis. Its own path, digest, and observation metadata remain
+part of the relation. Directory spelling and PID are not identity authority.
+
 ### AdmittedRun
 
-A run discovered from a bounded proof or identity carrier. It records run id,
-run root, workspace root, scenario identity, proof class, graph-function ref,
-status, event count, and source artifacts.
+A run discovered from a bounded RunIdentityCarrier and its in-boundary durable
+EventCarrier. It records exact run identity, roots, scenario, substrate,
+graph-function, event posture, independent process posture where published,
+optional proof reconciliation, event-prefix identity, and source artifacts.
 
 ### Run
 
@@ -202,15 +215,20 @@ evaluation. The manager projects continuation facts but never chooses them.
 
 ### EventCarrier
 
-A source-attributed event sequence or event ledger. Large ledgers are never
-sent whole to the browser. The manager exposes complete published kind counts,
-bounded high-signal rows, file metadata, and SHA-256 verification against the
-proof-declared digest. Unknown event kinds remain visible.
+A source-attributed append-only event sequence or event ledger. Large ledgers
+are never sent whole to the browser. The server incrementally validates an
+exact complete prefix and exposes bounded kind counts, indexed rows, file and
+prefix metadata, schema fingerprint, and SHA-256. Unknown event kinds remain
+visible. Non-terminal event posture does not imply that an external process is
+running or stopped.
 
 ### ProofCarrier
 
-A bounded artifact that admits run identity, runtime refs, event counts,
-event-ledger digest, substrate version, and assurance facts.
+A bounded immutable artifact that may publish run identity, runtime refs, event
+counts, event-ledger digest, substrate version, and assurance facts. It is
+reconciled late against the already admitted RunIdentityCarrier and exact
+EventCarrier bytes. Absence of proof blocks proof-dependent closure but not
+read-only non-terminal observation.
 
 ### Asset
 
@@ -247,7 +265,11 @@ exposes:
 - artifacts
 
 The projection is bounded, versioned, source-attributed, and runtime-validated
-before reducer admission.
+It separately records event posture, process posture, proof reconciliation,
+event-index generation, and bounded page cursors. Graph calls, frames,
+semantic vectors, invocation attempts, retries, continuations, actors, and
+C-calls retain their published identities rather than being inferred from raw
+count subtraction or array adjacency.
 
 ### RuntimeTarget
 
@@ -381,7 +403,8 @@ silently performs them.
 1. Core GTL/ABG truth remains stable across product overlays.
 2. Identity comes from published carriers, not path labels.
 3. Run discovery remains bounded and Project-scoped.
-4. No run projection is admitted without proof or identity evidence.
+4. No run projection is admitted without exact identity and event-carrier
+   evidence; proof is an optional late reconciliation carrier.
 5. No event digest is shown as verified until the observed carrier matches it.
 6. Unknown event kinds are surfaced, never silently discarded.
 7. Domain overlays extend core truth without replacing it.
@@ -401,3 +424,7 @@ silently performs them.
     internal state.
 15. The Project Workbench composes capability meaning but does not become a
     hidden constructive carrier or orchestration engine.
+16. Event terminality, event freshness, and external process liveness remain
+    separate relations.
+17. Compatibility posture is attached only to the exact substrate identity
+    published by the carrier and proved through the installed causal path.

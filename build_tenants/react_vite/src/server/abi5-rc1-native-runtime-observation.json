@@ -1,0 +1,5076 @@
+{
+  "kind": "native_runtime_observation_contract",
+  "schemaVersion": "5.0.0",
+  "currentEventContractDigest": "sha256:ddc961a2484be150193fa255d7dc7b933e52fb81b7b2c681f2bb97e1f9d5754c",
+  "historicalEventContractDigest": "sha256:fc3a635040a6e3d763740ae54b6390944c7ea8cedfa060de110cb36e31ca6e3c",
+  "currentDescriptor": {
+    "kind": "root_event_contract_profile",
+    "schemaVersion": "5.0.0",
+    "profileRef": "abg.event-contract.root/p5-run-environment-role-context@1",
+    "legacyProfileDigest": "sha256:fc3a635040a6e3d763740ae54b6390944c7ea8cedfa060de110cb36e31ca6e3c",
+    "aggregateTypes": [
+      "actor_invocation",
+      "c_call",
+      "continuation",
+      "frame",
+      "graph_call",
+      "process",
+      "run",
+      "transport_binding",
+      "workspace"
+    ],
+    "eventKinds": [
+      "public_operation_artifact_admitted",
+      "public_operation_admitted",
+      "invocation_admitted",
+      "invocation_refused",
+      "implementation_admitted",
+      "basis_admitted",
+      "declaration_reprice_admitted",
+      "replay_log_attested",
+      "workspace_hygiene_stamped",
+      "defect_intake_admitted",
+      "run_resumed",
+      "run_segment_opened",
+      "graph_call_opened",
+      "frame_opened",
+      "traversal_cursor_entered",
+      "c_call_opened",
+      "c_call_fibre_selected",
+      "actor_transport_binding_admitted",
+      "actor_invocation_started",
+      "actor_process_started",
+      "actor_process_spawn_failed",
+      "actor_process_stdout_observed",
+      "actor_process_stderr_observed",
+      "actor_process_timeout_observed",
+      "actor_process_signal_requested",
+      "actor_process_exited",
+      "actor_process_termination_unconfirmed",
+      "actor_result_artifact_observed",
+      "actor_invocation_closed",
+      "actor_invocation_failed",
+      "c_call_evidenced",
+      "c_call_result_admitted",
+      "c_call_judged",
+      "assessed",
+      "retry_attempt_opened",
+      "retry_progress_recorded",
+      "child_foldback_admitted",
+      "child_preparation_refused",
+      "fan_out_completion_admitted",
+      "traversal_route_admitted",
+      "construction_intent_selected",
+      "construction_delta_observed",
+      "fh_interaction_opened",
+      "fh_interaction_responded",
+      "fh_interaction_resume_admitted",
+      "continuation_abandoned",
+      "continuation_superseded",
+      "continuation_reentry_link_admitted",
+      "runtime_failure_observed",
+      "run_stopped",
+      "terminal_reached",
+      "frame_closed",
+      "graph_call_closed",
+      "run_closed",
+      "runtime_activity_probe_observed",
+      "runtime_external_interruption_observed"
+    ],
+    "eventContracts": {
+      "public_operation_artifact_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "artifact",
+              "artifactDigest",
+              "artifactRef",
+              "authorityScopeDigest",
+              "authorityScopeRef",
+              "causationEventRefs",
+              "correlationId",
+              "definitionDigest",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "ownerAdmittedDisposition",
+              "productSemanticsBasisDigest",
+              "publicationDigest",
+              "resolvedLock",
+              "workspaceAuthorityBasis"
+            ],
+            "requiredPayloadKeys": [
+              "operationId",
+              "artifactRef",
+              "artifactDigest"
+            ]
+          }
+        ]
+      },
+      "public_operation_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogHandle",
+              "catalogViewId",
+              "definitionDigest",
+              "graphFunctionRef",
+              "gtlEntryCoordinate",
+              "gtlEntryTerm",
+              "invocationDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "policyDigest",
+              "policyRef",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "selectedDefinitionDigest",
+              "selectedDefinitionRef",
+              "variant",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "operationId",
+              "invocationRef",
+              "invocationDigest",
+              "variant"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogHandle",
+              "catalogViewId",
+              "definitionDigest",
+              "graphFunctionRef",
+              "gtlEntryCoordinate",
+              "gtlEntryTerm",
+              "invocationDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "policyDigest",
+              "policyRef",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "selectedDefinitionDigest",
+              "selectedDefinitionRef",
+              "variant",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "operationId",
+              "invocationRef",
+              "invocationDigest",
+              "variant"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityRef",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogViewDigest",
+              "catalogViewId",
+              "continuationRef",
+              "definitionDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "policyDigest",
+              "policyRef",
+              "programDigest",
+              "programRef",
+              "variant",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityRef",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogViewDigest",
+              "catalogViewId",
+              "continuationRef",
+              "definitionDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "policyDigest",
+              "policyRef",
+              "programDigest",
+              "programRef",
+              "variant",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "authorityScopeDigest",
+              "authorityScopeRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "definitionDigest",
+              "dependencyLockDigest",
+              "dependencyLockRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "productSetDigest",
+              "productSetRef",
+              "workspaceBindingDigest",
+              "workspaceBindingRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "authorityScopeDigest",
+              "authorityScopeRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "definitionDigest",
+              "dependencyLockDigest",
+              "dependencyLockRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "productSetDigest",
+              "productSetRef",
+              "workspaceBindingDigest",
+              "workspaceBindingRef"
+            ],
+            "expectedPayload": {
+              "operationId": "abg.operation.witness.admit"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "authorityScopeDigest",
+              "authorityScopeRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "definitionDigest",
+              "dependencyLockDigest",
+              "dependencyLockRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "productSetDigest",
+              "productSetRef",
+              "workspaceBindingDigest",
+              "workspaceBindingRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "authorityScopeDigest",
+              "authorityScopeRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "definitionDigest",
+              "dependencyLockDigest",
+              "dependencyLockRef",
+              "invocationDigest",
+              "invocationPayloadDigest",
+              "invocationRef",
+              "memberKey",
+              "operationId",
+              "productSetDigest",
+              "productSetRef",
+              "workspaceBindingDigest",
+              "workspaceBindingRef"
+            ],
+            "expectedPayload": {
+              "operationId": "abg.operation.witness.admit"
+            }
+          }
+        ]
+      },
+      "invocation_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityGrants",
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "catalogViewDigest",
+              "catalogViewId",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "inputContractDigest",
+              "inputContractOwner",
+              "inputContractRef",
+              "invocationAdmissionDigest",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "invocationVariant",
+              "outputContractDigest",
+              "outputContractOwner",
+              "outputContractRef",
+              "policyDigest",
+              "policyRef",
+              "productExecutionResolutionDigest",
+              "productExecutionResolutionRef",
+              "programDigest",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "publicRequestAdmissionRef",
+              "publicRequestDigest",
+              "publicRequestInvocationRef",
+              "publicStart",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "reentryBasis",
+              "sourceResultBasis",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "workspaceId"
+            ],
+            "requiredPayloadKeys": [
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "invocationAdmissionRef",
+              "invocationAdmissionDigest",
+              "invocationRef",
+              "reentryBasis",
+              "sourceResultBasis"
+            ],
+            "nullablePayloadKeys": [
+              "publicStart",
+              "reentryBasis",
+              "sourceResultBasis"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityGrants",
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogHandle",
+              "catalogViewDigest",
+              "catalogViewId",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "gtlEntryCoordinate",
+              "gtlEntryTerm",
+              "inputContractDigest",
+              "inputContractOwner",
+              "inputContractRef",
+              "invocationAdmissionDigest",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "invocationVariant",
+              "outputContractDigest",
+              "outputContractOwner",
+              "outputContractRef",
+              "policyDigest",
+              "policyRef",
+              "productExecutionResolutionDigest",
+              "productExecutionResolutionRef",
+              "programDigest",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "publicRequestAdmissionRef",
+              "publicRequestDigest",
+              "publicRequestInvocationRef",
+              "publicStart",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "reentryBasis",
+              "selectedDefinitionDigest",
+              "selectedDefinitionRef",
+              "sourceResultBasis",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "workspaceId"
+            ],
+            "requiredPayloadKeys": [
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "invocationAdmissionRef",
+              "invocationAdmissionDigest",
+              "invocationRef",
+              "reentryBasis",
+              "sourceResultBasis"
+            ],
+            "nullablePayloadKeys": [
+              "publicStart",
+              "reentryBasis",
+              "sourceResultBasis"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityGrants",
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "catalogViewDigest",
+              "catalogViewId",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "inputContractDigest",
+              "inputContractOwner",
+              "inputContractRef",
+              "invocationAdmissionDigest",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "invocationVariant",
+              "outputContractDigest",
+              "outputContractOwner",
+              "outputContractRef",
+              "policyDigest",
+              "policyRef",
+              "productExecutionResolutionDigest",
+              "productExecutionResolutionRef",
+              "programDigest",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "publicRequestAdmissionRef",
+              "publicRequestDigest",
+              "publicRequestInvocationRef",
+              "publicStart",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "reentryBasis",
+              "sourceResultBasis",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "workspaceId",
+              "runEnvironment"
+            ],
+            "requiredPayloadKeys": [
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "invocationAdmissionRef",
+              "invocationAdmissionDigest",
+              "invocationRef",
+              "reentryBasis",
+              "sourceResultBasis",
+              "runEnvironment"
+            ],
+            "nullablePayloadKeys": [
+              "publicStart",
+              "reentryBasis",
+              "sourceResultBasis"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "authorityDigest",
+              "authorityRef",
+              "capabilityGrantRefs",
+              "capabilityGrants",
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogHandle",
+              "catalogViewDigest",
+              "catalogViewId",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "gtlEntryCoordinate",
+              "gtlEntryTerm",
+              "inputContractDigest",
+              "inputContractOwner",
+              "inputContractRef",
+              "invocationAdmissionDigest",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "invocationVariant",
+              "outputContractDigest",
+              "outputContractOwner",
+              "outputContractRef",
+              "policyDigest",
+              "policyRef",
+              "productExecutionResolutionDigest",
+              "productExecutionResolutionRef",
+              "programDigest",
+              "programRef",
+              "programValidationDigest",
+              "programValidationRef",
+              "publicRequestAdmissionRef",
+              "publicRequestDigest",
+              "publicRequestInvocationRef",
+              "publicStart",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "reentryBasis",
+              "selectedDefinitionDigest",
+              "selectedDefinitionRef",
+              "sourceResultBasis",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "workspaceId",
+              "runEnvironment"
+            ],
+            "requiredPayloadKeys": [
+              "catalogApplicationDigests",
+              "catalogApplicationRefs",
+              "invocationAdmissionRef",
+              "invocationAdmissionDigest",
+              "invocationRef",
+              "reentryBasis",
+              "sourceResultBasis",
+              "runEnvironment"
+            ],
+            "nullablePayloadKeys": [
+              "publicStart",
+              "reentryBasis",
+              "sourceResultBasis"
+            ]
+          }
+        ]
+      },
+      "invocation_refused": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "contractOrDiagnosticRefs",
+              "invocationAdmissionRef",
+              "refusalDigest",
+              "refusalRef",
+              "stage",
+              "subjectDigest"
+            ],
+            "requiredPayloadKeys": [
+              "refusalRef",
+              "refusalDigest",
+              "stage"
+            ]
+          }
+        ]
+      },
+      "implementation_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "implementationSet",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "interactionSet",
+              "interactionSetDigest",
+              "interactionSetRef"
+            ],
+            "requiredPayloadKeys": [
+              "implementationSetRef",
+              "implementationSetDigest",
+              "interactionSetRef",
+              "interactionSetDigest"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "implementationSet",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "interactionSet",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "catalogViewDigest",
+              "catalogViewId",
+              "computeRegime",
+              "failureContractRef",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphValidationDigest",
+              "graphValidationRef",
+              "implementationBindingDigest",
+              "implementationBindingRef",
+              "implementationDescriptorDigest",
+              "implementationRef",
+              "inputContractRef",
+              "modulePath",
+              "namedSymbol",
+              "nodeRef",
+              "outputContractRef",
+              "packageName",
+              "packageVersion",
+              "programValidationRef",
+              "publicationDigest",
+              "refusalContractRef",
+              "resolutionCandidateDigest",
+              "resolutionCandidateRef",
+              "resolutionDigest",
+              "resolutionRef",
+              "resolutionValidationDigest",
+              "resolutionValidationRef"
+            ],
+            "requiredPayloadKeys": [
+              "implementationSetRef",
+              "implementationSetDigest",
+              "interactionSetRef",
+              "interactionSetDigest",
+              "implementationBindingRef"
+            ]
+          }
+        ]
+      },
+      "basis_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": [],
+            "payloadVariantIndexes": [
+              0
+            ]
+          },
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actionCatalogDigest",
+              "actionCatalogRef",
+              "actionCatalogRows",
+              "actorRef",
+              "basisClass",
+              "basisDigest",
+              "basisRef",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogViewDigest",
+              "catalogViewId",
+              "closureContractDigest",
+              "closureContractRef",
+              "constructionComposition",
+              "constructionCompositionDigest",
+              "constructionCompositionRef",
+              "entryRef",
+              "evidenceContractRef",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "graphValidationRef",
+              "implementationResolutionRef",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "judgmentContractRef",
+              "localExecutableLeafKeys",
+              "localImplementationSubsetDigest",
+              "localInteractionLeafKeys",
+              "localInteractionSubsetDigest",
+              "parentCCallRef",
+              "parentExecutionBasisRef",
+              "parentTraversalScopeRef",
+              "programDigest",
+              "programRef",
+              "programValidationRef",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "rawInputValue",
+              "refusalContractRef",
+              "refusalValueKind",
+              "rejectionContractRef",
+              "replayProjectionRef",
+              "resultContractRef",
+              "rootImplementationSetDigest",
+              "rootImplementationSetRef",
+              "rootInteractionSetDigest",
+              "rootInteractionSetRef",
+              "terminalKind",
+              "terminalPredicateRef",
+              "transitionContractRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "registeredSelectionDefinitionDigests"
+            ],
+            "requiredPayloadKeys": [
+              "basisRef",
+              "basisDigest",
+              "basisClass",
+              "rawInputValue"
+            ],
+            "expectedPayload": {
+              "basisClass": "root"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "actionCatalogDigest",
+              "actionCatalogRef",
+              "actionCatalogRows",
+              "actorRef",
+              "basisClass",
+              "basisDigest",
+              "basisRef",
+              "catalogBasisDigest",
+              "catalogBasisRef",
+              "catalogViewDigest",
+              "catalogViewId",
+              "closureContractDigest",
+              "closureContractRef",
+              "constructionComposition",
+              "constructionCompositionDigest",
+              "constructionCompositionRef",
+              "entryRef",
+              "evidenceContractRef",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "graphValidationRef",
+              "implementationResolutionRef",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "invocationAdmissionRef",
+              "invocationDigest",
+              "invocationRef",
+              "judgmentContractRef",
+              "localExecutableLeafKeys",
+              "localImplementationSubsetDigest",
+              "localInteractionLeafKeys",
+              "localInteractionSubsetDigest",
+              "parentCCallRef",
+              "parentExecutionBasisRef",
+              "parentTraversalScopeRef",
+              "programDigest",
+              "programRef",
+              "programValidationRef",
+              "rawInputAdmissionRef",
+              "rawInputDigest",
+              "rawInputValue",
+              "refusalContractRef",
+              "refusalValueKind",
+              "rejectionContractRef",
+              "replayProjectionRef",
+              "resultContractRef",
+              "rootImplementationSetDigest",
+              "rootImplementationSetRef",
+              "rootInteractionSetDigest",
+              "rootInteractionSetRef",
+              "terminalKind",
+              "terminalPredicateRef",
+              "transitionContractRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "registeredSelectionDefinitionDigests"
+            ],
+            "requiredPayloadKeys": [
+              "basisRef",
+              "basisDigest",
+              "basisClass",
+              "rawInputValue"
+            ],
+            "expectedPayload": {
+              "basisClass": "child"
+            }
+          }
+        ]
+      },
+      "declaration_reprice_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          },
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "afterDigest",
+              "beforeDigest",
+              "changeClass",
+              "declarationRef",
+              "operatorActorRef",
+              "owningTicketRef",
+              "reason",
+              "repriceRef"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "afterDigest",
+              "beforeDigest",
+              "changeClass",
+              "declarationRef",
+              "operatorActorRef",
+              "owningTicketRef",
+              "reason",
+              "repriceRef"
+            ]
+          }
+        ]
+      },
+      "replay_log_attested": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          },
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "attestationRef",
+              "attestedBy",
+              "chainDigest",
+              "eventCount"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "attestationRef",
+              "attestedBy",
+              "chainDigest",
+              "eventCount"
+            ]
+          }
+        ]
+      },
+      "workspace_hygiene_stamped": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "hygieneRef",
+              "observedBy",
+              "rows",
+              "segmentRef"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "hygieneRef",
+              "observedBy",
+              "rows",
+              "segmentRef"
+            ],
+            "nullablePayloadKeys": [
+              "segmentRef"
+            ]
+          }
+        ]
+      },
+      "defect_intake_admitted": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "changeClass",
+              "haltDiagnosisDigest",
+              "haltDiagnosisRef",
+              "intakeRef",
+              "owner",
+              "reEntryPoint",
+              "summary",
+              "triagedBy"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "changeClass",
+              "haltDiagnosisDigest",
+              "haltDiagnosisRef",
+              "intakeRef",
+              "owner",
+              "reEntryPoint",
+              "summary",
+              "triagedBy"
+            ]
+          }
+        ]
+      },
+      "run_resumed": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "operatorActorRef",
+              "reasonDetail",
+              "reasonKind"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "provenance",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef",
+              "operatorActorRef",
+              "reasonDetail",
+              "reasonKind"
+            ]
+          }
+        ]
+      },
+      "run_segment_opened": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "invocationAdmissionRef",
+              "invocationRef",
+              "programRef",
+              "runDigest",
+              "runId",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "invocationAdmissionRef",
+              "invocationRef",
+              "programRef",
+              "runDigest",
+              "runId",
+              "workspaceBindingId"
+            ]
+          }
+        ]
+      },
+      "graph_call_opened": {
+        "variants": [
+          {
+            "aggregateType": "graph_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId"
+            ],
+            "payloadVariantIndexes": [
+              0,
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "executionBasisRef",
+              "graphCallDigest",
+              "graphCallId",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "invocationRef",
+              "runId"
+            ],
+            "requiredPayloadKeys": [
+              "graphCallId",
+              "graphCallDigest"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "executionBasisRef",
+              "graphCallDigest",
+              "graphCallId",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "invocationRef",
+              "runId",
+              "parentFrameId"
+            ],
+            "requiredPayloadKeys": [
+              "graphCallId",
+              "graphCallDigest",
+              "parentFrameId"
+            ]
+          }
+        ]
+      },
+      "frame_opened": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "admittedInputDigest",
+              "admittedInputRef",
+              "attempt",
+              "executionBasisRef",
+              "frameDigest",
+              "frameId",
+              "frameLineageId",
+              "graphCallId",
+              "invocationRef",
+              "parentFrameId",
+              "runId"
+            ],
+            "requiredPayloadKeys": [
+              "frameId",
+              "frameDigest",
+              "frameLineageId",
+              "attempt",
+              "parentFrameId"
+            ]
+          }
+        ]
+      },
+      "traversal_cursor_entered": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "cursorDigest",
+              "cursorRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "inputDigest",
+              "inputRef",
+              "materializationDigest",
+              "materializationRef",
+              "programDigest",
+              "programRef",
+              "retryPath",
+              "taskOrdinal",
+              "termPath",
+              "traversalScopeDigest",
+              "traversalScopeRef"
+            ],
+            "requiredPayloadKeys": [
+              "cursorRef",
+              "cursorDigest"
+            ]
+          }
+        ]
+      },
+      "c_call_opened": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "basisId",
+              "batchRef",
+              "cCallDigest",
+              "cCallRef",
+              "callClass",
+              "cursorDigest",
+              "cursorRef",
+              "edgeRef",
+              "frameId",
+              "graphCallId",
+              "graphFunctionRef",
+              "programLocusRef",
+              "retryPath",
+              "stageRole",
+              "taskOrdinal",
+              "vectorIndex"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "cCallDigest",
+              "callClass"
+            ],
+            "expectedPayload": {
+              "callClass": "leaf"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "basisId",
+              "batchRef",
+              "cCallDigest",
+              "cCallRef",
+              "callClass",
+              "cursorDigest",
+              "cursorRef",
+              "edgeRef",
+              "frameId",
+              "graphCallId",
+              "graphFunctionRef",
+              "programLocusRef",
+              "retryPath",
+              "stageRole",
+              "taskOrdinal",
+              "vectorIndex",
+              "childGraphFunctionRef",
+              "failureContractRef",
+              "judgmentPredicateRef"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "cCallDigest",
+              "callClass",
+              "childGraphFunctionRef",
+              "failureContractRef",
+              "judgmentPredicateRef"
+            ],
+            "expectedPayload": {
+              "callClass": "workflow"
+            }
+          }
+        ]
+      },
+      "c_call_fibre_selected": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorCapabilityRef",
+              "armId",
+              "cCallRef",
+              "callClass",
+              "compositionRef",
+              "continuationContractRef",
+              "implementationBindingRef",
+              "implementationRef",
+              "implementationRequirementKey",
+              "implementationSetRef",
+              "interactionKind",
+              "interactionRequirementKey",
+              "interactionSetRef",
+              "regime",
+              "requestContractRef",
+              "responseContractRef"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "callClass",
+              "armId",
+              "regime"
+            ],
+            "expectedPayload": {
+              "callClass": "leaf"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorCapabilityRef",
+              "armId",
+              "cCallRef",
+              "callClass",
+              "compositionRef",
+              "continuationContractRef",
+              "implementationBindingRef",
+              "implementationRef",
+              "implementationRequirementKey",
+              "implementationSetRef",
+              "interactionKind",
+              "interactionRequirementKey",
+              "interactionSetRef",
+              "regime",
+              "requestContractRef",
+              "responseContractRef",
+              "childGraphFunctionRef"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "callClass",
+              "armId",
+              "regime",
+              "childGraphFunctionRef"
+            ],
+            "expectedPayload": {
+              "callClass": "workflow"
+            }
+          }
+        ]
+      },
+      "actor_transport_binding_admitted": {
+        "variants": [
+          {
+            "aggregateType": "transport_binding",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "absoluteTimeoutMs",
+              "actorRef",
+              "agentKey",
+              "archiveRoot",
+              "args",
+              "cCallRef",
+              "command",
+              "cwd",
+              "dispatchOrdinal",
+              "environmentDigest",
+              "environmentPolicyDigest",
+              "implementationBindingRef",
+              "implementationRef",
+              "inputDigest",
+              "lane",
+              "parser",
+              "paths",
+              "promptDigest",
+              "promptTransport",
+              "responseJsonSchemaDigest",
+              "terminationGraceMs",
+              "timeoutMs",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportContractDigest",
+              "transportPlanDigest",
+              "workerBindingRef",
+              "livenessBinding"
+            ],
+            "requiredPayloadKeys": [
+              "transportBindingRef",
+              "transportBindingDigest",
+              "cCallRef",
+              "livenessBinding"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "absoluteTimeoutMs",
+              "actorRef",
+              "agentKey",
+              "archiveRoot",
+              "args",
+              "cCallRef",
+              "command",
+              "cwd",
+              "dispatchOrdinal",
+              "environmentDigest",
+              "environmentPolicyDigest",
+              "implementationBindingRef",
+              "implementationRef",
+              "inputDigest",
+              "lane",
+              "parser",
+              "paths",
+              "promptDigest",
+              "promptTransport",
+              "responseJsonSchemaDigest",
+              "terminationGraceMs",
+              "timeoutMs",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportContractDigest",
+              "transportPlanDigest",
+              "workerBindingRef",
+              "instructionAssembly",
+              "livenessBinding"
+            ],
+            "requiredPayloadKeys": [
+              "transportBindingRef",
+              "transportBindingDigest",
+              "cCallRef",
+              "instructionAssembly",
+              "livenessBinding"
+            ]
+          }
+        ]
+      },
+      "actor_invocation_started": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "actorRef",
+              "cCallRef",
+              "dispatchOrdinal",
+              "implementationRef",
+              "inputDigest",
+              "promptDigest",
+              "requestDigest",
+              "requestRef",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "workerBindingRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "transportBindingRef",
+              "cCallRef"
+            ]
+          }
+        ]
+      },
+      "actor_process_started": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "cCallRef",
+              "processId",
+              "processRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "processId"
+            ]
+          }
+        ]
+      },
+      "actor_process_spawn_failed": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "diagnosticDigest",
+              "processRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "diagnosticDigest"
+            ]
+          }
+        ]
+      },
+      "actor_process_stdout_observed": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "byteLength",
+              "chunkDigest",
+              "processRef",
+              "streamOrdinal"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "streamOrdinal",
+              "chunkDigest"
+            ]
+          }
+        ]
+      },
+      "actor_process_stderr_observed": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "byteLength",
+              "chunkDigest",
+              "processRef",
+              "streamOrdinal"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "streamOrdinal",
+              "chunkDigest"
+            ]
+          }
+        ]
+      },
+      "actor_process_timeout_observed": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "timeoutClass",
+              "timeoutMs",
+              "thresholdObservation"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "timeoutClass",
+              "timeoutMs",
+              "thresholdObservation"
+            ],
+            "expectedPayload": {
+              "timeoutClass": "inactivity"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "timeoutClass",
+              "timeoutMs",
+              "thresholdObservation"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "timeoutClass",
+              "timeoutMs",
+              "thresholdObservation"
+            ],
+            "expectedPayload": {
+              "timeoutClass": "absolute"
+            }
+          }
+        ]
+      },
+      "actor_process_signal_requested": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "signal"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "signal"
+            ]
+          }
+        ]
+      },
+      "actor_process_exited": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "signal",
+              "status"
+            ],
+            "requiredPayloadKeys": [
+              "processRef",
+              "status",
+              "signal"
+            ]
+          }
+        ]
+      },
+      "actor_process_termination_unconfirmed": {
+        "variants": [
+          {
+            "aggregateType": "process",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "processRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef"
+            ]
+          }
+        ]
+      },
+      "actor_result_artifact_observed": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "actorRef",
+              "apiRetryCount",
+              "artifactDigests",
+              "cCallRef",
+              "disposition",
+              "exitObserved",
+              "failureClass",
+              "finalOutput",
+              "implementationRef",
+              "inputDigest",
+              "instructionContractRef",
+              "materializationPlanRef",
+              "observedOutputDigest",
+              "processRef",
+              "processSignal",
+              "processStatus",
+              "progressEventCount",
+              "promptDigest",
+              "rendererRef",
+              "requestDigest",
+              "requestRef",
+              "resultContractRef",
+              "signalSequence",
+              "stderrByteLength",
+              "stdoutByteLength",
+              "structuredEventCount",
+              "terminationConfirmed",
+              "timedOut",
+              "timeoutClass",
+              "toolCallCount",
+              "toolInvocations",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportDigest",
+              "transportLane",
+              "workerBindingRef",
+              "nativeResultAssessment"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "artifactDigests",
+              "disposition",
+              "nativeResultAssessment"
+            ]
+          }
+        ]
+      },
+      "actor_invocation_closed": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "cCallRef",
+              "disposition",
+              "failureClass",
+              "processRef",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportDigest",
+              "consumedTransportBindingRef",
+              "consumedStdoutEventRefs",
+              "consumedStderrEventRefs",
+              "consumedArtifactEventRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "cCallRef",
+              "disposition"
+            ]
+          }
+        ]
+      },
+      "actor_invocation_failed": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "cCallRef",
+              "disposition",
+              "failureClass",
+              "processRef",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportDigest",
+              "consumedTransportBindingRef",
+              "consumedStdoutEventRefs",
+              "consumedStderrEventRefs",
+              "consumedArtifactEventRef"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "cCallRef",
+              "disposition",
+              "failureClass",
+              "transportDigest"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorInvocationRef",
+              "cCallRef",
+              "disposition",
+              "failureClass",
+              "processRef",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "diagnosticDigest"
+            ],
+            "requiredPayloadKeys": [
+              "actorInvocationRef",
+              "processRef",
+              "cCallRef",
+              "disposition",
+              "failureClass",
+              "diagnosticDigest"
+            ],
+            "expectedPayload": {
+              "failureClass": "transport_exception"
+            }
+          }
+        ]
+      },
+      "c_call_evidenced": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "deterministic"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "authorization",
+              "receipt",
+              "request",
+              "successorObservation"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "authorization",
+              "receipt",
+              "request",
+              "successorObservation"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "worksite_file_replace"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "actorInvocationRef",
+              "actorRef",
+              "apiRetryCount",
+              "artifactDigests",
+              "candidateDigest",
+              "candidateRef",
+              "exitObserved",
+              "instructionContractRef",
+              "materializationPlanRef",
+              "observedOutputDigest",
+              "processRef",
+              "processSignal",
+              "processStatus",
+              "progressEventCount",
+              "promptDigest",
+              "rawOutputDigest",
+              "rendererRef",
+              "requestDigest",
+              "requestRef",
+              "resultContractRef",
+              "signalSequence",
+              "stderrByteLength",
+              "stdoutByteLength",
+              "structuredEventCount",
+              "terminationConfirmed",
+              "timedOut",
+              "timeoutClass",
+              "toolCallCount",
+              "transportBindingDigest",
+              "transportBindingRef",
+              "transportDigest",
+              "transportDisposition",
+              "transportFailureClass",
+              "transportLane",
+              "workerBindingRef",
+              "nativeResultAssessment"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "nativeResultAssessment"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "probabilistic_transport"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "childClosureRef",
+              "childDisposition",
+              "childExecutionBasisDigest",
+              "childExecutionBasisRef",
+              "childFrameId",
+              "childGraphCallId",
+              "childJudgmentRef",
+              "childOutputDigest",
+              "childReasonRef",
+              "childResultDigest",
+              "childResultRef",
+              "childTerminalEventRef",
+              "foldbackDigest",
+              "foldbackEventRef",
+              "foldbackRef"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "sub_traversal"
+            },
+            "nullablePayloadKeys": [
+              "implementationRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "candidateDigest",
+              "diagnosticRef",
+              "rejectedContractRef",
+              "rejectedStage"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "admission_rejection"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "requestDigest",
+              "requestRef"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "interaction_request"
+            },
+            "nullablePayloadKeys": [
+              "implementationRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "ownerObservation",
+              "failureContractRef",
+              "failureValue"
+            ],
+            "requiredPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceClass",
+              "evidenceDigest",
+              "evidenceRef",
+              "implementationRef",
+              "inputDigest",
+              "outputDigest",
+              "ownerObservation",
+              "failureContractRef",
+              "failureValue"
+            ],
+            "expectedPayload": {
+              "evidenceClass": "undispatched_owner_refusal"
+            }
+          }
+        ]
+      },
+      "c_call_result_admitted": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "evidenceRefs",
+              "resultClass",
+              "resultDigest",
+              "resultRef",
+              "value",
+              "valueDigest",
+              "valueKind"
+            ],
+            "requiredPayloadKeys": [
+              "resultRef",
+              "resultDigest",
+              "cCallRef",
+              "resultClass"
+            ]
+          }
+        ]
+      },
+      "c_call_judged": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "contractRef",
+              "judgment",
+              "judgmentDigest",
+              "judgmentRef",
+              "predicateRef",
+              "reasonRef",
+              "replayStateDigest",
+              "resultDigest",
+              "resultRef",
+              "retryAttemptRef"
+            ],
+            "requiredPayloadKeys": [
+              "judgmentRef",
+              "judgmentDigest",
+              "cCallRef",
+              "resultRef",
+              "judgment",
+              "retryAttemptRef"
+            ],
+            "nullablePayloadKeys": [
+              "retryAttemptRef"
+            ]
+          }
+        ]
+      },
+      "assessed": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "assessment",
+              "assessmentContractDigest",
+              "assessmentContractRef",
+              "assessmentDigest",
+              "assessmentRef",
+              "assessmentValueDigest",
+              "assessmentValueRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "closureEligible",
+              "disposition",
+              "evidence",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "expectedResultDigest",
+              "expectedResultRef",
+              "invocationDigest",
+              "invocationRef",
+              "residuals"
+            ],
+            "requiredPayloadKeys": [
+              "actorDigest",
+              "actorRef",
+              "assessment",
+              "assessmentContractDigest",
+              "assessmentContractRef",
+              "assessmentDigest",
+              "assessmentRef",
+              "assessmentValueDigest",
+              "assessmentValueRef",
+              "capabilityGrantDigest",
+              "capabilityGrantRef",
+              "closureEligible",
+              "disposition",
+              "evidence",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "expectedResultDigest",
+              "expectedResultRef",
+              "invocationDigest",
+              "invocationRef",
+              "residuals"
+            ]
+          }
+        ]
+      },
+      "retry_attempt_opened": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptDigest",
+              "attemptManifestRef",
+              "attemptRef",
+              "budget",
+              "inputContractRef",
+              "inputDigest",
+              "inputRef",
+              "inputValue",
+              "priorJudgmentRef",
+              "priorRouteRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "retryTermPath",
+              "retryableFailureClasses",
+              "taskOrdinal",
+              "wrappedTermPath"
+            ],
+            "requiredPayloadKeys": [
+              "attemptRef",
+              "attemptDigest",
+              "attemptManifestRef",
+              "retryBoundaryRef",
+              "attempt"
+            ]
+          }
+        ]
+      },
+      "retry_progress_recorded": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "budget",
+              "cCallRef",
+              "completedAttempts",
+              "failureClass",
+              "failureSignalRef",
+              "inputContractRef",
+              "inputDigest",
+              "inputRef",
+              "judgmentRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "remainingBudget",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath"
+            ],
+            "requiredPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "budget",
+              "cCallRef",
+              "completedAttempts",
+              "failureClass",
+              "failureSignalRef",
+              "inputContractRef",
+              "inputDigest",
+              "inputRef",
+              "judgmentRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "remainingBudget",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath"
+            ],
+            "expectedPayload": {
+              "progressClass": "retry"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "budget",
+              "cCallRef",
+              "completedAttempts",
+              "failureClass",
+              "failureSignalRef",
+              "inputContractRef",
+              "inputDigest",
+              "inputRef",
+              "judgmentRef",
+              "predecessorProgressRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "remainingBudget",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "stopReason"
+            ],
+            "requiredPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "budget",
+              "cCallRef",
+              "completedAttempts",
+              "failureClass",
+              "failureSignalRef",
+              "inputContractRef",
+              "inputDigest",
+              "inputRef",
+              "judgmentRef",
+              "predecessorProgressRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "remainingBudget",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "stopReason"
+            ],
+            "expectedPayload": {
+              "progressClass": "stopped"
+            },
+            "nullablePayloadKeys": [
+              "predecessorProgressRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "cCallRef",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "judgmentRef",
+              "predecessorProgressRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "sourceCursorDigest",
+              "sourceCursorRef"
+            ],
+            "requiredPayloadKeys": [
+              "progressRef",
+              "progressDigest",
+              "progressClass",
+              "attemptRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "cCallRef",
+              "resultRef",
+              "judgmentRef",
+              "sourceCursorRef",
+              "sourceCursorDigest",
+              "predecessorProgressRef"
+            ],
+            "expectedPayload": {
+              "progressClass": "completed"
+            },
+            "nullablePayloadKeys": [
+              "predecessorProgressRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "cCallRef",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "judgmentRef",
+              "predecessorProgressRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "resultRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "sourceCursorDigest",
+              "sourceCursorRef",
+              "targetCursorDigest",
+              "targetCursorRef"
+            ],
+            "requiredPayloadKeys": [
+              "progressRef",
+              "progressDigest",
+              "progressClass",
+              "attemptRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "cCallRef",
+              "resultRef",
+              "judgmentRef",
+              "sourceCursorRef",
+              "sourceCursorDigest",
+              "targetCursorRef",
+              "targetCursorDigest",
+              "predecessorProgressRef"
+            ],
+            "expectedPayload": {
+              "progressClass": "completed"
+            },
+            "nullablePayloadKeys": [
+              "predecessorProgressRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "attempt",
+              "attemptRef",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "predecessorProgressRef",
+              "progressClass",
+              "progressDigest",
+              "progressRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "sourceCursorDigest",
+              "sourceCursorRef",
+              "targetCursorDigest",
+              "targetCursorRef"
+            ],
+            "requiredPayloadKeys": [
+              "progressRef",
+              "progressDigest",
+              "progressClass",
+              "attemptRef",
+              "retryBoundaryRef",
+              "retryPath",
+              "completedRetryDepth",
+              "completionClass",
+              "completionWitnessEventRef",
+              "sourceCursorRef",
+              "sourceCursorDigest",
+              "targetCursorRef",
+              "targetCursorDigest",
+              "predecessorProgressRef"
+            ],
+            "expectedPayload": {
+              "progressClass": "completed",
+              "completionClass": "structural_identity_success"
+            },
+            "nullablePayloadKeys": [
+              "predecessorProgressRef"
+            ]
+          }
+        ]
+      },
+      "child_foldback_admitted": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "childClosureRef",
+              "childDisposition",
+              "childExecutionBasisDigest",
+              "childExecutionBasisRef",
+              "childFrameId",
+              "childGraphCallId",
+              "childJudgmentRef",
+              "childReasonRef",
+              "childResultDigest",
+              "childResultRef",
+              "childTerminalEventRef",
+              "foldbackDigest",
+              "foldbackRef",
+              "outputDigest",
+              "parentCCallRef"
+            ],
+            "requiredPayloadKeys": [
+              "foldbackRef",
+              "foldbackDigest",
+              "parentCCallRef",
+              "childDisposition",
+              "childResultRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "childClosureRef",
+              "childDisposition",
+              "childExecutionBasisDigest",
+              "childExecutionBasisRef",
+              "childFrameId",
+              "childGraphCallId",
+              "childJudgmentRef",
+              "childReasonRef",
+              "childResultDigest",
+              "childResultRef",
+              "childTerminalEventRef",
+              "foldbackDigest",
+              "foldbackRef",
+              "outputDigest",
+              "parentCCallRef",
+              "applicationFoldbackRef",
+              "applicationRef",
+              "parentJudgmentRef",
+              "sourceCursorDigest",
+              "sourceCursorRef"
+            ],
+            "requiredPayloadKeys": [
+              "foldbackRef",
+              "foldbackDigest",
+              "parentCCallRef",
+              "childDisposition",
+              "childResultRef",
+              "applicationRef"
+            ]
+          }
+        ]
+      },
+      "child_preparation_refused": {
+        "variants": [
+          {
+            "aggregateType": "c_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              0
+            ]
+          },
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "candidateDigest",
+              "childGraphFunctionRef",
+              "diagnosticRef",
+              "inputDigest",
+              "inputRef",
+              "kind",
+              "message",
+              "parentCCallRef",
+              "schemaVersion",
+              "stage"
+            ],
+            "requiredPayloadKeys": [
+              "childGraphFunctionRef",
+              "stage",
+              "candidateDigest"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "applicationRef",
+              "childGraphFunctionRef",
+              "diagnosticRef",
+              "inputDigest",
+              "inputRef",
+              "message",
+              "parentCCallRef",
+              "parentJudgmentRef",
+              "refusalDigest",
+              "refusalRef",
+              "sourceCursorRef",
+              "stage"
+            ],
+            "requiredPayloadKeys": [
+              "childGraphFunctionRef",
+              "stage",
+              "refusalRef",
+              "refusalDigest"
+            ]
+          }
+        ]
+      },
+      "fan_out_completion_admitted": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "applicationRef",
+              "batchRef",
+              "completionDigest",
+              "completionKind",
+              "completionRef",
+              "inputMemberContractRef",
+              "inputVectorRef",
+              "outputMemberContractRef",
+              "outputVectorContractRef",
+              "outputVector",
+              "outputVectorDigest",
+              "outputVectorRef",
+              "taskRows"
+            ],
+            "requiredPayloadKeys": [
+              "completionRef",
+              "completionDigest",
+              "completionKind",
+              "outputVector",
+              "outputVectorDigest",
+              "outputVectorRef",
+              "taskRows"
+            ],
+            "expectedPayload": {
+              "completionKind": "complete_vector"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "applicationRef",
+              "batchRef",
+              "completionDigest",
+              "completionKind",
+              "completionRef",
+              "inputMemberContractRef",
+              "inputVectorRef",
+              "outputMemberContractRef",
+              "outputVectorContractRef",
+              "completedRows",
+              "stoppingRow",
+              "unstartedRows"
+            ],
+            "requiredPayloadKeys": [
+              "completionRef",
+              "completionDigest",
+              "completionKind",
+              "completedRows",
+              "stoppingRow",
+              "unstartedRows"
+            ],
+            "expectedPayload": {
+              "completionKind": "partial_stop"
+            }
+          }
+        ]
+      },
+      "traversal_route_admitted": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "boundInput",
+              "cCallRef",
+              "consumedAvailabilityRefs",
+              "contractRef",
+              "declarationDigest",
+              "declarationRef",
+              "graphSpanReentryProjection",
+              "graphSpanReentryProjectionDigest",
+              "graphSpanReentryProjectionRef",
+              "judgmentRef",
+              "nextActionProjection",
+              "nextActionProjectionDigest",
+              "nextActionProjectionRef",
+              "replayStateDigest",
+              "routeDigest",
+              "routeKind",
+              "routeRef",
+              "sourceCursorDigest",
+              "sourceCursorRef",
+              "targetCursorDigest",
+              "targetCursorRef",
+              "registeredSelectionApplicationRef"
+            ],
+            "requiredPayloadKeys": [
+              "routeRef",
+              "routeDigest",
+              "routeKind"
+            ]
+          }
+        ]
+      },
+      "construction_intent_selected": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actionCatalogDigest",
+              "actionCatalogRef",
+              "actionCatalogRowDigest",
+              "constructionIntent",
+              "constructionIntentDigest",
+              "constructionIntentRef",
+              "nextActionBasis",
+              "nextActionBasisDigest",
+              "nextActionBasisRef",
+              "nextActionProjection",
+              "nextActionProjectionDigest",
+              "nextActionProjectionRef",
+              "routeRef",
+              "targetCursorDigest",
+              "targetCursorRef"
+            ],
+            "requiredPayloadKeys": [
+              "actionCatalogDigest",
+              "actionCatalogRef",
+              "actionCatalogRowDigest",
+              "constructionIntent",
+              "constructionIntentDigest",
+              "constructionIntentRef",
+              "nextActionBasis",
+              "nextActionBasisDigest",
+              "nextActionBasisRef",
+              "nextActionProjection",
+              "nextActionProjectionDigest",
+              "nextActionProjectionRef",
+              "routeRef",
+              "targetCursorDigest",
+              "targetCursorRef"
+            ]
+          }
+        ]
+      },
+      "construction_delta_observed": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actionEvaluation",
+              "actionEvaluationAdmission",
+              "actionEvaluationAdmissionDigest",
+              "actionEvaluationAdmissionRef",
+              "actionEvaluationDigest",
+              "actionEvaluationRef",
+              "constructionCompositionDigest",
+              "constructionCompositionRef",
+              "constructionIntentDigest",
+              "constructionIntentRef",
+              "deltaDigest",
+              "deltaRef",
+              "edgeClosureDecision",
+              "edgeClosureDecisionDigest",
+              "edgeClosureDecisionRef",
+              "edgeFulfillmentLedger",
+              "edgeFulfillmentLedgerDigest",
+              "edgeFulfillmentLedgerRef",
+              "runtimeEvidenceEventRefs",
+              "semanticEvidenceAssetRefs",
+              "sourceCCallRef",
+              "sourceJudgmentRef",
+              "sourceResultDigest",
+              "sourceResultRef",
+              "targetCursorDigest",
+              "targetCursorRef",
+              "targetOutcomeRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "actionEvaluation",
+              "actionEvaluationAdmission",
+              "actionEvaluationAdmissionDigest",
+              "actionEvaluationAdmissionRef",
+              "actionEvaluationDigest",
+              "actionEvaluationRef",
+              "constructionCompositionDigest",
+              "constructionCompositionRef",
+              "constructionIntentDigest",
+              "constructionIntentRef",
+              "deltaDigest",
+              "deltaRef",
+              "edgeClosureDecision",
+              "edgeClosureDecisionDigest",
+              "edgeClosureDecisionRef",
+              "edgeFulfillmentLedger",
+              "edgeFulfillmentLedgerDigest",
+              "edgeFulfillmentLedgerRef",
+              "runtimeEvidenceEventRefs",
+              "semanticEvidenceAssetRefs",
+              "sourceCCallRef",
+              "sourceJudgmentRef",
+              "sourceResultDigest",
+              "sourceResultRef",
+              "targetCursorDigest",
+              "targetCursorRef",
+              "targetOutcomeRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ]
+          }
+        ]
+      },
+      "fh_interaction_opened": {
+        "variants": [
+          {
+            "aggregateType": "continuation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorCapabilityRef",
+              "cCall",
+              "cCallRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "graphValidationRef",
+              "heldCursor",
+              "heldCursorDigest",
+              "heldCursorRef",
+              "holdRouteRef",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "inputDigest",
+              "inputRef",
+              "inputValue",
+              "installId",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "linkDigest",
+              "linkRef",
+              "manifestDigest",
+              "openedTraversalScope",
+              "pendingJudgment",
+              "pendingResult",
+              "productContentDigest",
+              "productId",
+              "programDigest",
+              "programRef",
+              "programValidationRef",
+              "requestContractRef",
+              "requestDigest",
+              "requestRef",
+              "responseContractRef",
+              "scopeDigest",
+              "scopeRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "catalogViewDigest",
+              "catalogViewId"
+            ],
+            "requiredPayloadKeys": [
+              "actorCapabilityRef",
+              "cCall",
+              "cCallRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "graphValidationRef",
+              "heldCursor",
+              "heldCursorDigest",
+              "heldCursorRef",
+              "holdRouteRef",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "inputDigest",
+              "inputRef",
+              "inputValue",
+              "installId",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "manifestDigest",
+              "openedTraversalScope",
+              "pendingJudgment",
+              "pendingResult",
+              "productContentDigest",
+              "productId",
+              "programDigest",
+              "programRef",
+              "programValidationRef",
+              "requestContractRef",
+              "requestDigest",
+              "requestRef",
+              "responseContractRef",
+              "scopeDigest",
+              "scopeRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "catalogViewDigest",
+              "catalogViewId"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "actorCapabilityRef",
+              "cCall",
+              "cCallRef",
+              "causedByEventRef",
+              "constructionIntentDigest",
+              "constructionIntentRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "executionBasisDigest",
+              "executionBasisRef",
+              "graphDigest",
+              "graphFunctionDigest",
+              "graphFunctionRef",
+              "graphRef",
+              "graphValidationRef",
+              "heldCursor",
+              "heldCursorDigest",
+              "heldCursorRef",
+              "holdRouteRef",
+              "implementationSetDigest",
+              "implementationSetRef",
+              "inputDigest",
+              "inputRef",
+              "inputValue",
+              "installId",
+              "interactionSetDigest",
+              "interactionSetRef",
+              "linkDigest",
+              "linkRef",
+              "manifestDigest",
+              "openedTraversalScope",
+              "pendingJudgment",
+              "pendingResult",
+              "productContentDigest",
+              "productId",
+              "programDigest",
+              "programRef",
+              "programValidationRef",
+              "requestContractRef",
+              "requestDigest",
+              "requestRef",
+              "responseContractRef",
+              "scopeDigest",
+              "scopeRef",
+              "workspaceBindingDigest",
+              "workspaceBindingId",
+              "catalogViewDigest",
+              "catalogViewId"
+            ],
+            "requiredPayloadKeys": [
+              "continuationRef",
+              "continuationDigest",
+              "constructionIntentRef",
+              "constructionIntentDigest"
+            ]
+          }
+        ]
+      },
+      "fh_interaction_responded": {
+        "variants": [
+          {
+            "aggregateType": "continuation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "capabilityRef",
+              "continuationRef",
+              "publicOperationEventRef",
+              "responseContractRef",
+              "responseDigest",
+              "responseRef",
+              "responseValue"
+            ],
+            "requiredPayloadKeys": [
+              "actorRef",
+              "capabilityRef",
+              "continuationRef",
+              "publicOperationEventRef",
+              "responseContractRef",
+              "responseDigest",
+              "responseRef",
+              "responseValue"
+            ]
+          }
+        ]
+      },
+      "fh_interaction_resume_admitted": {
+        "variants": [
+          {
+            "aggregateType": "continuation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "actorRef",
+              "capabilityRef",
+              "closureContract",
+              "continuationRef",
+              "durablePrefixDigest",
+              "openedEventRef",
+              "publicOperationEventRef",
+              "respondedEventRef",
+              "responseDigest",
+              "responseRef",
+              "responseValue",
+              "successorCursor",
+              "successorCursorDigest",
+              "successorCursorRef",
+              "successorInputContractRef",
+              "successorInputDigest",
+              "successorInputRef",
+              "successorInputValue",
+              "successorInputValueKind"
+            ],
+            "requiredPayloadKeys": [
+              "actorRef",
+              "capabilityRef",
+              "closureContract",
+              "continuationRef",
+              "durablePrefixDigest",
+              "openedEventRef",
+              "publicOperationEventRef",
+              "respondedEventRef",
+              "responseDigest",
+              "responseRef",
+              "responseValue",
+              "successorCursor",
+              "successorCursorDigest",
+              "successorCursorRef",
+              "successorInputContractRef",
+              "successorInputDigest",
+              "successorInputRef",
+              "successorInputValue",
+              "successorInputValueKind"
+            ],
+            "nullablePayloadKeys": [
+              "successorInputContractRef"
+            ]
+          }
+        ]
+      },
+      "continuation_abandoned": {
+        "variants": [
+          {
+            "aggregateType": "continuation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "candidateDigest",
+              "candidateRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "terminalDisposition"
+            ],
+            "requiredPayloadKeys": [
+              "candidateDigest",
+              "candidateRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "terminalDisposition"
+            ]
+          }
+        ]
+      },
+      "continuation_superseded": {
+        "variants": [
+          {
+            "aggregateType": "continuation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "candidateDigest",
+              "candidateRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "terminalDisposition"
+            ],
+            "requiredPayloadKeys": [
+              "candidateDigest",
+              "candidateRef",
+              "causedByEventRef",
+              "continuationDigest",
+              "continuationKind",
+              "continuationRef",
+              "terminalDisposition"
+            ]
+          }
+        ]
+      },
+      "continuation_reentry_link_admitted": {
+        "variants": [
+          {
+            "aggregateType": "workspace",
+            "scopeClass": "workspace",
+            "requiredEnvelopeIdentities": []
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "linkDigest",
+              "linkRef",
+              "predecessorContinuationId",
+              "predecessorDisposition",
+              "predecessorRunId",
+              "successorKind",
+              "successorRunId",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "linkDigest",
+              "linkRef",
+              "predecessorContinuationId",
+              "predecessorDisposition",
+              "predecessorRunId",
+              "successorKind",
+              "successorRunId",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "expectedPayload": {
+              "successorKind": "none"
+            }
+          },
+          {
+            "allowedPayloadKeys": [
+              "continuationKind",
+              "linkDigest",
+              "linkRef",
+              "plannedContinuationId",
+              "plannedOpeningBasisDigest",
+              "plannedOpeningBasisRef",
+              "predecessorContinuationId",
+              "predecessorDisposition",
+              "predecessorRunId",
+              "successorKind",
+              "successorRunId",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "requiredPayloadKeys": [
+              "continuationKind",
+              "linkDigest",
+              "linkRef",
+              "plannedContinuationId",
+              "plannedOpeningBasisDigest",
+              "plannedOpeningBasisRef",
+              "predecessorContinuationId",
+              "predecessorDisposition",
+              "predecessorRunId",
+              "successorKind",
+              "successorRunId",
+              "workspaceBindingDigest",
+              "workspaceBindingId"
+            ],
+            "expectedPayload": {
+              "successorKind": "some"
+            }
+          }
+        ]
+      },
+      "runtime_failure_observed": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ],
+            "payloadVariantIndexes": [
+              0
+            ]
+          },
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "basisId",
+              "diagnosticRef",
+              "failureDigest",
+              "failureRef",
+              "frameId",
+              "graphCallId",
+              "runId",
+              "stage",
+              "subjectDigest"
+            ],
+            "requiredPayloadKeys": [
+              "failureRef",
+              "failureDigest",
+              "stage",
+              "subjectDigest"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "code",
+              "failureClass",
+              "subjectDigest"
+            ],
+            "requiredPayloadKeys": [
+              "failureClass",
+              "code",
+              "subjectDigest",
+              "cCallRef"
+            ]
+          }
+        ]
+      },
+      "run_stopped": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "disposition",
+              "judgmentRef",
+              "reasonRef",
+              "routeRef"
+            ],
+            "requiredPayloadKeys": [
+              "disposition",
+              "routeRef",
+              "reasonRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "operatorActorRef",
+              "provenance",
+              "reasonDetail",
+              "reasonKind",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef"
+            ],
+            "requiredPayloadKeys": [
+              "act",
+              "actorDigest",
+              "actorRef",
+              "contentContractDigest",
+              "contentContractRef",
+              "contentKind",
+              "contentValue",
+              "contentValueDigest",
+              "contentValueRef",
+              "context",
+              "evidence",
+              "operatorActorRef",
+              "provenance",
+              "reasonDetail",
+              "reasonKind",
+              "subjectDigest",
+              "subjectKind",
+              "subjectRef",
+              "witnessedActDigest",
+              "witnessedActRef"
+            ]
+          }
+        ]
+      },
+      "terminal_reached": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "closureContractDigest",
+              "closureContractRef",
+              "closureDigest",
+              "closureRef",
+              "judgmentRef",
+              "resultRef",
+              "routeRef",
+              "terminalKind"
+            ],
+            "requiredPayloadKeys": [
+              "closureRef",
+              "closureDigest",
+              "routeRef",
+              "terminalKind"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "cCallRef",
+              "closureContractDigest",
+              "closureContractRef",
+              "closureDigest",
+              "closureRef",
+              "judgmentRef",
+              "resultRef",
+              "routeRef",
+              "terminalKind",
+              "childFrameId",
+              "childGraphCallId"
+            ],
+            "requiredPayloadKeys": [
+              "closureRef",
+              "closureDigest",
+              "routeRef",
+              "terminalKind",
+              "childFrameId",
+              "childGraphCallId"
+            ]
+          }
+        ]
+      },
+      "frame_closed": {
+        "variants": [
+          {
+            "aggregateType": "frame",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "closureContractRef",
+              "frameId",
+              "terminalReachedEventRef"
+            ],
+            "requiredPayloadKeys": [
+              "frameId",
+              "terminalReachedEventRef"
+            ]
+          }
+        ]
+      },
+      "graph_call_closed": {
+        "variants": [
+          {
+            "aggregateType": "graph_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "closureContractRef",
+              "frameClosedEventRef",
+              "graphCallId"
+            ],
+            "requiredPayloadKeys": [
+              "graphCallId",
+              "frameClosedEventRef"
+            ]
+          }
+        ]
+      },
+      "run_closed": {
+        "variants": [
+          {
+            "aggregateType": "run",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId"
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "closureContractRef",
+              "graphCallClosedEventRef",
+              "runId"
+            ],
+            "requiredPayloadKeys": [
+              "runId",
+              "graphCallClosedEventRef"
+            ]
+          }
+        ]
+      },
+      "runtime_activity_probe_observed": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              0
+            ]
+          },
+          {
+            "aggregateType": "graph_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId"
+            ],
+            "payloadVariantIndexes": [
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "probeContract",
+              "observation",
+              "actorInvocationRef"
+            ],
+            "requiredPayloadKeys": [
+              "probeContract",
+              "observation",
+              "actorInvocationRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "probeContract",
+              "observation"
+            ],
+            "requiredPayloadKeys": [
+              "probeContract",
+              "observation"
+            ]
+          }
+        ]
+      },
+      "runtime_external_interruption_observed": {
+        "variants": [
+          {
+            "aggregateType": "actor_invocation",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId",
+              "frameId"
+            ],
+            "payloadVariantIndexes": [
+              0
+            ]
+          },
+          {
+            "aggregateType": "graph_call",
+            "scopeClass": "run",
+            "requiredEnvelopeIdentities": [
+              "runId",
+              "graphCallId"
+            ],
+            "payloadVariantIndexes": [
+              1
+            ]
+          }
+        ],
+        "payloadVariants": [
+          {
+            "allowedPayloadKeys": [
+              "probeContract",
+              "observation",
+              "actorInvocationRef"
+            ],
+            "requiredPayloadKeys": [
+              "probeContract",
+              "observation",
+              "actorInvocationRef"
+            ]
+          },
+          {
+            "allowedPayloadKeys": [
+              "probeContract",
+              "observation"
+            ],
+            "requiredPayloadKeys": [
+              "probeContract",
+              "observation"
+            ]
+          }
+        ]
+      }
+    },
+    "envelopeStamp": {
+      "key": "eventContractDigest",
+      "type": "sha256",
+      "owner": "native_store",
+      "identityParticipation": true
+    }
+  },
+  "sourceKinds": [
+    "stdout",
+    "stderr",
+    "pty",
+    "structured_output",
+    "tool_progress",
+    "api_progress",
+    "process_lifecycle",
+    "worker_heartbeat",
+    "graph_progress",
+    "frame_progress",
+    "evaluator_progress",
+    "event_log",
+    "ledger",
+    "manifest",
+    "projection",
+    "report",
+    "dossier",
+    "archive",
+    "result_artifact"
+  ],
+  "dispositions": [
+    "continue_waiting",
+    "controlled_terminate",
+    "retry",
+    "yield_continuation",
+    "block",
+    "inspect_archive",
+    "escalate",
+    "reprice_policy"
+  ],
+  "eventCalculus": {
+    "public_operation_artifact_admitted": {
+      "initiates": [
+        "public_operation_artifact_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "public_operation_admitted": {
+      "initiates": [
+        "public_operation_ingress_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "invocation_admitted": {
+      "initiates": [
+        "invocation_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "invocation_refused": {
+      "initiates": [
+        "invocation_refused"
+      ],
+      "terminates": [
+        "invocation_admitted"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "implementation_admitted": {
+      "initiates": [
+        "implementation_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "basis_admitted": {
+      "initiates": [
+        "basis_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "declaration_reprice_admitted": {
+      "initiates": [
+        "declaration_reprice_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "replay_log_attested": {
+      "initiates": [
+        "replay_log_attested"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "workspace_hygiene_stamped": {
+      "initiates": [
+        "workspace_hygiene_stamped"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "defect_intake_admitted": {
+      "initiates": [
+        "defect_intake_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "run_resumed": {
+      "initiates": [
+        "run_active"
+      ],
+      "terminates": [
+        "operator_run_stopped"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "run_segment_opened": {
+      "initiates": [
+        "run_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "graph_call_opened": {
+      "initiates": [
+        "graph_call_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "frame_opened": {
+      "initiates": [
+        "frame_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "traversal_cursor_entered": {
+      "initiates": [
+        "locus_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "c_call_opened": {
+      "initiates": [
+        "c_call_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "c_call_fibre_selected": {
+      "initiates": [
+        "c_call_fibre_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_transport_binding_admitted": {
+      "initiates": [
+        "actor_transport_binding_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_invocation_started": {
+      "initiates": [
+        "actor_invocation_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_started": {
+      "initiates": [
+        "actor_process_active",
+        "actor_process_live"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_spawn_failed": {
+      "initiates": [
+        "actor_process_spawn_failed"
+      ],
+      "terminates": [
+        "actor_process_active",
+        "actor_process_live"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_stdout_observed": {
+      "initiates": [
+        "actor_process_live",
+        "actor_stdout_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_stderr_observed": {
+      "initiates": [
+        "actor_process_live",
+        "actor_stderr_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_timeout_observed": {
+      "initiates": [
+        "actor_process_timed_out"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "runtime_activity_probe_observed": {
+      "initiates": [
+        "runtime_activity_recent",
+        "runtime_invocation_active"
+      ],
+      "terminates": [
+        "runtime_invocation_active"
+      ],
+      "clips": [
+        "runtime_inactivity_asserted"
+      ],
+      "declips": []
+    },
+    "runtime_external_interruption_observed": {
+      "initiates": [
+        "runtime_externally_interrupted",
+        "runtime_invocation_blocked"
+      ],
+      "terminates": [
+        "runtime_invocation_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_signal_requested": {
+      "initiates": [
+        "actor_process_signal_requested"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_exited": {
+      "initiates": [
+        "actor_process_exited"
+      ],
+      "terminates": [
+        "actor_process_active",
+        "actor_process_live"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "actor_process_termination_unconfirmed": {
+      "initiates": [
+        "actor_process_termination_unconfirmed"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_result_artifact_observed": {
+      "initiates": [
+        "actor_result_artifact_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "actor_invocation_closed": {
+      "initiates": [
+        "actor_invocation_closed"
+      ],
+      "terminates": [
+        "actor_invocation_active",
+        "actor_transport_binding_admitted",
+        "actor_stdout_available",
+        "actor_stderr_available",
+        "actor_result_artifact_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "actor_invocation_failed": {
+      "initiates": [
+        "actor_invocation_failed"
+      ],
+      "terminates": [
+        "actor_invocation_active",
+        "actor_process_active",
+        "actor_transport_binding_admitted",
+        "actor_stdout_available",
+        "actor_stderr_available",
+        "actor_result_artifact_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "c_call_evidenced": {
+      "initiates": [
+        "c_call_evidence_available"
+      ],
+      "terminates": [
+        "c_call_fibre_admitted"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "c_call_result_admitted": {
+      "initiates": [
+        "c_call_result_available"
+      ],
+      "terminates": [
+        "c_call_evidence_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "c_call_judged": {
+      "initiates": [
+        "c_call_judgment_available"
+      ],
+      "terminates": [
+        "c_call_active",
+        "c_call_result_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "assessed": {
+      "initiates": [
+        "result_assessment_admitted"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "retry_attempt_opened": {
+      "initiates": [
+        "retry_attempt_active"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "retry_progress_recorded": {
+      "initiates": [
+        "retry_progress_available"
+      ],
+      "terminates": [
+        "retry_attempt_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "child_foldback_admitted": {
+      "initiates": [
+        "child_foldback_available"
+      ],
+      "terminates": [
+        "parent_waiting_on_child"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "child_preparation_refused": {
+      "initiates": [
+        "child_preparation_refused"
+      ],
+      "terminates": [
+        "parent_waiting_on_child"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "fan_out_completion_admitted": {
+      "initiates": [
+        "fan_out_completion_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "traversal_route_admitted": {
+      "initiates": [],
+      "terminates": [
+        "locus_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "construction_intent_selected": {
+      "initiates": [
+        "construction_intent_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "construction_delta_observed": {
+      "initiates": [],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "fh_interaction_opened": {
+      "initiates": [
+        "continuation_open",
+        "interaction_pending",
+        "frame_held"
+      ],
+      "terminates": [
+        "hold_route_admitted"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "fh_interaction_responded": {
+      "initiates": [
+        "continuation_response_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "fh_interaction_resume_admitted": {
+      "initiates": [
+        "continuation_terminated",
+        "frame_active",
+        "locus_active"
+      ],
+      "terminates": [
+        "continuation_open",
+        "interaction_pending",
+        "continuation_response_available",
+        "frame_held"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "continuation_abandoned": {
+      "initiates": [
+        "continuation_abandoned"
+      ],
+      "terminates": [
+        "continuation_open",
+        "interaction_pending",
+        "continuation_response_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "continuation_superseded": {
+      "initiates": [
+        "continuation_superseded"
+      ],
+      "terminates": [
+        "continuation_open",
+        "interaction_pending",
+        "continuation_response_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "continuation_reentry_link_admitted": {
+      "initiates": [
+        "continuation_reentry_link_available"
+      ],
+      "terminates": [],
+      "clips": [],
+      "declips": []
+    },
+    "runtime_failure_observed": {
+      "initiates": [
+        "runtime_failure"
+      ],
+      "terminates": [
+        "locus_active",
+        "frame_active",
+        "runtime_invocation_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "run_stopped": {
+      "initiates": [
+        "run_terminal"
+      ],
+      "terminates": [
+        "locus_active",
+        "frame_active",
+        "frame_blocked",
+        "frame_failed",
+        "graph_call_active",
+        "run_active",
+        "retry_attempt_active",
+        "retry_progress_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "terminal_reached": {
+      "initiates": [
+        "terminal_admitted"
+      ],
+      "terminates": [
+        "terminal_route_available"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "frame_closed": {
+      "initiates": [
+        "frame_closed"
+      ],
+      "terminates": [
+        "frame_active",
+        "runtime_invocation_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "graph_call_closed": {
+      "initiates": [
+        "graph_call_closed"
+      ],
+      "terminates": [
+        "graph_call_active"
+      ],
+      "clips": [],
+      "declips": []
+    },
+    "run_closed": {
+      "initiates": [
+        "run_closed"
+      ],
+      "terminates": [
+        "locus_active",
+        "run_active"
+      ],
+      "clips": [],
+      "declips": []
+    }
+  },
+  "readProjection": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "const": "native_liveness_read_projection"
+      },
+      "schemaVersion": {
+        "const": "5.0.0"
+      },
+      "profileSchedule": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "root_event_profile_schedule"
+          },
+          "schemaVersion": {
+            "const": "5.0.0"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "eventContractDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "firstOrdinal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "lastOrdinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "eventContractDigest",
+                "firstOrdinal",
+                "lastOrdinal"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "boundaryEventRef": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentEventContractDigest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "kind",
+          "schemaVersion",
+          "spans",
+          "boundaryEventRef",
+          "currentEventContractDigest"
+        ],
+        "additionalProperties": false
+      },
+      "invocations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "runtime_liveness_observer_projection"
+            },
+            "schemaVersion": {
+              "const": "5.0.0"
+            },
+            "projectionRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectionDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "basisRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "programRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "runId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "graphFunctionRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "graphCallId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "frameId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "cCallRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "programLocusRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskOrdinal": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "vectorIndex": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "edgeRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "attempt": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "actorInvocationRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "actorRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workerBindingRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "backendRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "basisRef",
+                "programRef",
+                "runId",
+                "graphFunctionRef",
+                "graphCallId",
+                "frameId",
+                "cCallRef",
+                "programLocusRef",
+                "taskOrdinal",
+                "vectorIndex",
+                "edgeRef",
+                "attempt",
+                "actorInvocationRef",
+                "actorRef",
+                "workerBindingRef",
+                "backendRef"
+              ],
+              "additionalProperties": false
+            },
+            "policyRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prefixDigest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "retryBudget": {
+              "type": "object",
+              "properties": {
+                "remaining": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "retryEligible": {
+                  "type": "boolean"
+                },
+                "continuationRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "terminalPolicy": {
+                  "enum": [
+                    "block",
+                    "escalate",
+                    "reprice_policy"
+                  ],
+                  "type": "string"
+                },
+                "resultRejectionRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "remaining",
+                "retryEligible",
+                "continuationRef",
+                "terminalPolicy",
+                "resultRejectionRef"
+              ],
+              "additionalProperties": false
+            },
+            "asOf": {
+              "type": "object",
+              "properties": {
+                "clockOriginRef": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "elapsedMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "eventRef": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "clockOriginRef",
+                "elapsedMs",
+                "eventRef"
+              ],
+              "additionalProperties": false
+            },
+            "coverage": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "probeRef": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source": {
+                    "enum": [
+                      "stdout",
+                      "stderr",
+                      "pty",
+                      "structured_output",
+                      "tool_progress",
+                      "api_progress",
+                      "process_lifecycle",
+                      "worker_heartbeat",
+                      "graph_progress",
+                      "frame_progress",
+                      "evaluator_progress",
+                      "event_log",
+                      "ledger",
+                      "manifest",
+                      "projection",
+                      "report",
+                      "dossier",
+                      "archive",
+                      "result_artifact"
+                    ],
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "observed",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "probeRef",
+                  "source",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "activeSystems": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "inactiveSystems": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "interruptedSystems": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "lastArtifactObservationRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "lastActivityElapsedMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "leaseDeadlineElapsedMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hardDeadlineElapsedMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "leaseExpired": {
+              "type": "boolean"
+            },
+            "hardCapReached": {
+              "type": "boolean"
+            },
+            "externallyInterrupted": {
+              "type": "boolean"
+            },
+            "artifactState": {
+              "enum": [
+                "absent",
+                "pending",
+                "admitted",
+                "rejected"
+              ],
+              "type": "string"
+            },
+            "disposition": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "runtime_invocation_disposition"
+                },
+                "schemaVersion": {
+                  "const": "5.0.0"
+                },
+                "disposition": {
+                  "enum": [
+                    "continue_waiting",
+                    "controlled_terminate",
+                    "retry",
+                    "yield_continuation",
+                    "block",
+                    "inspect_archive",
+                    "escalate",
+                    "reprice_policy"
+                  ],
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "schemaVersion",
+                "disposition",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "schemaVersion",
+            "projectionRef",
+            "projectionDigest",
+            "scope",
+            "policyRef",
+            "prefixDigest",
+            "retryBudget",
+            "asOf",
+            "coverage",
+            "activeSystems",
+            "inactiveSystems",
+            "interruptedSystems",
+            "lastArtifactObservationRef",
+            "evidenceRefs",
+            "lastActivityElapsedMs",
+            "leaseDeadlineElapsedMs",
+            "hardDeadlineElapsedMs",
+            "leaseExpired",
+            "hardCapReached",
+            "externallyInterrupted",
+            "artifactState",
+            "disposition"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "kind",
+      "schemaVersion",
+      "profileSchedule",
+      "invocations"
+    ],
+    "additionalProperties": false,
+    "$schema": "https://json-schema.org/draft/2020-12/schema"
+  }
+}

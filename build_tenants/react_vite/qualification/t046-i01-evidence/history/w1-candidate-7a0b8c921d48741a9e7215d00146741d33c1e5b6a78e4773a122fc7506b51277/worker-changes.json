@@ -1,0 +1,155 @@
+{
+  "kind": "t046_i01_worker_delta",
+  "activation": "T046-I01-W1",
+  "candidateDigest": "7a0b8c921d48741a9e7215d00146741d33c1e5b6a78e4773a122fc7506b51277",
+  "baselineNote": "Preexisting dirty tree preserved. Four early-edit input hashes were supplied by Executive from W00 preconstruction inventory; other hashes use the Worker pre-edit inventory. New files explicitly classified. Generated outputs and proof outputs are excluded from this source delta.",
+  "changes": [
+    {
+      "path": "build_tenants/common/design/ABG_EVENT_STREAM_COMPATIBILITY.md",
+      "change": "modified",
+      "beforeSha256": "c6f27941bd569ef55d808e948fdb58b5750c036d91790aa98bfbac5355889dbd",
+      "afterSha256": "4659d9c195ceefa1e5727ae7449409897bda78b3490ecdbe768f3cb6be2a505c",
+      "bytes": 20473
+    },
+    {
+      "path": "build_tenants/react_vite/qualification/fixtures/abg-5-rc1/README.md",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "38aac16f592574acdaacac5474cd8529499d16df6680a24aeefa95f43ca137fa",
+      "bytes": 2280
+    },
+    {
+      "path": "build_tenants/react_vite/qualification/fixtures/abg-5-rc1/subjects.json",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "8e5a86371bba072fa62db2262954e1b57d45508cb4ad363ea2f12caf663a89f0",
+      "bytes": 5630
+    },
+    {
+      "path": "build_tenants/react_vite/qualification/t046-frozen-subjects.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "98867790cd957b4dcae6975e7daaee77863e52ad0f8e74bc9b9130300f87200c",
+      "bytes": 1572
+    },
+    {
+      "path": "build_tenants/react_vite/qualification/t046-installed-proof.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "4021d6a8422d230ce30a2af3ea106838d615b56c3c61f0d70274985330cf952c",
+      "bytes": 4935
+    },
+    {
+      "path": "build_tenants/react_vite/qualification/t046-playwright.config.ts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "a0f808aaddcf5aec80051bfef506fd1ae7616c9d125b6a0bf1ca906703b98491",
+      "bytes": 1063
+    },
+    {
+      "path": "build_tenants/react_vite/runtime/tests/test_t046_current_run_observation.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "572e222eea738a18ab48839e3ea58a49d2cf74b15c72732abe0119c8666c21de",
+      "bytes": 11168
+    },
+    {
+      "path": "build_tenants/react_vite/src/contracts/abg-run-observation.ts",
+      "change": "modified",
+      "beforeSha256": "3275d227862232e09f9c8c3c9df96781e0d4ed64a32aa911cc8b7112948ba072",
+      "afterSha256": "fc2f1667c2e012fabd25f134b4924ede1aab68f8d77c45131f5d55c642419211",
+      "bytes": 11546
+    },
+    {
+      "path": "build_tenants/react_vite/src/features/sidecar/SidecarPanel.tsx",
+      "change": "modified",
+      "beforeSha256": "e7de2dffd9acc5ebdd8f0e6905f7baf1742892bb43f0201b6f282654681aa2b3",
+      "afterSha256": "43695ad3b2f76b7da3bdd7966548f75e8d31345dab2009401e5d3c39ff22c18e",
+      "bytes": 225458
+    },
+    {
+      "path": "build_tenants/react_vite/src/features/sidecar/abg-run-observation-validation.ts",
+      "change": "modified",
+      "beforeSha256": "092afd5dcba028dd398c2887163a16e0398d2c531b2ef66b546666d6e2821fe6",
+      "afterSha256": "da0f516b7a704d327dbeda08be7dc70b8d81b755539a5189daee511b89bd0a7e",
+      "bytes": 25670
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/abg-event-carrier-service.mjs",
+      "change": "modified",
+      "beforeSha256": "160b88bd16146dfd8314efa571b5f6894897a5fa39b7cf4a92a8e1abd219d524",
+      "afterSha256": "405197443c9882885cc013677122504fc9842fa35f353fd101b6cbadde331053",
+      "bytes": 51779
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/abg-run-observation-service.mjs",
+      "change": "modified",
+      "beforeSha256": "62533639567949987828a9bfe73708c7935c1a78579be12122288b8551cee132",
+      "afterSha256": "56b3b22976f97874b829b4fb2f98c9f11c61d1fb4ea6ca2e1e716db2d3ffa99b",
+      "bytes": 45373
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/abi5-rc1-native-runtime-observation.json",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "866eebd2a7cfe2d3aafac965aecb9ba69dfb8611ce86a5288cf354f6ba49f957",
+      "bytes": 141694
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/abi5-root-event-contract.mjs",
+      "change": "modified",
+      "beforeSha256": "9658a0efd991ea10bba03fbc6797eb0be3efe87de4c1d487e3fff380ba29366e",
+      "afterSha256": "c25eb73f13084c09a24df498cc8793534b9d8b450178747a7ebfc2c0ed41081c",
+      "bytes": 61705
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/project-observation-topology-service.mjs",
+      "change": "modified",
+      "beforeSha256": "21c5cfe893c41fddfb0602e8a2abafb5fb147b54732f4b9fbf2c0a8899ab302c",
+      "afterSha256": "90c12ea064b0d7fecb9d771036a6af703836833f5198ed58fae2ebf9076f5d33",
+      "bytes": 40326
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/retained-run-observation-service.mjs",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "6c8db787c667050b7d023f5d2b67dd5b666abd32810175eff32178f48eee16b6",
+      "bytes": 12809
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/traversal-projection-service.mjs",
+      "change": "modified",
+      "beforeSha256": "487d2e95d5e8f9f1af193ce9ddd2675cb39fe3098e665f431a0fc66798825bff",
+      "afterSha256": "3277a580202a291268c180389877dad815353915ce11fef913fdc13040baf6a8",
+      "bytes": 32890
+    },
+    {
+      "path": "build_tenants/react_vite/src/server/visual-graph-projection-service.mjs",
+      "change": "modified",
+      "beforeSha256": "e92eba6561a99f451b1093ac86b9e818db01203de92941179ecb8514136f0c89",
+      "afterSha256": "4f45361530bc5bace9c64431a5c4c78656c1aa0f2bdaf3756389879a5476a983",
+      "bytes": 43820
+    },
+    {
+      "path": "build_tenants/react_vite/tests/e2e/odd-manager-t046-i01.spec.ts",
+      "change": "added",
+      "beforeSha256": null,
+      "afterSha256": "5738effb278c10c310b5ee330ad39c28bb9cabab9eb661e5eac0e5ced0bb38b7",
+      "bytes": 4265
+    },
+    {
+      "path": "specification/PRODUCT.md",
+      "change": "modified",
+      "beforeSha256": "e819eec5218905b432a234c8b83fc1e5b8878b681db382616f3938926b9313a6",
+      "afterSha256": "119dff5c5b808f593bd989babfdf9c3803a918130aa9d95b33e172e05df870f0",
+      "bytes": 32677
+    },
+    {
+      "path": "specification/requirements/16-abg-event-stream-compatibility.md",
+      "change": "modified",
+      "beforeSha256": "52800259106c22eca4c8900223787ba3b233eeb9a5f0927926f55a8529a7fca3",
+      "afterSha256": "020b2cea602502be809b3d95ddb1d0f381e5f3de731b331e35a412013e367e65",
+      "bytes": 12913
+    }
+  ]
+}

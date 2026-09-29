@@ -693,6 +693,20 @@ the next affected acceptance boundary. Its source wording remains distinct
 from agent interpretation. Opening a ticket records the obligation but does not
 satisfy it, and an agent cannot widen the ruling while recording it.
 
+Where `SPEC_METHOD.md`'s Agentic Construction Execution relation applies, the
+active work item identifies the selected execution basis, bounded affected
+relation set, delegated construction and assessment authority, and re-entry
+conditions. It may point to accepted design and existing evidence carriers
+rather than restating them. Ticket state, ticket prose, or an admitted execution
+contract cannot widen that basis or substitute for the live-surface assessment
+required by the protocol.
+
+The reviewable transition may be carried by an existing ticket, commentary,
+commit, qualification, or release-evidence surface. No new ticket state,
+document type, review round, or approval ceremony is required. Ticket Method
+carries selection and traceability; `SPEC_METHOD.md` owns the execution
+semantics.
+
 ### Evaluation Criteria And Non-Closure Conditions
 
 Execution contracts should expose both:

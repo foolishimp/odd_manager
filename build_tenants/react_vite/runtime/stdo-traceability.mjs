@@ -4,7 +4,6 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
 import { dirname, extname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -22,12 +21,6 @@ const DESIGN_ROOTS = [
   "build_tenants/react_vite/design",
 ];
 const CAPABILITIES_ROOT = "build_tenants/react_vite/src/capabilities";
-const INSTALLED_STDO_ROOT = ".genesis/docs/standards";
-export const INSTALLED_STDO_RELEASE = Object.freeze({
-  version: "v2.2.1",
-  memberCount: 41,
-  aggregate: "df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed",
-});
 
 const PRODUCT_OUTCOME_PATTERN = /\bPO-[A-Z0-9]+(?:-[A-Z0-9]+)+\b/g;
 const REQUIREMENT_FAMILY_PATTERN = /\bREQ-[A-Z0-9]+(?:-[A-Z0-9]+)+-\*/g;
@@ -62,51 +55,6 @@ function listFiles(root, predicate) {
   };
   visit(root);
   return found.sort();
-}
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-export function inspectInstalledStdoRelease(repositoryRoot = DEFAULT_REPOSITORY_ROOT) {
-  const root = resolve(repositoryRoot);
-  const installedRoot = resolve(root, INSTALLED_STDO_ROOT);
-  if (!existsSync(installedRoot)) {
-    return {
-      ok: false,
-      path: INSTALLED_STDO_ROOT,
-      version: INSTALLED_STDO_RELEASE.version,
-      memberCount: 0,
-      aggregate: null,
-      members: [],
-    };
-  }
-
-  const members = listFiles(installedRoot, () => true)
-    .map((absolute) => {
-      const installedRelative = normalizeRelativePath(relative(installedRoot, absolute));
-      const releasePath = `specification/standards/${installedRelative}`;
-      return {
-        path: releasePath,
-        sha256: sha256(readFileSync(absolute)),
-      };
-    })
-    .sort((left, right) => (
-      left.path < right.path ? -1 : left.path > right.path ? 1 : 0
-    ));
-  const manifest = members
-    .map((member) => `${member.sha256}  ${member.path}\n`)
-    .join("");
-  const aggregate = sha256(manifest);
-  return {
-    ok: members.length === INSTALLED_STDO_RELEASE.memberCount
-      && aggregate === INSTALLED_STDO_RELEASE.aggregate,
-    path: INSTALLED_STDO_ROOT,
-    version: INSTALLED_STDO_RELEASE.version,
-    memberCount: members.length,
-    aggregate,
-    members,
-  };
 }
 
 function lineNumber(text, index) {
@@ -555,10 +503,7 @@ function pathCoveredByEntrypoint(sourcePath, entrypoint) {
     || source.startsWith(`${entry}/`);
 }
 
-export function auditStdoTraceability(
-  repositoryRoot = DEFAULT_REPOSITORY_ROOT,
-  { verifyInstalledStandards = true } = {},
-) {
+export function auditStdoTraceability(repositoryRoot = DEFAULT_REPOSITORY_ROOT) {
   const root = resolve(repositoryRoot);
   const errors = [];
   const proofCache = new Map();
@@ -571,44 +516,8 @@ export function auditStdoTraceability(
     scenarios: [],
     sources: [],
     proofs: [],
-    standardsReleases: [],
     edges: [],
   };
-
-  if (verifyInstalledStandards) {
-    const installedStdo = inspectInstalledStdoRelease(root);
-    graph.standardsReleases.push({
-      id: installedStdo.version,
-      path: installedStdo.path,
-      memberCount: installedStdo.memberCount,
-      aggregate: installedStdo.aggregate,
-    });
-    if (installedStdo.memberCount === 0 && installedStdo.aggregate === null) {
-      issue(
-        errors,
-        "MISSING_INSTALLED_STDO_RELEASE",
-        INSTALLED_STDO_ROOT,
-        `installed ${INSTALLED_STDO_RELEASE.version} standards projection is missing`,
-      );
-    } else {
-      if (installedStdo.memberCount !== INSTALLED_STDO_RELEASE.memberCount) {
-        issue(
-          errors,
-          "STDO_RELEASE_MEMBER_COUNT_MISMATCH",
-          INSTALLED_STDO_ROOT,
-          `expected ${INSTALLED_STDO_RELEASE.memberCount} members, found ${installedStdo.memberCount}`,
-        );
-      }
-      if (installedStdo.aggregate !== INSTALLED_STDO_RELEASE.aggregate) {
-        issue(
-          errors,
-          "STDO_RELEASE_AGGREGATE_MISMATCH",
-          INSTALLED_STDO_ROOT,
-          `expected ${INSTALLED_STDO_RELEASE.aggregate}, found ${installedStdo.aggregate}`,
-        );
-      }
-    }
-  }
 
   const constitutionalRanks = new Map([
     [GOALS_PATH, 0],
@@ -1255,8 +1164,6 @@ function finalizeReport(graph, errors) {
       scenarios: graph.scenarios.length,
       sourceCarriers: graph.sources.length,
       proofCarriers: graph.proofs.length,
-      standardsMembers: graph.standardsReleases[0]?.memberCount ?? 0,
-      standardsAggregate: graph.standardsReleases[0]?.aggregate ?? null,
       scenarioProofGaps: graph.scenarios.reduce(
         (total, scenario) => total + scenario.proofGapCount,
         0,
@@ -1278,7 +1185,6 @@ export function formatTraceabilityReport(report) {
     `${summary.scenarios} scenarios`,
     `${summary.sourceCarriers} source carriers`,
     `${summary.proofCarriers} proof carriers`,
-    `${summary.standardsMembers} installed STDO members`,
     `${summary.scenarioProofGaps} scenario proof gaps`,
     `${summary.edges} edges`,
   ].join(" | ");

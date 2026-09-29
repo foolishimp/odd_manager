@@ -1,0 +1,152 @@
+{
+  "$schema": "stdo://releases/v2.5.1-rc.1/standards/schemas/product-definition.schema.json",
+  "kind": "stdo.product-definition",
+  "product": {
+    "definition_id": "urn:stdo:product-definition:odd-manager",
+    "name": "odd_manager",
+    "source_project": "./",
+    "bounded_context": {
+      "id": "urn:odd-manager:bounded-context:product",
+      "definition": "./specification/PRODUCT.md#product-terms"
+    }
+  },
+  "constitution": {
+    "stdo": {
+      "source": {
+        "repository": "https://github.com/foolishimp/specification_methodology.git"
+      },
+      "selector": "stdo://channels/2.5.1",
+      "basis": {
+        "uri": "stdo://releases/v2.5.1-rc.1/",
+        "manifest_sha256": "5d306da13994e69aa9f215d4c1cd2d0be96283c1e33a652b58e6e9262d036b64"
+      }
+    },
+    "additional_authorities": [
+      "./specification/GOVERNANCE.md"
+    ],
+    "entrypoints": [
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/authority_compressions/stdo_bootstrap.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/SPEC_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/REFERENCE_FRAME_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/STDO_REFERENCE_FRAME_BASELINE.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/AXIOMATIC_CALCULUS.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/TICKET_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/DESIGN_MODULE_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/ODD_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/UX_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/IDENTITY_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/stdo/basis",
+        "uri": "standards/RELEASE_METHOD.md"
+      },
+      {
+        "basis": "#/constitution/additional_authorities/0",
+        "uri": "./specification/GOVERNANCE.md"
+      }
+    ],
+    "agent_bootstrap": {
+      "entrypoint": "#/constitution/entrypoints/0",
+      "targets": [
+        "./AGENTS.md",
+        "./CLAUDE.md"
+      ]
+    }
+  },
+  "local_constitution": {
+    "axioms": [],
+    "overrides": [],
+    "disambiguations": []
+  },
+  "reference_frame_bases": [
+    {
+      "uri": "./specification/REFERENCE_FRAME_BASIS.md#project-frame-basis",
+      "authority": [
+        "./specification/GOALS.md#g-008-adopt-current-stdo-governance-before-product-growth",
+        "./specification/PRODUCT.md#governance-basis",
+        "./specification/GOVERNANCE.md#selected-authority",
+        "./.ai-workspace/tickets/active/T-041-adopt-current-stdo-governance.md"
+      ],
+      "applies_to": [
+        "urn:stdo:product-definition:odd-manager"
+      ]
+    }
+  ],
+  "what": {
+    "intent": "./specification/INTENT.md",
+    "product": "./specification/PRODUCT.md",
+    "specification": [
+      "./specification/requirements/",
+      "./specification/domain/DOMAIN_MODEL.md",
+      "./specification/analysis/",
+      "./specification/scenarios/"
+    ]
+  },
+  "how": {
+    "common": [],
+    "build_tenants": [
+      {
+        "id": "urn:odd-manager:build-tenant:react-vite",
+        "root": "./build_tenants/react_vite/",
+        "design": [
+          "./build_tenants/common/design/",
+          "./build_tenants/react_vite/design/"
+        ],
+        "implementation": [
+          "./build_tenants/react_vite/src/",
+          "./build_tenants/react_vite/runtime/",
+          "./build_tenants/react_vite/qualification/",
+          "./build_tenants/react_vite/tests/",
+          "./build_tenants/react_vite/package.json"
+        ]
+      }
+    ]
+  },
+  "ticketing": {
+    "goals": "./specification/GOALS.md",
+    "tickets": {
+      "root": "./.ai-workspace/tickets/",
+      "lanes": {
+        "backlog": "./.ai-workspace/tickets/backlog/",
+        "active": "./.ai-workspace/tickets/active/",
+        "completed": "./.ai-workspace/tickets/completed/"
+      }
+    },
+    "comments": {
+      "root": "./.ai-workspace/comments/"
+    },
+    "sprints": {
+      "root": "./.ai-workspace/sprints/"
+    }
+  },
+  "composition": []
+}

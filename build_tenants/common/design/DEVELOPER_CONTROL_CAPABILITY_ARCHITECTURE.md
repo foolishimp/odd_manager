@@ -694,9 +694,9 @@ design relation.
 terms; requirements `REQ-OM-DEV-*`, `REQ-OM-SPC-*`, `REQ-OM-BLD-*`,
 `REQ-OM-ASR-*`, `REQ-OM-CAP-*`, and `REQ-OM-VER-*`.
 
-**Version**: 1, STDO `v2.2.1` reconciliation.
+**Version**: 1; historical STDO `v2.2.1` reconciliation basis.
 
-**Acceptance authority**: Product-owner instruction of 2026-07-27 to install
+**Historical acceptance authority**: Product-owner instruction of 2026-07-27 to install
 STDO `v2.2.1`, close the admitted conformance work, validate the ABIogenesis
 4.6-aligned version, and defer ABIogenesis 5 work until release. Acceptance is
 conditional on the deterministic proof lanes in section 26.

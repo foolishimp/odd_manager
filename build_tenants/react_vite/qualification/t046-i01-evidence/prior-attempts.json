@@ -1,0 +1,22 @@
+[
+  {
+    "attempt": "Far4hy",
+    "status": "failed",
+    "reason": "Initial proof harness server launch lacked the tenant cwd; repaired explicit cwd.",
+    "retainedFiles": [
+      "candidate-manifest.json",
+      "browser-report.json",
+      "browser-stderr.log"
+    ]
+  },
+  {
+    "attempt": "lW5Owa",
+    "status": "failed",
+    "reason": "Initial browser overview click raced an ordinary sidecar flyout; repaired normal flyout closure before continuing.",
+    "retainedFiles": [
+      "candidate-manifest.json",
+      "browser-report.json",
+      "browser-stderr.log"
+    ]
+  }
+]

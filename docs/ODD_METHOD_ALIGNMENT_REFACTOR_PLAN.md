@@ -1,10 +1,14 @@
 # odd_manager Alignment Refactor Plan
 
-**Status**: Active branch-plan artifact
+**Status**: Superseded historical branch-plan artifact; not work authority
 **Purpose**: Provide a cold-start, drift-correcting plan for realigning `odd_manager` to the latest live `odd_method`
-**Method**: `SPEC_METHOD.md`
+**Current method route**: `stdo_odd_manager.json#/constitution/entrypoints`
 **Recommended vehicle**: clean branch in `odd_manager`, not a new project
-**Active branch**: `odd_method_alignment_20260410_control_surface_reprice`
+**Historical branch**: `odd_method_alignment_20260410_control_surface_reprice`
+
+This plan is retained as a donor record only. Do not execute its branch or
+continuation instructions. Current work enters through the Product Definition,
+current Goals, and an active ticket.
 
 ## Position
 
@@ -21,8 +25,8 @@ The wave should therefore run as:
 - `design_reframe`
 - `realization_refactor`
 
-This ordering follows the constitutional chain in
-`.genesis/docs/standards/SPEC_METHOD.md`.
+This ordering followed the constitutional chain selected when the plan was
+written. Current work resolves that chain through `stdo_odd_manager.json`.
 
 Do not treat this as a local code cleanup.
 
@@ -116,8 +120,8 @@ Primary affected files:
 Any future agent or operator restarting this wave should follow this exact
 sequence before making changes.
 
-1. Read the governing method:
-   - `.genesis/docs/standards/SPEC_METHOD.md`
+1. Resolve the governing method:
+   - verify `stdo_odd_manager.json` and load its selected `SPEC_METHOD.md`
 2. Read the live upstream odd_method authority:
    - `GOALS.md`
    - `PRODUCT.md`

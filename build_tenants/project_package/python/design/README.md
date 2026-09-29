@@ -2,7 +2,11 @@
 
 Tenant-local design surfaces live here.
 
-Use `.genesis/docs/standards/` as the governing method reference and `build_tenants/common/design/` for shared realization law.
+This scaffold is not an active realization in `stdo_odd_manager.json` and has
+no current implementation authority. Before reactivation, declare it as a
+build tenant in the Product Definition, resolve the selected design-method
+entrypoint through that definition, and explicitly adopt any shared law from
+`build_tenants/common/design/`.
 
 ## Adopted Common Surfaces
 

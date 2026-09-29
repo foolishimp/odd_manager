@@ -20,7 +20,12 @@ import { createSessionSurface } from "./session-asset-surface-service.mjs";
 import { createProjectSurface } from "./project-asset-surface-service.mjs";
 import { loadAiWorkspaceObservation } from "./ai-workspace-observation-service.mjs";
 import { loadTraversalSummary, loadTraversalVectorDetail } from "./traversal-projection-service.mjs";
-import { loadAbgRunObservation } from "./abg-run-observation-service.mjs";
+import {
+  loadAbgRunEventDetail,
+  loadAbgRunEventPage,
+  loadAbgRunObservation,
+} from "./abg-run-observation-service.mjs";
+import { loadVisualGraphProjection } from "./visual-graph-projection-service.mjs";
 import {
   loadDeveloperControlBootstrap,
   loadDeveloperControlPortfolio,
@@ -344,6 +349,7 @@ function classifyOddWorkspace(workspaceRoot) {
 
   if (
     hasWorkspaceMarker(workspaceRoot, ".genesis/gtl") ||
+    // Observed-workspace compatibility signal only; never a method-authority route.
     hasWorkspaceMarker(workspaceRoot, ".genesis/docs/standards/SPEC_METHOD.md")
   ) {
     markers.push("runtime:.genesis");
@@ -1528,6 +1534,7 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, loadTraversalSummary(surfaceProjectRoot, {
         runId: url.searchParams.get("runId"),
         refresh: url.searchParams.get("refresh") === "1",
+        allowImplicitSelection: false,
       }));
       return;
     }
@@ -1535,7 +1542,79 @@ const server = createServer(async (request, response) => {
       writeJson(response, 200, loadAbgRunObservation(surfaceProjectRoot, {
         runId: url.searchParams.get("runId"),
         refresh: url.searchParams.get("refresh") === "1",
+        allowImplicitSelection: false,
       }));
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/run/visual-graph") {
+      const runId = url.searchParams.get("runId");
+      const generation = url.searchParams.get("generation");
+      if (!runId || !generation) {
+        writeJson(response, 400, {
+          error: "visual graph projection requires exact runId and generation parameters",
+          code: "visual_graph_basis_required",
+        });
+        return;
+      }
+      if (!/^sha256:[0-9a-f]{64}$/u.test(generation)) {
+        writeJson(response, 400, {
+          error: "visual graph generation must be a canonical SHA-256 digest",
+          code: "visual_graph_basis_invalid",
+        });
+        return;
+      }
+      const projection = loadVisualGraphProjection(surfaceProjectRoot, {
+        runId,
+        generation,
+        refresh: url.searchParams.get("refresh") === "1",
+      });
+      if (
+        projection.state === "invalid"
+        && projection.diagnostics.some((entry) => entry.code === "stale_event_generation")
+      ) {
+        writeJson(response, 409, projection);
+        return;
+      }
+      writeJson(response, 200, projection);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/run/events") {
+      const start = Number(url.searchParams.get("start") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? 80);
+      if (!Number.isInteger(start) || start < 0 || !Number.isInteger(limit) || limit < 1 || limit > 240) {
+        writeJson(response, 400, { error: "event page requires start >= 0 and 1 <= limit <= 240" });
+        return;
+      }
+      const result = loadAbgRunEventPage(surfaceProjectRoot, {
+        runId: url.searchParams.get("runId"),
+        generation: url.searchParams.get("generation"),
+        start,
+        limit,
+      });
+      if (!result.ok) {
+        writeJson(response, result.code === "stale_event_generation" ? 409 : 404, { error: result.error, code: result.code });
+        return;
+      }
+      writeJson(response, 200, result.page);
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/ai-workspace/run/event") {
+      const ordinalParam = url.searchParams.get("ordinal");
+      const ordinal = Number(ordinalParam);
+      if (ordinalParam === null || !Number.isInteger(ordinal) || ordinal < 0) {
+        writeJson(response, 400, { error: "event detail requires a non-negative integer ordinal" });
+        return;
+      }
+      const result = loadAbgRunEventDetail(surfaceProjectRoot, {
+        runId: url.searchParams.get("runId"),
+        generation: url.searchParams.get("generation"),
+        ordinal,
+      });
+      if (!result.ok) {
+        writeJson(response, result.code === "stale_event_generation" ? 409 : 404, { error: result.error, code: result.code });
+        return;
+      }
+      writeJson(response, 200, result.detail);
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/ai-workspace/traversal/vector") {

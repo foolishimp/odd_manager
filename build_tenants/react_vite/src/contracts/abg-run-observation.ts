@@ -1,7 +1,8 @@
-export const ABG_RUN_OBSERVATION_VERSION = 2;
+export const ABG_RUN_OBSERVATION_VERSION = 3;
 
 export type AbgRunObservationState = 'ready' | 'unsupported' | 'error';
-export type AbgRunStatus = 'active' | 'converged' | 'failed' | 'unknown';
+export type AbgPublishedRunStatus = 'active' | 'blocked' | 'closed' | 'failed' | 'gap_stopped' | 'held' | 'refused' | 'stopped' | 'workspace';
+export type AbgRunStatus = AbgPublishedRunStatus | 'converged' | 'unknown';
 export type AbgRunSection =
   | 'overview'
   | 'graph'
@@ -35,7 +36,9 @@ export interface AbgProjectIdentity {
 }
 
 export interface AbgRunSummary {
+  observationLabel?: string | null;
   runId: string;
+  runKey: string;
   runRoot: string;
   workspaceRoot: string;
   scenarioId: string | null;
@@ -46,6 +49,8 @@ export interface AbgRunSummary {
   modifiedAt: string;
   lastEventAt: string | null;
   eventCount: number;
+  eventPosture: AbgEventPosture;
+  eventProfile: AbgEventEnvelopeProfile;
 }
 
 export interface AbgSystemReference {
@@ -58,11 +63,14 @@ export interface AbgRunActivity {
   status: AbgRunStatus;
   eventCount: number;
   eventKindCount: number;
-  vectorPlannedCount: number;
-  vectorEvaluatedCount: number;
-  vectorClosedCount: number;
-  retryCount: number;
-  continuationCount: number;
+  vectorPlannedCount: number | null;
+  vectorEvaluatedCount: number | null;
+  vectorClosedCount: number | null;
+  semanticVectorCount: number | null;
+  vectorAttemptCount: number | null;
+  openSemanticVectorCount: number | null;
+  retryCount: number | null;
+  continuationCount: number | null;
   terminalCount: number;
   currentVectorIndex: number | null;
   startedAt: string | null;
@@ -190,6 +198,110 @@ export interface AbgEventRow {
   detail: string | null;
 }
 
+export type AbgEventPosture =
+  | 'non_terminal'
+  | 'terminal_converged'
+  | 'terminal_failed'
+  | 'terminal_observed'
+  | 'run_closed'
+  | 'terminal_other'
+  | 'external_contract_uninterpreted'
+  | 'invalid';
+export type AbgEventEnvelopeProfile = 'abiogenesis_4_6_flat' | 'abiogenesis_5_root' | 'unknown';
+
+export interface AbgEventCarrierSnapshot {
+  physicalRecordCount?: number;
+  storageReferenceCount?: number;
+  selectedRunId?: string | null;
+  ledgerEventCount?: number;
+  dependencyEventCount?: number;
+  state: 'ready' | 'invalid';
+  sourceRef: string;
+  generation: string;
+  envelopeProfile: AbgEventEnvelopeProfile;
+  workflowVersion: string | null;
+  eventContractDigest: string | null;
+  contractPosture: string;
+  observedSizeBytes: number;
+  completePrefixBytes: number;
+  pendingBytes: number;
+  eventCount: number;
+  firstOrdinal: number | null;
+  lastOrdinal: number | null;
+  firstEventAt: string | null;
+  lastEventAt: string | null;
+  maxLineBytes: number;
+  completePrefixDigest: string | null;
+  stable: boolean;
+  eventPosture: AbgEventPosture;
+  terminalEvent: {
+    eventId: string;
+    ordinal: number;
+    eventTime: string;
+    terminalKind: string | null;
+    reason: string | null;
+    basisId: string | null;
+  } | null;
+  limits: { maxCarrierBytes: number; maxLineBytes: number; maxEvents: number; maxIndexBytes: number };
+}
+
+export interface AbgEventPageRow extends AbgEventRow {
+  ordinal: number;
+  eventId: string;
+  graphCallId: string | null;
+  frameId: string | null;
+  cCallRef: string | null;
+  actorInvocationRef: string | null;
+  causationEventRefs: string[];
+}
+
+export interface AbgEventPage {
+  kind: 'abg_event_page';
+  version: 1;
+  generation: string;
+  start: number;
+  limit: number;
+  total: number;
+  rows: AbgEventPageRow[];
+  nextStart: number | null;
+  previousStart: number | null;
+}
+
+export interface AbgEventDetail {
+  logicalByteLength?: number;
+  storageReference?: { sourceEventRef: string; sourcePayloadDigest: string; sourceSlot: 'basis_input' | 'c_call_result_value'; bodyDigest: string } | null;
+  kind: 'abg_event_detail';
+  version: 1;
+  generation: string;
+  ordinal: number;
+  eventId: string;
+  eventKind: string;
+  sourceRef: string;
+  sourceByteOffset: number;
+  sourceByteLength: number;
+  value: Record<string, unknown> | null;
+  truncated: boolean;
+  refusal: string | null;
+}
+
+export interface AbgEventFamilyProjection {
+  eventCount: number;
+  kindCounts: AbgEventKindCount[];
+  rows: Array<{
+    ordinal: number;
+    eventId: string;
+    kind: string;
+    eventTime: string | null;
+    graphCallId: string | null;
+    frameId: string | null;
+    vectorIndex: number | null;
+    cCallRef: string | null;
+    actorInvocationRef: string | null;
+    causationEventRefs: string[];
+  }>;
+  truncated: boolean;
+}
+
 export interface AbgStageActivity {
   vectorIndex: number;
   edge: string | null;
@@ -228,7 +340,36 @@ export interface AbgArtifactReference {
   digestState: 'verified' | 'mismatch' | 'not_declared' | 'unavailable' | 'not_applicable';
 }
 
+export interface AbgSubstrateIdentity {
+  productId: string | null;
+  packageName: string | null;
+  packageVersion: string | null;
+  releaseTag: string | null;
+  sourceCommit: string | null;
+  snapshotCommit: string | null;
+  tarballSha256: string | null;
+  productToolchainManifestDigest: string | null;
+  releaseSnapshotManifestSha256: string | null;
+}
+
+export interface AbgRetainedPrefix {
+  kind: 'durable_prefix_coordinate'; schemaVersion: '5.0.0';
+  eventLogRef: string; prefixLength: number; prefixDigest: string; coordinateDigest: string;
+  storeIdentity: { device: number; inode: number; eventContractDigest: string };
+}
 export interface AbgRunObservation {
+  runtimeState?: {
+    state: 'published' | 'unavailable'; status: AbgPublishedRunStatus | null;
+    reason: string; sourceRef: string | null; sourceDigest: string | null;
+    prefix: AbgRetainedPrefix | null; asOfOrdinal: number | null;
+    replayRef: string | null; replayDigest: string | null; terminalResultRef: string | null;
+    replayFromOrdinal: number | null; replayLimit: number | null;
+    coverage: 'exact_retained_prefix' | 'unavailable';
+  } | null;
+  retainedObservation?: {
+    kind: 'retained_prefix_resolution'; originalCoordinate: AbgRetainedPrefix;
+    archiveSourceRef: string; receiptSourceRef: string; receiptDigest: string;
+  } | null;
   kind: 'abg_run_observation';
   version: typeof ABG_RUN_OBSERVATION_VERSION;
   generatedAt: string;
@@ -237,16 +378,26 @@ export interface AbgRunObservation {
   identity: AbgProjectIdentity;
   runs: AbgRunSummary[];
   selectedRunId: string | null;
+  selectedRunKey: string | null;
   selectedRunRoot: string | null;
   selectedWorkspaceRoot: string | null;
+  carrierSnapshot: AbgEventCarrierSnapshot | null;
+  eventPosture: AbgEventPosture;
+  processPosture: 'unavailable' | 'queued' | 'starting' | 'running' | 'waiting_human' | 'exited' | 'cancelled' | 'disconnected';
+  proofReconciliation: {
+    state: 'absent' | 'pending' | 'reconciled' | 'conflict' | 'unreadable' | 'unsupported';
+    sourceRef: string | null;
+    conflicts: string[];
+    eventCount: number | null;
+    eventDigest: string | null;
+  };
+  compatibility: {
+    posture: string;
+    subject: AbgSubstrateIdentity | null;
+    reason: string;
+  };
   systemReferences: AbgSystemReference[];
-  substrate: {
-    productId: string | null;
-    packageName: string | null;
-    packageVersion: string | null;
-    releaseTag: string | null;
-    sourceCommit: string | null;
-  } | null;
+  substrate: AbgSubstrateIdentity | null;
   activity: AbgRunActivity | null;
   functions: AbgFunctionActivity[];
   catalog: AbgCatalogProjection;
@@ -254,6 +405,8 @@ export interface AbgRunObservation {
   assurance: AbgAssuranceSummary | null;
   eventKinds: AbgEventKindCount[];
   events: AbgEventRow[];
+  eventPage: AbgEventPage | null;
+  eventFamilies: Record<'run' | 'retryContinuation' | 'actor' | 'cCall' | 'payloadIntegrity' | 'assurance', AbgEventFamilyProjection>;
   stages: AbgStageActivity[];
   transcripts: AbgTranscript[];
   artifacts: AbgArtifactReference[];

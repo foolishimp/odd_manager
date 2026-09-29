@@ -2,10 +2,8 @@
 
 **Status**: Active
 **Derived From**: `specification/GOALS.md`, `specification/INTENT.md`,
-`.genesis/docs/standards/SPEC_METHOD.md`,
-`.genesis/docs/standards/ODD_METHOD.md`,
-`.genesis/docs/standards/DESIGN_MODULE_METHOD.md`, and
-`.genesis/docs/standards/UX_METHOD.md`
+`stdo_odd_manager.json`, and its selected `SPEC_METHOD.md`, `ODD_METHOD.md`,
+`DESIGN_MODULE_METHOD.md`, and `UX_METHOD.md` entrypoints
 **Purpose**: Define the current control-plane product realization for `odd_manager`
 
 ## Product Position
@@ -151,9 +149,10 @@ that no longer match live upstream truth.
 Compatibility may be kept only where it lowers migration cost without distorting
 current constitutional or design truth.
 
-### Exact ABIogenesis 4.6-Aligned Observation Subject
+### Historical Exact ABIogenesis 4.6-Aligned Observation Subject
 
-The current source-development compatibility subject is deliberately narrow:
+The retained historical source-development qualification is deliberately
+narrow:
 
 > `odd_manager` can read and validate the immutable `odd_glc` `0.1.0`
 > Basic-CLI proof produced on ABIogenesis `4.6.0-rc.3`.
@@ -168,10 +167,12 @@ The exact basis is:
 - live proof SHA-256
   `9a8bbce08257db6a5b808e629ca7dce5a6f62a293d3f29309e169930228ddfe8`.
 
-The qualification admits the exact proof through both the server projection
-and client validator, reports the proof-declared 602-event total, and admits
+The historical qualification admitted the exact proof through both the server
+projection and client validator, reporting the proof-declared 602-event total,
 152 bounded event rows, 8 closed vectors, 47 catalog entries, and zero manager
-diagnostics.
+diagnostics. The current v3 projection retains that exact subject while using
+a 40-row initial page plus server paging and lazy detail rather than treating
+the historical row count as current runtime law.
 
 This is not a general ABIogenesis 4.6 compatibility range. It does not claim:
 
@@ -185,6 +186,28 @@ This is not a general ABIogenesis 4.6 compatibility range. It does not claim:
 Build remains explicitly unavailable when `.odd/build-carrier.json` is absent.
 The evidence bundle is a retained compatibility qualification, not runtime
 authority and not a dependency of `odd_manager`.
+
+### Current ABIogenesis 5.0 Development Target
+
+T-046 selects the frozen installed S6 LIVE05 and S7 source/fresh Run witnesses
+as the current G-009 observation target. Their ABIogenesis `5.0.0-rc.1` core
+archives have SHA-256 `1722953b7391e593079e3436b729b13c55457c734fb441d5e08b604edf9c462d`
+and `c4bff846362ac59cd928fffcacb6a33a669c178d0380d03aea6c1e3b1fbd9ee1`.
+Both publish event profile
+`sha256:ddc961a2484be150193fa255d7dc7b933e52fb81b7b2c681f2bb97e1f9d5754c`.
+The bounded target is identity-first discovery, exact physical-prefix and
+decoded-event validation, selected-Run status, and bounded event/call inspection
+through the installed manager. Retained archive observation preserves original
+runtime identity; it does not confer native store reopening or process liveness.
+
+Each delivered slice requires its own exact installed-path proof. This target
+does not establish general ABIogenesis 5.0 compatibility or supersede the
+independent T-040 and T-042 through T-045 acceptance obligations. The retained
+Hello World and stopped Data Mapper portfolio remains labeled by its published
+ABIogenesis `4.6.0-rc.3` identity. An odd_glc-on-ABIogenesis-5.0 compatibility
+claim still requires a self-identified runtime carrier through the declared
+installed causal path. `REQ-OM-ABG-001` through `REQ-OM-ABG-010` govern these
+observation and qualification boundaries.
 
 ## Operational Lifecycle Posture
 
@@ -216,27 +239,35 @@ missing operational claims are delivered.
 
 ## Governance Basis
 
-`odd_manager` selects the complete immutable STDO `v2.2.1` release at commit
-`8ad868eb0c9a3bdd075ff17ec4f7923d5ceec1cf`, with the 41-member standards
-member-set digest
-`df1064dea1e1926436a3123280071a5082c5dc03b8418d07e46e839cbed20aed`.
-The operative local distribution is `.genesis/docs/standards/` and must remain
-byte-identical to that release.
+`stdo_odd_manager.json` owns exact STDO selection and routing.
+`specification/GOVERNANCE.md` owns project application, and
+`specification/REFERENCE_FRAME_BASIS.md` owns the adopted collective frame
+configuration. The verified shared-store release is operative.
+`.genesis/docs/standards/` remains historical provenance only.
 
 `SPEC_METHOD.md` supplies the general constitutional method.
 `ODD_METHOD.md` supplies graph-native ODD product-authoring and
 traversal-governance law. `DESIGN_MODULE_METHOD.md` and `UX_METHOD.md` govern
-the applicable design and interaction boundaries. Mutable methodology source,
-candidate cuts, and historical local method members do not govern this
+the applicable design and interaction boundaries. `REFERENCE_FRAME_METHOD.md`
+and `STDO_REFERENCE_FRAME_BASELINE.md` govern finite evaluation engagement,
+activation, evidence, and result separation. Mutable methodology source,
+moving selectors, and historical local method members do not govern this
 consumer.
 
-This selection changes the method basis only. It does not alter Product
-outcomes, current goal selection, accepted design, ticket topology, runtime
-behavior, or evidence status. Another STDO release becomes operative only
-through explicit Product-owner selection and installation of its complete
-immutable member set.
+This selection changes the method basis and its routing/verification surfaces
+only. It does not alter Product outcomes, capability semantics, accepted
+design, runtime behavior, compatibility claims, or historical evidence status.
+Another STDO release becomes operative only through an explicit digest-bound
+Product Definition transition and verification of its complete immutable
+installed release.
 
 ## Product Terms
+
+This section declares bounded context
+`urn:odd-manager:bounded-context:product`. `specification/PRODUCT.md` owns the
+terms in this scope under the exact basis selected by `stdo_odd_manager.json`.
+Equal spelling in STDO, ABIogenesis, a domain package, or a runtime carrier does
+not establish equal meaning or authority without an explicit relation.
 
 ### Control Surface
 
@@ -560,6 +591,20 @@ roles.
 
 One engine-owned execution attempt over semantic work.
 
+### Run Identity Carrier
+
+A bounded published artifact that identifies a Run and its workspace,
+scenario, substrate, graph, graph-function, overlay, startup, and source basis.
+It may admit observation before terminal proof exists. Path spelling, PID, and
+repository naming are not identity authority.
+
+### Event Carrier
+
+The durable append-only ABG event sequence for one admitted Run. The manager
+validates and indexes a bounded observed prefix on the server, preserves source
+ordinals and identities, and never requires the browser to load the complete
+carrier. Event terminality and external process liveness are separate facts.
+
 ### Graph Call
 
 One engine-owned realization of one published graph-function boundary against a
@@ -658,6 +703,9 @@ The intended end-state product shape is:
     attention into bounded reaction or lawful re-entry
 16. compose independently evolvable STDO-UX capability modules through shared
     Context, contracts, commands, events, navigation, and evidence
+17. discover exact runs from published identity and durable event carriers,
+    observe non-terminal prefixes without manufacturing process state, and
+    reconcile later immutable proof over the same bytes
 
 ## Current Product Definition
 
@@ -693,6 +741,12 @@ The current product definition of `odd_manager` is:
   the current active domain package has not yet published richer semantic detail
 - a product that composes ABG-native runtime projections with domain query
   results instead of depending on one monolithic observer payload
+- a product whose ABG observation path is identity- and event-stream-native,
+  proof-independent for non-terminal observation, incrementally bounded, and
+  late-proof-reconciled
+- a product that attaches compatibility only to the exact substrate identity
+  published by a carrier and never promotes an operator wave label into a
+  release claim
 - a product that offers requirement-first and process-first stakeholder entry
   lenses over one shared world model rather than separate widget systems
 - a product organized for its first primary persona: the developer operating a

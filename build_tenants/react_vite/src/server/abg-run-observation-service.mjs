@@ -6,8 +6,16 @@ import {
   loadObservationRunProof,
   selectObservationRun,
 } from './project-observation-topology-service.mjs';
+import {
+  abgEventCarrierSnapshot,
+  abgEventSequence,
+  detailAbgEventCarrier,
+  indexAbgEventCarrier, scopeAbgEventCarrier,
+  pageAbgEventCarrier,
+  reconcileAbgProof,
+} from './abg-event-carrier-service.mjs';
 
-const VERSION = 2;
+const VERSION = 3;
 const MAX_AUXILIARY_BYTES = 8 * 1024 * 1024;
 const MAX_VECTOR_ARTIFACT_BYTES = 4 * 1024 * 1024;
 const MAX_VECTOR_SCAN_DIRECTORIES = 500;
@@ -129,9 +137,11 @@ function identityProjection(identity) {
 function runSummary(run) {
   return {
     runId: run.runId,
+    runKey: run.runKey,
     runRoot: run.runRoot,
     workspaceRoot: run.workspaceRoot,
     scenarioId: run.scenarioId,
+    observationLabel: run.observationLabel ?? null,
     scenarioKind: run.scenarioKind,
     proofClass: run.proofClass,
     graphFunctionRef: run.graphFunctionRef,
@@ -139,7 +149,21 @@ function runSummary(run) {
     modifiedAt: run.modifiedAt,
     lastEventAt: run.lastEventAt,
     eventCount: run.eventCount,
+    eventPosture: run.eventPosture,
+    eventProfile: run.eventProfile,
   };
+}
+
+function projectedRunCandidates(topology, selectedRun = null) {
+  const explicit = topology.runs.filter((run) => run.requiresExplicitSelection === true);
+  const family = explicit.length === 0
+    ? topology.runs
+    : !selectedRun || selectedRun.requiresExplicitSelection === true
+      ? explicit
+      : topology.runs.filter((run) => run.requiresExplicitSelection !== true);
+  const counts = new Map();
+  for (const run of family) counts.set(run.runId, (counts.get(run.runId) ?? 0) + 1);
+  return family.filter((run) => counts.get(run.runId) === 1);
 }
 
 function emptyObservation(topology, state, diagnostics) {
@@ -150,10 +174,18 @@ function emptyObservation(topology, state, diagnostics) {
     state,
     projectRoot: topology.projectRoot,
     identity: identityProjection(topology.identity),
-    runs: topology.runs.map(runSummary),
+    runs: projectedRunCandidates(topology).map(runSummary),
     selectedRunId: null,
+    selectedRunKey: null,
     selectedRunRoot: null,
     selectedWorkspaceRoot: null,
+    carrierSnapshot: null,
+    eventPosture: 'invalid',
+    processPosture: 'unavailable',
+    runtimeState: null,
+    retainedObservation: null,
+    proofReconciliation: { state: 'absent', sourceRef: null, conflicts: [], eventCount: null, eventDigest: null },
+    compatibility: { posture: 'unknown', subject: null, reason: 'no admitted run event carrier' },
     systemReferences: [],
     substrate: null,
     activity: null,
@@ -163,6 +195,8 @@ function emptyObservation(topology, state, diagnostics) {
     assurance: null,
     eventKinds: [],
     events: [],
+    eventPage: null,
+    eventFamilies: emptyEventFamilies(),
     stages: [],
     transcripts: [],
     artifacts: [],
@@ -228,6 +262,117 @@ function boundedEventRows(sequence) {
       graphFunctionRef: stringOrNull(event.graphFunctionRef),
       detail: eventDetail(event),
     }));
+}
+
+const EVENT_FAMILY_MATCHERS = Object.freeze({
+  run: /^(run_|graph_call_|frame_|terminal_)/u,
+  retryContinuation: /^(retry_|continuation_)/u,
+  actor: /^actor_/u,
+  cCall: /^c_call_/u,
+  payloadIntegrity: /(payload|response_contract|instruction|artifact_content)/u,
+  assurance: /(requirement|authority|ambiguity|closure_input|evidence|assess|temporal|verdict)/u,
+});
+
+function emptyEventFamilies() {
+  return Object.fromEntries(Object.keys(EVENT_FAMILY_MATCHERS).map((key) => [key, {
+    eventCount: 0,
+    kindCounts: [],
+    rows: [],
+    truncated: false,
+  }]));
+}
+
+function eventFamilyProjection(sequence) {
+  const projected = emptyEventFamilies();
+  for (const [family, matcher] of Object.entries(EVENT_FAMILY_MATCHERS)) {
+    const matching = sequence.filter((event) => isRecord(event) && matcher.test(event.kind));
+    const counts = {};
+    for (const event of matching) counts[event.kind] = (counts[event.kind] ?? 0) + 1;
+    const bounded = matching.length <= 12
+      ? matching
+      : [...matching.slice(0, 4), ...matching.slice(-8)];
+    projected[family] = {
+      eventCount: matching.length,
+      kindCounts: eventKindRows(counts),
+      rows: bounded.map((event) => ({
+        ordinal: numberOrNull(event.sourceOrdinal) ?? numberOrNull(event.index) ?? 0,
+        eventId: stringOrNull(event.eventId) ?? 'unknown',
+        kind: stringOrNull(event.kind) ?? 'unknown',
+        eventTime: stringOrNull(event.eventTime),
+        graphCallId: stringOrNull(event.graphCallId),
+        frameId: stringOrNull(event.frameId),
+        vectorIndex: numberOrNull(event.vectorIndex),
+        cCallRef: stringOrNull(event.cCallRef),
+        actorInvocationRef: stringOrNull(event.actorInvocationRef),
+        causationEventRefs: stringArray(event.causationEventRefs).slice(0, 80),
+      })),
+      truncated: matching.length > bounded.length,
+    };
+  }
+  return projected;
+}
+
+function semanticVectorProjection(sequence) {
+  const vectors = new Map();
+  let invocationAttemptCount = 0;
+  for (const event of sequence) {
+    if (!isRecord(event)) continue;
+    if (!['vector_traversal_planned', 'vector_evaluated', 'vector_closed'].includes(event.kind)) continue;
+    const vectorIndex = numberOrNull(event.vectorIndex);
+    if (vectorIndex === null) continue;
+    const key = [
+      stringOrNull(event.frameLineageId) ?? stringOrNull(event.frameId) ?? 'frame:unknown',
+      `vector:${vectorIndex}`,
+    ].join('|');
+    const row = vectors.get(key) ?? {
+      key,
+      vectorIndex,
+      plannedCount: 0,
+      evaluatedCount: 0,
+      closedCount: 0,
+      retryCount: 0,
+      firstOrdinal: numberOrNull(event.sourceOrdinal) ?? numberOrNull(event.index),
+      lastOrdinal: numberOrNull(event.sourceOrdinal) ?? numberOrNull(event.index),
+    };
+    row.lastOrdinal = numberOrNull(event.sourceOrdinal) ?? numberOrNull(event.index);
+    if (event.kind === 'vector_traversal_planned') {
+      row.plannedCount += 1;
+      invocationAttemptCount += 1;
+    }
+    if (event.kind === 'vector_evaluated') row.evaluatedCount += 1;
+    if (event.kind === 'vector_closed') row.closedCount += 1;
+    vectors.set(key, row);
+  }
+  const rows = [...vectors.values()].filter((row) => row.plannedCount > 0 || row.evaluatedCount > 0 || row.closedCount > 0);
+  const openRows = rows.filter((row) => row.closedCount === 0);
+  return {
+    semanticVectorCount: rows.length,
+    invocationAttemptCount,
+    openSemanticVectorCount: openRows.length,
+    currentVectorIndex: openRows.map((row) => row.vectorIndex).filter((value) => value !== null).at(-1) ?? null,
+  };
+}
+
+function compatibilityProjection(run, eventIndex, proofReconciliation) {
+  const substrate = isRecord(run.substrate) ? substrateOf(run.substrate) : null;
+  if (eventIndex.state !== 'ready' || (run.eventPrefixLength !== undefined && (eventIndex.completePrefixBytes !== run.eventPrefixLength || eventIndex.completePrefixDigest !== run.eventPrefixDigest))) {
+    return { posture: 'invalid_carrier', subject: substrate, reason: 'the event carrier did not admit a stable valid prefix' };
+  }
+  if (proofReconciliation.state === 'conflict') {
+    return { posture: 'proof_conflict', subject: substrate, reason: 'terminal proof conflicts with the admitted event carrier' };
+  }
+  if (run.carrierKind === 'retained_published_run_observation' && eventIndex.contractPosture === 'stamped_profile_validated') return { posture: 'retained_profile_validated', subject: substrate, reason: 'Exact retained profile and prefix admitted; broader Product compatibility remains unqualified.' };
+  if (eventIndex.envelopeProfile === 'abiogenesis_5_root') {
+    const exactIdentity = substrate?.packageName === '@abiogenesis/typescript-tenant'
+      && substrate?.packageVersion?.startsWith('5.0.0');
+    return exactIdentity && eventIndex.contractPosture === 'pinned_root_envelope_verified'
+      ? { posture: 'abiogenesis_5_root_envelope_supported', subject: substrate, reason: 'exact 5.0 identity and pinned root-envelope integrity were admitted' }
+      : { posture: 'abiogenesis_5_identity_unconfirmed', subject: substrate, reason: '5.0 envelope was observed without an exact supported substrate identity or root-kind registry' };
+  }
+  if (eventIndex.envelopeProfile === 'abiogenesis_4_6_flat') {
+    return { posture: 'abiogenesis_4_6_legacy_supported', subject: substrate, reason: 'legacy flat envelope is retained as an explicit compatibility profile' };
+  }
+  return { posture: 'unknown', subject: substrate, reason: 'event envelope profile is not supported' };
 }
 
 function emptyCatalogProjection(sourceRef) {
@@ -727,11 +872,15 @@ function substrateOf(value) {
     packageVersion: stringOrNull(value.packageVersion),
     releaseTag: stringOrNull(value.releaseTag),
     sourceCommit: stringOrNull(value.sourceCommit),
+    snapshotCommit: stringOrNull(value.snapshotCommit),
+    tarballSha256: stringOrNull(value.tarballSha256),
+    productToolchainManifestDigest: stringOrNull(value.productToolchainManifestDigest),
+    releaseSnapshotManifestSha256: stringOrNull(value.releaseSnapshotManifestSha256),
   };
 }
 
-function activityOf(run, proof, counts, stages) {
-  const sequence = Array.isArray(proof.eventSequence) ? proof.eventSequence : [];
+function activityOf(run, projection, counts) {
+  const sequence = Array.isArray(projection.eventSequence) ? projection.eventSequence : [];
   const first = sequence[0];
   const last = sequence.at(-1);
   const plannedIndexes = sequence
@@ -742,63 +891,131 @@ function activityOf(run, proof, counts, stages) {
     .filter((event) => isRecord(event) && event.kind === 'vector_evaluated')
     .map((event) => numberOrNull(event.vectorIndex))
     .filter((value) => value !== null));
+  const semantic = semanticVectorProjection(sequence);
   const activeIndexes = plannedIndexes.filter((index) => !evaluatedIndexes.has(index));
-  const currentVectorIndex = activeIndexes.length > 0
-    ? Math.max(...activeIndexes)
-    : stages.length > 0
-      ? Math.max(...stages.map((stage) => stage.vectorIndex))
-      : null;
+  const currentVectorIndex = semantic.currentVectorIndex
+    ?? (activeIndexes.length > 0 ? Math.max(...activeIndexes) : null);
+  const semanticCountersAvailable = run.carrierKind !== 'retained_published_run_observation';
   return {
     status: run.status,
     eventCount: sequence.length,
     eventKindCount: Object.keys(counts).length,
-    vectorPlannedCount: numberOrNull(counts.vector_traversal_planned) ?? 0,
-    vectorEvaluatedCount: numberOrNull(counts.vector_evaluated) ?? 0,
-    vectorClosedCount: numberOrNull(counts.vector_closed) ?? 0,
-    retryCount: numberOrNull(counts.retry_attempt_opened) ?? 0,
-    continuationCount: (numberOrNull(counts.continuation_reopened) ?? 0) + (numberOrNull(counts.continuation_terminated) ?? 0),
+    vectorPlannedCount: semanticCountersAvailable ? (numberOrNull(counts.vector_traversal_planned) ?? 0) : null,
+    vectorEvaluatedCount: semanticCountersAvailable ? (numberOrNull(counts.vector_evaluated) ?? 0) : null,
+    vectorClosedCount: semanticCountersAvailable ? (numberOrNull(counts.vector_closed) ?? 0) : null,
+    semanticVectorCount: semanticCountersAvailable ? (semantic.semanticVectorCount) : null,
+    vectorAttemptCount: semanticCountersAvailable ? (semantic.invocationAttemptCount) : null,
+    openSemanticVectorCount: semanticCountersAvailable ? (semantic.openSemanticVectorCount) : null,
+    retryCount: semanticCountersAvailable ? (numberOrNull(counts.retry_attempt_opened) ?? 0) : null,
+    continuationCount: semanticCountersAvailable ? ((numberOrNull(counts.continuation_reopened) ?? 0) + (numberOrNull(counts.continuation_terminated) ?? 0)) : null,
     terminalCount: numberOrNull(counts.terminal_reached) ?? 0,
     currentVectorIndex,
     startedAt: stringOrNull(first?.eventTime),
     lastEventAt: stringOrNull(last?.eventTime),
-    durationMs: numberOrNull(proof.campaignDurationMs) ?? numberOrNull(proof.durationMs),
+    durationMs: numberOrNull(projection.campaignDurationMs)
+      ?? numberOrNull(projection.durationMs)
+      ?? (first && last ? Math.max(0, Date.parse(last.eventTime) - Date.parse(first.eventTime)) : null),
+  };
+}
+
+function eventIndexOptions(run, refresh) {
+  return {
+    refresh,
+    ...(run.eventContractDigest
+      ? { publishedEventContractDigest: run.eventContractDigest }
+      : {}),
+    ...(run.eventContractBindingPosture
+      ? { contractBindingPosture: run.eventContractBindingPosture }
+      : {}),
   };
 }
 
 export function loadAbgRunObservation(projectRootInput, options = {}) {
   const topology = discoverProjectObservationTopology(projectRootInput, { refresh: options.refresh === true });
   const diagnostics = [...topology.diagnostics];
-  const run = selectObservationRun(topology, options.runId ?? null);
+  const requestedRunId = typeof options.runId === 'string' && options.runId.trim()
+    ? options.runId.trim()
+    : null;
+  const implicitSelectionDisabled = requestedRunId === null && options.allowImplicitSelection === false;
+  const run = implicitSelectionDisabled ? null : selectObservationRun(topology, requestedRunId);
   if (!run) {
-    if (options.runId) diagnostics.push(diagnostic('warning', 'selected_run_missing', `Run ${options.runId} is not present in the Project topology.`));
+    if (requestedRunId) {
+      diagnostics.push(diagnostic('warning', 'selected_run_missing', `Run ${requestedRunId} is not present in the Project topology.`));
+    } else if (implicitSelectionDisabled && topology.runs.length > 0) {
+      diagnostics.push(diagnostic(
+        'info',
+        'run_selection_required',
+        'Run discovery published candidates without inferring a default or latest selection.',
+      ));
+    }
     return emptyObservation(topology, 'unsupported', diagnostics);
   }
-  const proof = loadObservationRunProof(run);
-  if (!isRecord(proof)) {
-    diagnostics.push(diagnostic('error', 'run_proof_unreadable', 'The selected run proof could not be admitted.', run.proofPath));
+  const ledgerIndex = indexAbgEventCarrier(
+    run.eventPath,
+    eventIndexOptions(run, options.refresh === true),
+  );
+  const eventIndex = run.carrierKind === 'retained_published_run_observation' ? scopeAbgEventCarrier(ledgerIndex, run.runId) : ledgerIndex;
+  diagnostics.push(...eventIndex.diagnostics);
+  if (eventIndex.state !== 'ready' || (run.eventPrefixLength !== undefined && (eventIndex.completePrefixBytes !== run.eventPrefixLength || eventIndex.completePrefixDigest !== run.eventPrefixDigest))) {
+    diagnostics.push(diagnostic('error', 'run_event_carrier_unreadable', 'The selected run event carrier could not be admitted.', run.eventPath));
     return emptyObservation(topology, 'error', diagnostics);
   }
+  const proof = loadObservationRunProof(run);
+  const proofReconciliation = run.proofState === 'unreadable'
+    ? {
+        state: 'unreadable',
+        sourceRef: run.proofPath,
+        conflicts: [run.proofError?.message ?? 'proof carrier is unreadable'],
+        eventCount: null,
+        eventDigest: null,
+      }
+    : reconcileAbgProof(eventIndex, proof, run.identity, run.proofPath);
+  if (proofReconciliation.state === 'unreadable') {
+    diagnostics.push(diagnostic('warning', 'run_proof_unreadable', proofReconciliation.conflicts.join('; '), run.proofPath ?? run.eventPath));
+  }
+  if (proofReconciliation.state === 'conflict') {
+    diagnostics.push(diagnostic('error', 'run_proof_conflict', proofReconciliation.conflicts.join('; '), run.proofPath ?? run.eventPath));
+  }
+  const admittedProof = proofReconciliation.state === 'reconciled' && isRecord(proof) ? proof : {};
+  const sequence = abgEventSequence(eventIndex);
+  const counts = { ...eventIndex.counts };
+  const projection = {
+    ...admittedProof,
+    graphRef: run.graphRef,
+    graphFunctionRef: run.graphFunctionRef,
+    overlayRef: run.overlayRef,
+    startupConfigRef: run.startupConfigRef,
+    substrate: run.substrate,
+    eventCounts: counts,
+    eventSequence: sequence,
+  };
   run.projectRoot = topology.projectRoot;
   const vectorScan = scanVectorArtifacts(run.workspaceRoot, diagnostics);
   const stages = stageRows(vectorScan.records);
-  const counts = eventCountsOf(proof);
-  const activity = activityOf(run, proof, counts, stages);
-  const catalog = catalogProjection(proof, run.proofPath);
-  if (activity.vectorPlannedCount > activity.vectorEvaluatedCount) {
-    diagnostics.push(diagnostic('info', 'run_has_active_vector', `${activity.vectorPlannedCount - activity.vectorEvaluatedCount} planned vector invocation(s) remain unevaluated.`));
-  }
-  if (activity.vectorEvaluatedCount > activity.vectorClosedCount) {
-    diagnostics.push(diagnostic('info', 'run_has_open_closure', `${activity.vectorEvaluatedCount - activity.vectorClosedCount} evaluated vector invocation(s) remain unclosed.`));
+  const activity = activityOf(run, projection, counts);
+  const catalog = catalogProjection(projection, run.eventPath);
+  if (activity.openSemanticVectorCount > 0 && eventIndex.eventPosture === 'non_terminal') {
+    diagnostics.push(diagnostic('info', 'run_has_active_vector', `${activity.openSemanticVectorCount} semantic vector(s) remain open in the admitted non-terminal prefix.`));
   }
   if (activity.retryCount > 0) {
     diagnostics.push(diagnostic('info', 'run_contains_retries', `${activity.retryCount} retry attempt(s) are admitted by the event carrier.`));
   }
   if (catalog.unparsedAdmissionCount > 0) {
-    diagnostics.push(diagnostic('warning', 'catalog_admission_unparsed', `${catalog.unparsedAdmissionCount} registry admission event(s) lacked a projectable catalog identity.`, run.proofPath));
+    diagnostics.push(diagnostic('warning', 'catalog_admission_unparsed', `${catalog.unparsedAdmissionCount} registry admission event(s) lacked a projectable catalog identity.`, run.eventPath));
   }
   if (catalog.truncated) {
-    diagnostics.push(diagnostic('warning', 'catalog_projection_truncated', 'The ABG catalog projection exceeded its bounded row limit.', run.proofPath));
+    diagnostics.push(diagnostic('warning', 'catalog_projection_truncated', 'The ABG catalog projection exceeded its bounded row limit.', run.eventPath));
   }
+  const initialPage = pageAbgEventCarrier(eventIndex, { start: 0, limit: 40 }).page;
+  const legacyEventRows = initialPage.rows.map((event) => ({
+    index: event.index,
+    kind: event.kind,
+    eventTime: event.eventTime,
+    vectorIndex: event.vectorIndex,
+    edge: event.edge,
+    graphFunctionRef: null,
+    detail: event.detail,
+  }));
   return {
     kind: 'abg_run_observation',
     version: VERSION,
@@ -806,22 +1023,71 @@ export function loadAbgRunObservation(projectRootInput, options = {}) {
     state: 'ready',
     projectRoot: topology.projectRoot,
     identity: identityProjection(topology.identity),
-    runs: topology.runs.map(runSummary),
+    runs: projectedRunCandidates(topology, run).map(runSummary),
     selectedRunId: run.runId,
+    selectedRunKey: run.runKey,
     selectedRunRoot: run.runRoot,
     selectedWorkspaceRoot: run.workspaceRoot,
-    systemReferences: systemReferences(proof, run.proofPath),
-    substrate: substrateOf(proof.substrate),
+    carrierSnapshot: abgEventCarrierSnapshot(eventIndex),
+    eventPosture: eventIndex.eventPosture,
+    processPosture: 'unavailable',
+    runtimeState: run.runtimeState ?? null,
+    retainedObservation: run.retainedObservation ?? null,
+    proofReconciliation,
+    compatibility: compatibilityProjection(run, eventIndex, proofReconciliation),
+    systemReferences: systemReferences({
+      ...projection,
+      eventLogSha256: eventIndex.completePrefixDigest,
+    }, run.eventPath),
+    substrate: substrateOf(run.substrate),
     activity,
-    functions: functionRows(proof, counts, stages, run.proofPath),
+    functions: functionRows(projection, counts, stages, run.eventPath),
     catalog,
     assets: assetRows(vectorScan.records),
-    assurance: assuranceSummary(run, proof, counts),
+    assurance: assuranceSummary(run, admittedProof, counts),
     eventKinds: eventKindRows(counts),
-    events: boundedEventRows(proof.eventSequence),
+    events: legacyEventRows,
+    eventPage: initialPage,
+    eventFamilies: eventFamilyProjection(sequence),
     stages,
-    transcripts: transcriptRows(proof, vectorScan.records, run.proofPath),
-    artifacts: artifactReferences(run, proof, vectorScan.artifactDirectory),
+    transcripts: transcriptRows(admittedProof, vectorScan.records, run.proofPath ?? run.eventPath),
+    artifacts: artifactReferences(run, {
+      ...admittedProof,
+      eventLogSha256: isRecord(proof) ? stringOrNull(proof.eventLogSha256 ?? proof.eventLogDigest) : null,
+    }, vectorScan.artifactDirectory),
     diagnostics,
   };
+}
+
+function selectedEventIndex(projectRootInput, options = {}) {
+  const topology = discoverProjectObservationTopology(projectRootInput, { refresh: options.refresh === true });
+  const run = selectObservationRun(topology, options.runId ?? null);
+  if (!run) return { ok: false, code: 'selected_run_missing', error: 'selected run is not present in the Project topology' };
+  const ledger = indexAbgEventCarrier(
+    run.eventPath,
+    eventIndexOptions(run, options.refresh === true),
+  );
+  const index = run.carrierKind === 'retained_published_run_observation' ? scopeAbgEventCarrier(ledger, run.runId) : ledger;
+  if (index.state !== 'ready') return { ok: false, code: 'event_carrier_invalid', error: 'selected run event carrier is invalid' };
+  if (run.eventPrefixLength !== undefined && (index.completePrefixBytes !== run.eventPrefixLength || index.completePrefixDigest !== run.eventPrefixDigest)) return { ok: false, code: 'stale_event_generation', error: 'retained prefix changed after topology admission' };
+  return { ok: true, run, index };
+}
+
+export function loadAbgRunEventPage(projectRootInput, options = {}) {
+  const selected = selectedEventIndex(projectRootInput, options);
+  if (!selected.ok) return selected;
+  return pageAbgEventCarrier(selected.index, {
+    start: options.start,
+    limit: options.limit,
+    generation: options.generation,
+  });
+}
+
+export function loadAbgRunEventDetail(projectRootInput, options = {}) {
+  const selected = selectedEventIndex(projectRootInput, options);
+  if (!selected.ok) return selected;
+  return detailAbgEventCarrier(selected.index, {
+    ordinal: options.ordinal,
+    generation: options.generation,
+  });
 }

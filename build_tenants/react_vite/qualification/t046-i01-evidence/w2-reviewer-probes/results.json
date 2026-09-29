@@ -1,0 +1,80 @@
+{
+  "kind": "t046_i01_w2_original_r1_counterexample_recheck",
+  "sourceInputs": "R1 retained scratch probes; status variants are schema tests, not new owner judgments",
+  "eventSourceForStatusProbes": "Frozen S7 source events, resolved by subjects.json exact member hashes",
+  "probes": [
+    {
+      "probe": "Run-to-workspace cause",
+      "inputSha256": "c5e570a4deb0614366f21dc77161483b3e48adb5ff141ae9e6aab44229e118d8",
+      "state": "invalid",
+      "admittedRecords": 40,
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "event_envelope_invalid",
+          "message": "ABIogenesis 5.0 causation crosses run scope",
+          "sourceRef": "/private/tmp/odd-manager-t046-review-lHklGq/workspace-cause.jsonl",
+          "eventOrdinal": 41
+        }
+      ]
+    },
+    {
+      "probe": "active",
+      "inputSha256": "b08d8fd37ae2cda6489b21c8ef2f272d9a42f6db301945351d2f8e3f68de25bb",
+      "runs": 1,
+      "statuses": [
+        "active"
+      ],
+      "diagnostics": []
+    },
+    {
+      "probe": "gap_stopped",
+      "inputSha256": "ce3fa715e288c03ccb9ca711d9444d7755f196f01714451660a8e62ef9efa4ea",
+      "runs": 1,
+      "statuses": [
+        "gap_stopped"
+      ],
+      "diagnostics": []
+    },
+    {
+      "probe": "open",
+      "inputSha256": "94b2fb22b27bb30fde58bdc0fc764a56e4e19867da59974677b444992919c03a",
+      "runs": 0,
+      "statuses": [],
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "retained_run_binding_invalid",
+          "message": "retained Run replay source, subject, prefix or status binding conflicts",
+          "sourceRef": "/private/tmp/odd-manager-t046-review-lHklGq/open"
+        },
+        {
+          "severity": "error",
+          "code": "retained_run_binding_invalid",
+          "message": "retained Run replay source, subject, prefix or status binding conflicts",
+          "sourceRef": "/private/tmp/odd-manager-t046-review-lHklGq/open"
+        }
+      ]
+    },
+    {
+      "probe": "blocked",
+      "inputSha256": "59a2246f29dd7160ee9eb8f25f5e5bc8c176f2e4d662b59352a6d0254990fa44",
+      "runs": 0,
+      "statuses": [],
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "retained_run_binding_invalid",
+          "message": "retained Run replay source, subject, prefix or status binding conflicts",
+          "sourceRef": "/private/tmp/odd-manager-t046-review-lHklGq/blocked"
+        },
+        {
+          "severity": "error",
+          "code": "retained_run_binding_invalid",
+          "message": "retained Run replay source, subject, prefix or status binding conflicts",
+          "sourceRef": "/private/tmp/odd-manager-t046-review-lHklGq/blocked"
+        }
+      ]
+    }
+  ]
+}
